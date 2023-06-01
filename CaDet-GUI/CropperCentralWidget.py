@@ -14,6 +14,8 @@ import os
 import pygfx as gfx
 import platform
 
+from superqt import QRangeSlider
+
 
 def load_video_from_list_of_files_cv2(paths):
     # This function loads videos using cv2
@@ -88,7 +90,7 @@ class ImageViewerWidget(QWidget):
 
     def __init__(self):
         '''
-            Widget holding the WGPUCanvas and the time-slider for scrolling
+            Widget holding the WGPUCanvas, time slider for scrolling and sliders for adjusting brightness
         '''
         super().__init__()
     
@@ -96,24 +98,42 @@ class ImageViewerWidget(QWidget):
         self.canvas = WgpuCanvas()
         layout.addWidget(self.canvas)
     
-        self.slider = QSlider(Qt.Horizontal)
-        self.slider.valueChanged.connect(self.change_time_value)
+        self.frame_slider = QSlider(Qt.Horizontal)
+        self.frame_slider.valueChanged.connect(self.change_time_value)
         
+
+        self.vmin_vmax_slider = QRangeSlider(Qt.Orientation.Horizontal)
+        self.vmin_vmax_slider.valueChanged.connect(self.adjust_vmin_vmax)
+
         self.spinBox = QSpinBox()
         self.spinBox.valueChanged.connect(self.change_time_value)
 
         
-
         # Slider with SpinBox horizontal container
         sliderWithSpinbox = QWidget()
         sliderWithSpinbox_layout = QHBoxLayout()
-        sliderWithSpinbox_layout.addWidget(self.slider)
+        sliderWithSpinbox_layout.addWidget(
+            QLabel("Frame: ")
+        )
+        sliderWithSpinbox_layout.addWidget(self.frame_slider)
         sliderWithSpinbox_layout.addWidget(self.spinBox)
         sliderWithSpinbox.setLayout(sliderWithSpinbox_layout)
         sliderWithSpinbox.setMaximumHeight(50)
 
 
         layout.addWidget(sliderWithSpinbox)
+
+        vmin_vmax_HBox = QHBoxLayout()
+        vmin_vmax_HBox.addWidget(
+            QLabel("Brightness: ")
+        )
+        vmin_vmax_HBox.addWidget(self.vmin_vmax_slider)
+
+        layout.addLayout(
+            vmin_vmax_HBox
+        )
+
+      #  layout.addWidget(self.vmin_vmax_slider)
         self.setLayout(layout)
 
     def load_data_from_directory(self,directory_name):
@@ -135,15 +155,31 @@ class ImageViewerWidget(QWidget):
         
     def set_image_data(self, data):
         self.image_data = data
-        self.slider.setMaximum(data.shape[0]-1)
-        self.spinBox.setMaximum(data.shape[0]-1)
 
+        # Adjusting limits of the frame slider and its SpinBox
+        self.frame_slider.setMinimum(0)
+        self.frame_slider.setMaximum(data.shape[0]-1)
+
+        self.spinBox.setMaximum(data.shape[0]-1)
         self.spinBox.setMinimum(0)
-        self.slider.setMinimum(0)
+        
+        # Adjusting limits of the vmax and vmin sliders
+        vmin = np.min(self.image_data)
+        vmax = np.max(self.image_data)
+
+        self.vmin_vmax_slider.setMaximum(vmax)
+        self.vmin_vmax_slider.setMinimum(vmin)
+
+        # Initial values of sliders
+        self.vmin_vmax_slider.setValue((vmin,vmax))
+        # self.im.vmin = vmin
+        # self.im.vmax = vmax
+        
+
 
     def setup_plot(self):
         self.plot = fastplotlib.Plot(canvas=self.canvas)
-        self.im = fastplotlib.graphics.image.ImageGraphic(self.image_data[0,:,:])
+        self.im = fastplotlib.graphics.image.ImageGraphic(self.image_data[0,:,:],cmap="magma")
         self.plot.add_graphic(self.im)
         self.plot.show()
 
@@ -159,15 +195,18 @@ class ImageViewerWidget(QWidget):
             self.plot.scene.add(cropper)
 
     def change_time_value(self, data):
-        self.slider.value = int(data)
-        self.slider.sliderPosition = int(data)
-        self.slider.update()
-        self.slider.repaint()
+        self.frame_slider.value = int(data)
+        self.frame_slider.sliderPosition = int(data)
+        self.frame_slider.update()
+        self.frame_slider.repaint()
     
         self.spinBox.setValue(int(data))
         self.im.data = self.image_data[int(data),:,:]
 
-
+    def adjust_vmin_vmax(self,data):
+        vmin, vmax=data[0],data[1]
+        self.im.vmin= vmin
+        self.im.vmax = vmax
 
 
 
