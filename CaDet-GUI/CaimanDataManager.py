@@ -85,7 +85,7 @@ class CaimanDataManager:
                 x.append(component_id)
     
     def get_components_from_point(self, x,y):
-        print(self.component_mapping[x,y])
+       # print(self.component_mapping[x,y])
         return self.component_mapping[x,y]
 
     def get_spatial_contour(self, component_id):
@@ -106,22 +106,25 @@ class CaimanDataManager:
         '''
         print("Merging ",component_ids," components")
 
-        unified_matrix = np.any([self.get_spatial_matrix(k) for k in component_ids],axis=0)
-        average_contour = np.array(skimage.measure.find_contours(unified_matrix>0,0)[0])
+        average_matrix = np.mean([self.get_spatial_matrix(k) for k in component_ids],axis=0)
+        average_contour = np.array(skimage.measure.find_contours(average_matrix>0,0)[0])
         average_trace = np.mean([self.get_temporal_trace(k) for k in component_ids], axis=0)
 
 
         modified_component = np.min(component_ids)
+        discarded_components = sorted(component_ids)[1:]
 
         for i in range(self.estimates.dims[0]): # Without the loop numpy for some reason can't assign object values as elements of array :/
             for j in range(self.estimates.dims[1]):
-                if unified_matrix[i,j]>0:
+                if average_matrix[i,j]>0:
                     self.component_mapping[i,j] = [modified_component]
 
-
-        self.estimates.A[:,modified_component] = csc_matrix(unified_matrix).reshape((np.prod(self.estimates.dims),1),order="F")
+        self.estimates.A[:,modified_component] = csc_matrix(average_matrix).reshape((np.prod(self.estimates.dims),1),order="F")
         self.estimates.C[modified_component,:] = average_trace
         self.spatial_contours[modified_component] = average_contour
+        self.discard_components(discarded_components)
+
+        print("After merge idx: ", self.estimates.idx_components)
 
 
     def toggle_selected_mode(self):
@@ -146,10 +149,13 @@ class CaimanDataManager:
         return self.component_ids[np.invert(self.selected_mask)]
     
     def discard_components(self, component_ids):
+        '''
+            When components are discarded, the corresponding flag is set and they are removed from 'idx_components'
+        '''
+        print("Discarding components: ", component_ids)
         self.discarded_mask[component_ids] = True
-
-    def restore_components(self, component_ids):
-        self.discarded_mask[component_ids] = False
+        for k in component_ids:
+            self.estimates.idx_components = self.estimates.idx_components[self.estimates.idx_components!=k]
 
     def get_discarded_components(self):
         return self.component_ids[self.discarded_mask]

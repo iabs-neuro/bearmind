@@ -240,7 +240,6 @@ class TemporalComponentsWidget(QWidget):
 
 
     def recalculate_plotDataItems(self,component_ids):
-        print(component_ids)
         '''
             Updates the data of each PlotDataItem based on CaimanDataManager
         '''
@@ -405,16 +404,17 @@ class CaimanViewerWidget(QWidget):
         if selected_files:
             file_path = selected_files[0]
 
-        self.CaimanDataManager = CaimanDataManager(file_path)
-        self.temporal_plots_widget.CaimanDataManager = self.CaimanDataManager
-        self.spatial_component_widget.CaimanDataManager = self.CaimanDataManager
+        if file_path:
+            self.CaimanDataManager = CaimanDataManager(file_path)
+            self.temporal_plots_widget.CaimanDataManager = self.CaimanDataManager
+            self.spatial_component_widget.CaimanDataManager = self.CaimanDataManager
 
 
-        self.plot_temporal_components()
-        self.spatial_component_widget.plot_component_matrix()
-        self.spatial_component_widget.setup_contours()
-        self.enable_all_buttons()
-        self.update_all_panels()
+            self.plot_temporal_components()
+            self.spatial_component_widget.plot_component_matrix()
+            self.spatial_component_widget.setup_contours()
+            self.enable_all_buttons()
+            self.update_all_panels()
 
 
     def save(self):
@@ -422,7 +422,7 @@ class CaimanViewerWidget(QWidget):
             Top-level function to save the modified outputs as a .pickle
         '''
         
-        save_name = QFileDialog.getSaveFileName(self, 'Save output', "", ".pickle")
+        save_name = QFileDialog.getSaveFileName(self, 'Save output', "", ".pickle")[0]
         print(f"Saving to {save_name}")
 
         with open(save_name, "wb") as f:
@@ -454,13 +454,8 @@ class CaimanViewerWidget(QWidget):
         self.spatial_component_widget.recalculate_contours([np.min(components_to_merge)])
         self.temporal_plots_widget.recalculate_plotDataItems([np.min(components_to_merge)])
         self.deselect_all_components()
-        self.CaimanDataManager.discard_components(
-            components_to_merge[1:]
-        )
         self.update_all_panels()
-       # self.CaimanDataManager.set_component_selection(components_to_merge, False)
-        #self.CaimanDataManager.set_component_selection(np.min(components_to_merge), True)
-        
+
 
     def toggle_component_selection(self,component_id):
         self.CaimanDataManager.toggle_component_selection(component_id)

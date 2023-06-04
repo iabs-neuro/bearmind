@@ -28,7 +28,7 @@ class GUIMainWindow(QMainWindow):
 
         saveAction = QAction("Save",self)
         saveAction.setShortcut(QKeySequence("Ctrl+s"))
-        saveAction.triggered.connect(self.load_file)
+        saveAction.triggered.connect(self.save_file)
 
        # openAction.setMenuRole(QAction.MenuRole.NoRole)
 
@@ -49,10 +49,6 @@ class GUIMainWindow(QMainWindow):
 
     def save_file(self):
         self.tabs.currentWidget().save()
-
-
-
-        
 
 
 
