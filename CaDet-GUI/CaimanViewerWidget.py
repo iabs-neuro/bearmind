@@ -336,9 +336,9 @@ class CaimanViewerWidget(QWidget):
         self.controlStripLayout = QHBoxLayout()
         self.buttonRowLayout = QHBoxLayout()
 
-        self.controlStripLayout.addLayout(self.buttonRowLayout,7)
-        self.controlStripLayout.addSpacing(150)
-        self.statusTextEdit = QTextEdit()
+        self.controlStripLayout.addLayout(self.buttonRowLayout,5)
+        self.controlStripLayout.addSpacing(50)
+        self.statusTextEdit = QTextEdit(text="No open file. Press Ctrl(Cmd) + O to open a directory with .avi files")
         self.statusTextEdit.setReadOnly(True)
         
 
@@ -486,7 +486,8 @@ class CaimanViewerWidget(QWidget):
             discardedComponents_status_text = str(list(discardedComponents))
 
         self.statusTextEdit.setText(
-            f"Selected components: {selectedComponents_status_text}\n Discarded components: {discardedComponents_status_text}")
+            f"Open file: {self.CaimanDataManager.estimates_filepath} \n\n"+
+            f"Selected components: {selectedComponents_status_text}\nDiscarded components: {discardedComponents_status_text}")
         
     def toggle_selected_mode(self):
         self.CaimanDataManager.toggle_selected_mode()

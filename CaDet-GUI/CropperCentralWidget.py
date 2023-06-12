@@ -142,6 +142,7 @@ class ImageViewerWidget(QWidget):
 
         avi_list = list(self.directory_path.glob("*.avi"))
         print(f"Found {len(avi_list)} avi files:",avi_list)
+        self.N_files = len(avi_list)
 
         
         data = load_video_from_list_of_files(avi_list)
@@ -288,14 +289,23 @@ class CropperCentralWidget(QWidget):
 
         self.im_viewer = ImageViewerWidget()
         self.control_panel = ControlPanelWidget()
+        self.status_label = QLabel(text="No data loaded. Press Ctrl(Cmd) + O to open a directory with .avi files")
+        self.status_label.setMaximumHeight(20)
+
+
+
         self.control_panel.load_button.clicked.connect(self.load)
         self.control_panel.save_button.clicked.connect(self.save)
 
         layout = QHBoxLayout()
         layout.addWidget(self.im_viewer)
         layout.addWidget(self.control_panel)
+
+        mainLayout = QVBoxLayout()
+        mainLayout.addWidget(self.status_label)
+        mainLayout.addLayout(layout)
         self.connect_spinboxes_to_croppers()
-        self.setLayout(layout)
+        self.setLayout(mainLayout)
 
 
     def connect_spinboxes_to_croppers(self):
@@ -312,6 +322,9 @@ class CropperCentralWidget(QWidget):
         self.im_viewer.setup_plot()
         self.im_viewer.setup_croppers()
         self.adjust_SpinBoxes_limits()
+        self.status_label.setText("Working directory: "+
+                                  str(directory) + 
+                                  f"    (  {self.im_viewer.N_files} .avi files  )")
         pass
 
 
