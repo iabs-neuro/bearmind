@@ -14,7 +14,7 @@ from CaimanViewerWidget import CaimanViewerWidget
 class GUIMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Caiman GUI")
+        self.setWindowTitle("CaDet GUI")
         self.setMinimumWidth(1200)
         self.setMinimumHeight(800)
 
