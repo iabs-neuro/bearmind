@@ -135,20 +135,17 @@ def MergeSelected(estimates, sel_inds, opts):
     estimates.manual_merge([estimates.idx_components[sel_inds].tolist()], params = opts)
     return estimates
 
-def SeedContours(estimates, seeded_pts):
-    seeds = np.concatenate((estimates.center, np.array(seeded_pts).T))
-    estimates = DoCNMF(estimates.tif_name, estimates.cnmf_dict, seeds = seeds) 
-    return estimates
+def SaveSeeds(seeds, base_name):
+    with open(base_name + '_seeds.pickle', "wb") as f:
+        pickle.dump(seeds, f)
 
 def SaveResults(estimates, sigma = 3):
-    with open(estimates.name.partition('.')[0] + '_final.pickle', "wb") as f:
-        pickle.dump(estimates, f) #just in case, may be it's excessive
     #traces timestamping and writing
     stamped_traces = np.concatenate(([estimates.time], estimates.C[estimates.idx_components]), axis=0)
-    pd.DataFrame(stamped_traces.T).to_csv(estimates.name.partition('estimates')[0] + 'traces_test.csv', index=False, header = ['time_s', *np.arange(len(estimates.idx_components))])
+    pd.DataFrame(stamped_traces.T).to_csv(estimates.name.partition('estimates')[0] + 'traces.csv', index=False, header = ['time_s', *np.arange(len(estimates.idx_components))])
 
     #making directory and tiff writing
-    fold = estimates.name.partition('estimates')[0] + 'filters_test'
+    fold = estimates.name.partition('estimates')[0] + 'filters'
     if not os.path.exists(fold):
         os.mkdir(fold)
     ims = []
@@ -160,56 +157,3 @@ def SaveResults(estimates, sigma = 3):
         tfl.imwrite(fold + f'\\filter_{i+1:03d}.tif', ims[-1])
     savemat(fold + '_session.mat', {"A":np.array(ims)})
     return
-
-
-
-#### Some deprecated stuff may be potentially useful as snippets
-
-def UpdateContours(src, fname, gSig = (5, 5), gSiz = (21, 21)):
-    start = time()
-    Ain = np.array([(frame.T.flatten('F') > np.max(frame)/2).astype(bool) for frame in src.data['rois']]).T
-    #Ain = np.array([frame.T.flatten('F') for frame in src.data['rois']], dtype = bool).T
-    opts_dict = {'fnames': [fname],
-                 'fr': 20,
-                 'decay_time': 2,
-                 'p': 1,
-                 'nb': 2,
-                 'rf': None,
-                 'only_init': False,
-                 'gSig': gSig,
-                 'gSig': gSiz,
-                 'ssub': 1,
-                 'tsub': 1,
-                 'merge_thr': 0.85,
-                 'method_init': 'corr_pnr',
-                 'K': None,
-                 'low_rank_background': None,           # None leaves background of each patch intact, True performs global low-rank approximation if gnb>0
-                 'update_background_components': True,  # sometimes setting to False improve the results
-                 'min_corr': .8,                        # min peak value from correlation image
-                 'min_pnr': 10,                         # min peak to noise ration from PNR image
-                 'normalize_init': False,               # just leave as is
-                 'center_psf': True,                    # leave as is for 1 photon
-                 'ring_size_factor': 1.4,               # radius of ring is gSiz*ring_size_factor
-                 'del_duplicates': True,                # whether to remove duplicates from initialization      
-                }
-
-    opts = params.CNMFParams(params_dict = opts_dict)
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
-    cnm = cm.source_extraction.cnmf.CNMF(n_processes, dview=dview, Ain=Ain, params=opts)
-    mem_fname = cm.save_memmap([fname], base_name=str(int(time())), order='C', border_to_0=0, dview=dview)
-    Yr, dims, T = cm.load_memmap(mem_fname)
-    images = Yr.T.reshape((T,) + dims, order='F')
-    cnm.fit(images)
-    with open(fname[:-4] + '_upd_estimates.pickle', "wb") as f:
-        pickle.dump(cnm.estimates, f)
-
-    cm.stop_server(dview=dview)
-    dview.terminate()
-
-    conts = cm.utils.visualization.get_contours(cnm.estimates.A, dims=dims)
-    conts = [cont["coordinates"][~np.isnan(cont["coordinates"]).any(axis=1)] for cont in conts]
-    src.data['xs'] = [[pt[0] for pt in c] for c in conts]
-    src.data['ys'] = [[pt[1] for pt in c] for c in conts]
-    src.data['traces'] = [tr/np.max(tr) + i for i, tr in enumerate(cnm.estimates.C)]
-    print(f'{fname} updated in {time()-start} s')
-    return src    
