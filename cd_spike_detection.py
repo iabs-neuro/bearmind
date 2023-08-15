@@ -1,8 +1,11 @@
+from scipy.stats import median_abs_deviation as mad
+from scipy.ndimage import uniform_filter1d as unif_1d
+from scipy.signal import medfilt
 import numpy as np
 import pandas as pd
 import os
 
-def DetectSpikes(fanme, opts):
+def DetectSpikes(fname, opts):
     #Fits calcium activity data in given .csv file with function single_spike_model
     #i.e., y(i) = ampl*(1 - exp((t - x(i))/t_on))*exp((t - x(i))/t_off) + backgr, x(i) >=t
     #      y(i) = backgr, x(i) < t.
@@ -13,8 +16,8 @@ def DetectSpikes(fanme, opts):
     #arguments:
     #path, filename of .csv file with data
     #thr - threshold level for spike detection, MADs above background
-    #t_before - window interval before threshold crossing, s
-    #t_after - window interval after nearest peak, s
+    #t_before - window interval before threshold crossing, s ==> FRAMES
+    #t_after - window interval after nearest peak, s ==> FRAMES
     #max_t_on - upper limit of e-fold rise time, s 
     #min_t_off - lower limit of e-fold decay time, s 
     #toler - fitting tolerance, 0..1
@@ -23,40 +26,97 @@ def DetectSpikes(fanme, opts):
     #
     # Vladimir Sotskov, 2017-2023
 '''
-    prompt = ['Threshold level, MADs', 'Window interval before threshold crossing, s', 'Window interval after nearest peak, s', 'Maximal e-fold rise time, s', 'Minimal e-fold decay time, s', 'Fitting tolerance, 0..1', 'Peak smoothing window half-time, frames (1 = skip peak smoothing)', 'Background median filter window, frames (1 = flat background)','Write spike amplitudes (vs ones) - y/n', 'Write auxiliary tables (FITS, THRES) - y/n']
-    variables = ['thr', 't_before', 't_after', 'max_t_on', 'min_t_off', 'toler', 'j_wind', 'bckg_med_wind', 'sp_ampl', 'aux']
-    default_data = ['4','1','1','1','0.5','0.8','5', '500', 'y', 'y']
+    prompt = ['Threshold level, MADs', 'Window interval before threshold crossing, s', 'Window interval after nearest peak, s', 'Maximal e-fold rise time, s', 'Minimal e-fold decay time, s', 'Fitting tolerance, 0..1', 'Peak smoothing window half-time, frames (1 = skip peak smoothing)', 'Background median filter window, frames (1 = flat background)']
+    variables = ['thr', 't_before', 't_after', 'max_t_on', 'min_t_off', 'toler', 'j_wind', 'bckg_med_wind']
+    default_data = ['4','1','1','1','0.5','0.8','5', '500']
 
 '''
-#reading data
-T = csvread(sprintf('%s%s',path,filename), 1);
-dim = size(T);
-X = T(1:dim(1),1);
-fps = round((dim(1) - 1)/(X(dim(1))-X(1)));
+    event_max_len = 20*20 #maximal time lag (in frames) for the nearest local maximum searching
 
-#main spikes array
-SPIKES = zeros(dim(1)+1,dim(2)); 
-SPIKES(2:dim(1)+1,1) = X;
+    #reading data
+    traces = np.genfromtxt(fname, delimiter =',', skip_header = 1)
+    time = traces[:,0]
+    traces = traces[:,1:].T #mind the transposition!! it's easier to deal with transposed array
+    n_cells, n_frames = np.shape(traces)
+    spikes = []
+    
+    for trace in traces:
+        sp_trace = np.zeros(len(trace))
+        mdev = mad(trace)
+        #background calculation
+        if bckg_med_wind == 1
+            backg = np.ones*np.median(trace)
+        else:
+            backg = medfilt(trace, kernel_size=None)
+        #detrending    
+        trace = trace-backg
+        for j in range(n_frames):
+            #condition of threshold crossing
+            if trace[j+1] > m_dev*thr && trace[j] <= m_dev*thr:
+                #nearest peak searching
+                sm_trace = unif_1d(trace[j:min(n_frames,j+event_max_len)], size = j_wind*2);
+                
 
-#array of fits
-FITS = zeros(dim(1)+1,dim(2)); 
-FITS(2:dim(1)+1,1) = X;
 
-#array of background level
-BACKG = zeros(dim(1)+1,dim(2)); 
-BACKG(2:dim(1)+1,1) = X;
+            #fitting
+            j_start = round(max(1, j - t_before*fps));
+            j_end = round(min(dim(1), j_peak + t_after*fps));
+            
 
-#array of threshold level
-THRES = zeros(dim(1)+1,dim(2)); 
-THRES(2:dim(1)+1,1) = X;
+            
+            [fitresult, gof] = sd_spike_fit_zero(X(j_start:j_end), T(j_start:j_end, i), m_dev*thr, max_t_on, min_t_off);
+              
+         
+            if gof.rsquare >= toler # && gof.sse <= 0.000025*(j_end-j_start)
+                t = fitresult.t;
+                t_on = fitresult.t_on;
+                t_off = fitresult.t_off;
+                ampl = fitresult.ampl;
+                Y = sd_spike_model_zero(X, t, t_on, t_off, ampl);
+                #subtracting fit from original data - this allows next
+                #potential spikes to be scored
+                T(1:dim(1),i) = T(1:dim(1),i) - Y;
+                #FITS saves cumulative spike fits
+                FITS(2:dim(1)+1,i) = FITS(2:dim(1)+1,i) + Y;
+                #spike scoring
+                for jt = j_start:j_end
+                    if t < X(jt)
+                        break
+                    end
+                end
+                if sp_ampl == 'y'
+                    SPIKES(jt, i) = max(FITS(j_start:j_end, i));
+                else
+                    SPIKES(jt, i) = 1;
+                end
+                fprintf('Spike detected in trace %d\tt = %.2f s\t ampl = %.3f\tt_on = %.2f s\tt_off = %.2f s\tgof = %.2f\n',i-1,t,ampl,t_on,t_off,gof.rsquare); 
+            else
+                #one isolated point will not alter fit significantly, but
+                #it can allow next potential over-thresholded spike to be scored
+                T(j_end,i) = m_dev*thr;
+                fprintf('Spike NOT detected in trace %d\tt = %.2f s\tgof = %.2f\n',i-1,fitresult.t,gof.rsquare);
+                
+                #just for information, what this spike could be like
+                #Y = sd_spike_model_zero(X, fitresult.t, fitresult.t_on, fitresult.t_off, fitresult.ampl); 
+                #SCAM(j_start:j_end, i) = Y(j_start:j_end)+ m_dev;
+            end    
+        end  
+    end
+end
+csvwrite(sprintf('%sspikes_%s',path,filename), SPIKES);            
+            
+            
+            
+            
+            
+            
+            
+        
+            
+    
+    
+    
 
-#array of scam (unaccounted events)
-SCAM = zeros(dim(1)+1,dim(2)); 
-SCAM(2:dim(1)+1,1) = X;
-
-#array of true values (unaccounted events)
-CORR = zeros(dim(1)+1,dim(2)); 
-CORR(2:dim(1)+1,1) = X;
 
 h = waitbar(0, sprintf('Processing trace %d of %d', 0,  dim(2)-1)); 
 
