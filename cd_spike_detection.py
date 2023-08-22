@@ -1,208 +1,61 @@
+from cd_inspector_callbacks import colornum_Metro
+from scipy.ndimage.filters import gaussian_filter1d
 from scipy.stats import median_abs_deviation as mad
-from scipy.ndimage import uniform_filter1d as unif_1d
-from scipy.signal import medfilt
-import numpy as np
+from scipy.optimize import curve_fit
+from scipy import signal
+import bokeh.plotting as bpl
 import pandas as pd
-import os
+import numpy as np
+import pickle
 
-def DetectSpikes(fname, opts):
-    #Fits calcium activity data in given .csv file with function single_spike_model
-    #i.e., y(i) = ampl*(1 - exp((t - x(i))/t_on))*exp((t - x(i))/t_off) + backgr, x(i) >=t
-    #      y(i) = backgr, x(i) < t.
-    #Fitting begins whenever the signal cross threshold level, and is
-    #restricted to definite time window, designed to catch fast spike rise,
-    #peak and beginning of slow decay.
-    #
-    #arguments:
-    #path, filename of .csv file with data
-    #thr - threshold level for spike detection, MADs above background
-    #t_before - window interval before threshold crossing, s ==> FRAMES
-    #t_after - window interval after nearest peak, s ==> FRAMES
-    #max_t_on - upper limit of e-fold rise time, s 
-    #min_t_off - lower limit of e-fold decay time, s 
-    #toler - fitting tolerance, 0..1
-    #j_wind  - peak smoothing window half-interval, frames (1 = skip peak smoothing)'
-    #bckg_med_wind - window for median filter for background calculation, frames (1 = flat background, old version)
-    #
-    # Vladimir Sotskov, 2017-2023
-'''
-    prompt = ['Threshold level, MADs', 'Window interval before threshold crossing, s', 'Window interval after nearest peak, s', 'Maximal e-fold rise time, s', 'Minimal e-fold decay time, s', 'Fitting tolerance, 0..1', 'Peak smoothing window half-time, frames (1 = skip peak smoothing)', 'Background median filter window, frames (1 = flat background)']
-    variables = ['thr', 't_before', 't_after', 'max_t_on', 'min_t_off', 'toler', 'j_wind', 'bckg_med_wind']
-    default_data = ['4','1','1','1','0.5','0.8','5', '500']
+def EventForm(xdata, a, b, t0, ton, toff):
+    return [b if t < t0 else a*(1 - np.exp((t0 - t)/ton))*np.exp((t0 - t)/toff) + b for t in xdata]
 
-'''
-    event_max_len = 20*20 #maximal time lag (in frames) for the nearest local maximum searching
+def FitEvents(fname, opts):
+    #file reading
+    traces = np.genfromtxt(fname, delimiter = ',', skip_header = 1)[:,1:].T #note the transposition for better iterability
+    time = np.genfromtxt(fname, delimiter = ',', skip_header = 1)[:,0]
+    spikes = np.zeros(traces.shape)   #this in for non-sparse storage like in traces.csv, as it used to be, just for back compartibility
+    events = []                       #this is for sparse storage in pickle 
+    for cell_num, trace in enumerate(traces):
+        #smoothing
+        sm_trace = gaussian_filter1d(trace, sigma=opts['sigma'])
+        thr = opts['thr']*mad(sm_trace)
+        x_peaks = signal.argrelmax(sm_trace)[0]
+        x_pits = signal.argrelmin(sm_trace)[0]
+        loc_events = []
+               
+        for x_peak in x_peaks:
+            x_left = 0 if all (x_pits > x_peak) else x_pits[x_pits < x_peak][-1]
+            x_right = len(trace)-1 if all (x_pits < x_peak) else x_pits[x_pits > x_peak][0]
+            if sm_trace[x_peak] - sm_trace[x_left] >= thr:
+                try:
+                    popt, pcov = curve_fit(EventForm, time[x_left:x_right], trace[x_left:x_right], p0 = [thr, trace[x_left], time[x_left], opts['est_ton'], opts['est_toff']])  
+                    loc_events.append(dict(zip(['cell_num','a','b','t0','ton','toff','x_left','x_right'],[cell_num, *popt, x_left, x_right])))
+                    idx = len(time[time < popt[2]]) #position of t0 in time array
+                    spikes[cell_num, idx] = sm_trace[x_peak] - sm_trace[x_left]
+                    print(f'Spike detected: {loc_events[-1]}')
+                except:
+                    continue
 
-    #reading data
-    traces = np.genfromtxt(fname, delimiter =',', skip_header = 1)
-    time = traces[:,0]
-    traces = traces[:,1:].T #mind the transposition!! it's easier to deal with transposed array
-    n_cells, n_frames = np.shape(traces)
-    spikes = []
-    
-    for trace in traces:
-        sp_trace = np.zeros(len(trace))
-        mdev = mad(trace)
-        #background calculation
-        if bckg_med_wind == 1
-            backg = np.ones*np.median(trace)
-        else:
-            backg = medfilt(trace, kernel_size=None)
-        #detrending    
-        trace = trace-backg
-        for j in range(n_frames):
-            #condition of threshold crossing
-            if trace[j+1] > m_dev*thr && trace[j] <= m_dev*thr:
-                #nearest peak searching
-                sm_trace = unif_1d(trace[j:min(n_frames,j+event_max_len)], size = j_wind*2);
-                
-
-
-            #fitting
-            j_start = round(max(1, j - t_before*fps));
-            j_end = round(min(dim(1), j_peak + t_after*fps));
-            
-
-            
-            [fitresult, gof] = sd_spike_fit_zero(X(j_start:j_end), T(j_start:j_end, i), m_dev*thr, max_t_on, min_t_off);
-              
-         
-            if gof.rsquare >= toler # && gof.sse <= 0.000025*(j_end-j_start)
-                t = fitresult.t;
-                t_on = fitresult.t_on;
-                t_off = fitresult.t_off;
-                ampl = fitresult.ampl;
-                Y = sd_spike_model_zero(X, t, t_on, t_off, ampl);
-                #subtracting fit from original data - this allows next
-                #potential spikes to be scored
-                T(1:dim(1),i) = T(1:dim(1),i) - Y;
-                #FITS saves cumulative spike fits
-                FITS(2:dim(1)+1,i) = FITS(2:dim(1)+1,i) + Y;
-                #spike scoring
-                for jt = j_start:j_end
-                    if t < X(jt)
-                        break
-                    end
-                end
-                if sp_ampl == 'y'
-                    SPIKES(jt, i) = max(FITS(j_start:j_end, i));
-                else
-                    SPIKES(jt, i) = 1;
-                end
-                fprintf('Spike detected in trace %d\tt = %.2f s\t ampl = %.3f\tt_on = %.2f s\tt_off = %.2f s\tgof = %.2f\n',i-1,t,ampl,t_on,t_off,gof.rsquare); 
-            else
-                #one isolated point will not alter fit significantly, but
-                #it can allow next potential over-thresholded spike to be scored
-                T(j_end,i) = m_dev*thr;
-                fprintf('Spike NOT detected in trace %d\tt = %.2f s\tgof = %.2f\n',i-1,fitresult.t,gof.rsquare);
-                
-                #just for information, what this spike could be like
-                #Y = sd_spike_model_zero(X, fitresult.t, fitresult.t_on, fitresult.t_off, fitresult.ampl); 
-                #SCAM(j_start:j_end, i) = Y(j_start:j_end)+ m_dev;
-            end    
-        end  
-    end
-end
-csvwrite(sprintf('%sspikes_%s',path,filename), SPIKES);            
-            
-            
-            
-            
-            
-            
-            
+        events.append(loc_events)
         
-            
-    
-    
-    
+    pd.DataFrame(np.concatenate(time[None,:],spikes).T).to_csv(fname.partition('traces.csv')[0] + 'spikes.csv', index=False, header = ['time_s', *np.arange(len(traces))])
+    with open(fname.partition('traces.csv')[0] + 'events.pickle', "wb") as f:
+        pickle.dump(events, f)
+      
 
+      
+def DrawSpEvents(tr_fname, sp_fname):
+	#file reading
+	bpl.output_notebook()
+	bpl.output_file()
+    traces = np.genfromtxt(tr_fname, delimiter = ',', skip_header = 1)[:,1:].T #note the transposition for better iterability
+	sp_events = np.genfromtxt(sp_fname, delimiter = ',', skip_header = 1)[:,1:].T
+    time = np.genfromtxt(tr_fname, delimiter = ',', skip_header = 1)[:,0]
 
-h = waitbar(0, sprintf('Processing trace %d of %d', 0,  dim(2)-1)); 
-
-for i = 2:dim(2)
-    waitbar((i-1)/(dim(2)-1), h, sprintf('Processing trace %d of %d', i-1,  dim(2)-1));
-    m_dev = mad(T(1:dim(1),i),1);
-    #background calculation
-    if bckg_med_wind == 1
-        BACKG(2:dim(1)+1,i) = median(T(1:dim(1),i));
-    else
-        BACKG(2:dim(1)+1,i) = medfilt1(T(1:dim(1),i), bckg_med_wind);
-    end
-    #background subtraction: from now, all bckg is set to 0    
-    T(1:dim(1),i) = T(1:dim(1),i) - BACKG(2:dim(1)+1,i);
-    CORR(1:dim(1),i) = T(1:dim(1),i);
-    
-    #threshold levels
-    THRES(2:dim(1)+1,i) = m_dev*thr;
-    
-    for j = j_wind+1:dim(1)
-        #condition of threshold crossing
-        if T(j,i) > m_dev*thr && T(j-1,i) <= m_dev*thr
-            
-            #nearest peak searching
-            ampl =  mean(T(j-j_wind:min(dim(1),j+j_wind),i));
-            j_peak = j+1;
-            while j_peak + j_wind <= dim(1) && mean(T(j_peak-j_wind:j_peak+j_wind,i)) > ampl
-                ampl = mean(T(j_peak-j_wind:j_peak+j_wind,i));
-                BACKG(j_peak,i) = ampl;
-                j_peak = j_peak + 1;
-            end
-
-            #fitting
-            j_start = round(max(1, j - t_before*fps));
-            j_end = round(min(dim(1), j_peak + t_after*fps));
-            
-            BACKG(j_start:j, i) = m_dev*2;
-            BACKG(j_peak:j_end, i) = m_dev*2;
-            
-            [fitresult, gof] = sd_spike_fit_zero(X(j_start:j_end), T(j_start:j_end, i), m_dev*thr, max_t_on, min_t_off);
-              
-         
-            if gof.rsquare >= toler # && gof.sse <= 0.000025*(j_end-j_start)
-                t = fitresult.t;
-                t_on = fitresult.t_on;
-                t_off = fitresult.t_off;
-                ampl = fitresult.ampl;
-                Y = sd_spike_model_zero(X, t, t_on, t_off, ampl);
-                #subtracting fit from original data - this allows next
-                #potential spikes to be scored
-                T(1:dim(1),i) = T(1:dim(1),i) - Y;
-                #FITS saves cumulative spike fits
-                FITS(2:dim(1)+1,i) = FITS(2:dim(1)+1,i) + Y;
-                #spike scoring
-                for jt = j_start:j_end
-                    if t < X(jt)
-                        break
-                    end
-                end
-                if sp_ampl == 'y'
-                    SPIKES(jt, i) = max(FITS(j_start:j_end, i));
-                else
-                    SPIKES(jt, i) = 1;
-                end
-                fprintf('Spike detected in trace %d\tt = %.2f s\t ampl = %.3f\tt_on = %.2f s\tt_off = %.2f s\tgof = %.2f\n',i-1,t,ampl,t_on,t_off,gof.rsquare); 
-            else
-                #one isolated point will not alter fit significantly, but
-                #it can allow next potential over-thresholded spike to be scored
-                T(j_end,i) = m_dev*thr;
-                fprintf('Spike NOT detected in trace %d\tt = %.2f s\tgof = %.2f\n',i-1,fitresult.t,gof.rsquare);
-                
-                #just for information, what this spike could be like
-                #Y = sd_spike_model_zero(X, fitresult.t, fitresult.t_on, fitresult.t_off, fitresult.ampl); 
-                #SCAM(j_start:j_end, i) = Y(j_start:j_end)+ m_dev;
-            end    
-        end  
-    end
-end
-csvwrite(sprintf('%sspikes_%s',path,filename), SPIKES);
-if aux == 'y'
-    csvwrite(sprintf('%sfits_%s',path,filename), FITS);
-    csvwrite(sprintf('%sbackg_%s',path,filename), BACKG);
-    csvwrite(sprintf('%sthres_%s',path,filename), THRES);
-    csvwrite(sprintf('%sscam_%s',path,filename), SCAM);
-    csvwrite(sprintf('%scorr_%s',path,filename), CORR);
-end
-delete(h);
-
-end
+	p = bpl.figure(title = tr_fname.split('\\')[-1])
+	for cell_num, trace, spikes in enumerate(zip(traces, sp_events)):
+		p.line(time, trace/np.max(trace) + cell_num, line_color = colornum_Metro(cell_num + 1))
+		p.scatter(time[spikes>0], cell_num +0.9, fill_color = colornum_Metro(cell_num + 1))
+	bpl.show(p)
