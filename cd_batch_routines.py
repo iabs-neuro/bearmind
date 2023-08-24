@@ -32,7 +32,8 @@ def DoCropAndRewrite(root, name):
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
-    avi_names = glob(os.path.dirname(name) + '\\*.avi') 
+    avi_names = glob(os.path.dirname(name) + '\\*.avi')
+    avi_names.sort(key = len) 
     splt_path = os.path.normpath(name).split(os.sep)
     out_fname = root + '_'.join(splt_path[-5:-2]) + '_CR.tif'
     whole_data = []
