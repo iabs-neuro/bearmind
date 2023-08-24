@@ -47,6 +47,8 @@ def FitEvents(fname, opts):
                         popt,_ = curve_fit(EventForm, time[x_left:x_right], trace[x_left:x_right], p0 = p0, bounds = bounds)
                     except:
                         print(f'FAILED to detect event at cell {cell_num} time {time[x_peak]} s')
+                        if opts['draw_details']:
+                            p.scatter((time[x_left] + time[x_peak])/2, (trace[x_left] + trace[x_peak])/2/np.max(trace) + cell_num, marker = 'circle_x', line_color = clnm(cell_num), fill_color = None, size = 15)
                         continue
                 fit = EventForm(time[x_left:x_right], *popt)
                 ampl = np.max(fit) - popt[1]  #relative amplitude of the event
