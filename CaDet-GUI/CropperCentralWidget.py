@@ -320,5 +320,5 @@ class CropperCentralWidget(QWidget):
         with open(save_path, "wb") as f:
             pickle.dump(cropping_dict, f)
         print(cropping_dict)
-        print("Saving croppings to {}".format(save_path))
+        print("Saving croppings to {}\n".format(save_path))
     
