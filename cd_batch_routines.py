@@ -6,6 +6,9 @@ import pickle
 import shutil
 import os
 import gc
+import ipywidgets as ipw
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 from bokeh.plotting import figure, show, output_notebook 
 from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, PointDrawTool
 from bokeh.layouts import column, row
@@ -27,6 +30,68 @@ def CleanMemmaps(name):
     for mm in mmap_files:
         os.remove(mm)
         
+    
+def DrawFrameAndBox(data, x, left, up, right, down, dpi = 200):
+    plt.figure(dpi = dpi)
+    plt.imshow(data[x,:,:])
+    plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
+        
+    
+def LoadSelectedVideos(fnames):
+    fnames.sort(key = len)
+    video = []
+    for name in fnames:
+        clip = VideoFileClip(name)
+        for frame in clip.iter_frames():
+            video.append(frame[:,:,0])
+    return np.asarray(video)
+
+
+def DrawCropper(data, dpi=200):
+    
+    play = ipw.Play(
+        value=0,
+        min=0,
+        max=data.shape[0]-1,
+        step=1,
+        interval=50,
+        disabled=False
+    )
+    x_slider = ipw.IntSlider(layout=ipw.Layout(width='75%'))
+    ipw.jslink((play, 'value'), (x_slider, 'value'))
+    
+    l_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
+    u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
+    r_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
+    d_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
+    
+    def update_right(*args):
+        r_slider.max = data.shape[1] - l_slider.value -1 
+    l_slider.observe(update_right, 'value')
+    
+    def update_down(*args):
+        d_slider.max = data.shape[2] - u_slider.value -1
+    u_slider.observe(update_down, 'value')
+    
+    w = ipw.interactive(DrawFrameAndBox, data = ipw.fixed(data), x = x_slider, left = l_slider, up = u_slider, right = r_slider, down = d_slider, dpi = ipw.fixed(200))
+    display(w)
+    ipw.HBox([play, x_slider])
+    
+    return w
+
+def SaveCrops(root, left, up, right, down):
+        save_name = root + '\\cropping.pickle'
+        cropping_dict = {
+            "LEFT":left,
+            "RIGHT":right,
+            "UP":up,
+            "DOWN":down
+        }
+        with open(save_name, "wb") as f:
+            pickle.dump(cropping_dict, f)
+        print(cropping_dict)
+        print(f'Crops saved to {save_name}\n')
+
 def DoCropAndRewrite(root, name):
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
