@@ -48,18 +48,7 @@ def LoadSelectedVideos(fnames):
 
 
 def DrawCropper(data, dpi=200):
-    
-    play = ipw.Play(
-        value=0,
-        min=0,
-        max=data.shape[0]-1,
-        step=1,
-        interval=50,
-        disabled=False
-    )
-    x_slider = ipw.IntSlider(layout=ipw.Layout(width='75%'))
-    ipw.jslink((play, 'value'), (x_slider, 'value'))
-    
+    x_slider = ipw.IntSlider(value=1,  min=0, max=data.shape[0]-1, layout=ipw.Layout(width='100%'))
     l_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
     u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     r_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
@@ -75,7 +64,6 @@ def DrawCropper(data, dpi=200):
     
     w = ipw.interactive(DrawFrameAndBox, data = ipw.fixed(data), x = x_slider, left = l_slider, up = u_slider, right = r_slider, down = d_slider, dpi = ipw.fixed(200))
     display(w)
-    ipw.HBox([play, x_slider])
     
     return w
 
