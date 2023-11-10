@@ -3,9 +3,9 @@ import caiman as cm
 import pandas as pd
 import numpy as np
 import pickle
-import shutil
 import os
-import gc
+import shutil
+import tifffile as tfl
 import ipywidgets as ipw
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
@@ -15,7 +15,6 @@ from bokeh.layouts import column, row
 from bokeh.io import push_notebook
 from glob import glob
 from moviepy.editor import VideoFileClip
-from tifffile import imwrite
 from caiman.source_extraction.cnmf import params
 from caiman.motion_correction import MotionCorrect
 from time import time
@@ -99,7 +98,7 @@ def DoCropAndRewrite(root, name):
             data = data[:,:,:-cr_dict['RIGHT']]
         whole_data.append(data[:-1])
         #cropping per se
-    imwrite(out_fname, np.concatenate(whole_data, axis=0), photometric='minisblack')
+    tfl.imwrite(out_fname, np.concatenate(whole_data, axis=0), photometric='minisblack')
     print('_'.join(splt_path[-5:-2]) + f' cropped in {time() - start:.1f}s')
     
     #Extract and copy timestamp files
@@ -128,7 +127,7 @@ def DoMotionCorrection(name, mc_dict):
     mc.bord_px = 0 if mc.border_nan == 'copy' else bord_px
     mov = mc.apply_shifts_movie([name])
     
-    imwrite(name[:-4] + '_MC.tif', np.array(mov, dtype='uint8'), photometric='minisblack')
+    tfl.imwrite(name[:-4] + '_MC.tif', np.array(mov, dtype='uint8'), photometric='minisblack')
     print(os.path.split(name)[-1] + f' motion corrected in {time() - start:.1f}s')
     
     cm.stop_server(dview=dview)
@@ -223,4 +222,17 @@ def FindMaxima(estimates):
         im = sp.reshape(estimates.imax.shape[::-1]).todense()
         pts.append([np.where(im == np.amax(im))[0][0], np.where(im == np.amax(im))[1][0]])
     return np.array(pts)
+
+
+def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key = range(0, min(maxframes, tlen), step))
+    
+    def DrawPnrImage(data, gSig, dpi = 200):
+        _, pnr = cm.summary_images.correlation_pnr(data, gSig=gSig, swap_dim=False)
+        plt.figure(dpi = dpi)
+        plt.imshow(pnr)
+        
+    w = ipw.interactive(DrawPnrImage, data = ipw.fixed(data), gSig = ipw.BoundedIntText(value=default_gsig, min=0), dpi = ipw.fixed(200))
+    display(w)    
     
