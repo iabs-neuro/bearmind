@@ -8,14 +8,12 @@ The main idea of the project is to optimize user's efforts and time for batch mi
 P.S. If you are looking for old good CaDet pipeline, it moved to a separate folder CaDet, where you can run it as usual.
 
 ## Installation
-First, you need to install CaImAn environment: https://github.com/flatironinstitute/CaImAn 
-</br>
-</br>
+First, you need to install CaImAn environment: https://github.com/flatironinstitute/CaImAn</br>
 In brief, all you need for getting CaImAn installed is to type the following commands in your Anaconda prompt:
-</br>
-conda install -n base -c conda-forge mamba   # install mamba in base environment
-mamba create -n caiman -c conda-forge caiman # install caiman
-conda activate caiman  # activate virtual environment
+</br></br>
+conda install -n base -c conda-forge mamba   # install mamba in base environment</br>
+mamba create -n caiman -c conda-forge caiman # install caiman</br>
+conda activate caiman  # activate virtual environment</br>
 </br>
 Then, you need to clone this repo to your PC. You may do it by downloading .zip file (see the button above) and unpacking it, OR you may use your git client and type "git clone https://github.com/iabs-neuro/bearmind" in a command prompt.
 
