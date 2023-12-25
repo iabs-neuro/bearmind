@@ -182,6 +182,8 @@ def ReDoCNMF(s_name, e_name):
     old_pts = FindMaxima(estimates)
     seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T))
     seeds = np.flip(seeds, axis = 1)
+	#normalization in the case of ssub != 1
+    seeds = seeds / estimates.cnmf_dict['ssub'] 
   
     #parameter adaptation for seesed cnmf
     params_dict = estimates.cnmf_dict
