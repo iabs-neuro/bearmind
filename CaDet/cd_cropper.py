@@ -23,6 +23,7 @@ if not QApplication.instance():
     app = QApplication(sys.argv)
 else:
     app = QApplication.instance()
+
 window=CropperMainWindow()
 window.show()
 app.exec()
