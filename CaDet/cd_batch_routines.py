@@ -183,7 +183,7 @@ def ReDoCNMF(s_name, e_name):
     seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T))
     seeds = np.flip(seeds, axis = 1)
   
-    #parameter adaptation for seesed cnmf
+    #parameter adaptation for seeded cnmf
     params_dict = estimates.cnmf_dict
     params_dict['min_corr'] = 0
     params_dict['min_pnr'] = 0
@@ -233,6 +233,10 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
         plt.figure(dpi = dpi)
         plt.imshow(pnr)
         
-    w = ipw.interactive(DrawPnrImage, data = ipw.fixed(data), gSig = ipw.BoundedIntText(value=default_gsig, min=0), dpi = ipw.fixed(200))
+    w = ipw.interactive(DrawPnrImage,
+                        data = ipw.fixed(data),
+                        gSig = ipw.BoundedIntText(value=default_gsig, min=0),
+                        dpi = ipw.fixed(200))
+
     display(w)    
     

@@ -9,6 +9,7 @@ import tifffile as tfl
 import ipywidgets as ipw
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+import tqdm
 from bokeh.plotting import figure, show, output_notebook 
 from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, PointDrawTool
 from bokeh.layouts import column, row
@@ -30,8 +31,8 @@ def CleanMemmaps(name):
         os.remove(mm)
         
     
-def DrawFrameAndBox(data, x, left, up, right, down, dpi = 200):
-    plt.figure(dpi = dpi)
+def DrawFrameAndBox(data, x, left, right, up, down, dpi=200):
+    plt.figure(dpi=dpi)
     plt.imshow(data[x,:,:])
     plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
         
@@ -49,66 +50,103 @@ def LoadSelectedVideos(fnames):
 def DrawCropper(data, dpi=200):
     x_slider = ipw.IntSlider(value=1,  min=0, max=data.shape[0]-1, layout=ipw.Layout(width='100%'))
     l_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
-    u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     r_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
+    u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     d_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     
     def update_right(*args):
-        r_slider.max = data.shape[1] - l_slider.value -1 
+        r_slider.max = data.shape[1] - l_slider.value - 1
     l_slider.observe(update_right, 'value')
     
     def update_down(*args):
-        d_slider.max = data.shape[2] - u_slider.value -1
+        d_slider.max = data.shape[2] - u_slider.value - 1
     u_slider.observe(update_down, 'value')
     
-    w = ipw.interactive(DrawFrameAndBox, data = ipw.fixed(data), x = x_slider, left = l_slider, up = u_slider, right = r_slider, down = d_slider, dpi = ipw.fixed(200))
+    w = ipw.interactive(DrawFrameAndBox,
+                        data=ipw.fixed(data),
+                        x=x_slider,
+                        left=l_slider,
+                        right=r_slider,
+                        up=u_slider,
+                        down=d_slider,
+                        dpi=ipw.fixed(200))
+    
     display(w)
     
     return w
 
-def SaveCrops(root, left, up, right, down):
-        save_name = root + '\\cropping.pickle'
+def SaveCrops(root, left, right, up, down):
+
+        save_name = os.path.join(root, 'cropping.pickle')
+        save_name = os.path.normpath(save_name)
         cropping_dict = {
-            "LEFT":left,
-            "RIGHT":right,
-            "UP":up,
-            "DOWN":down
+            "LEFT": left,
+            "RIGHT": right,
+            "UP": up,
+            "DOWN": down
         }
         with open(save_name, "wb") as f:
             pickle.dump(cropping_dict, f)
+
         print(cropping_dict)
         print(f'Crops saved to {save_name}\n')
 
-def DoCropAndRewrite(root, name):
+
+def DoCropAndRewrite(root, name, pathway='legacy'):
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
-    avi_names = glob(os.path.dirname(name) + '\\*.avi')
-    avi_names.sort(key = len) 
+
     splt_path = os.path.normpath(name).split(os.sep)
-    out_fname = root + '_'.join(splt_path[-5:-2]) + '_CR.tif'
+    if pathway == 'legacy':
+        out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
+    elif pathway == 'bonsai':
+        out_fname = splt_path[-2] + '_CR.tif'
+    else:
+        raise ValueError('Wrong pathway!')
+
     whole_data = []
-    for av_name in avi_names:
+
+    avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
+    avi_names.sort(key=len)
+
+    for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
         clip = VideoFileClip(av_name)
-        data = np.array([frame[cr_dict['UP']:,cr_dict['LEFT']:,0] for frame in clip.iter_frames()])
+        data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
         if cr_dict['DOWN']:
-            data = data[:,:-cr_dict['DOWN'],:]
+            data = data[:, :-cr_dict['DOWN'], :]
         if cr_dict['RIGHT']:
-            data = data[:,:,:-cr_dict['RIGHT']]
+            data = data[:, :, :-cr_dict['RIGHT']]
         whole_data.append(data[:-1])
-        #cropping per se
-    tfl.imwrite(out_fname, np.concatenate(whole_data, axis=0), photometric='minisblack')
-    print('_'.join(splt_path[-5:-2]) + f' cropped in {time() - start:.1f}s')
-    
+
+    #  cropping per se
+    out_fpath = os.path.join(root, out_fname)
+    tfl.imwrite(out_fpath, np.concatenate(whole_data, axis=0), photometric='minisblack')
+    print(f'{out_fname} cropped in {time() - start:.1f}s')
+
+
+def extract_and_copy_ts(root, name, pathway='legacy'):
+    splt_path = os.path.normpath(name).split(os.sep)
+
     #Extract and copy timestamp files
-    tst_name = os.path.dirname(name) + '\\timeStamps.csv'
-    out_fname = root + '_'.join(splt_path[-5:-2]) + '_timestamp.csv'
+    if pathway == 'legacy':
+        tst_name = os.path.join(os.path.dirname(name), 'timeStamps.csv')
+        out_fname = root + '_'.join(splt_path[-5:-2]) + '_timestamp.csv'
+    elif pathway == 'bonsai':
+        folder_name = splt_path[-2]
+        tst_name = os.path.join(os.path.dirname(name), folder_name + '_Mini_TS.csv')
+        out_fname = os.path.join(root, folder_name + '_timestamp.csv')
+    else:
+        raise ValueError('Wrong pathway!')
+
     try:
         shutil.copy(tst_name, out_fname)
-    except:
-        print('Timestamp not found!')
-        
+    except Exception as e:
+        print('Problem with timestamps!')
+        print(repr(e))
+
+
 def DoMotionCorrection(name, mc_dict):
     start = time()
     #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
@@ -117,13 +155,16 @@ def DoMotionCorrection(name, mc_dict):
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
     
     opts = params.CNMFParams(params_dict=mc_dict)
+
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
     mc.motion_correct(save_movie=True)
     fname_mc = mc.fname_tot_els if mc.pw_rigid else mc.fname_tot_rig
+
     if mc.pw_rigid:
         bord_px = np.ceil(np.maximum(np.max(np.abs(mc.x_shifts_els)), np.max(np.abs(mc.y_shifts_els)))).astype(np.uint8)
     else:
         bord_px = np.ceil(np.max(np.abs(mc.shifts_rig))).astype(np.uint8)
+
     mc.bord_px = 0 if mc.border_nan == 'copy' else bord_px
     mov = mc.apply_shifts_movie([name])
     
@@ -137,12 +178,13 @@ def DoMotionCorrection(name, mc_dict):
 def DoCNMF(name, cnmf_dict): 
     start = time()
     #cnmf option setting
-    opts = params.CNMFParams(params_dict = cnmf_dict)
+    opts = params.CNMFParams(params_dict=cnmf_dict)
     
     #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
     if 'dview' in locals():
         cm.stop_server(dview=dview)
         dview.terminate()
+
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
 
     #tif loading to memory

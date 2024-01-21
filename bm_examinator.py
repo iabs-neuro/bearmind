@@ -15,6 +15,8 @@ from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
 
+from table_routines import *
+
 output_notebook()
 
 def colornum_Metro(num):
@@ -31,16 +33,49 @@ def colornum_Metro(num):
     9:"grey",  
     0:"lawngreen"}.get(num%10)   
 
-def LoadEstimates(name, fps =20):
+
+
+def LoadEstimates(name, default_fps=20):
     with open(name, "rb") as f:
         estimates = pickle.load(f,)
-    estimates.name = name   
+    estimates.name = name
     if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
         estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    estimates.time = FindAndLoadTimestamp(estimates.name.partition('estimates')[0], estimates.C.shape[1])
+    #estimates.time = FindAndLoadTimestamp(estimates.name.partition('estimates')[0], estimates.C.shape[1])
+    estimates.time = get_timestamps(estimates.name.partition('estimates')[0],
+                                   estimates.C.shape[1],
+                                   default_fps=default_fps)
+
     return estimates
 
-def FindAndLoadTimestamp(name, n_frames, fps = 20):
+
+def get_timestamps(name, n_frames, default_fps=20):
+    #try to load timestamps, in case of failure use constant fps
+    ts_files = glob(name + '*_timestamp.csv')
+    if len(ts_files) == 0:
+        return np.linspace(0, n_frames//default_fps, n_frames)
+    else:
+        ts_df = pd.read_csv(ts_files[0])
+        time_col = find_time_column(ts_df)
+        timeline = ts_df[time_col].values
+        return timeline[:n_frames]
+
+
+def get_fps_from_timestamps(name, default_fps=20, verbose=True):
+    ts_files = glob(name + '*_timestamp.csv')
+    if len(ts_files) == 0:
+        if verbose:
+            print('no timestamps found, reverting to default fps')
+        return default_fps
+    else:
+        ts_df = pd.read_csv(ts_files[0])
+        fps = get_fps(ts_df)
+        return fps
+
+
+
+
+def FindAndLoadTimestamp_deprecated(name, n_frames, fps = 20):
     #try to load timestamp, in case of failure use constant fps
     tst = glob(name + '*_timestamp.csv')
     if not tst:
@@ -48,6 +83,7 @@ def FindAndLoadTimestamp(name, n_frames, fps = 20):
     else:
         time_s = np.genfromtxt(tst[0], delimiter = ',', skip_header = 1)[:,1]/1000
         return time_s[:n_frames]
+
 
 def EstimatesToSrc(estimates):
     n_cells = len(estimates.idx_components)
@@ -85,10 +121,10 @@ def SaveResults(estimates, sigma = 3):
     savemat(fold + '_session.mat', {"A":np.array(ims)})
 
 
-def ExamineCells(fname):
+def ExamineCells(fname, default_fps=20):
     #This is the main plotting functions which plots all images and traces and contains all button callbacks
     def bkapp(doc):
-        estimates = LoadEstimates(fname)
+        estimates = LoadEstimates(fname, default_fps=default_fps)
         dims = estimates.imax.shape
         title = fname.rpartition('\\')[-1].partition('_estimates')[0]
         src = ColumnDataSource(data = EstimatesToSrc(estimates))
