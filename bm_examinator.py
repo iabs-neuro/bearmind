@@ -89,14 +89,16 @@ def EstimatesToSrc(estimates):
         return {}
     traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[estimates.idx_components])]
     times = [estimates.time for i in range(n_cells)]
-    colors = [colornum_Metro(i) for i in range(n_cells)] 
-    cm_conts = cm.utils.visualization.get_contours(estimates.A, dims=estimates.imax.shape)
+    colors = [colornum_Metro(i) for i in range(n_cells)]
+    estimates_data = estimates.A
+    dims = estimates.imax.shape
+    cm_conts = cm.utils.visualization.get_contours(estimates_data, dims=estimates.imax.shape)
     contours = []
     for i in estimates.idx_components:
         coors = cm_conts[i]["coordinates"]
         contours.append(coors[~np.isnan(coors).any(axis=1)])
     xs = [[pt[0] for pt in c] for c in contours]
-    ys = [[pt[1] for pt in c] for c in contours] 
+    ys = [[dims[1] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors)
 
 
@@ -133,11 +135,13 @@ def ExamineCells(fname, default_fps=20):
         trwidth = 500
         height = int(imwidth*dims[0]/dims[1])
 
+        imdata = np.flip(estimates.imax, axis=0) # flip for reverting y-axis
+        #imdata = estimates.imax
         #main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title = title)
-        p1.image(image=[estimates.imax], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
+        p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
         p2 = figure(width = trwidth,height = height, tools = tools2, toolbar_location = 'below')
-        p1.patches('xs', 'ys', fill_alpha = 0.9, nonselection_alpha = 0.3, color = 'colors', selection_line_color="yellow", line_width=2, source = src)
+        p1.patches('xs', 'ys', fill_alpha = 0.5, nonselection_alpha = 0.2, color = 'colors', selection_line_color="yellow", line_width=2, source = src)
         p2.multi_line('times', 'traces', line_color='colors', selection_line_width=2, source = src)
         
         #this is for points addition
