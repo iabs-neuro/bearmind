@@ -69,10 +69,8 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return default_fps
     else:
         ts_df = pd.read_csv(ts_files[0])
-        fps = get_fps(ts_df)
+        fps = get_fps(ts_df, verbose=verbose)
         return fps
-
-
 
 
 def FindAndLoadTimestamp_deprecated(name, n_frames, fps = 20):

@@ -186,14 +186,31 @@ def DoMotionCorrection(name, mc_dict):
     dview.terminate()   
 
     
-def DoCNMF(name, cnmf_dict, out_name=None):
-    if out_name is None:
-        out_name = name[:-4] + '_estimates.pickle'
-    else:
-        if '_estimates.pickle' not in out_name:
-            out_name = out_name + '_estimates.pickle'
-
+def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False):
     try:
+        # cropping according to user preferences
+        if start_frame is None:
+            start_frame = 0
+            sf_text = '--'
+        else:
+            sf_text = str(start_frame)
+
+        if end_frame is None:
+            end_frame = 10**10
+            ef_text = '--'
+        else:
+            ef_text = str(end_frame)
+
+        time_crop = slice(start_frame, end_frame)
+
+        # output name construction
+        frames_txt = f'_sf={sf_text}_ef={ef_text}'
+        if out_name is None:
+            out_name = name[:-4] + frames_txt + '_estimates.pickle'
+        else:
+            if '_estimates.pickle' not in out_name:
+                out_name = out_name + frames_txt + '_estimates.pickle'
+
         start = time()
         #cnmf option setting
         opts = params.CNMFParams(params_dict=cnmf_dict)
@@ -205,22 +222,36 @@ def DoCNMF(name, cnmf_dict, out_name=None):
 
         c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
 
-        #tif loading to memory
-        mem_fname = cm.save_memmap([name], base_name=name, order='C', border_to_0=0, dview=dview)
+        if verbose:
+            print('loading tif to memory...')
+        # tif loading to memory
+        mem_fname = cm.save_memmap([name],
+                                   base_name=name[:-4],
+                                   order='C',
+                                   border_to_0=0,
+                                   dview=dview,
+                                   slices=[time_crop])
+
         Yr, dims, T = cm.load_memmap(mem_fname)
         images = Yr.T.reshape((T,) + dims, order='F')
 
-        #cnmf itself
+        if verbose:
+            print('Performing CNMF...')
+        # cnmf itself
         cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
         cnm.fit(images)
         cnm.estimates.evaluate_components(images, params=opts, dview=dview)
 
-        #addition of some fields to estimates object
+        if verbose:
+            print('Computing imax...')
+        #  addition of some fields to estimates object
         cnm.estimates.tif_name = name
         cnm.estimates.cnmf_dict = cnmf_dict
         _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
         cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
 
+        if verbose:
+            print('Saving result...')
         #estimates object saving
         with open(out_name, "wb") as f:
             pickle.dump(cnm.estimates, f)
