@@ -92,6 +92,17 @@ def SaveCrops(root, left, right, up, down):
         print(f'Crops saved to {save_name}\n')
 
 
+def get_file_num_id(name, pathway='bonsai'):
+    if pathway == 'bonsai':
+        num_id = name[:-4][-2:]
+    elif pathway == 'legacy':
+        num_id = name[:-4]
+    else:
+        raise Exception('Wrong pathway!')
+
+    return int(num_id)
+
+
 def DoCropAndRewrite(root, name, pathway='legacy'):
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
@@ -109,7 +120,7 @@ def DoCropAndRewrite(root, name, pathway='legacy'):
     whole_data = []
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    avi_names.sort(key=len)
+    avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
 
     for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
         clip = VideoFileClip(av_name)
