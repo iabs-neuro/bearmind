@@ -175,59 +175,73 @@ def DoMotionCorrection(name, mc_dict):
     dview.terminate()   
 
     
-def DoCNMF(name, cnmf_dict): 
-    start = time()
-    #cnmf option setting
-    opts = params.CNMFParams(params_dict=cnmf_dict)
-    
-    #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
-    if 'dview' in locals():
+def DoCNMF(name, cnmf_dict, out_name=None):
+    if out_name is None:
+        out_name = name[:-4] + '_estimates.pickle'
+    else:
+        if '_estimates.pickle' not in out_name:
+            out_name = out_name + '_estimates.pickle'
+
+    try:
+        start = time()
+        #cnmf option setting
+        opts = params.CNMFParams(params_dict=cnmf_dict)
+
+        #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
+        if 'dview' in locals():
+            cm.stop_server(dview=dview)
+            dview.terminate()
+
+        c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+
+        #tif loading to memory
+        mem_fname = cm.save_memmap([name], base_name=name, order='C', border_to_0=0, dview=dview)
+        Yr, dims, T = cm.load_memmap(mem_fname)
+        images = Yr.T.reshape((T,) + dims, order='F')
+
+        #cnmf itself
+        cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
+        cnm.fit(images)
+        cnm.estimates.evaluate_components(images, params=opts, dview=dview)
+
+        #addition of some fields to estimates object
+        cnm.estimates.tif_name = name
+        cnm.estimates.cnmf_dict = cnmf_dict
+        _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
+        cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
+
+        #estimates object saving
+        with open(out_name, "wb") as f:
+            pickle.dump(cnm.estimates, f)
+
+        #cluster termination
         cm.stop_server(dview=dview)
         dview.terminate()
+        print(os.path.split(name)[-1] + f' cnmf-ed in {time() - start:.1f}s')
 
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+        return cnm.estimates
 
-    #tif loading to memory
-    mem_fname = cm.save_memmap([name], base_name=name, order='C', border_to_0=0, dview=dview)
-    Yr, dims, T = cm.load_memmap(mem_fname)
-    images = Yr.T.reshape((T,) + dims, order='F')
-    
-    #cnmf itself
-    cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
-    cnm.fit(images)
-    cnm.estimates.evaluate_components(images, params=opts, dview=dview)
-    
-    #addition of some fields to estimates object
-    cnm.estimates.tif_name = name
-    cnm.estimates.cnmf_dict = cnmf_dict
-    _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
-    cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
-    
-    #estimates object saving 
-    with open(name[:-4] + '_estimates.pickle', "wb") as f:
-        pickle.dump(cnm.estimates, f)
-              
-    #cluster termination
-    cm.stop_server(dview=dview)
-    dview.terminate()
-    print(os.path.split(name)[-1] + f' cnmf-ed in {time() - start:.1f}s')
-    
-    return cnm.estimates
+    except Exception as e:
+        print(f'Problem with {out_name}, computation aborted:')
+        print(repr(e))
+
 
 def ReDoCNMF(s_name, e_name):
     start = time()
+
     #seeds construction
     with open(s_name, "rb") as f:
         seeded_pts = pickle.load(f,)
     with open(e_name, "rb") as f:
         estimates = pickle.load(f,)
+
     old_pts = FindMaxima(estimates)
     seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T))
     seeds = np.flip(seeds, axis = 1)
-	#normalization in the case of ssub != 1
-    seeds = seeds / estimates.cnmf_dict['ssub'] 
+    # normalization in the case of ssub != 1
+    seeds = seeds / estimates.cnmf_dict['ssub']
   
-    #parameter adaptation for seesed cnmf
+    #  parameter adaptation for seeded cnmf
     params_dict = estimates.cnmf_dict
     params_dict['min_corr'] = 0
     params_dict['min_pnr'] = 0
