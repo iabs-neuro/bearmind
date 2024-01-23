@@ -278,7 +278,7 @@ def ReDoCNMF(s_name, e_name):
         estimates = pickle.load(f,)
 
     old_pts = FindMaxima(estimates)
-    seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T))
+    seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T[:,0,:]))
     seeds = np.flip(seeds, axis = 1)
     # normalization in the case of ssub != 1
     seeds = seeds / estimates.cnmf_dict['ssub']
