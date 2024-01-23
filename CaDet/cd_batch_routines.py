@@ -20,6 +20,7 @@ from caiman.motion_correction import MotionCorrect
 from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
+import config
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -66,20 +67,23 @@ def DrawCropper(data, dpi=200):
     
     return w
 
-def SaveCrops(root, left, up, right, down):
-        save_name = root + '\\cropping.pickle'
-        cropping_dict = {
-            "LEFT":left,
-            "RIGHT":right,
-            "UP":up,
-            "DOWN":down
-        }
-        with open(save_name, "wb") as f:
-            pickle.dump(cropping_dict, f)
-        print(cropping_dict)
-        print(f'Crops saved to {save_name}\n')
+def SaveCrops(left, up, right, down):
+    root = config.ROOT
+    save_name = root + '\\cropping.pickle'
+    cropping_dict = {
+        "LEFT":left,
+        "RIGHT":right,
+        "UP":up,
+        "DOWN":down
+    }
+    with open(save_name, "wb") as f:
+        pickle.dump(cropping_dict, f)
+    print(cropping_dict)
+    print(f'Crops saved to {save_name}\n')
 
-def DoCropAndRewrite(root, name):
+
+def DoCropAndRewrite(name):
+    root = config.ROOT
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
     with open(name, 'rb') as f:
@@ -108,7 +112,8 @@ def DoCropAndRewrite(root, name):
         shutil.copy(tst_name, out_fname)
     except:
         print('Timestamp not found!')
-        
+
+
 def DoMotionCorrection(name, mc_dict):
     start = time()
     #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)

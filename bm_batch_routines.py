@@ -23,6 +23,9 @@ from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
 
 import warnings
+
+import config
+
 warnings.filterwarnings('ignore')
 
 def CleanMemmaps(name):
@@ -75,21 +78,23 @@ def DrawCropper(data, dpi=200):
     
     return w
 
-def SaveCrops(root, left, right, up, down):
+def SaveCrops(fname, left, right, up, down):
+    splt_path = os.path.normpath(fname).split(os.sep)
+    root = config.ROOT
 
-        save_name = os.path.join(root, 'cropping.pickle')
-        save_name = os.path.normpath(save_name)
-        cropping_dict = {
-            "LEFT": left,
-            "RIGHT": right,
-            "UP": up,
-            "DOWN": down
-        }
-        with open(save_name, "wb") as f:
-            pickle.dump(cropping_dict, f)
+    save_name = os.path.join(root, splt_path[-2], splt_path[-2] + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+    save_name = os.path.normpath(save_name)
+    cropping_dict = {
+        "LEFT": left,
+        "RIGHT": right,
+        "UP": up,
+        "DOWN": down
+    }
+    with open(save_name, "wb") as f:
+        pickle.dump(cropping_dict, f)
 
-        print(cropping_dict)
-        print(f'Crops saved to {save_name}\n')
+    print(cropping_dict)
+    print(f'Crops saved to {save_name}\n')
 
 
 def get_file_num_id(name, pathway='bonsai'):
@@ -103,7 +108,9 @@ def get_file_num_id(name, pathway='bonsai'):
     return int(num_id)
 
 
-def DoCropAndRewrite(root, name, pathway='legacy'):
+def DoCropAndRewrite(name):
+    root = config.ROOT
+    pathway = config.DATA_PATHWAY
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
     with open(name, 'rb') as f:
@@ -137,7 +144,9 @@ def DoCropAndRewrite(root, name, pathway='legacy'):
     print(f'{out_fname} cropped in {time() - start:.1f}s')
 
 
-def extract_and_copy_ts(root, name, pathway='legacy'):
+def extract_and_copy_ts(name):
+    pathway = config.DATA_PATHWAY
+    root = config.ROOT
     splt_path = os.path.normpath(name).split(os.sep)
 
     #Extract and copy timestamp files
