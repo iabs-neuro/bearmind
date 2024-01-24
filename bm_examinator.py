@@ -20,6 +20,7 @@ from table_routines import *
 
 output_notebook()
 
+
 def colornum_Metro(num):
     #Returns color for each number as in Moscow Metro
     return {
@@ -173,7 +174,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                    line_width=line_width,
                    source=src)
 
-        p2.multi_line('times', 'traces', line_color='colors', selection_line_width=line_width, source = src)
+        p2.multi_line('times',
+                      'traces',
+                      line_color='colors',
+                      selection_line_width=line_width,
+                      source=src.selected)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -221,4 +226,17 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         doc.add_root(column(row(button_del, button_merge, button_seed, button_save), row(p1, p2)))
 
-    show(bkapp)
+    origins = bkapp_kwargs['origins']
+    url_ind = 0
+    success = False
+    while not success and url_ind < len(origins):
+        try:
+            print(f'Trying to connect through origin {origins[url_ind]}')
+            os.environ["BOKEH_ALLOW_WS_ORIGIN"] = origins[url_ind][7:-1]
+            show(bkapp)
+
+        except Exception:
+            url_ind += 1
+
+    if not success:
+        print('Houston we have a problem')
