@@ -24,7 +24,7 @@ from scipy.io import savemat
 
 import warnings
 
-import config
+from config import CONFIG
 
 warnings.filterwarnings('ignore')
 
@@ -80,7 +80,7 @@ def DrawCropper(data, dpi=200):
 
 def SaveCrops(fname, left, right, up, down):
     splt_path = os.path.normpath(fname).split(os.sep)
-    root = config.ROOT
+    root = CONFIG['ROOT']
 
     save_name = os.path.join(root, splt_path[-2], splt_path[-2] + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     save_name = os.path.normpath(save_name)
@@ -109,8 +109,8 @@ def get_file_num_id(name, pathway='bonsai'):
 
 
 def DoCropAndRewrite(name):
-    root = config.ROOT
-    pathway = config.DATA_PATHWAY
+    root = CONFIG['ROOT']
+    pathway = CONFIG['DATA_PATHWAY']
     #find, crop and rewrite .avi files as well as timestamps
     start = time()
     with open(name, 'rb') as f:
@@ -145,8 +145,8 @@ def DoCropAndRewrite(name):
 
 
 def extract_and_copy_ts(name):
-    pathway = config.DATA_PATHWAY
-    root = config.ROOT
+    pathway = CONFIG['DATA_PATHWAY']
+    root = CONFIG['ROOT']
     splt_path = os.path.normpath(name).split(os.sep)
 
     #Extract and copy timestamp files
