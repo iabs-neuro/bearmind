@@ -104,7 +104,7 @@ def EstimatesToSrc(estimates, cthr=0.9):
         coors = cm_conts[i]["coordinates"]
         contours.append(coors[~np.isnan(coors).any(axis=1)])
     xs = [[pt[0] for pt in c] for c in contours]
-    ys = [[dims[1] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
+    ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors)
 
 
