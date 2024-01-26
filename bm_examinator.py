@@ -104,7 +104,7 @@ def EstimatesToSrc(estimates, cthr=0.9):
         coors = cm_conts[i]["coordinates"]
         contours.append(coors[~np.isnan(coors).any(axis=1)])
     xs = [[pt[0] for pt in c] for c in contours]
-    ys = [[dims[1] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
+    ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion    
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors)
 
 
@@ -156,7 +156,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 imwidth = 608
                 trwidth = 608
         '''
-        height = int(imwidth*dims[0]/dims[1])
+        height = int(imwidth*dims[1]/dims[0])
+        # height = int(imwidth)
         imdata = np.flip(estimates.imax, axis=0) # flip for reverting y-axis
         #imdata = estimates.imax
         #main plots, p1 is for image on the left, p2 is for traces on the right
