@@ -8,7 +8,7 @@ DEFAULT_CONFIG = {
     'ROOT': 'C:\\Users\\1\\HM_NOF_4D',
     'DATA_PATHWAY': 'bonsai',
     'CPUs': multiprocessing.cpu_count(),
-    'RAM': int(psutil.virtual_memory().total/1024/1024/1024)
+    'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
 }
 
 
@@ -37,7 +37,7 @@ def update_config(new_data):
 
     system_info = {
         'CPUs': multiprocessing.cpu_count(),
-        'RAM': int(psutil.virtual_memory().total/1024/1024/1024)
+        'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
     }
     old_config.update(system_info)
 

@@ -19,4 +19,5 @@ folder_structure = set_folder_structure()
 
 #global LOCAL_URLS
 LOCAL_URLS = [server['url'] for server in list(serverapp.list_running_servers())]
-os.environ["BOKEH_ALLOW_WS_ORIGIN"] = LOCAL_URLS[0][7:-1]
+os.environ["BOKEH_ALLOW_WS_ORIGIN"] = ','.join([origin[7:-1] for origin in LOCAL_URLS])
+
