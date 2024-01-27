@@ -25,7 +25,8 @@ from scipy.io import savemat
 
 import warnings
 
-from config import CONFIG
+from config import CONFIG, read_config, get_mouse_config_path, update_config
+
 
 warnings.filterwarnings('ignore')
 
@@ -82,15 +83,34 @@ def DrawCropper(data, dpi=200, fname=''):
 
     def on_load_button_clicked(b):
         with load_output:
-            print("Load button clicked.")
-            l_slider.value = 100
-            r_slider.value = 100
-            u_slider.value = 100
-            d_slider.value = 100
+            ms_config_name = get_mouse_config_path(fname)
+            crop_from_config = read_config(ms_config_name).get('crop_params')
+
+            if len(crop_from_config) != 0:
+                l_slider.value = crop_from_config['LEFT']
+                r_slider.value = crop_from_config['RIGHT']
+                u_slider.value = crop_from_config['UP']
+                d_slider.value = crop_from_config['DOWN']
+            else:
+                print(f'Crop params not set in config {ms_config_name}!')
+
+    def on_config_button_clicked(b):
+        with config_output:
+            ms_config_name = get_mouse_config_path(fname)
+            crop_to_config = {
+                'crop_params': {
+                    'LEFT': l_slider.value,
+                    'RIGHT': r_slider.value,
+                    'UP': u_slider.value,
+                    'DOWN': d_slider.value
+                }
+            }
+
+            update_config(crop_to_config, name=ms_config_name)
+            print(f'config {ms_config_name} updated!')
 
     def on_save_button_clicked(b):
         with save_output:
-            print("Save button clicked.")
             SaveCrops(fname, w.kwargs['left'], w.kwargs['right'], w.kwargs['up'], w.kwargs['down'])
 
     load_button = ipw.Button(description="Load crop from config")
@@ -101,8 +121,13 @@ def DrawCropper(data, dpi=200, fname=''):
     save_button.on_click(on_save_button_clicked)
     save_output = ipw.Output()
 
+    config_button = ipw.Button(description="Save crop to config")
+    config_button.on_click(on_config_button_clicked)
+    config_output = ipw.Output()
+
     display(load_button, load_output)
     display(save_button, save_output)
+    display(config_button, config_output)
     display(w)
     
     return w

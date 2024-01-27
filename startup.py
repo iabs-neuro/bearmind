@@ -3,7 +3,7 @@ from bm_batch_routines import *
 from bm_examinator import *
 from bm_spike_detection import *
 from utils import *
-from config import create_config, read_config, update_config, CONFIG
+from config import *
 
 from glob import glob
 import os

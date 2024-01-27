@@ -191,7 +191,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             temp = estimates.idx_components_bad.tolist() + estimates.idx_components[sel_inds].tolist()
             estimates.idx_components_bad = np.sort(temp)
             estimates.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i not in sel_inds])
-            src.data = EstimatesToSrc(estimates)
+            src.data = EstimatesToSrc(estimates, cthr=cthr)
 
         def merge_callback(event):
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
@@ -199,14 +199,14 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 estimates.manual_merge([estimates.idx_components[sel_inds].tolist()],
                                        params = params.CNMFParams(params_dict = estimates.cnmf_dict))
 
-                src.data = EstimatesToSrc(estimates)
+                src.data = EstimatesToSrc(estimates, cthr=cthr)
 
         def show_callback(event):
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
             if sel_inds:
                 estimates_partial = copy.deepcopy(estimates)
                 estimates_partial.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds])
-                src_partial.data = EstimatesToSrc(estimates_partial)
+                src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
 
         def restore_callback(event):
             src_partial.data = src.data.copy()
