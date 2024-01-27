@@ -104,7 +104,7 @@ def EstimatesToSrc(estimates, cthr=0.9):
         coors = cm_conts[i]["coordinates"]
         contours.append(coors[~np.isnan(coors).any(axis=1)])
     xs = [[pt[0] for pt in c] for c in contours]
-    ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion    
+    ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors)
 
 
@@ -130,122 +130,11 @@ def SaveResults(estimates, sigma = 3):
 def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     #This is the main plotting functions which plots all images and traces and contains all button callbacks
     def bkapp(doc):
-        #print(doc.__dict__)
-        #kwargs = doc._session_context
-        #kwargs = doc._roots[0]
-        # workaround since bokeh does not allow additional variables
-        # for functions wrapped in show()
-        #fname = kwargs.get('fname')
-        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.9
-
         estimates = LoadEstimates(fname, default_fps=default_fps)
         dims = estimates.imax.shape
         title = fname.rpartition('\\')[-1].partition('_estimates')[0]
-        src = ColumnDataSource(data=EstimatesToSrc(estimates, cthr=cthr))
 
-        tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
-        tools2 = ["pan", "tap", "box_zoom", "zoom_in", "zoom_out", "reset"]
-        color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
-
-        imwidth = 500
-        trwidth = 500
-        '''
-        # TODO: fix resolution
-        if 'pathway' in bkapp_kwargs:
-            if bkapp_kwargs['pathway'] == 'bonsai':
-                imwidth = 608
-                trwidth = 608
-        '''
-        height = int(imwidth*dims[1]/dims[0])
-        # height = int(imwidth)
-        imdata = np.flip(estimates.imax, axis=0) # flip for reverting y-axis
-        #imdata = estimates.imax
-        #main plots, p1 is for image on the left, p2 is for traces on the right
-        p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title = title)
-        p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
-        p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below')
-
-        fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
-        nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
-        p1.patches('xs',
-                   'ys',
-                   fill_alpha = fill_alpha,
-                   nonselection_alpha = nonselection_alpha,
-                   color = 'colors',
-                   selection_line_color="yellow",
-                   line_width=line_width,
-                   source=src)
-
-        p2.multi_line('times',
-                      'traces',
-                      line_color='colors',
-                      selection_line_width=line_width,
-                      source=src)
-
-        #this is for points addition
-        pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
-        pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
-        draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
-        p1.add_tools(draw_tool)
-
-        #Button callbscks
-        def del_callback(event):
-            sel_inds = [src.selected.indices] if isinstance(src.selected.indices, int) else list(src.selected.indices)
-            temp = estimates.idx_components_bad.tolist() + estimates.idx_components[sel_inds].tolist()
-            estimates.idx_components_bad = np.sort(temp)
-            estimates.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i not in sel_inds])
-            src.data = EstimatesToSrc(estimates)
-
-        def merge_callback(event):
-            sel_inds = [src.selected.indices] if isinstance(src.selected.indices, int) else list(src.selected.indices)
-            if sel_inds:
-                estimates.manual_merge([estimates.idx_components[sel_inds].tolist()], params = params.CNMFParams(params_dict = estimates.cnmf_dict))
-                src.data = EstimatesToSrc(estimates)
-
-        def seed_callback(event):
-            seeds = [[pts_src.data['x']], [pts_src.data['y']]]
-            seeds_fname = fname.partition('_estimates')[0] + '_seeds.pickle'
-            with open(seeds_fname, "wb") as f:
-                pickle.dump(seeds, f)
-                print(f'Seeds saved to {seeds_fname}\n')
-
-        def save_callback(event):
-            SaveResults(estimates)
-            print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
-
-        #Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = 120)
-        button_del.on_event('button_click', del_callback)
-
-        button_merge = Button(label="Merge selected", button_type="success", width = 120)
-        button_merge.on_event('button_click', merge_callback)
-
-        button_seed = Button(label="Save seeds", button_type="success", width = 120)
-        button_seed.on_event('button_click', seed_callback)
-
-        button_save = Button(label="Save results", button_type="success", width = 120)
-        button_save.on_event('button_click', save_callback)
-
-        doc.add_root(column(row(button_del, button_merge, button_seed, button_save), row(p1, p2)))
-
-    show(bkapp)
-
-
-def ExamineCellsNew(fname, default_fps=20, bkapp_kwargs=None):
-    #This is the main plotting functions which plots all images and traces and contains all button callbacks
-    def bkapp(doc):
-        #print(doc.__dict__)
-        #kwargs = doc._session_context
-        #kwargs = doc._roots[0]
-        # workaround since bokeh does not allow additional variables
-        # for functions wrapped in show()
-        #fname = kwargs.get('fname')
-        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.9
-
-        estimates = LoadEstimates(fname, default_fps=default_fps)
-        dims = estimates.imax.shape
-        title = fname.rpartition('\\')[-1].partition('_estimates')[0]
+        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
         est_data = EstimatesToSrc(estimates, cthr=cthr)
         src = ColumnDataSource(data=est_data)
         src_partial = ColumnDataSource(data=EstimatesToSrc(estimates, cthr=cthr))
@@ -302,7 +191,7 @@ def ExamineCellsNew(fname, default_fps=20, bkapp_kwargs=None):
             temp = estimates.idx_components_bad.tolist() + estimates.idx_components[sel_inds].tolist()
             estimates.idx_components_bad = np.sort(temp)
             estimates.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i not in sel_inds])
-            src.data = EstimatesToSrc(estimates)
+            src.data = EstimatesToSrc(estimates, cthr=cthr)
 
         def merge_callback(event):
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
@@ -310,14 +199,14 @@ def ExamineCellsNew(fname, default_fps=20, bkapp_kwargs=None):
                 estimates.manual_merge([estimates.idx_components[sel_inds].tolist()],
                                        params = params.CNMFParams(params_dict = estimates.cnmf_dict))
 
-                src.data = EstimatesToSrc(estimates)
+                src.data = EstimatesToSrc(estimates, cthr=cthr)
 
         def show_callback(event):
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
             if sel_inds:
                 estimates_partial = copy.deepcopy(estimates)
                 estimates_partial.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds])
-                src_partial.data = EstimatesToSrc(estimates_partial)
+                src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
 
         def restore_callback(event):
             src_partial.data = src.data.copy()
@@ -376,81 +265,31 @@ def ExamineCellsNew(fname, default_fps=20, bkapp_kwargs=None):
 
     show(bkapp)
 
-    '''
-    origins = bkapp_kwargs['origins']
-    for origin in origins:
-        print(origin[7:-1])
-        os.environ["BOKEH_ALLOW_WS_ORIGIN"] = origin[7:-1]
-        show(bkapp, notebook_url=origin[7:-1])
-    '''
-    '''
-    origins = bkapp_kwargs['origins']
-    url_ind = 0
-    success = False
-    while not success and url_ind < len(origins):
-        try:
-            print(f'Trying to connect through origin {origins[url_ind]}')
-            os.environ["BOKEH_ALLOW_WS_ORIGIN"] = origins[url_ind][7:-1]
-            x = show(bkapp)
-            if x is not None:
-                print('successfully connected')
-                success = True
-            else:
-                print('connection error, switching...')
-                url_ind += 1
 
-        except Exception as e:
-            print('failed:')
-            print(repr(e))
-            url_ind += 1
+def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
-    if not success:
-        print('Houston we have a problem')
-    '''
+    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
+    return imax
 
-'''
-def ManualSeeds(fname, bkapp_kwargs=None):
-    #This is the main plotting functions which plots all images and traces and contains all button callbacks
+
+def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
         tools = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
-        color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
 
-        imwidth = 500
-        trwidth = 500
+        gsig = cnmf_dict['gSig'][0] if cnmf_dict is not None else 6
+        imdata_ = build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5)
+        imdata = np.flip(imdata_, axis=0)  # flip for reverting y-axis
 
-        height = int(imwidth*dims[0]/dims[1])
-        imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
-        #imdata = estimates.imax
-        #main plots, p1 is for image on the left, p2 is for traces on the right
-        p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title = title)
-        p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
-        p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below')
-        p3 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below')
-
-        fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
-        nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
-        p1.patches('xs',
-                   'ys',
-                   fill_alpha = fill_alpha,
-                   nonselection_alpha = nonselection_alpha,
-                   color = 'colors',
-                   selection_line_color="yellow",
-                   line_width=line_width,
-                   source=src)
-
-        p2.multi_line('times',
-                      'traces',
-                      line_color='colors',
-                      selection_line_width=line_width,
-                      source=src)
-                      #view=view)
-
-        p3.multi_line('times',
-                      'traces',
-                      line_color='colors',
-                      selection_line_width=line_width,
-                      source=src_partial)
+        imwidth = size
+        dims = imdata.shape
+        height = int(imwidth * dims[0] / dims[1])
+        #main plots, p1 is for image on the left
+        #title = fname.rpartition('\\')[-1].partition('_estimates')[0]
+        p1 = figure(width=imwidth, height = height, tools = tools, toolbar_location = 'below', title = fname)
+        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -459,26 +298,6 @@ def ManualSeeds(fname, bkapp_kwargs=None):
         p1.add_tools(draw_tool)
 
         #Button callbscks
-        def del_callback(event):
-            sel_inds = [src.selected.indices] if isinstance(src.selected.indices, int) else list(src.selected.indices)
-            temp = estimates.idx_components_bad.tolist() + estimates.idx_components[sel_inds].tolist()
-            estimates.idx_components_bad = np.sort(temp)
-            estimates.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i not in sel_inds])
-            src.data = EstimatesToSrc(estimates)
-
-        def merge_callback(event):
-            sel_inds = [src.selected.indices] if isinstance(src.selected.indices, int) else list(src.selected.indices)
-            if sel_inds:
-                estimates.manual_merge([estimates.idx_components[sel_inds].tolist()], params = params.CNMFParams(params_dict = estimates.cnmf_dict))
-                src.data = EstimatesToSrc(estimates)
-
-        def show_callback(event):
-            sel_inds = [src.selected.indices] if isinstance(src.selected.indices, int) else list(src.selected.indices)
-            if sel_inds:
-                #view = CDSView(filter=IndexFilter(indices=sel_inds))
-                estimates_partial = copy.deepcopy(estimates)
-                estimates_partial.idx_components = np.array([ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds])
-                src_partial.data = EstimatesToSrc(estimates_partial)
 
         def seed_callback(event):
             seeds = [[pts_src.data['x']], [pts_src.data['y']]]
@@ -487,42 +306,16 @@ def ManualSeeds(fname, bkapp_kwargs=None):
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
 
-        def save_callback(event):
-            SaveResults(estimates)
-            print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
-
-        #Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = 120)
-        button_del.on_event('button_click', del_callback)
-
-        button_merge = Button(label="Merge selected", button_type="success", width = 120)
-        button_merge.on_event('button_click', merge_callback)
-
-        button_show = Button(label="Show selected", button_type="success", width = 120)
-        button_show.on_event('button_click', show_callback)
-
-        #button_restore = Button(label="Reset view", button_type="success", width = 120)
-        #button_show.on_event('button_click', restore_callback)
-
         button_seed = Button(label="Save seeds", button_type="success", width = 120)
         button_seed.on_event('button_click', seed_callback)
-
-        button_save = Button(label="Save results", button_type="success", width = 120)
-        button_save.on_event('button_click', save_callback)
 
         doc.add_root(
             column(
                 row(
-                    button_del,
-                    button_merge,
-                    button_show,
-                    #button_restore,
                     button_seed,
-                    button_save
                 ),
-                row(p1, p2, p3)
+                row(p1)
             )
         )
 
     show(bkapp)
-'''

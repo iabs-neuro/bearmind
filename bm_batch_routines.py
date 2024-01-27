@@ -7,6 +7,7 @@ import os
 import shutil
 import tifffile as tfl
 import ipywidgets as ipw
+from IPython.display import display
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import tqdm
@@ -24,9 +25,11 @@ from scipy.io import savemat
 
 import warnings
 
-from config import CONFIG
+from config import CONFIG, read_config, get_mouse_config_path, update_config, get_session_name_from_path
+
 
 warnings.filterwarnings('ignore')
+
 
 def CleanMemmaps(name):
     mmap_files = glob(name.partition('.')[0] + '*.mmap')
@@ -34,8 +37,8 @@ def CleanMemmaps(name):
         os.remove(mm)
         
     
-def DrawFrameAndBox(data, x, left, right, up, down, dpi=200):
-    plt.figure(dpi=dpi)
+def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5):
+    plt.figure(dpi=dpi, figsize=(size,size))
     plt.imshow(data[x,:,:])
     plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
         
@@ -50,19 +53,22 @@ def LoadSelectedVideos(fnames):
     return np.asarray(video)
 
 
-def DrawCropper(data, dpi=200):
+def DrawCropper(data, dpi=200, fname=''):
     x_slider = ipw.IntSlider(value=1,  min=0, max=data.shape[0]-1, layout=ipw.Layout(width='100%'))
     l_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
     r_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
     u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     d_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
+    s_slider = ipw.IntSlider(value=2, min=1, max=6)
     
     def update_right(*args):
         r_slider.max = data.shape[1] - l_slider.value - 1
+
     l_slider.observe(update_right, 'value')
     
     def update_down(*args):
         d_slider.max = data.shape[2] - u_slider.value - 1
+
     u_slider.observe(update_down, 'value')
     
     w = ipw.interactive(DrawFrameAndBox,
@@ -72,17 +78,66 @@ def DrawCropper(data, dpi=200):
                         right=r_slider,
                         up=u_slider,
                         down=d_slider,
-                        dpi=ipw.fixed(200))
-    
+                        size=s_slider,
+                        dpi=ipw.fixed(dpi))
+
+    def on_load_button_clicked(b):
+        with load_output:
+            ms_config_name = get_mouse_config_path(fname)
+            crop_from_config = read_config(ms_config_name).get('crop_params')
+
+            if len(crop_from_config) != 0:
+                l_slider.value = crop_from_config['LEFT']
+                r_slider.value = crop_from_config['RIGHT']
+                u_slider.value = crop_from_config['UP']
+                d_slider.value = crop_from_config['DOWN']
+            else:
+                print(f'Crop params not set in config {ms_config_name}!')
+
+    def on_config_button_clicked(b):
+        with config_output:
+            ms_config_name = get_mouse_config_path(fname)
+            crop_to_config = {
+                'crop_params': {
+                    'LEFT': l_slider.value,
+                    'RIGHT': r_slider.value,
+                    'UP': u_slider.value,
+                    'DOWN': d_slider.value
+                }
+            }
+
+            update_config(crop_to_config, name=ms_config_name)
+            print(f'config {ms_config_name} updated!')
+
+    def on_save_button_clicked(b):
+        with save_output:
+            SaveCrops(fname, w.kwargs['left'], w.kwargs['right'], w.kwargs['up'], w.kwargs['down'])
+
+    load_button = ipw.Button(description="Load crop from config")
+    load_button.on_click(on_load_button_clicked)
+    load_output = ipw.Output()
+
+    save_button = ipw.Button(description="Save crop to file")
+    save_button.on_click(on_save_button_clicked)
+    save_output = ipw.Output()
+
+    config_button = ipw.Button(description="Save crop to config")
+    config_button.on_click(on_config_button_clicked)
+    config_output = ipw.Output()
+
+    display(load_button, load_output)
+    display(save_button, save_output)
+    display(config_button, config_output)
     display(w)
     
     return w
 
-def SaveCrops(fname, left, right, up, down):
-    splt_path = os.path.normpath(fname).split(os.sep)
-    root = CONFIG['ROOT']
 
-    save_name = os.path.join(root, splt_path[-2], splt_path[-2] + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+def SaveCrops(fname, left, right, up, down):
+    session_name = get_session_name_from_path(fname)
+    save_name = os.path.join(os.path.dirname(fname),
+                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+
     save_name = os.path.normpath(save_name)
     cropping_dict = {
         "LEFT": left,
@@ -93,7 +148,7 @@ def SaveCrops(fname, left, right, up, down):
     with open(save_name, "wb") as f:
         pickle.dump(cropping_dict, f)
 
-    print(cropping_dict)
+    print('Crop params:', cropping_dict)
     print(f'Crops saved to {save_name}\n')
 
 
@@ -111,7 +166,8 @@ def get_file_num_id(name, pathway='bonsai'):
 def DoCropAndRewrite(name):
     root = CONFIG['ROOT']
     pathway = CONFIG['DATA_PATHWAY']
-    #find, crop and rewrite .avi files as well as timestamps
+
+    #find, crop and rewrite .avi files
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
@@ -277,23 +333,33 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         print(repr(e))
 
 
-def ReDoCNMF(s_name, e_name):
+def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
     start = time()
 
     #seeds construction
     with open(s_name, "rb") as f:
         seeded_pts = pickle.load(f,)
-    with open(e_name, "rb") as f:
-        estimates = pickle.load(f,)
 
-    old_pts = FindMaxima(estimates)
-    seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T[:,0,:]))
+    if e_name is not None:
+        with open(e_name, "rb") as f:
+            estimates = pickle.load(f,)
+        old_pts = FindMaxima(estimates)
+        seeds = np.concatenate((old_pts.astype(np.double), np.array(seeded_pts).T[:,0,:]))
+    else:
+        seeds = np.array(seeded_pts).T[:, 0, :]
+
     seeds = np.flip(seeds, axis = 1)
+
+    if e_name is not None:
+        params_dict = estimates.cnmf_dict
+    else:
+        params_dict = cnmf_dict.copy()
+
     # normalization in the case of ssub != 1
-    seeds = seeds / estimates.cnmf_dict['ssub']
-  
+    seeds = seeds / params_dict['ssub']
+
     #  parameter adaptation for seeded cnmf
-    params_dict = estimates.cnmf_dict
+
     params_dict['min_corr'] = 0
     params_dict['min_pnr'] = 0
     params_dict['seed_method'] = seeds
@@ -302,7 +368,9 @@ def ReDoCNMF(s_name, e_name):
     opts = params.CNMFParams(params_dict = params_dict)
     
     #tif loading to memory
-    mem_fname = cm.save_memmap([estimates.tif_name], base_name = estimates.tif_name, order='C', border_to_0=0)
+    if tif_name is None:
+        tif_name = estimates.tif_name
+    mem_fname = cm.save_memmap([tif_name], base_name=tif_name, order='C', border_to_0=0)
     Yr, dims, T = cm.load_memmap(mem_fname)
     images = Yr.T.reshape((T,) + dims, order='F')
 
@@ -312,9 +380,10 @@ def ReDoCNMF(s_name, e_name):
     cnm.estimates.evaluate_components(images, params=opts)
        
     #addition of some fields to estimates object
-    cnm.estimates.tif_name = estimates.tif_name
-    cnm.estimates.cnmf_dict = estimates.cnmf_dict
-    _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=estimates.cnmf_dict['gSig'][0], swap_dim=False)
+    cnm.estimates.tif_name = tif_name
+    #cnm.estimates.cnmf_dict = estimates.cnmf_dict
+    cnm.estimates.cnmf_dict = params_dict.copy()
+    _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnm.estimates.cnmf_dict['gSig'][0], swap_dim=False)
     cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
     
     #estimates object saving
