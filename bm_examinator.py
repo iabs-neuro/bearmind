@@ -134,7 +134,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         dims = estimates.imax.shape
         title = fname.rpartition('\\')[-1].partition('_estimates')[0]
 
-        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.9
+        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
         est_data = EstimatesToSrc(estimates, cthr=cthr)
         src = ColumnDataSource(data=est_data)
         src_partial = ColumnDataSource(data=EstimatesToSrc(estimates, cthr=cthr))
@@ -275,7 +275,7 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     return imax
 
 
-def ManualSeeds(fname, size=1000, cnmf_dict=None):
+def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
         tools = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
 

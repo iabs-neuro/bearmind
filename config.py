@@ -60,20 +60,33 @@ def create_mouse_configs(root=None):
     if root is None:
         root = CONFIG['ROOT']
 
+    base_path = os.path.dirname(CONFIG['ROOT'])
     mouse_folders = [f for f in os.listdir(root) if os.path.isdir(os.path.join(root, f)) and 'CONFIGS' not in f]
-    mouse_config_folder = os.path.join(root, 'MOUSE_CONFIGS')
+    mouse_config_folder = os.path.join(base_path, 'MOUSE_CONFIGS')
     os.makedirs(mouse_config_folder, exist_ok=True)
 
     for msf in mouse_folders:
-        mouse_config_path = os.path.join(root, mouse_config_folder, msf + '.json')
+        ms_name = msf.split(sep='_')[1]
+        mouse_config_path = os.path.join(base_path, mouse_config_folder, ms_name + '.json')
         if not os.path.exists(mouse_config_path):
             create_config(content=DEFAULT_MOUSE_CONFIG, name=mouse_config_path)
 
 
-def get_mouse_config_path(fname):
+def get_session_name_from_path(fname):
     splt_path = os.path.normpath(fname).split(os.sep)
-    ms_name = splt_path[-2]
-    ms_config_name = os.path.join(CONFIG['ROOT'], 'MOUSE_CONFIGS', ms_name + '.json')
+    if CONFIG['DATA_PATHWAY'] == 'bonsai':
+        session_name = splt_path[-2]
+    elif CONFIG['DATA_PATHWAY'] == 'legacy':
+        session_name = splt_path[-5]
+
+    return session_name
+
+
+def get_mouse_config_path(fname):
+    session_name = get_session_name_from_path(fname)
+    ms_name = session_name.split(sep='_')[1]  # Experiment_Mouse_Session
+    base_path = os.path.dirname(CONFIG['ROOT'])
+    ms_config_name = os.path.join(base_path, 'MOUSE_CONFIGS', ms_name + '.json')
     return ms_config_name
 
 

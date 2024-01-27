@@ -25,7 +25,7 @@ from scipy.io import savemat
 
 import warnings
 
-from config import CONFIG, read_config, get_mouse_config_path, update_config
+from config import CONFIG, read_config, get_mouse_config_path, update_config, get_session_name_from_path
 
 
 warnings.filterwarnings('ignore')
@@ -134,10 +134,10 @@ def DrawCropper(data, dpi=200, fname=''):
 
 
 def SaveCrops(fname, left, right, up, down):
-    splt_path = os.path.normpath(fname).split(os.sep)
-    root = CONFIG['ROOT']
+    session_name = get_session_name_from_path(fname)
+    save_name = os.path.join(os.path.dirname(fname),
+                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
 
-    save_name = os.path.join(root, splt_path[-2], splt_path[-2] + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     save_name = os.path.normpath(save_name)
     cropping_dict = {
         "LEFT": left,
@@ -166,7 +166,8 @@ def get_file_num_id(name, pathway='bonsai'):
 def DoCropAndRewrite(name):
     root = CONFIG['ROOT']
     pathway = CONFIG['DATA_PATHWAY']
-    #find, crop and rewrite .avi files as well as timestamps
+
+    #find, crop and rewrite .avi files
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
