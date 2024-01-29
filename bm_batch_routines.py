@@ -60,7 +60,7 @@ def DrawCropper(data, dpi=200, fname=''):
     r_slider = ipw.IntSlider(value=50, min=0, max=data.shape[1]-1)
     u_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
     d_slider = ipw.IntSlider(value=50, min=0, max=data.shape[2]-1)
-    s_slider = ipw.IntSlider(value=2, min=1, max=6)
+    s_slider = ipw.IntSlider(value=4, min=1, max=6)
     
     def update_right(*args):
         r_slider.max = data.shape[1] - l_slider.value - 1

@@ -327,7 +327,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print(f'Seeds saved to {seeds_fname}\n')
 
         def save_callback(event):
-            SaveResults(estimates)
+            SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         #Buttons themselves
@@ -378,7 +378,7 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
-    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)    
     imax = (pnr * 255 / np.max(pnr)).astype('uint16')
     return imax
 
