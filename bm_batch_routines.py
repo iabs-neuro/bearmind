@@ -25,7 +25,7 @@ from scipy.io import savemat
 
 import warnings
 
-from config import CONFIG, read_config, get_mouse_config_path, update_config, get_session_name_from_path
+from config import CONFIG, read_config, get_mouse_config_path_from_fname, update_config, get_session_name_from_path
 
 
 warnings.filterwarnings('ignore')
@@ -90,7 +90,7 @@ def DrawCropper(data, dpi=200, fname=''):
 
     def on_load_button_clicked(b):
         with load_output:
-            ms_config_name = get_mouse_config_path(fname)
+            ms_config_name = get_mouse_config_path_from_fname(fname)
             crop_from_config = read_config(ms_config_name).get('crop_params')
 
             if len(crop_from_config) != 0:
@@ -103,7 +103,7 @@ def DrawCropper(data, dpi=200, fname=''):
 
     def on_config_button_clicked(b):
         with config_output:
-            ms_config_name = get_mouse_config_path(fname)
+            ms_config_name = get_mouse_config_path_from_fname(fname)
             crop_to_config = {
                 'crop_params': {
                     'LEFT': l_slider.value,

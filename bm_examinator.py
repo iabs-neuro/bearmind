@@ -131,6 +131,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 self.estimates=None
                 self.estimates_partial=None
 
+        size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
         cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
 
@@ -139,11 +140,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         est_data0 = EstimatesToSrc(estimates0, cthr=cthr)
 
         estimates = copy.deepcopy(estimates0)
-        estimates_partial = copy.deepcopy(estimates0)
 
         storage = Storage()
-        storage.estimates = estimates
-        storage.estimates_partial = estimates_partial
+        storage.estimates = copy.deepcopy(estimates0)
+        storage.estimates_partial = copy.deepcopy(estimates0)
+        storage.prev_estimates = copy.deepcopy(estimates0)
+        storage.prev_estimates_partial = copy.deepcopy(estimates0)
 
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
@@ -151,13 +153,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         dims = estimates.imax.shape
         title = fname.rpartition('\\')[-1].partition('_estimates')[0]
 
-
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
         tools2 = ["pan", "tap", "box_zoom", "zoom_in", "zoom_out", "reset"]
         color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
 
-        imwidth = 500
-        trwidth = 500
+        imwidth = size
+        trwidth = size
         '''
         # TODO: fix resolution
         if 'pathway' in bkapp_kwargs:
@@ -207,6 +208,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         def del_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
+
+            # save previous state
+            storage.prev_estimates = copy.deepcopy(estimates)
+            storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
+
             if verbose:
                 print('               Delete in progress...')
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
@@ -218,7 +224,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('est comp before:', estimates.idx_components)
                 print('est partial before:', estimates_partial.idx_components)
                 print('sel_comps:', sel_comps)
-
                 print('new bad comps:', estimates_partial.idx_components[sel_inds].tolist())
             temp = estimates.idx_components_bad.tolist() + sel_comps.tolist()
             estimates.idx_components_bad = np.sort(temp)
@@ -234,6 +239,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         def merge_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
+
+            # save previous state
+            storage.prev_estimates = copy.deepcopy(estimates)
+            storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
+
             if verbose:
                 print('               Merge in progress...')
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
@@ -273,13 +283,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 storage.estimates_partial = copy.deepcopy(estimates_partial)
                 src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
 
-
         def restore_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
             if verbose:
                 print('            Reset in progress...')
-            #sel_comps = np.array([ind for i, ind in enumerate(estimates.idx_components)])
-            #print(sel_comps)
 
             overall_data = dict(src.data)
             src_partial.data = copy.deepcopy(overall_data)
@@ -288,19 +295,18 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('num est comp:', len(estimates.idx_components))
             storage.estimates_partial = copy.deepcopy(estimates)
 
-            #src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
-            #print('part est comp:', estimates_partial.idx_components)
-            #print('num part est comp:', len(estimates_partial.idx_components))
-
-            #src_partial.selected.update(indices=np.array([ind for i, ind in enumerate(estimates.idx_components)]))
-
-
         def revert_callback(event, storage=None):
+            prev_estimates = copy.deepcopy(storage.prev_estimates)
+            prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
 
-            #estimates = storage.estimates
-            #estimates_partial = storage.estimates_partial
+            storage.estimates = copy.deepcopy(storage.prev_estimates)
+            storage.estimates_partial = copy.deepcopy(storage.prev_estimates_partial)
+            src.data = EstimatesToSrc(prev_estimates, cthr=cthr)
+            src_partial.data = EstimatesToSrc(prev_estimates_partial, cthr=cthr)
+
+        def discard_callback(event, storage=None):
             if verbose:
-                print('Revert in progress...')
+                print('Discard in progress...')
 
             storage.estimates = copy.deepcopy(estimates0)
             storage.estimates_partial = copy.deepcopy(estimates0)
@@ -312,7 +318,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('est comp:', estimates.idx_components)
                 print('num est comp:', len(estimates.idx_components))
                 print('num est comp bad:', len(estimates.idx_components_bad))
-
 
         def seed_callback(event):
             seeds = [[pts_src.data['x']], [pts_src.data['y']]]
@@ -338,8 +343,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_restore = Button(label="Reset view", button_type="success", width = 120)
         button_restore.on_event('button_click', partial(restore_callback, storage=storage))
 
-        button_revert = Button(label="Discard changes", button_type="success", width = 120)
-        button_revert.on_event('button_click', partial(revert_callback, storage=storage))
+        button_revert = Button(label="Revert change", button_type="success", width = 120)
+        button_revert.on_event('button_click', partial(revert_callback, storage=storage), partial(restore_callback, storage=storage))
+
+        button_discard = Button(label="Discard changes", button_type="success", width = 120)
+        button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
         button_seed = Button(label="Save seeds", button_type="success", width = 120)
         button_seed.on_event('button_click', seed_callback)
@@ -354,9 +362,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_merge,
                     button_show,
                     button_restore,
+                    button_revert,
+                    button_discard,
                     button_seed,
                     button_save,
-                    button_revert
                 ),
                 row(p1, p2)
             )
