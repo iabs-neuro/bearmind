@@ -82,9 +82,14 @@ def get_session_name_from_path(fname):
     return session_name
 
 
-def get_mouse_config_path(fname):
+def get_mouse_config_path_from_fname(fname):
     session_name = get_session_name_from_path(fname)
     ms_name = session_name.split(sep='_')[1]  # Experiment_Mouse_Session
+    cpath = get_mouse_config_path(ms_name)
+    return cpath
+
+
+def get_mouse_config_path(ms_name):
     base_path = os.path.dirname(CONFIG['ROOT'])
     ms_config_name = os.path.join(base_path, 'MOUSE_CONFIGS', ms_name + '.json')
     return ms_config_name
