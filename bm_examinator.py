@@ -151,7 +151,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
 
         dims = estimates.imax.shape
-        title = fname.rpartition('\\')[-1].partition('_estimates')[0]
+        title = fname.rpartition('/')[-1].partition('_estimates')[0]
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
         tools2 = ["pan", "tap", "box_zoom", "zoom_in", "zoom_out", "reset"]
@@ -165,11 +165,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             if bkapp_kwargs['pathway'] == 'bonsai':
                 imwidth = 608
                 trwidth = 608
-        '''
+        
         try:
             title = get_session_name_from_path(fname)
         except Exception:
             title = ''
+        '''
 
         height = int(imwidth*dims[0]/dims[1])
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
