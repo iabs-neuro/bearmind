@@ -10,8 +10,9 @@ import pickle
 import os
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
-from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, BooleanFilter, PointDrawTool
+from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,PointDrawTool, TapTool
 from bokeh.layouts import column, row
+from bokeh.events import Tap
 from bokeh.io import push_notebook
 from glob import glob
 from caiman.source_extraction.cnmf import params
@@ -19,6 +20,7 @@ from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
 
+from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
 from table_routines import *
 
@@ -136,9 +138,16 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         show_data = dict()
         all_comps = overall_data['idx']
         indices_to_leave = np.array([i for i, comp in enumerate(all_comps) if comp in comps_to_leave])
+        index_mapping = dict(zip(indices_to_leave, range(len(indices_to_leave))))
+
         for key in overall_data.keys():
-            data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
-            show_data.update({key: data_part})
+            if key == 'traces':
+                # subtract id vals from trace vals and add new ids
+                new_traces = [val-i+index_mapping[i] for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
+                show_data.update({'traces': new_traces})
+            else:
+                data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
+                show_data.update({key: data_part})
 
         return show_data
 
@@ -156,7 +165,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
         fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
         nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
+        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 1
+        line_alpha = bkapp_kwargs.get('line_alpha') if 'line_alpha' in bkapp_kwargs else 1
+        trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
+        trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
+
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
         else:
@@ -215,6 +228,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                    color = 'colors',
                    selection_line_color="yellow",
                    line_width=line_width,
+                   line_alpha=line_alpha,
                    source=src_partial)
 
         null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
@@ -222,8 +236,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p2.multi_line('times',
                       'traces',
                       line_color='colors',
-                      selection_line_width=line_width,
-                      source=src_partial)# if count_selected() > 0 else null_source)
+                      line_alpha=trace_alpha,
+                      selection_line_width=trace_line_width,
+                      source=src_partial)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -231,7 +246,24 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
 
-        #Button callbscks
+        # image reload on tap
+        def tap_callback(event):
+            p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
+
+            p1.patches('xs',
+                       'ys',
+                       fill_alpha=fill_alpha,
+                       nonselection_alpha=nonselection_alpha,
+                       color='colors',
+                       selection_line_color="yellow",
+                       line_width=line_width,
+                       line_alpha=line_alpha,
+                       source=src_partial)
+
+        p1.add_tools(TapTool())
+        p1.on_event(Tap, tap_callback)
+
+        #Button callbacks
         def del_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
@@ -313,7 +345,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 storage.estimates_partial = copy.deepcopy(estimates_partial)
                 show_data = slice_cds(src, estimates_partial.idx_components)
                 src_partial.data = show_data
+                #print(src_partial.__dict__)
                 #src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
+                #print(src_partial.__dict__)
 
         def restore_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
