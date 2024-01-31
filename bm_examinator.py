@@ -100,7 +100,7 @@ def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
         contours.append(coors[~np.isnan(coors).any(axis=1)])
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
-    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors)
+    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma = 3):
@@ -124,16 +124,43 @@ def SaveResults(estimates, sigma = 3):
 
 def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     #This is the main plotting functions which plots all images and traces and contains all button callbacks
+    '''
+    def count_selected():
+        sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
+            src_partial.selected.indices)
+        return len(sel_inds)
+    '''
+
+    def slice_cds(cds, comps_to_leave):
+        overall_data = dict(cds.data)
+        show_data = dict()
+        all_comps = overall_data['idx']
+        indices_to_leave = np.array([i for i, comp in enumerate(all_comps) if comp in comps_to_leave])
+        for key in overall_data.keys():
+            data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
+            show_data.update({key: data_part})
+
+        return show_data
+
     def bkapp(doc):
 
         class Storage():
             def __init__(self):
                 self.estimates=None
                 self.estimates_partial=None
+                self.prev_estimates=None
+                self.prev_estimates_partial=None
 
         size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
         cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
+        fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
+        nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
+        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
+        if 'enable_gpu_backend' in bkapp_kwargs:
+            backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
+        else:
+            backend = "canvas"
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
@@ -175,14 +202,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         height = int(imwidth*dims[0]/dims[1])
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
         #imdata = estimates.imax
-        #main plots, p1 is for image on the left, p2 is for traces on the right
-        p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title)
-        p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
-        p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below')
 
-        fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
-        nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
+        #main plots, p1 is for image on the left, p2 is for traces on the right
+        p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
+        p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
+        p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
 
         p1.patches('xs',
                    'ys',
@@ -193,11 +217,13 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                    line_width=line_width,
                    source=src_partial)
 
+        null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
+
         p2.multi_line('times',
                       'traces',
                       line_color='colors',
                       selection_line_width=line_width,
-                      source=src_partial)
+                      source=src_partial)# if count_selected() > 0 else null_source)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -234,7 +260,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('num est comp after:', len(estimates.idx_components))
                 print('est comp after:', estimates.idx_components)
 
-            src.data = EstimatesToSrc(estimates, cthr=cthr)
+            #src.data = EstimatesToSrc(estimates, cthr=cthr)
+            src.data = slice_cds(src, estimates.idx_components)
             storage.estimates = copy.deepcopy(estimates)
 
         def merge_callback(event, storage=None):
@@ -257,10 +284,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('est partial before:', estimates_partial.idx_components)
                 print('sel_comps:', sel_comps)
 
+            #print([c for c in estimates.idx_components if c in sel_comps])
             if len(sel_inds) != 0:
                 estimates.manual_merge([sel_comps],
                                        params=params.CNMFParams(params_dict=estimates.cnmf_dict))
 
+                #print('after', [c for c in estimates.idx_components if c in sel_comps])
                 src.data = EstimatesToSrc(estimates, cthr=cthr)
                 storage.estimates = copy.deepcopy(estimates)
 
@@ -282,7 +311,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     print('est part:', estimates_partial.idx_components)
 
                 storage.estimates_partial = copy.deepcopy(estimates_partial)
-                src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
+                show_data = slice_cds(src, estimates_partial.idx_components)
+                src_partial.data = show_data
+                #src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
 
         def restore_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
@@ -303,7 +334,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             storage.estimates = copy.deepcopy(storage.prev_estimates)
             storage.estimates_partial = copy.deepcopy(storage.prev_estimates_partial)
             src.data = EstimatesToSrc(prev_estimates, cthr=cthr)
+            #src.data = slice_cds(src, prev_estimates.idx_components)
             src_partial.data = EstimatesToSrc(prev_estimates_partial, cthr=cthr)
+            #src_partial.data = slice_cds(src, prev_estimates_partial.idx_components)
 
         def discard_callback(event, storage=None):
             if verbose:
