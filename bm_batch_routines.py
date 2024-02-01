@@ -368,12 +368,13 @@ def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
 
     #  parameter adaptation for seeded cnmf
 
+
+    opts = params.CNMFParams(params_dict = params_dict)
     params_dict['min_corr'] = 0
     params_dict['min_pnr'] = 0
     params_dict['seed_method'] = seeds
-    params_dict['init_iter'] = 1
+    params_dict['init_iter'] = 0
     params_dict['rf'] = None
-    opts = params.CNMFParams(params_dict = params_dict)
     
     #tif loading to memory
     if tif_name is None:
@@ -395,7 +396,10 @@ def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
     cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
     
     #estimates object saving
-    with open(e_name, "wb") as f:
+    base_name = s_name.partition('_seeds')[0]
+    out_name = base_name + '_redo_cnmf' + '_estimates.pickle'
+
+    with open(out_name, "wb") as f:
         pickle.dump(cnm.estimates, f) 
         
     print(f'cnmf-ed in {time() - start:.1f}s')
