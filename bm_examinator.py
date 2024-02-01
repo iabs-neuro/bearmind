@@ -7,6 +7,8 @@ import caiman as cm
 import pandas as pd
 import numpy as np
 import pickle
+import ipywidgets as ipw
+from IPython.display import display
 import os
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
@@ -19,6 +21,7 @@ from caiman.source_extraction.cnmf import params
 from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
+from caiman.utils.visualization import inspect_correlation_pnr
 
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
@@ -38,7 +41,7 @@ def colornum_Metro(num):
     6:"darkorange",    
     7:"mediumvioletred",      
     8:"gold",   
-    9:"grey",  
+    9:"magenta",
     0:"lawngreen"}.get(num%10)   
 
 
@@ -259,6 +262,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        line_width=line_width,
                        line_alpha=line_alpha,
                        source=src_partial)
+            pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
         p1.add_tools(TapTool())
         p1.on_event(Tap, tap_callback)
@@ -450,6 +454,18 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     imax = (pnr * 255 / np.max(pnr)).astype('uint16')
     return imax
 
+def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
+
+    corr_image, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    #imax_pnr = (pnr * 255 / np.max(pnr)).astype('uint16')
+    #corr_image = (corr_image * 255 / np.max(corr_image)).astype('uint16')
+
+    w = ipw.interactive(inspect_correlation_pnr(corr_image, pnr_image))
+
+    display(w)
+    return w
 
 def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
@@ -474,8 +490,8 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
-        pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
-        draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
+        pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=3)
+        draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='red')
         p1.add_tools(draw_tool)
 
         #Button callbscks
