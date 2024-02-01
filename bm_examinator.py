@@ -468,9 +468,9 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
         height = int(imwidth * dims[0] / dims[1])
 
         title = get_session_name_from_path(fname)
-
+        color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
         p1 = figure(width=imwidth, height = height, tools = tools, toolbar_location = 'below', title=title)
-        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0)
+        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0, color_mapper=color_mapper)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
