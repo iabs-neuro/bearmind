@@ -7,18 +7,23 @@ import caiman as cm
 import pandas as pd
 import numpy as np
 import pickle
+import ipywidgets as ipw
+from IPython.display import display
 import os
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
-from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, BooleanFilter, PointDrawTool
+from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,PointDrawTool, TapTool
 from bokeh.layouts import column, row
+from bokeh.events import Tap
 from bokeh.io import push_notebook
 from glob import glob
 from caiman.source_extraction.cnmf import params
 from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
+from caiman.utils.visualization import inspect_correlation_pnr
 
+from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
 from table_routines import *
 
@@ -36,7 +41,7 @@ def colornum_Metro(num):
     6:"darkorange",    
     7:"mediumvioletred",      
     8:"gold",   
-    9:"grey",  
+    9:"magenta",
     0:"lawngreen"}.get(num%10)   
 
 
@@ -45,9 +50,10 @@ def LoadEstimates(name, default_fps=20):
     with open(name, "rb") as f:
         estimates = pickle.load(f,)
     estimates.name = name
+    '''
     if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
         estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    #estimates.time = FindAndLoadTimestamp(estimates.name.partition('estimates')[0], estimates.C.shape[1])
+    '''
     estimates.time = get_timestamps(estimates.name.partition('estimates')[0],
                                    estimates.C.shape[1],
                                    default_fps=default_fps)
@@ -124,21 +130,22 @@ def SaveResults(estimates, sigma = 3):
 
 def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     #This is the main plotting functions which plots all images and traces and contains all button callbacks
-    '''
-    def count_selected():
-        sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-            src_partial.selected.indices)
-        return len(sel_inds)
-    '''
 
     def slice_cds(cds, comps_to_leave):
         overall_data = dict(cds.data)
         show_data = dict()
         all_comps = overall_data['idx']
         indices_to_leave = np.array([i for i, comp in enumerate(all_comps) if comp in comps_to_leave])
+        index_mapping = dict(zip(indices_to_leave, range(len(indices_to_leave))))
+
         for key in overall_data.keys():
-            data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
-            show_data.update({key: data_part})
+            if key == 'traces':
+                # subtract id vals from trace vals and add new ids
+                new_traces = [val-i+index_mapping[i] for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
+                show_data.update({'traces': new_traces})
+            else:
+                data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
+                show_data.update({key: data_part})
 
         return show_data
 
@@ -156,7 +163,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
         fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
         nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 2
+        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 1
+        line_alpha = bkapp_kwargs.get('line_alpha') if 'line_alpha' in bkapp_kwargs else 1
+        trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
+        trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
+
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
         else:
@@ -200,7 +211,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         '''
 
         height = int(imwidth*dims[0]/dims[1])
-        #imdata_ = np.flip(build_average_image(fname, gsig = 6, start_frame=0, end_frame=np.Inf, step=5), axis=0)
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
         #imdata = estimates.imax
 
@@ -216,6 +226,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                    color = 'colors',
                    selection_line_color="yellow",
                    line_width=line_width,
+                   line_alpha=line_alpha,
                    source=src_partial)
 
         null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
@@ -223,8 +234,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p2.multi_line('times',
                       'traces',
                       line_color='colors',
-                      selection_line_width=line_width,
-                      source=src_partial)# if count_selected() > 0 else null_source)
+                      line_alpha=trace_alpha,
+                      selection_line_width=trace_line_width,
+                      source=src_partial)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -232,7 +244,25 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
 
-        #Button callbscks
+        # image reload on tap
+        def tap_callback(event):
+            p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
+
+            p1.patches('xs',
+                       'ys',
+                       fill_alpha=fill_alpha,
+                       nonselection_alpha=nonselection_alpha,
+                       color='colors',
+                       selection_line_color="yellow",
+                       line_width=line_width,
+                       line_alpha=line_alpha,
+                       source=src_partial)
+            pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
+
+        p1.add_tools(TapTool())
+        p1.on_event(Tap, tap_callback)
+
+        #Button callbacks
         def del_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
@@ -314,7 +344,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 storage.estimates_partial = copy.deepcopy(estimates_partial)
                 show_data = slice_cds(src, estimates_partial.idx_components)
                 src_partial.data = show_data
+                #print(src_partial.__dict__)
                 #src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
+                #print(src_partial.__dict__)
 
         def restore_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
@@ -413,10 +445,24 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
-    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)    
-    imax = (pnr * 255 / np.max(pnr)).astype('uint16')
+    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    pnr[np.where(pnr == np.inf)] = 0
+    #pnr[np.where(pnr == 0)] = np.min(pnr)
+    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
+def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
+
+    corr_image, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    #imax_pnr = (pnr * 255 / np.max(pnr)).astype('uint16')
+    #corr_image = (corr_image * 255 / np.max(corr_image)).astype('uint16')
+
+    w = ipw.interactive(inspect_correlation_pnr(corr_image, pnr_image))
+
+    display(w)
+    return w
 
 def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
@@ -435,14 +481,14 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
         height = int(imwidth * dims[0] / dims[1])
 
         title = get_session_name_from_path(fname)
-
+        color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
         p1 = figure(width=imwidth, height = height, tools = tools, toolbar_location = 'below', title=title)
-        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0)
+        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0, color_mapper=color_mapper)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
-        pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
-        draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
+        pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=3)
+        draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='red')
         p1.add_tools(draw_tool)
 
         #Button callbscks

@@ -35,15 +35,15 @@ def CleanMemmaps(name):
     mmap_files = glob(name.partition('.')[0] + '*.mmap')
     for mm in mmap_files:
         os.remove(mm)
-        
-    
+
+
 def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5, title=''):
     plt.figure(dpi=dpi, figsize=(size,size))
     plt.imshow(data[x,:,:])
     plt.title(title)
     plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
-        
-    
+
+
 def LoadSelectedVideos(fnames):
     fnames.sort(key = len)
     video = []
@@ -420,8 +420,8 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
     
     def DrawPnrImage(data, gSig, dpi = 200):
         _, pnr = cm.summary_images.correlation_pnr(data, gSig=gSig, swap_dim=False)
-        pnr[np.where(pnr == np.inf)] = -42
-        pnr[np.where(pnr == -42)] = np.max(pnr)
+        pnr[np.where(pnr == np.inf)] = 0
+        #pnr[np.where(pnr == -42)] = np.max(pnr)
         plt.figure(dpi = dpi)
         plt.imshow(pnr)
         

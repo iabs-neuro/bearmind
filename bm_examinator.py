@@ -26,6 +26,7 @@ from caiman.utils.visualization import inspect_correlation_pnr
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
 from table_routines import *
+from utils import get_datetime
 
 output_notebook()
 
@@ -167,6 +168,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         line_alpha = bkapp_kwargs.get('line_alpha') if 'line_alpha' in bkapp_kwargs else 1
         trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
         trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
+        bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 100
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -393,34 +395,45 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
 
-        def save_callback(event):
+        def save_callback(event, storage=None):
+            dt = get_datetime()
+            base_name = fname.partition('_estimates')[0]
+            out_name = base_name + '_in_progress_' + dt.replace(':', '-') + '_estimates.pickle'
+            with open(out_name, "wb") as f:
+                pickle.dump(storage.estimates, f)
+            print(f'Intermediate results for {title} saved to {out_name}\n')
+
+        def final_save_callback(event):
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
-        #Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = 120)
+        # Buttons themselves
+        button_del = Button(label="Delete selected", button_type="success", width = bwidth)
         button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_merge = Button(label="Merge selected", button_type="success", width = 120)
+        button_merge = Button(label="Merge selected", button_type="success", width = bwidth)
         button_merge.on_event('button_click',partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_show = Button(label="Show selected", button_type="success", width = 120)
+        button_show = Button(label="Show selected", button_type="success", width = bwidth)
         button_show.on_event('button_click', partial(show_callback, storage=storage))
 
-        button_restore = Button(label="Reset view", button_type="success", width = 120)
+        button_restore = Button(label="Reset view", button_type="success", width = bwidth)
         button_restore.on_event('button_click', partial(restore_callback, storage=storage))
 
-        button_revert = Button(label="Revert change", button_type="success", width = 120)
+        button_revert = Button(label="Revert change", button_type="success", width = bwidth)
         button_revert.on_event('button_click', partial(revert_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_discard = Button(label="Discard changes", button_type="success", width = 120)
+        button_discard = Button(label="Discard changes", button_type="success", width = bwidth)
         button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
-        button_seed = Button(label="Save seeds", button_type="success", width = 120)
+        button_seed = Button(label="Save seeds", button_type="success", width = bwidth)
         button_seed.on_event('button_click', seed_callback)
 
-        button_save = Button(label="Save results", button_type="success", width = 120)
-        button_save.on_event('button_click', save_callback)
+        button_save = Button(label="Save progress", button_type="success", width = 120)
+        button_save.on_event('button_click', partial(save_callback, storage=storage))
+
+        button_save_final = Button(label="Save results", button_type="success", width = 120)
+        button_save_final.on_event('button_click', final_save_callback)
 
         doc.add_root(
             column(
@@ -433,6 +446,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_discard,
                     button_seed,
                     button_save,
+                    button_save_final
                 ),
                 row(p1, p2)
             )
@@ -446,8 +460,8 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
-    pnr[np.where(pnr == np.inf)] = -42
-    pnr[np.where(pnr == -42)] = np.max(pnr)
+    pnr[np.where(pnr == np.inf)] = 0
+    #pnr[np.where(pnr == 0)] = np.min(pnr)
     imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
@@ -463,6 +477,7 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     display(w)
     return w
+
 
 def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
