@@ -26,6 +26,7 @@ from caiman.utils.visualization import inspect_correlation_pnr
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
 from table_routines import *
+from utils import get_datetime
 
 output_notebook()
 
@@ -393,11 +394,19 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
 
-        def save_callback(event):
+        def save_callback(event, storage=None):
+            dt = get_datetime()
+            base_name = fname.partition('_estimates')[0]
+            out_name = base_name + '_in_progress_' + dt.replace(':', '-') + '_estimates.pickle'
+            with open(out_name, "wb") as f:
+                pickle.dump(storage.estimates, f)
+            print(f'Intermediate results for {title} saved to {out_name}\n')
+
+        def final_save_callback(event):
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
-        #Buttons themselves
+        # Buttons themselves
         button_del = Button(label="Delete selected", button_type="success", width = 120)
         button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
@@ -419,8 +428,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_seed = Button(label="Save seeds", button_type="success", width = 120)
         button_seed.on_event('button_click', seed_callback)
 
-        button_save = Button(label="Save results", button_type="success", width = 120)
-        button_save.on_event('button_click', save_callback)
+        button_save = Button(label="Save progress", button_type="success", width = 120)
+        button_save.on_event('button_click', partial(save_callback, storage=storage))
+
+        button_save_final = Button(label="Save results", button_type="success", width = 120)
+        button_save_final.on_event('button_click', final_save_callback)
 
         doc.add_root(
             column(
@@ -430,9 +442,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_show,
                     button_restore,
                     button_revert,
-                    button_discard,
+                    button_discard
+                ),
+                row(
                     button_seed,
                     button_save,
+                    button_save_final
                 ),
                 row(p1, p2)
             )
@@ -463,6 +478,7 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     display(w)
     return w
+
 
 def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
