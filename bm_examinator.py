@@ -50,9 +50,10 @@ def LoadEstimates(name, default_fps=20):
     with open(name, "rb") as f:
         estimates = pickle.load(f,)
     estimates.name = name
+    '''
     if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
         estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    #estimates.time = FindAndLoadTimestamp(estimates.name.partition('estimates')[0], estimates.C.shape[1])
+    '''
     estimates.time = get_timestamps(estimates.name.partition('estimates')[0],
                                    estimates.C.shape[1],
                                    default_fps=default_fps)
@@ -129,12 +130,6 @@ def SaveResults(estimates, sigma = 3):
 
 def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     #This is the main plotting functions which plots all images and traces and contains all button callbacks
-    '''
-    def count_selected():
-        sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-            src_partial.selected.indices)
-        return len(sel_inds)
-    '''
 
     def slice_cds(cds, comps_to_leave):
         overall_data = dict(cds.data)
@@ -450,8 +445,10 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
-    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)    
-    imax = (pnr * 255 / np.max(pnr)).astype('uint16')
+    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    pnr[np.where(pnr == np.inf)] = -42
+    pnr[np.where(pnr == -42)] = np.max(pnr)
+    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
 def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
