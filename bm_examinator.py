@@ -88,26 +88,55 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
 
 def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
     n_cells = len(estimates.idx_components)
-    if not n_cells:
+    if n_cells == 0:
         return {}
     traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[estimates.idx_components])]
-    times = [estimates.time for i in range(n_cells)]
+    times = [estimates.time for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
     estimates_data = estimates.A
     dims = estimates.imax.shape
     cm_conts = cm.utils.visualization.get_contours(estimates_data,
                                                    dims=estimates.imax.shape,
                                                    thr=cthr)
-    contours = []
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
+    contours = []
     for i in comps_to_select:
         coors = cm_conts[i]["coordinates"]
         contours.append(coors[~np.isnan(coors).any(axis=1)])
+
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
+
+def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
+    if len(comps_to_select) == 0:
+        comps_to_select = estimates.idx_components
+
+    n_cells = len(comps_to_select)
+    if n_cells == 0:
+        return {}
+
+    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select])]
+    times = [estimates.time for _ in range(n_cells)]
+    colors = [colornum_Metro(i) for i in range(n_cells)]
+
+    estimates_data = estimates.A[:, comps_to_select]
+    dims = estimates.imax.shape
+    cm_conts = cm.utils.visualization.get_contours(estimates_data,
+                                                   dims=estimates.imax.shape,
+                                                   thr=cthr)
+
+    contours = []
+    for i, comp in enumerate(comps_to_select):
+        coors = cm_conts[i]["coordinates"]
+        contours.append(coors[~np.isnan(coors).any(axis=1)])
+
+    xs = [[pt[0] for pt in c] for c in contours]
+    ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
+    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
+
 
 
 def SaveResults(estimates, sigma = 3):
@@ -158,6 +187,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 self.estimates_partial=None
                 self.prev_estimates=None
                 self.prev_estimates_partial=None
+                self.prev_data = None
+                self.prev_data_partial = None
 
         size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
         cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
@@ -168,7 +199,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         line_alpha = bkapp_kwargs.get('line_alpha') if 'line_alpha' in bkapp_kwargs else 1
         trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
         trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
-        bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 100
+        bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -177,7 +208,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
-        est_data0 = EstimatesToSrc(estimates0, cthr=cthr)
+        est_data0 = EstimatesToSrcFast(estimates0, cthr=cthr)
 
         estimates = copy.deepcopy(estimates0)
 
@@ -186,6 +217,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         storage.estimates_partial = copy.deepcopy(estimates0)
         storage.prev_estimates = copy.deepcopy(estimates0)
         storage.prev_estimates_partial = copy.deepcopy(estimates0)
+        storage.prev_data = copy.deepcopy(est_data0)
+        storage.prev_data_partial = copy.deepcopy(est_data0)
 
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
@@ -272,6 +305,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             # save previous state
             storage.prev_estimates = copy.deepcopy(estimates)
             storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
+            storage.prev_data = dict(src.data)
+            storage.prev_data_partial = dict(src_partial.data)
 
             if verbose:
                 print('               Delete in progress...')
@@ -304,12 +339,15 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             # save previous state
             storage.prev_estimates = copy.deepcopy(estimates)
             storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
+            storage.prev_data = dict(src.data)
+            storage.prev_data_partial = dict(src_partial.data)
 
             if verbose:
                 print('               Merge in progress...')
             sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(src_partial.selected.indices)
             sel_inds = np.array(sel_inds)
-            sel_comps = np.array([ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
+            sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds]
+            not_sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i not in sel_inds]
             if verbose:
                 print('sel_inds:', sel_inds)
                 print('num est comp before:', len(estimates.idx_components))
@@ -317,13 +355,33 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('est partial before:', estimates_partial.idx_components)
                 print('sel_comps:', sel_comps)
 
-            #print([c for c in estimates.idx_components if c in sel_comps])
+            #print('before:', [c for c in estimates.idx_components if c in sel_comps])
             if len(sel_inds) != 0:
                 estimates.manual_merge([sel_comps],
                                        params=params.CNMFParams(params_dict=estimates.cnmf_dict))
-
                 #print('after', [c for c in estimates.idx_components if c in sel_comps])
-                src.data = EstimatesToSrc(estimates, cthr=cthr)
+                '''
+                merged_data = EstimatesToSrcFast(estimates, cthr=cthr, comps_to_select=[estimates.idx_components[-1]])
+                new_to_old_not_sel_comp_mapping = dict(zip(estimates.idx_components[:-1], not_sel_comps))
+                not_touched_data = slice_cds(src, not_sel_comps)
+                #print(merged_data)
+                #print()
+                #print(not_touched_data)
+                n_not_touched = len(not_touched_data['xs'])
+
+                # put merged data at the top of traces diagram:
+                for i, data in enumerate(merged_data['traces']):
+                    data += n_not_touched + i
+
+                aggregated_data = copy.deepcopy(not_touched_data)
+                # concatenate contents of both dicts
+                for key in not_touched_data.keys():
+                    aggregated_data[key].extend(merged_data[key])
+                
+                #print(aggregated_data)
+                src.data = aggregated_data
+                '''
+                src.data = EstimatesToSrcFast(estimates, cthr=cthr)
                 storage.estimates = copy.deepcopy(estimates)
 
         def show_callback(event, storage=None):
@@ -346,9 +404,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 storage.estimates_partial = copy.deepcopy(estimates_partial)
                 show_data = slice_cds(src, estimates_partial.idx_components)
                 src_partial.data = show_data
-                #print(src_partial.__dict__)
                 #src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
-                #print(src_partial.__dict__)
 
         def restore_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
@@ -365,13 +421,18 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         def revert_callback(event, storage=None):
             prev_estimates = copy.deepcopy(storage.prev_estimates)
             prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
+            prev_data = storage.prev_data
+            prev_data_partial = storage.prev_data
 
             storage.estimates = copy.deepcopy(storage.prev_estimates)
             storage.estimates_partial = copy.deepcopy(storage.prev_estimates_partial)
-            src.data = EstimatesToSrc(prev_estimates, cthr=cthr)
+            #src.data = EstimatesToSrc(prev_estimates, cthr=cthr)
             #src.data = slice_cds(src, prev_estimates.idx_components)
-            src_partial.data = EstimatesToSrc(prev_estimates_partial, cthr=cthr)
+            #src_partial.data = EstimatesToSrc(prev_estimates_partial, cthr=cthr)
             #src_partial.data = slice_cds(src, prev_estimates_partial.idx_components)
+
+            src.data = copy.deepcopy(prev_data)
+            src_partial.data = copy.deepcopy(prev_data_partial)
 
         def discard_callback(event, storage=None):
             if verbose:
@@ -429,10 +490,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_seed = Button(label="Save seeds", button_type="success", width = bwidth)
         button_seed.on_event('button_click', seed_callback)
 
-        button_save = Button(label="Save progress", button_type="success", width = 120)
+        button_save = Button(label="Save progress", button_type="success", width = bwidth)
         button_save.on_event('button_click', partial(save_callback, storage=storage))
 
-        button_save_final = Button(label="Save results", button_type="success", width = 120)
+        button_save_final = Button(label="Save results", button_type="success", width = bwidth)
         button_save_final.on_event('button_click', final_save_callback)
 
         doc.add_root(
