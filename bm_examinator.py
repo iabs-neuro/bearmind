@@ -10,6 +10,9 @@ import pickle
 import ipywidgets as ipw
 from IPython.display import display
 import os
+import pylab as pl
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,PointDrawTool, TapTool
@@ -109,6 +112,7 @@ def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
+
 
 def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
     if len(comps_to_select) == 0:
@@ -516,30 +520,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     show(bkapp)
 
 
-def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
-    tlen = len(tfl.TiffFile(fname).pages)
-    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
-
-    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
-    pnr[np.where(pnr == np.inf)] = 0
-    #pnr[np.where(pnr == 0)] = np.min(pnr)
-    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
-    return imax
-
-def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
-    tlen = len(tfl.TiffFile(fname).pages)
-    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
-
-    corr_image, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
-    #imax_pnr = (pnr * 255 / np.max(pnr)).astype('uint16')
-    #corr_image = (corr_image * 255 / np.max(corr_image)).astype('uint16')
-
-    w = ipw.interactive(inspect_correlation_pnr(corr_image, pnr_image))
-
-    display(w)
-    return w
-
-
 def ManualSeeds(fname, size=600, cnmf_dict=None):
     def bkapp(doc):
         tools = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
@@ -589,3 +569,50 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
         )
 
     show(bkapp)
+
+
+def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
+
+    _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    pnr[np.where(pnr == np.inf)] = 0
+    #pnr[np.where(pnr == 0)] = np.min(pnr)
+    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
+    return imax
+
+
+def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+    tlen = len(tfl.TiffFile(fname).pages)
+    data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
+
+    correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+
+    fig = pl.figure(figsize=(10, 4))
+    pl.axes([0.05, 0.2, 0.4, 0.7])
+    im_cn = plt.imshow(correlation_image_pnr, cmap='jet')
+    pl.title('correlation image')
+    pl.colorbar()
+    pl.axes([0.5, 0.2, 0.4, 0.7])
+    im_pnr = pl.imshow(pnr_image, cmap='jet')
+    pl.title('PNR')
+    pl.colorbar()
+
+    s_cn_max = Slider(pl.axes([0.05, 0.01, 0.35, 0.03]), 'vmax',
+                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.max())
+    s_cn_min = Slider(pl.axes([0.05, 0.07, 0.35, 0.03]), 'vmin',
+                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.min())
+    s_pnr_max = Slider(pl.axes([0.5, 0.01, 0.35, 0.03]), 'vmax',
+                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.max())
+    s_pnr_min = Slider(pl.axes([0.5, 0.07, 0.35, 0.03]), 'vmin',
+                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.min())
+
+    def update(val):
+        im_cn.set_clim([s_cn_min.val, s_cn_max.val])
+        im_pnr.set_clim([s_pnr_min.val, s_pnr_max.val])
+        fig.canvas.draw_idle()
+
+    s_cn_max.on_changed(update)
+    s_cn_min.on_changed(update)
+    s_pnr_max.on_changed(update)
+    s_pnr_min.on_changed(update)

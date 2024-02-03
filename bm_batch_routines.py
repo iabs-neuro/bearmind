@@ -425,7 +425,8 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
         plt.figure(dpi = dpi)
         plt.imshow(pnr)
         
-    w = ipw.interactive(DrawPnrImage, data = ipw.fixed(data), gSig = ipw.BoundedIntText(value=default_gsig, min=0), dpi = ipw.fixed(200))
+    w = ipw.interactive(DrawPnrImage,
+                        data = ipw.fixed(data),
+                        gSig = ipw.BoundedIntText(value=default_gsig, min=0),
+                        dpi = ipw.fixed(300))
     display(w)
-
-    
