@@ -587,7 +587,10 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
     correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    pnr_image[np.where(pnr_image == np.inf)] = 0
+    correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
 
+    
     fig = pl.figure(figsize=(10, 4))
     pl.axes([0.05, 0.2, 0.4, 0.7])
     im_cn = plt.imshow(correlation_image_pnr, cmap='jet')
@@ -599,13 +602,13 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     pl.colorbar()
 
     s_cn_max = Slider(pl.axes([0.05, 0.01, 0.35, 0.03]), 'vmax',
-                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.max())
+                      max(0, correlation_image_pnr.min()), min(1, correlation_image_pnr.max()), valinit=min(1, correlation_image_pnr.max()))
     s_cn_min = Slider(pl.axes([0.05, 0.07, 0.35, 0.03]), 'vmin',
-                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.min())
+                      max(0, correlation_image_pnr.min()), min(1, correlation_image_pnr.max()), valinit=max(0, correlation_image_pnr.min()))
     s_pnr_max = Slider(pl.axes([0.5, 0.01, 0.35, 0.03]), 'vmax',
-                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.max())
+                        max(0, pnr_image.min()), min(100, pnr_image.max()), valinit=min(100, pnr_image.max()))
     s_pnr_min = Slider(pl.axes([0.5, 0.07, 0.35, 0.03]), 'vmin',
-                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.min())
+                      max(0, pnr_image.min()), min(100, pnr_image.max()), valinit=max(0, pnr_image.min()))
 
     def update(val):
         im_cn.set_clim([s_cn_min.val, s_cn_max.val])
