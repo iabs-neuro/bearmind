@@ -321,6 +321,8 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         cnm.estimates.tif_name = name
         cnm.estimates.cnmf_dict = cnmf_dict
         _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
+        pnr[np.where(pnr == np.inf)] = 0
+        pnr[np.isnan(pnr)] = 0
         cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
 
         if verbose:
@@ -393,6 +395,8 @@ def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
     #cnm.estimates.cnmf_dict = estimates.cnmf_dict
     cnm.estimates.cnmf_dict = params_dict.copy()
     _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnm.estimates.cnmf_dict['gSig'][0], swap_dim=False)
+    pnr[np.where(pnr == np.inf)] = 0
+    pnr[np.isnan(pnr)] = 0
     cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
     
     #estimates object saving
@@ -421,7 +425,8 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
     def DrawPnrImage(data, gSig, dpi = 200):
         _, pnr = cm.summary_images.correlation_pnr(data, gSig=gSig, swap_dim=False)
         pnr[np.where(pnr == np.inf)] = 0
-        #pnr[np.where(pnr == -42)] = np.max(pnr)
+        pnr[np.isnan(pnr)] = 0
+
         plt.figure(dpi = dpi)
         plt.imshow(pnr)
         

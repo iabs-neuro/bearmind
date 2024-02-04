@@ -577,7 +577,7 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr[np.where(pnr == np.inf)] = 0
-    #pnr[np.where(pnr == 0)] = np.min(pnr)
+    pnr[np.isnan(pnr)] = 0
     imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
@@ -589,7 +589,8 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr_image[np.where(pnr_image == np.inf)] = 0
     correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
-
+    pnr_image[np.isnan(pnr_image)] = 0
+    correlation_image_pnr[np.isnan(correlation_image_pnr)] = 0
     
     fig = pl.figure(figsize=(10, 4))
     pl.axes([0.05, 0.2, 0.4, 0.7])
