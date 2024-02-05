@@ -468,37 +468,44 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
-        def final_save_callback(event):
+        def final_save_callback(event, storage=None):
+            base_name = fname.partition('_estimates')[0]
+            out_name = base_name + '_final_estimates.pickle'
+            with open(out_name, "wb") as f:
+                pickle.dump(storage.estimates, f)
+            print(f'Final results for {title} saved to {out_name}\n')
+
+            # now save to .mat file
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = bwidth)
+        button_del = Button(label="Delete selected", button_type="success", width=bwidth)
         button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_merge = Button(label="Merge selected", button_type="success", width = bwidth)
+        button_merge = Button(label="Merge selected", button_type="success", width=bwidth)
         button_merge.on_event('button_click',partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_show = Button(label="Show selected", button_type="success", width = bwidth)
+        button_show = Button(label="Show selected", button_type="success", width=bwidth)
         button_show.on_event('button_click', partial(show_callback, storage=storage))
 
-        button_restore = Button(label="Reset view", button_type="success", width = bwidth)
+        button_restore = Button(label="Reset view", button_type="success", width=bwidth)
         button_restore.on_event('button_click', partial(restore_callback, storage=storage))
 
-        button_revert = Button(label="Revert change", button_type="success", width = bwidth)
+        button_revert = Button(label="Revert change", button_type="success", width=bwidth)
         button_revert.on_event('button_click', partial(revert_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_discard = Button(label="Discard changes", button_type="success", width = bwidth)
+        button_discard = Button(label="Discard changes", button_type="success", width=bwidth)
         button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
-        button_seed = Button(label="Save seeds", button_type="success", width = bwidth)
+        button_seed = Button(label="Save seeds", button_type="success", width=bwidth)
         button_seed.on_event('button_click', seed_callback)
 
-        button_save = Button(label="Save progress", button_type="success", width = bwidth)
+        button_save = Button(label="Save progress", button_type="success", width=bwidth)
         button_save.on_event('button_click', partial(save_callback, storage=storage))
 
-        button_save_final = Button(label="Save results", button_type="success", width = bwidth)
-        button_save_final.on_event('button_click', final_save_callback)
+        button_save_final = Button(label="Save results", button_type="success", width=bwidth)
+        button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
         doc.add_root(
             column(
