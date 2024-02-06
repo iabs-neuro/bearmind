@@ -584,6 +584,7 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr[np.where(pnr == np.inf)] = 0
+    pnr[np.where(pnr > 70)] = 70
     pnr[np.isnan(pnr)] = 0
     imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax

@@ -360,6 +360,7 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
         pnr[np.where(pnr == np.inf)] = 0
         pnr[np.isnan(pnr)] = 0
+        pnr[np.where(pnr > 70)] = 70
         cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
 
         if verbose:
@@ -434,6 +435,7 @@ def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
     _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnm.estimates.cnmf_dict['gSig'][0], swap_dim=False)
     pnr[np.where(pnr == np.inf)] = 0
     pnr[np.isnan(pnr)] = 0
+    pnr[np.where(pnr > 70)] = 70
     cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
     
     #estimates object saving
