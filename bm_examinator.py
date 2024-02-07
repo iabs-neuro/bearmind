@@ -468,37 +468,44 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
-        def final_save_callback(event):
+        def final_save_callback(event, storage=None):
+            base_name = fname.partition('_estimates')[0]
+            out_name = base_name + '_final_estimates.pickle'
+            with open(out_name, "wb") as f:
+                pickle.dump(storage.estimates, f)
+            print(f'Final results for {title} saved to {out_name}\n')
+
+            # now save to .mat file
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = bwidth)
+        button_del = Button(label="Delete selected", button_type="success", width=bwidth)
         button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_merge = Button(label="Merge selected", button_type="success", width = bwidth)
+        button_merge = Button(label="Merge selected", button_type="success", width=bwidth)
         button_merge.on_event('button_click',partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_show = Button(label="Show selected", button_type="success", width = bwidth)
+        button_show = Button(label="Show selected", button_type="success", width=bwidth)
         button_show.on_event('button_click', partial(show_callback, storage=storage))
 
-        button_restore = Button(label="Reset view", button_type="success", width = bwidth)
+        button_restore = Button(label="Reset view", button_type="success", width=bwidth)
         button_restore.on_event('button_click', partial(restore_callback, storage=storage))
 
-        button_revert = Button(label="Revert change", button_type="success", width = bwidth)
+        button_revert = Button(label="Revert change", button_type="success", width=bwidth)
         button_revert.on_event('button_click', partial(revert_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_discard = Button(label="Discard changes", button_type="success", width = bwidth)
+        button_discard = Button(label="Discard changes", button_type="success", width=bwidth)
         button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
-        button_seed = Button(label="Save seeds", button_type="success", width = bwidth)
+        button_seed = Button(label="Save seeds", button_type="success", width=bwidth)
         button_seed.on_event('button_click', seed_callback)
 
-        button_save = Button(label="Save progress", button_type="success", width = bwidth)
+        button_save = Button(label="Save progress", button_type="success", width=bwidth)
         button_save.on_event('button_click', partial(save_callback, storage=storage))
 
-        button_save_final = Button(label="Save results", button_type="success", width = bwidth)
-        button_save_final.on_event('button_click', final_save_callback)
+        button_save_final = Button(label="Save results", button_type="success", width=bwidth)
+        button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
         doc.add_root(
             column(
@@ -577,7 +584,8 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr[np.where(pnr == np.inf)] = 0
-    #pnr[np.where(pnr == 0)] = np.min(pnr)
+    pnr[np.where(pnr > 70)] = 70
+    pnr[np.isnan(pnr)] = 0
     imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
@@ -587,7 +595,11 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
     correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
-
+    pnr_image[np.where(pnr_image == np.inf)] = 0
+    correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
+    pnr_image[np.isnan(pnr_image)] = 0
+    correlation_image_pnr[np.isnan(correlation_image_pnr)] = 0
+    
     fig = pl.figure(figsize=(10, 4))
     pl.axes([0.05, 0.2, 0.4, 0.7])
     im_cn = plt.imshow(correlation_image_pnr, cmap='jet')
@@ -599,13 +611,13 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     pl.colorbar()
 
     s_cn_max = Slider(pl.axes([0.05, 0.01, 0.35, 0.03]), 'vmax',
-                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.max())
+                      max(0, correlation_image_pnr.min()), min(1, correlation_image_pnr.max()), valinit=min(1, correlation_image_pnr.max()))
     s_cn_min = Slider(pl.axes([0.05, 0.07, 0.35, 0.03]), 'vmin',
-                      correlation_image_pnr.min(), correlation_image_pnr.max(), valinit=correlation_image_pnr.min())
+                      max(0, correlation_image_pnr.min()), min(1, correlation_image_pnr.max()), valinit=max(0, correlation_image_pnr.min()))
     s_pnr_max = Slider(pl.axes([0.5, 0.01, 0.35, 0.03]), 'vmax',
-                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.max())
+                        max(0, pnr_image.min()), min(100, pnr_image.max()), valinit=min(100, pnr_image.max()))
     s_pnr_min = Slider(pl.axes([0.5, 0.07, 0.35, 0.03]), 'vmin',
-                       pnr_image.min(), pnr_image.max(), valinit=pnr_image.min())
+                      max(0, pnr_image.min()), min(100, pnr_image.max()), valinit=max(0, pnr_image.min()))
 
     def update(val):
         im_cn.set_clim([s_cn_min.val, s_cn_max.val])

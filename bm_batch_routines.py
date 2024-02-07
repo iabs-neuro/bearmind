@@ -25,7 +25,8 @@ from scipy.io import savemat
 
 import warnings
 
-from config import CONFIG, read_config, get_mouse_config_path_from_fname, update_config, get_session_name_from_path
+from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
+                    update_config, get_session_name_from_path, get_session_config_path)
 
 
 warnings.filterwarnings('ignore')
@@ -91,18 +92,46 @@ def DrawCropper(data, dpi=200, fname=''):
     def on_load_button_clicked(b):
         with load_output:
             ms_config_name = get_mouse_config_path_from_fname(fname)
-            crop_from_config = read_config(ms_config_name).get('crop_params')
+            session_config_name = get_session_config_path(title)
+            crop_from_session_config = read_config(session_config_name).get('crop_params')
 
-            if len(crop_from_config) != 0:
-                l_slider.value = crop_from_config['LEFT']
-                r_slider.value = crop_from_config['RIGHT']
-                u_slider.value = crop_from_config['UP']
-                d_slider.value = crop_from_config['DOWN']
+            if len(crop_from_session_config) != 0:
+                l_slider.value = crop_from_session_config['LEFT']
+                r_slider.value = crop_from_session_config['RIGHT']
+                u_slider.value = crop_from_session_config['UP']
+                d_slider.value = crop_from_session_config['DOWN']
+                print(f'Crop loaded from session config {session_config_name}')
+
             else:
-                print(f'Crop params not set in config {ms_config_name}!')
+                print(f'Crop params not set in session config {session_config_name}!')
+                crop_from_mouse_config = read_config(ms_config_name).get('crop_params')
+                if len(crop_from_mouse_config) != 0:
+                    l_slider.value = crop_from_mouse_config['LEFT']
+                    r_slider.value = crop_from_mouse_config['RIGHT']
+                    u_slider.value = crop_from_mouse_config['UP']
+                    d_slider.value = crop_from_mouse_config['DOWN']
+                    print(f'Crop loaded from mouse config {ms_config_name}')
 
-    def on_config_button_clicked(b):
-        with config_output:
+                else:
+                    print(f'Crop params not set in mouse config {ms_config_name}!')
+
+    def on_session_config_button_clicked(b):
+        with s_config_output:
+            session_config_name = get_session_config_path(title)
+            crop_to_config = {
+                'crop_params': {
+                    'LEFT': l_slider.value,
+                    'RIGHT': r_slider.value,
+                    'UP': u_slider.value,
+                    'DOWN': d_slider.value
+                }
+            }
+
+            update_config(crop_to_config, cpath=session_config_name)
+            print(f'Session config {session_config_name} updated!')
+
+    def on_mouse_config_button_clicked(b):
+        with m_config_output:
             ms_config_name = get_mouse_config_path_from_fname(fname)
             crop_to_config = {
                 'crop_params': {
@@ -113,28 +142,36 @@ def DrawCropper(data, dpi=200, fname=''):
                 }
             }
 
-            update_config(crop_to_config, name=ms_config_name)
-            print(f'config {ms_config_name} updated!')
+            update_config(crop_to_config, cpath=ms_config_name)
+            print(f'Session config {ms_config_name} updated!')
 
     def on_save_button_clicked(b):
         with save_output:
             SaveCrops(fname, w.kwargs['left'], w.kwargs['right'], w.kwargs['up'], w.kwargs['down'])
 
-    load_button = ipw.Button(description="Load crop from config")
+    common_layout = ipw.Layout(width='250px', height='40px')
+
+    load_button = ipw.Button(description="Load crop from config", layout=common_layout)
     load_button.on_click(on_load_button_clicked)
-    load_output = ipw.Output()
+    load_output = ipw.Output(layout=common_layout)
 
-    config_button = ipw.Button(description="Save crop to config")
-    config_button.on_click(on_config_button_clicked)
-    config_output = ipw.Output()
+    s_config_button = ipw.Button(description="Save crop to session config", layout=common_layout)
+    s_config_button.on_click(on_session_config_button_clicked)
+    s_config_output = ipw.Output(layout=common_layout)
 
-    save_button = ipw.Button(description="Save crop to file")
+    m_config_button = ipw.Button(description="Save crop to mouse config", layout=common_layout)
+    m_config_button.on_click(on_mouse_config_button_clicked)
+    m_config_output = ipw.Output(layout=common_layout)
+
+    save_button = ipw.Button(description="Save crop to file", layout=common_layout)
     save_button.on_click(on_save_button_clicked)
-    save_output = ipw.Output()
+    save_output = ipw.Output(layout=common_layout)
 
-    display(load_button, load_output)
-    display(config_button, config_output)
-    display(save_button, save_output)
+    vbox1 = ipw.VBox([load_button, load_output])
+    vbox2 = ipw.VBox([s_config_button, s_config_output])
+    vbox3 = ipw.VBox([m_config_button, m_config_output])
+    vbox4 = ipw.VBox([save_button, save_output])
+    display(ipw.HBox([vbox1, vbox2, vbox3, vbox4]))
 
     display(w)
     
@@ -321,6 +358,9 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         cnm.estimates.tif_name = name
         cnm.estimates.cnmf_dict = cnmf_dict
         _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
+        pnr[np.where(pnr == np.inf)] = 0
+        pnr[np.isnan(pnr)] = 0
+        pnr[np.where(pnr > 70)] = 70
         cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
 
         if verbose:
@@ -393,6 +433,9 @@ def ReDoCNMF(s_name, e_name=None, cnmf_dict=None, tif_name=None):
     #cnm.estimates.cnmf_dict = estimates.cnmf_dict
     cnm.estimates.cnmf_dict = params_dict.copy()
     _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnm.estimates.cnmf_dict['gSig'][0], swap_dim=False)
+    pnr[np.where(pnr == np.inf)] = 0
+    pnr[np.isnan(pnr)] = 0
+    pnr[np.where(pnr > 70)] = 70
     cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
     
     #estimates object saving
@@ -421,7 +464,8 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
     def DrawPnrImage(data, gSig, dpi = 200):
         _, pnr = cm.summary_images.correlation_pnr(data, gSig=gSig, swap_dim=False)
         pnr[np.where(pnr == np.inf)] = 0
-        #pnr[np.where(pnr == -42)] = np.max(pnr)
+        pnr[np.isnan(pnr)] = 0
+
         plt.figure(dpi = dpi)
         plt.imshow(pnr)
         
