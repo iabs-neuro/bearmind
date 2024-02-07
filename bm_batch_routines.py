@@ -204,7 +204,7 @@ def get_file_num_id(name, pathway='bonsai'):
         num_id = name[:-4]
     else:
         raise Exception('Wrong pathway!')
-
+    print(num_id)
     return int(num_id)
 
 
@@ -228,8 +228,10 @@ def DoCropAndRewrite(name):
     whole_data = []
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
-
+    # temporal decision for normally named data (00,01,02,...,10,...)
+    avi_names = sorted(avi_names)
+    #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
+    print(avi_names)
     for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
         clip = VideoFileClip(av_name)
         data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
