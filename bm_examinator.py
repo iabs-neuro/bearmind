@@ -204,6 +204,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
         trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
         bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
+        emergency = bkapp_kwargs.get('oh_shit') if 'oh_shit' in bkapp_kwargs else False
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -257,26 +258,27 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
         p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
         p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
-        '''
-        p1.patches('xs',
-                   'ys',
-                   fill_alpha = fill_alpha,
-                   nonselection_alpha = nonselection_alpha,
-                   color = 'colors',
-                   selection_line_color="yellow",
-                   line_width=line_width,
-                   line_alpha=line_alpha,
-                   source=src_partial)
 
-        null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
+        if not emergency:
+            p1.patches('xs',
+                       'ys',
+                       fill_alpha = fill_alpha,
+                       nonselection_alpha = nonselection_alpha,
+                       color = 'colors',
+                       selection_line_color="yellow",
+                       line_width=line_width,
+                       line_alpha=line_alpha,
+                       source=src_partial)
 
-        p2.multi_line('times',
-                      'traces',
-                      line_color='colors',
-                      line_alpha=trace_alpha,
-                      selection_line_width=trace_line_width,
-                      source=src_partial)
-        '''
+            null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
+
+            p2.multi_line('times',
+                          'traces',
+                          line_color='colors',
+                          line_alpha=trace_alpha,
+                          selection_line_width=trace_line_width,
+                          source=src_partial)
+
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
         pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
@@ -297,12 +299,13 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        line_alpha=line_alpha,
                        source=src_partial)
 
-            p2.multi_line('times',
-                          'traces',
-                          line_color='colors',
-                          line_alpha=trace_alpha,
-                          selection_line_width=trace_line_width,
-                          source=src_partial)
+            if emergency:
+                p2.multi_line('times',
+                              'traces',
+                              line_color='colors',
+                              line_alpha=trace_alpha,
+                              selection_line_width=trace_line_width,
+                              source=src_partial)
 
             pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
