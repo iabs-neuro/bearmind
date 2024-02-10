@@ -257,7 +257,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
         p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
         p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
-
+        '''
         p1.patches('xs',
                    'ys',
                    fill_alpha = fill_alpha,
@@ -276,7 +276,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                       line_alpha=trace_alpha,
                       selection_line_width=trace_line_width,
                       source=src_partial)
-
+        '''
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
         pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
@@ -296,6 +296,14 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        line_width=line_width,
                        line_alpha=line_alpha,
                        source=src_partial)
+
+            p2.multi_line('times',
+                          'traces',
+                          line_color='colors',
+                          line_alpha=trace_alpha,
+                          selection_line_width=trace_line_width,
+                          source=src_partial)
+
             pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
         p1.add_tools(TapTool())
