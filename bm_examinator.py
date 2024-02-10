@@ -89,7 +89,7 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return fps
 
 
-def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
+def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     n_cells = len(estimates.idx_components)
     if n_cells == 0:
         return {}
@@ -114,7 +114,7 @@ def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
+def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -122,8 +122,13 @@ def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
     if n_cells == 0:
         return {}
 
-    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select])]
-    times = [estimates.time for _ in range(n_cells)]
+    if sf is None:
+        sf = 0
+    if ef is None:
+        ef = estimates.C.shape[1]
+
+    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef])]
+    times = [estimates.time[sf:ef] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
 
     estimates_data = estimates.A[:, comps_to_select]
@@ -204,6 +209,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
         trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
         bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
+        start_frame = bkapp_kwargs.get('start_frame') if 'start_frame' in bkapp_kwargs else 0
+        end_frame = bkapp_kwargs.get('end_frame') if 'end_frame' in bkapp_kwargs else 0
         emergency = bkapp_kwargs.get('oh_shit') if 'oh_shit' in bkapp_kwargs else False
 
         if 'enable_gpu_backend' in bkapp_kwargs:
@@ -213,7 +220,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
-        est_data0 = EstimatesToSrcFast(estimates0, cthr=cthr)
+        est_data0 = EstimatesToSrcFast(estimates0, cthr=cthr, sf=start_frame, ef=end_frame)
 
         estimates = copy.deepcopy(estimates0)
 
