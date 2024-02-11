@@ -403,7 +403,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 #print(aggregated_data)
                 src.data = aggregated_data
                 '''
-                src.data = EstimatesToSrcFast(estimates, cthr=cthr)
+                src.data = EstimatesToSrcFast(estimates, cthr=cthr, sf=start_frame, ef=end_frame)
                 storage.estimates = copy.deepcopy(estimates)
 
         def show_callback(event, storage=None):
