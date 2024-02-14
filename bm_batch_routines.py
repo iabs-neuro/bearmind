@@ -204,7 +204,7 @@ def get_file_num_id(name, pathway='bonsai'):
         num_id = name[:-4]
     else:
         raise Exception('Wrong pathway!')
-    print(num_id)
+
     return int(num_id)
 
 
@@ -228,10 +228,8 @@ def DoCropAndRewrite(name):
     whole_data = []
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    # temporal decision for normally named data (00,01,02,...,10,...)
-    avi_names = sorted(avi_names)
-    #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
-    print(avi_names)
+    avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
+
     for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
         clip = VideoFileClip(av_name)
         data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
@@ -275,12 +273,15 @@ def DoMotionCorrection(name, mc_dict):
     #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
     if 'dview' in locals():
         cm.stop_server(dview=dview)
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=14, single_thread=False)
     
     opts = params.CNMFParams(params_dict=mc_dict)
-
+    
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
+    #mc = MotionCorrect([name], dview=None, **opts.get_group('motion'))
+    print(f'Start of motion_correct {time() - start:.1f}s')
     mc.motion_correct(save_movie=True)
+    print(f'End of motion_correct {time() - start:.1f}s')
     fname_mc = mc.fname_tot_els if mc.pw_rigid else mc.fname_tot_rig
 
     if mc.pw_rigid:
@@ -289,8 +290,9 @@ def DoMotionCorrection(name, mc_dict):
         bord_px = np.ceil(np.max(np.abs(mc.shifts_rig))).astype(np.uint8)
 
     mc.bord_px = 0 if mc.border_nan == 'copy' else bord_px
+    print(f'Start of apply_shifts_movie {time() - start:.1f}s')
     mov = mc.apply_shifts_movie([name])
-    
+    print(f'End of apply_shifts_movie {time() - start:.1f}s')
     tfl.imwrite(name[:-4] + '_MC.tif', np.array(mov, dtype='uint8'), photometric='minisblack')
     print(os.path.split(name)[-1] + f' motion corrected in {time() - start:.1f}s')
     
@@ -343,16 +345,21 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
                                    border_to_0=0,
                                    dview=dview,
                                    slices=[time_crop])
-
+        print('cm.save_memmap ended...')
         Yr, dims, T = cm.load_memmap(mem_fname)
+        print('cm.load_memmap ended...')
         images = Yr.T.reshape((T,) + dims, order='F')
+        print('Yr.T.reshape ended...')
 
         if verbose:
             print('Performing CNMF...')
         # cnmf itself
         cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
+        print('source_extraction.cnmf')
         cnm.fit(images)
+        print('cnm.fit')
         cnm.estimates.evaluate_components(images, params=opts, dview=dview)
+        print('cnm.estimates.evaluate_components')
 
         if verbose:
             print('Computing imax...')

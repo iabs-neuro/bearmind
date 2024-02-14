@@ -78,7 +78,8 @@ def get_timestamps(name, n_frames, default_fps=20):
 
 
 def get_fps_from_timestamps(name, default_fps=20, verbose=True):
-    ts_files = glob(name + '*_timestamp.csv')
+    ts_files = glob(name + '*.csv')
+    print(ts_files)
     if len(ts_files) == 0:
         if verbose:
             print('no timestamps found, reverting to default fps')
@@ -235,7 +236,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
 
+        
+        
         dims = estimates.imax.shape
+
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
@@ -259,11 +263,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         height = int(imwidth*dims[0]/dims[1])
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
-        #imdata = estimates.imax
 
         #main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
         p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
+
         p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
 
         if not emergency:
