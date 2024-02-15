@@ -114,7 +114,7 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None):
+def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None, ds=1):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -127,8 +127,8 @@ def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=No
     if ef is None:
         ef = estimates.C.shape[1]
 
-    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef])]
-    times = [estimates.time[sf:ef] for _ in range(n_cells)]
+    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef][:,::ds])]
+    times = [estimates.time[sf:ef][::ds] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
 
     estimates_data = estimates.A[:, comps_to_select]
@@ -201,6 +201,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
         cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
+        ds = bkapp_kwargs.get('downsampling') if 'downsampling' in bkapp_kwargs else 1
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
         fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
         nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
@@ -220,7 +221,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
-        est_data0 = EstimatesToSrcFast(estimates0, cthr=cthr, sf=start_frame, ef=end_frame)
+        est_data0 = EstimatesToSrcFast(estimates0,
+                                       cthr=cthr,
+                                       sf=start_frame,
+                                       ef=end_frame,
+                                       ds=ds)
 
         estimates = copy.deepcopy(estimates0)
 
@@ -403,7 +408,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 #print(aggregated_data)
                 src.data = aggregated_data
                 '''
-                src.data = EstimatesToSrcFast(estimates, cthr=cthr, sf=start_frame, ef=end_frame)
+                src.data = EstimatesToSrcFast(estimates,
+                                              cthr=cthr,
+                                              sf=start_frame,
+                                              ef=end_frame,
+                                              ds=ds)
                 storage.estimates = copy.deepcopy(estimates)
 
         def show_callback(event, storage=None):
