@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+import re
 import shutil
 import tifffile as tfl
 import ipywidgets as ipw
@@ -16,7 +17,7 @@ from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, Cus
 from bokeh.layouts import column, row
 from bokeh.io import push_notebook
 from glob import glob
-from moviepy.editor import VideoFileClip
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 from caiman.source_extraction.cnmf import params
 from caiman.motion_correction import MotionCorrect
 from time import time
@@ -207,6 +208,11 @@ def get_file_num_id(name, pathway='bonsai'):
 
     return int(num_id)
 
+def extract_number(filename):
+    match = re.search(r'(\d+)\.', os.path.basename(filename))
+    if match:
+        return int(match.group(1))
+    return float('inf')
 
 def DoCropAndRewrite(name):
     root = CONFIG['ROOT']
@@ -225,24 +231,41 @@ def DoCropAndRewrite(name):
     else:
         raise ValueError('Wrong pathway!')
 
-    whole_data = []
-
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
+    #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
+    avi_names.sort(key=extract_number)
 
+    whole_data = []
+    mp4_clips = []
+    num_frames_whole = 0
     for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
+
         clip = VideoFileClip(av_name)
+        mp4_clips.append(clip)
+        num_frames = clip.reader.nframes
+        num_frames_whole = num_frames_whole + num_frames
+        print(f"{av_name} - {num_frames} frames")
+
         data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
         if cr_dict['DOWN']:
             data = data[:, :-cr_dict['DOWN'], :]
         if cr_dict['RIGHT']:
             data = data[:, :, :-cr_dict['RIGHT']]
-        whole_data.append(data[:-1])
+        #whole_data.append(data[:-1])
+        whole_data.append(data)
+    mp4_clip = concatenate_videoclips(mp4_clips)
 
     #  cropping per se
     out_fpath = os.path.join(root, out_fname)
+    out_fpath_mp4 = out_fpath[:-4] + '.mp4'
     tfl.imwrite(out_fpath, np.concatenate(whole_data, axis=0), photometric='minisblack')
+    mp4_clip.write_videofile(out_fpath_mp4)
+
+    mp4_video_out = VideoFileClip(out_fpath_mp4)
+    #tif_video_out = VideoFileClip(out_fpath)
+    print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
     print(f'{out_fname} cropped in {time() - start:.1f}s')
+
 
 
 def extract_and_copy_ts(name):

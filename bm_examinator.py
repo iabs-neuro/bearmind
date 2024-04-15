@@ -316,6 +316,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        source=src_partial)
 
             if emergency:
+                p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below',
+                            output_backend=backend)
                 p2.multi_line('times',
                               'traces',
                               line_color='colors',
