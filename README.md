@@ -14,7 +14,7 @@ In brief, all you need for getting CaImAn installed is to type the following com
 install mamba in base environment: `conda install -n base -c conda-forge mamba` </br>
 install caiman (enter desired venv name instead of <NEW_ENV_NAME>): `mamba create -n <NEW_ENV_NAME> -c conda-forge caiman` </br>
 activate virtual environment: `conda activate caiman`  </br>
-Install dependencies: `pip install  moviepy PySide6 wgpu glfw fastplotlib jupyter_rfb sidecar sortedcontainers cmasher opencv-python`
+Install dependencies: `pip install  moviepy PySide6 wgpu glfw fastplotlib jupyter_rfb sidecar sortedcontainers cmasher opencv-python ssqueezepy`
 </br>
 
 Then, you need to clone this repo to your PC. You may do it by downloading .zip file (see the button above) and unpacking it, OR you may use your git client and type "git clone https://github.com/iabs-neuro/bearmind" in a command prompt.

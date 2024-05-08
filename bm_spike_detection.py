@@ -17,8 +17,8 @@ def FitEvents(fname, opts):
     time = np.genfromtxt(fname, delimiter = ',', skip_header = 1)[:,0]
     spikes = np.zeros(traces.shape)   #this in for non-sparse storage like in traces.csv, as it used to be, just for back compartibility
     events = []                       #this is for sparse storage in pickle 
-    #bpl.output_file(fname.replace('.csv','_events.html'))
-    #p = bpl.figure(title = fname.split('\\')[-1].split('traces')[0], height = 1000, width = 1800, width_policy = 'fit')
+    bpl.output_file(fname.replace('.csv','_events.html'))
+    p = bpl.figure(title = fname.split('\\')[-1].split('traces')[0], height = 1000, width = 1800, width_policy = 'fit')
     for cell_num, trace in enumerate(traces):
         #smoothing
         sm_trace = gaussian_filter1d(trace, sigma=opts['sigma'])
