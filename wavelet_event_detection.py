@@ -1,5 +1,7 @@
 import os
 from os.path import join, splitext
+
+import pandas as pd
 import tqdm
 import matplotlib.pyplot as plt
 
@@ -207,22 +209,39 @@ def extract_wvt_events(traces, wvt_kwargs):
 
     rel_wvt_times = [time_resolution(wavelet, scale=sc, nondim=False, min_decay=200) for sc in manual_scales]
 
-    all_ev_inds = []
+    st_ev_inds = []
+    end_ev_inds = []
     all_ridges = []
     for i, trace in tqdm.tqdm(enumerate(traces), total=len(traces)):
-        ridges, st_evinds, end_evinds = events_from_trace(trace,
-                                                          wavelet,
-                                                          manual_scales,
-                                                          rel_wvt_times,
-                                                          fps=fps,
-                                                          sigma=sigma,
-                                                          eps=eps,
-                                                          scale_length_thr=scale_length_thr,
-                                                          max_scale_thr=max_scale_thr,
-                                                          max_ampl_thr=max_ampl_thr,
-                                                          max_dur_thr=max_dur_thr)
+        ridges, st_ev, end_ev = events_from_trace(trace,
+                                                  wavelet,
+                                                  manual_scales,
+                                                  rel_wvt_times,
+                                                  fps=fps,
+                                                  sigma=sigma,
+                                                  eps=eps,
+                                                  scale_length_thr=scale_length_thr,
+                                                  max_scale_thr=max_scale_thr,
+                                                  max_ampl_thr=max_ampl_thr,
+                                                  max_dur_thr=max_dur_thr)
 
-        all_ev_inds.append(end_evinds)
+        st_ev_inds.append(st_ev)
+        end_ev_inds.append(end_ev)
         all_ridges.append(ridges)
 
-    return all_ev_inds, all_ridges
+    return st_ev_inds, end_ev_inds, all_ridges
+
+
+def events_to_csv(time, st_ev_inds, end_ev_inds, tr_fname):
+    ncells = len(end_ev_inds)
+    length = len(time)
+    spikes = np.zeros((ncells, length))
+    for i in range(ncells):
+        spk = np.array(end_ev_inds[i]).astype(int)
+        spikes[i, spk] = 1
+
+    spdata = np.vstack((time, spikes))
+    df = pd.DataFrame(spdata.T)
+    df.to_csv(tr_fname.replace('traces', 'spikes'), index=False, header=['time_s', *np.arange(ncells)])
+
+    return df
