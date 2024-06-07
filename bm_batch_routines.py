@@ -17,7 +17,7 @@ from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, Cus
 from bokeh.layouts import column, row
 from bokeh.io import push_notebook
 from glob import glob
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, concatenate_videoclips, ImageSequenceClip
 from caiman.source_extraction.cnmf import params
 from caiman.motion_correction import MotionCorrect
 from time import time
@@ -299,7 +299,7 @@ def DoMotionCorrection(name, mc_dict):
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=14, single_thread=False)
     
     opts = params.CNMFParams(params_dict=mc_dict)
-    
+
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
     #mc = MotionCorrect([name], dview=None, **opts.get_group('motion'))
     print(f'Start of motion_correct {time() - start:.1f}s')
@@ -318,6 +318,12 @@ def DoMotionCorrection(name, mc_dict):
     print(f'End of apply_shifts_movie {time() - start:.1f}s')
     tfl.imwrite(name[:-4] + '_MC.tif', np.array(mov, dtype='uint8'), photometric='minisblack')
     print(os.path.split(name)[-1] + f' motion corrected in {time() - start:.1f}s')
+
+    # mp4-video creation
+    tiff_frames = tfl.imread(name)
+    frames_list = [np.stack((frame,) * 3, axis=-1) for frame in np.array(mov, dtype='uint8')]
+    mp4_clip = ImageSequenceClip(frames_list, fps=30)
+    mp4_clip.write_videofile(name[:-4] + '.mp4', codec='libx264')
     
     cm.stop_server(dview=dview)
     dview.terminate()   
