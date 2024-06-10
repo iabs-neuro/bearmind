@@ -323,7 +323,7 @@ def DoMotionCorrection(name, mc_dict):
     tiff_frames = tfl.imread(name)
     frames_list = [np.stack((frame,) * 3, axis=-1) for frame in np.array(mov, dtype='uint8')]
     mp4_clip = ImageSequenceClip(frames_list, fps=30)
-    mp4_clip.write_videofile(name[:-4] + '.mp4', codec='libx264')
+    mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
     
     cm.stop_server(dview=dview)
     dview.terminate()   
