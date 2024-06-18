@@ -19,7 +19,7 @@ DEFAULT_MOUSE_CONFIG = {
 
 
 def create_config(content=DEFAULT_CONFIG, name='config.json'):
-    if 'ROOT' in content:
+    if 'ROOT' in content.keys():
         content['ROOT'] = os.path.normpath(content['ROOT'])
     write_config(content, name=name)
 
@@ -37,7 +37,7 @@ def read_config(name='config.json'):
 
 def update_config(new_data, cpath='config.json'):
     old_config = read_config(name=cpath)
-    if 'ROOT' in new_data:
+    if 'ROOT' in new_data.keys():
         new_data['ROOT'] = os.path.normpath(new_data['ROOT'])
     old_config.update(new_data)
 

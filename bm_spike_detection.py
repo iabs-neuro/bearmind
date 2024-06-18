@@ -76,7 +76,7 @@ def DrawSpEvents(tr_fname, sp_fname):
     sp_events = np.genfromtxt(sp_fname, delimiter = ',', skip_header = 1)[:,1:].T
     time = np.genfromtxt(tr_fname, delimiter = ',', skip_header = 1)[:,0]
 
-    p = bpl.figure(title = tr_fname.split('\\')[-1], width = 1000, width_policy = 'fit')
+    p = bpl.figure(title = tr_fname.split('\\')[-1], width = 1000)#, width_policy = 'fit')
     for cell_num, (trace, spikes) in enumerate(zip(traces, sp_events)):
         p.line(time, trace/np.max(trace) + cell_num, line_color = clnm(cell_num))
         p.scatter(time[spikes>0], cell_num - 0.1, line_color = None, fill_color = clnm(cell_num), size = 5)

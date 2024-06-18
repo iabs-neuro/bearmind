@@ -9,14 +9,21 @@ from config import *
 from glob import glob
 import os
 import tqdm
+import time
 from jupyter_server import serverapp
+import multiprocessing
+import psutil
 
 # This is needed for the proper work of further manual file selection:
 wnd = Tk()
 wnd.wm_attributes('-topmost', 1)
 response = wnd.withdraw()
 
-folder_structure = set_folder_structure()
+MACHINE_CONFIG = {
+    'CPUs': multiprocessing.cpu_count(),
+    'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
+}
+
 
 #global LOCAL_URLS
 LOCAL_URLS = [server['url'] for server in list(serverapp.list_running_servers())]

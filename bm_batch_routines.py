@@ -214,22 +214,11 @@ def extract_number(filename):
         return int(match.group(1))
     return float('inf')
 
-def DoCropAndRewrite(name):
-    root = CONFIG['ROOT']
-    pathway = CONFIG['DATA_PATHWAY']
-
+def DoCropAndRewrite(name, out_fname):
     #find, crop and rewrite .avi files
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
-
-    splt_path = os.path.normpath(name).split(os.sep)
-    if pathway == 'legacy':
-        out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
-    elif pathway == 'bonsai':
-        out_fname = splt_path[-2] + '_CR.tif'
-    else:
-        raise ValueError('Wrong pathway!')
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
     #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
@@ -245,7 +234,8 @@ def DoCropAndRewrite(name):
         num_frames = clip.reader.nframes
         num_frames_whole = num_frames_whole + num_frames
         print(f"{av_name} - {num_frames} frames")
-
+        
+        #  cropping per se
         data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
         if cr_dict['DOWN']:
             data = data[:, :-cr_dict['DOWN'], :]
@@ -255,18 +245,13 @@ def DoCropAndRewrite(name):
         whole_data.append(data)
     mp4_clip = concatenate_videoclips(mp4_clips)
 
-    #  cropping per se
-    out_fpath = os.path.join(root, out_fname)
-    out_fpath_mp4 = out_fpath[:-4] + '.mp4'
-    tfl.imwrite(out_fpath, np.concatenate(whole_data, axis=0), photometric='minisblack')
-    mp4_clip.write_videofile(out_fpath_mp4)
 
-    mp4_video_out = VideoFileClip(out_fpath_mp4)
+    tfl.imwrite(out_fname, np.concatenate(whole_data, axis=0), photometric='minisblack')
+    mp4_clip.write_videofile(out_fname[:-4] + '.mp4')
+    mp4_video_out = VideoFileClip(out_fname[:-4] + '.mp4')
     #tif_video_out = VideoFileClip(out_fpath)
     print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
     print(f'{out_fname} cropped in {time() - start:.1f}s')
-
-
 
 def extract_and_copy_ts(name):
     pathway = CONFIG['DATA_PATHWAY']
