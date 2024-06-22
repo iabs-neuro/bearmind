@@ -1,5 +1,7 @@
 import os
 from os.path import join, splitext
+import bokeh.plotting as bpl
+from bm_examinator import colornum_Metro as clnm
 
 import pandas as pd
 import tqdm
@@ -13,6 +15,25 @@ from scipy.signal import argrelmax
 
 from wavelet_ridge import *
 from numba import njit
+
+
+def GetWaveletEvents(fname, opts):
+    #performs wavelet event detection on _traces.csv file with calcium traces and plots the result    
+    trdata = pd.read_csv(fname)
+    time = trdata['time_s'].values
+    traces = np.array(trdata)[:,1:].T
+
+    st_evinds, end_evinds, all_ridges = extract_wvt_events(traces, opts)
+    events_to_csv(time, st_evinds, end_evinds, fname)
+    
+    bpl.output_file(fname.replace('.csv','_wvt_events.html'))
+    p = bpl.figure(title = fname.split('\\')[-1].split('traces')[0], height = 1000, width = 1800)#, width_policy = 'fit')
+    for cell_num, trace in enumerate(traces):
+        ev_times = np.array([time[int(ev)] for ev in st_evinds[cell_num]])
+        p.line(time, trace/np.max(trace) + cell_num, line_color = clnm(cell_num), line_width = 2.0)
+        p.scatter(ev_times, cell_num - 0.1, line_color = None, fill_color = clnm(cell_num), size = 5)
+    bpl.show(p)
+        
 
 
 def wvt_viz(x, Wx):
@@ -233,15 +254,15 @@ def extract_wvt_events(traces, wvt_kwargs):
 
 
 def events_to_csv(time, st_ev_inds, end_ev_inds, tr_fname):
-    ncells = len(end_ev_inds)
+    ncells = len(st_ev_inds)
     length = len(time)
     spikes = np.zeros((ncells, length))
     for i in range(ncells):
-        spk = np.array(end_ev_inds[i]).astype(int)
+        spk = np.array(st_ev_inds[i]).astype(int)
         spikes[i, spk] = 1
 
     spdata = np.vstack((time, spikes))
     df = pd.DataFrame(spdata.T)
-    df.to_csv(tr_fname.replace('traces', 'spikes'), index=False, header=['time_s', *np.arange(ncells)])
+    df.to_csv(tr_fname.replace('traces', 'wvt_spikes'), index=False, header=['time_s', *np.arange(ncells)])
 
     return df

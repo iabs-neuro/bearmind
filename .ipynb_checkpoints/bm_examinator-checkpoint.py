@@ -54,10 +54,6 @@ def LoadEstimates(name, default_fps=20):
     with open(name, "rb") as f:
         estimates = pickle.load(f,)
     estimates.name = name
-    '''
-    if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
-        estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    '''
     estimates.time = get_timestamps(estimates.name.partition('estimates')[0],
                                    estimates.C.shape[1],
                                    default_fps=default_fps)
@@ -78,7 +74,8 @@ def get_timestamps(name, n_frames, default_fps=20):
 
 
 def get_fps_from_timestamps(name, default_fps=20, verbose=True):
-    ts_files = glob(name + '*_timestamp.csv')
+    ts_files = glob(name + '*.csv')
+    print(ts_files)
     if len(ts_files) == 0:
         if verbose:
             print('no timestamps found, reverting to default fps')
@@ -89,7 +86,7 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return fps
 
 
-def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
+def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     n_cells = len(estimates.idx_components)
     if n_cells == 0:
         return {}
@@ -114,7 +111,7 @@ def EstimatesToSrc(estimates, comps_to_select = [], cthr=0.3):
     return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
+def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None, ds=1):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -122,8 +119,13 @@ def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3):
     if n_cells == 0:
         return {}
 
-    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select])]
-    times = [estimates.time for _ in range(n_cells)]
+    if sf is None:
+        sf = 0
+    if ef is None:
+        ef = estimates.C.shape[1]
+
+    traces = [tr/np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef][:,::ds])]
+    times = [estimates.time[sf:ef][::ds] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
 
     estimates_data = estimates.A[:, comps_to_select]
@@ -158,7 +160,7 @@ def SaveResults(estimates, sigma = 3):
         if sigma:    #gaussian smoothing of neural contours, omitted if sigma=0
             im = gaussian_filter(im, sigma=sigma)
         ims.append((im*255/np.max(im)).astype(np.uint8))
-        tfl.imwrite(fold + f'\\filter_{i+1:03d}.tif', ims[-1])
+        tfl.imwrite(fold + os.sep + f'filter_{i+1:03d}.tif', ims[-1])
     savemat(fold + '_session.mat', {"A":np.array(ims)})
 
 
@@ -196,6 +198,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
         cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
+        ds = bkapp_kwargs.get('downsampling') if 'downsampling' in bkapp_kwargs else 1
         verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
         fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
         nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
@@ -204,6 +207,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
         trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
         bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
+        start_frame = bkapp_kwargs.get('start_frame') if 'start_frame' in bkapp_kwargs else 0
+        end_frame = bkapp_kwargs.get('end_frame') if 'end_frame' in bkapp_kwargs else 0
+        emergency = bkapp_kwargs.get('emergency_mode') if 'emergency_mode' in bkapp_kwargs else False
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -212,7 +218,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
-        est_data0 = EstimatesToSrcFast(estimates0, cthr=cthr)
+        est_data0 = EstimatesToSrcFast(estimates0,
+                                       cthr=cthr,
+                                       sf=start_frame,
+                                       ef=end_frame,
+                                       ds=ds)
 
         estimates = copy.deepcopy(estimates0)
 
@@ -227,7 +237,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
 
+        
+        
         dims = estimates.imax.shape
+
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
@@ -236,53 +249,42 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         imwidth = size
         trwidth = size
-        '''
-        # TODO: fix resolution
-        if 'pathway' in bkapp_kwargs:
-            if bkapp_kwargs['pathway'] == 'bonsai':
-                imwidth = 608
-                trwidth = 608
-        
-        try:
-            title = get_session_name_from_path(fname)
-        except Exception:
-            title = ''
-        '''
 
         height = int(imwidth*dims[0]/dims[1])
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
-        #imdata = estimates.imax
 
         #main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
         p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
+
         p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
 
-        p1.patches('xs',
-                   'ys',
-                   fill_alpha = fill_alpha,
-                   nonselection_alpha = nonselection_alpha,
-                   color = 'colors',
-                   selection_line_color="yellow",
-                   line_width=line_width,
-                   line_alpha=line_alpha,
-                   source=src_partial)
+        if not emergency:
+            p1.patches('xs',
+                       'ys',
+                       fill_alpha = fill_alpha,
+                       nonselection_alpha = nonselection_alpha,
+                       color = 'colors',
+                       selection_line_color="yellow",
+                       line_width=line_width,
+                       line_alpha=line_alpha,
+                       source=src_partial)
 
-        null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
+            null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
 
-        p2.multi_line('times',
-                      'traces',
-                      line_color='colors',
-                      line_alpha=trace_alpha,
-                      selection_line_width=trace_line_width,
-                      source=src_partial)
-
+            p2.multi_line('times',
+                          'traces',
+                          line_color='colors',
+                          line_alpha=trace_alpha,
+                          selection_line_width=trace_line_width,
+                          source=src_partial)
+        '''
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
         pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
-
+        '''
         # image reload on tap
         def tap_callback(event):
             p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
@@ -296,9 +298,20 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        line_width=line_width,
                        line_alpha=line_alpha,
                        source=src_partial)
-            pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
-        p1.add_tools(TapTool())
+            if emergency:
+                p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below',
+                            output_backend=backend)
+                p2.multi_line('times',
+                              'traces',
+                              line_color='colors',
+                              line_alpha=trace_alpha,
+                              selection_line_width=trace_line_width,
+                              source=src_partial)
+
+            #pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
+
+        #p1.add_tools(TapTool())
         p1.on_event(Tap, tap_callback)
 
         #Button callbacks
@@ -364,28 +377,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 estimates.manual_merge([sel_comps],
                                        params=params.CNMFParams(params_dict=estimates.cnmf_dict))
                 #print('after', [c for c in estimates.idx_components if c in sel_comps])
-                '''
-                merged_data = EstimatesToSrcFast(estimates, cthr=cthr, comps_to_select=[estimates.idx_components[-1]])
-                new_to_old_not_sel_comp_mapping = dict(zip(estimates.idx_components[:-1], not_sel_comps))
-                not_touched_data = slice_cds(src, not_sel_comps)
-                #print(merged_data)
-                #print()
-                #print(not_touched_data)
-                n_not_touched = len(not_touched_data['xs'])
 
-                # put merged data at the top of traces diagram:
-                for i, data in enumerate(merged_data['traces']):
-                    data += n_not_touched + i
-
-                aggregated_data = copy.deepcopy(not_touched_data)
-                # concatenate contents of both dicts
-                for key in not_touched_data.keys():
-                    aggregated_data[key].extend(merged_data[key])
-                
-                #print(aggregated_data)
-                src.data = aggregated_data
-                '''
-                src.data = EstimatesToSrcFast(estimates, cthr=cthr)
+                src.data = EstimatesToSrcFast(estimates,
+                                              cthr=cthr,
+                                              sf=start_frame,
+                                              ef=end_frame,
+                                              ds=ds)
                 storage.estimates = copy.deepcopy(estimates)
 
         def show_callback(event, storage=None):
@@ -468,37 +465,46 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
-        def final_save_callback(event):
+        def final_save_callback(event, storage=None):
+            base_name = fname.partition('_estimates')[0]
+            out_name = base_name + '_final_estimates.pickle'
+            with open(out_name, "wb") as f:
+                pickle.dump(storage.estimates, f)
+            print(f'Final results for {title} saved to {out_name}\n')
+
+            # now save to .mat file
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Buttons themselves
-        button_del = Button(label="Delete selected", button_type="success", width = bwidth)
+        button_del = Button(label="Delete selected", button_type="success", width=bwidth)
         button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_merge = Button(label="Merge selected", button_type="success", width = bwidth)
+        button_merge = Button(label="Merge selected", button_type="success", width=bwidth)
         button_merge.on_event('button_click',partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_show = Button(label="Show selected", button_type="success", width = bwidth)
+        button_show = Button(label="Show selected", button_type="success", width=bwidth)
         button_show.on_event('button_click', partial(show_callback, storage=storage))
 
-        button_restore = Button(label="Reset view", button_type="success", width = bwidth)
+        button_restore = Button(label="Reset view", button_type="success", width=bwidth)
         button_restore.on_event('button_click', partial(restore_callback, storage=storage))
 
-        button_revert = Button(label="Revert change", button_type="success", width = bwidth)
+        button_revert = Button(label="Revert change", button_type="success", width=bwidth)
         button_revert.on_event('button_click', partial(revert_callback, storage=storage), partial(restore_callback, storage=storage))
 
-        button_discard = Button(label="Discard changes", button_type="success", width = bwidth)
+        button_discard = Button(label="Discard changes", button_type="success", width=bwidth)
         button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
-        button_seed = Button(label="Save seeds", button_type="success", width = bwidth)
+        '''
+        button_seed = Button(label="Save seeds", button_type="success", width=bwidth)
         button_seed.on_event('button_click', seed_callback)
-
-        button_save = Button(label="Save progress", button_type="success", width = bwidth)
+        '''
+        
+        button_save = Button(label="Save progress", button_type="success", width=bwidth)
         button_save.on_event('button_click', partial(save_callback, storage=storage))
 
-        button_save_final = Button(label="Save results", button_type="success", width = bwidth)
-        button_save_final.on_event('button_click', final_save_callback)
+        button_save_final = Button(label="Save results", button_type="success", width=bwidth)
+        button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
         doc.add_root(
             column(
@@ -509,7 +515,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_restore,
                     button_revert,
                     button_discard,
-                    button_seed,
+                    #button_seed,
                     button_save,
                     button_save_final
                 ),
@@ -577,7 +583,8 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr[np.where(pnr == np.inf)] = 0
-    #pnr[np.where(pnr == 0)] = np.min(pnr)
+    pnr[np.where(pnr > 70)] = 70
+    pnr[np.isnan(pnr)] = 0
     imax = (pnr * 255 / np.max(pnr)).astype('uint8')
     return imax
 
@@ -589,7 +596,8 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
     pnr_image[np.where(pnr_image == np.inf)] = 0
     correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
-
+    pnr_image[np.isnan(pnr_image)] = 0
+    correlation_image_pnr[np.isnan(correlation_image_pnr)] = 0
     
     fig = pl.figure(figsize=(10, 4))
     pl.axes([0.05, 0.2, 0.4, 0.7])

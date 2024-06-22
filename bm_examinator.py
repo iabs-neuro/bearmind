@@ -54,10 +54,6 @@ def LoadEstimates(name, default_fps=20):
     with open(name, "rb") as f:
         estimates = pickle.load(f,)
     estimates.name = name
-    '''
-    if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
-        estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    '''
     estimates.time = get_timestamps(estimates.name.partition('estimates')[0],
                                    estimates.C.shape[1],
                                    default_fps=default_fps)
@@ -164,7 +160,7 @@ def SaveResults(estimates, sigma = 3):
         if sigma:    #gaussian smoothing of neural contours, omitted if sigma=0
             im = gaussian_filter(im, sigma=sigma)
         ims.append((im*255/np.max(im)).astype(np.uint8))
-        tfl.imwrite(fold + f'\\filter_{i+1:03d}.tif', ims[-1])
+        tfl.imwrite(fold + os.sep + f'filter_{i+1:03d}.tif', ims[-1])
     savemat(fold + '_session.mat', {"A":np.array(ims)})
 
 
@@ -213,7 +209,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
         start_frame = bkapp_kwargs.get('start_frame') if 'start_frame' in bkapp_kwargs else 0
         end_frame = bkapp_kwargs.get('end_frame') if 'end_frame' in bkapp_kwargs else 0
-        emergency = bkapp_kwargs.get('oh_shit') if 'oh_shit' in bkapp_kwargs else False
+        emergency = bkapp_kwargs.get('emergency_mode') if 'emergency_mode' in bkapp_kwargs else False
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -253,18 +249,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         imwidth = size
         trwidth = size
-        '''
-        # TODO: fix resolution
-        if 'pathway' in bkapp_kwargs:
-            if bkapp_kwargs['pathway'] == 'bonsai':
-                imwidth = 608
-                trwidth = 608
-        
-        try:
-            title = get_session_name_from_path(fname)
-        except Exception:
-            title = ''
-        '''
 
         height = int(imwidth*dims[0]/dims[1])
         imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
@@ -294,13 +278,13 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           line_alpha=trace_alpha,
                           selection_line_width=trace_line_width,
                           source=src_partial)
-
+        '''
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
         pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color = 'color',  size=5)
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
-
+        '''
         # image reload on tap
         def tap_callback(event):
             p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
@@ -325,9 +309,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                               selection_line_width=trace_line_width,
                               source=src_partial)
 
-            pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
+            #pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
-        p1.add_tools(TapTool())
+        #p1.add_tools(TapTool())
         p1.on_event(Tap, tap_callback)
 
         #Button callbacks
@@ -393,27 +377,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 estimates.manual_merge([sel_comps],
                                        params=params.CNMFParams(params_dict=estimates.cnmf_dict))
                 #print('after', [c for c in estimates.idx_components if c in sel_comps])
-                '''
-                merged_data = EstimatesToSrcFast(estimates, cthr=cthr, comps_to_select=[estimates.idx_components[-1]])
-                new_to_old_not_sel_comp_mapping = dict(zip(estimates.idx_components[:-1], not_sel_comps))
-                not_touched_data = slice_cds(src, not_sel_comps)
-                #print(merged_data)
-                #print()
-                #print(not_touched_data)
-                n_not_touched = len(not_touched_data['xs'])
 
-                # put merged data at the top of traces diagram:
-                for i, data in enumerate(merged_data['traces']):
-                    data += n_not_touched + i
-
-                aggregated_data = copy.deepcopy(not_touched_data)
-                # concatenate contents of both dicts
-                for key in not_touched_data.keys():
-                    aggregated_data[key].extend(merged_data[key])
-                
-                #print(aggregated_data)
-                src.data = aggregated_data
-                '''
                 src.data = EstimatesToSrcFast(estimates,
                                               cthr=cthr,
                                               sf=start_frame,
@@ -531,9 +495,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_discard = Button(label="Discard changes", button_type="success", width=bwidth)
         button_discard.on_event('button_click', partial(discard_callback, storage=storage))
 
+        '''
         button_seed = Button(label="Save seeds", button_type="success", width=bwidth)
         button_seed.on_event('button_click', seed_callback)
-
+        '''
+        
         button_save = Button(label="Save progress", button_type="success", width=bwidth)
         button_save.on_event('button_click', partial(save_callback, storage=storage))
 
@@ -549,7 +515,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_restore,
                     button_revert,
                     button_discard,
-                    button_seed,
+                    #button_seed,
                     button_save,
                     button_save_final
                 ),

@@ -74,11 +74,13 @@ def DrawCropper(data, dpi=200, fname=''):
 
     u_slider.observe(update_down, 'value')
 
+    title = fname
+    '''
     try:
         title = get_session_name_from_path(fname)
     except Exception:
         title = ''
-
+    '''
     w = ipw.interactive(DrawFrameAndBox,
                         data=ipw.fixed(data),
                         x=x_slider,
@@ -172,8 +174,8 @@ def DrawCropper(data, dpi=200, fname=''):
     vbox2 = ipw.VBox([s_config_button, s_config_output])
     vbox3 = ipw.VBox([m_config_button, m_config_output])
     vbox4 = ipw.VBox([save_button, save_output])
-    display(ipw.HBox([vbox1, vbox2, vbox3, vbox4]))
-
+    #display(ipw.HBox([vbox1, vbox2, vbox3, vbox4]))
+    display(vbox4)
     display(w)
     
     return w
@@ -495,5 +497,5 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
     w = ipw.interactive(DrawPnrImage,
                         data = ipw.fixed(data),
                         gSig = ipw.BoundedIntText(value=default_gsig, min=0),
-                        dpi = ipw.fixed(300))
+                        dpi = ipw.fixed(200))
     display(w)
