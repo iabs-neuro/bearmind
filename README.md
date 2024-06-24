@@ -1,5 +1,6 @@
 # BEARMiND
 ### A pipeline for Batch Examination & Analysis of Raw Miniscopic Neural Data
+<img src="/bearmind_logo.png" align="left">
 Processing of large amounts of miniscopic data often appears to be a time-keeping procedure, requiring user’s efforts for step-by-step launching of various procedures, including manual intervention and inspection of putative neural units. The aim of this NoRMCorre- and CaImAn-based full-Python pipeline is to optimize users' efforts and time for batch miniscopic data processing. Instead of one-by-one analysing of each imaging session, here you should spend some time at the beginning, examinating all raw videos, specifying field of view and other parameters, then launch the batch routines for motion correction and cnmf for all videos, which may take a while if the amount of data is significant, and then all you need is just to examine the results and make some corrections if you want! Also, you can use a special designed handy module for detection of significant calcium events based on scalable thresholding and trace approximation. The pipeline exists in the form of Jupyter notebook with subsequent cells, grouped in modules. Each module produces  third-party-compartible outputs and therefore can be run independently.
 </br>
 
@@ -47,10 +48,10 @@ Is based on the NoRMCorre piece-wise rigid motion correction routine [Pnevmatika
 </br>INPUTS: cropped .tif files
 </br>OUTPUTS: motion corrected .tif files
 ### Module 2.5. Setting of CNMF parameters
-Here the user can load a limited amount of data and interactively adjust the key CNMF parameters: 
-</br>● gSig, the kernel size of the gaussian filter applied to the data for the proper segmentation of putative neurons
-</br>● min_corr – minimal correlation value on the matrix for seeding a neuron  
-</br>● min_pnr – another threshold for seeding a neuron, minmal peak-to-noise ratio (PNR) of the time traces, corresponding to each pixel of the data.
+Here the user can load a limited amount of data and interactively adjust the key CNMF parameters: </br>
+● gSig, the kernel size of the gaussian filter applied to the data for the proper segmentation of putative neurons</br>
+● min_corr – minimal correlation value on the matrix for seeding a neuron  
+● min_pnr – another threshold for seeding a neuron, minmal peak-to-noise ratio (PNR) of the time traces, corresponding to each pixel of the data.
 </br>This module can be launched once for a batch of data from the same animal. 
 </br>INPUTS: Motion corrected .tif files
 </br>OUTPUTS: None
