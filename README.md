@@ -14,7 +14,7 @@ activate virtual environment: `conda activate caiman`  </br>
 Install dependencies: `pip install  moviepy PySide6 wgpu glfw fastplotlib jupyter_rfb sidecar sortedcontainers cmasher opencv-python ssqueezepy`
 </br>
 
-Then, you need to clone this repo to your PC. You may do it by downloading .zip file (see the button above) and unpacking it, OR you may use your git client and type "git clone https://github.com/iabs-neuro/bearmind" in a command prompt.
+Then, you need to clone this repo to your PC. You may do it by downloading .zip file (see the button above) and unpacking it, OR you may use your git client and type `git clone -b public https://github.com/iabs-neuro/bearmind` in a command prompt.
 
 ### Alternative caiman env installation
 If you have some trouble with mamba, you can try libmamba, which is a more conda-friendly solver, more information can be seen here:</br>
