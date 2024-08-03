@@ -69,7 +69,8 @@ def get_timestamps(name, n_frames, default_fps=20):
     #try to load timestamps, in case of failure use constant fps
     ts_files = glob(name + '*_timestamp.csv')
     if len(ts_files) == 0:
-        return np.linspace(0, n_frames//default_fps, n_frames)
+        raise FileNotFoundError(f'No timestamp files found for {name}, default fps has been disabled')
+        #return np.linspace(0, n_frames//default_fps, n_frames)
     else:
         ts_df = pd.read_csv(ts_files[0])
         time_col = find_time_column(ts_df)
@@ -112,10 +113,10 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
-    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
+    return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None, ds=1):
+def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None, ds=1):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -145,8 +146,7 @@ def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=No
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
-    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
-
+    return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma = 3):
@@ -240,11 +240,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
-
-        
         
         dims = estimates.imax.shape
-
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
