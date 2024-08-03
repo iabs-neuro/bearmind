@@ -1,4 +1,4 @@
-#Stuff needed for plotting and widget callbacks
+# Stuff needed for plotting and widget callbacks
 import caiman as cm
 import pandas as pd
 import numpy as np
@@ -12,8 +12,9 @@ from IPython.display import display
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import tqdm
-from bokeh.plotting import figure, show, output_notebook 
-from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, PointDrawTool
+from bokeh.plotting import figure, show, output_notebook
+from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, \
+    PointDrawTool
 from bokeh.layouts import column, row
 from bokeh.io import push_notebook
 from glob import glob
@@ -40,8 +41,8 @@ def CleanMemmaps(name):
 
 
 def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5, title=''):
-    plt.figure(dpi=dpi, figsize=(size,size))
-    plt.imshow(data[x,:,:])
+    plt.figure(dpi=dpi, figsize=(size, size))
+    plt.imshow(data[x, :, :])
     plt.title(title)
     plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
 
@@ -299,7 +300,7 @@ def DoMotionCorrection(name, mc_dict):
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=14, single_thread=False)
     
     opts = params.CNMFParams(params_dict=mc_dict)
-
+    
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
     #mc = MotionCorrect([name], dview=None, **opts.get_group('motion'))
     print(f'Start of motion_correct {time() - start:.1f}s')
@@ -324,7 +325,7 @@ def DoMotionCorrection(name, mc_dict):
     frames_list = [np.stack((frame,) * 3, axis=-1) for frame in np.array(mov, dtype='uint8')]
     mp4_clip = ImageSequenceClip(frames_list, fps=30)
     mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
-    
+
     cm.stop_server(dview=dview)
     dview.terminate()   
 
@@ -508,7 +509,7 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
         plt.imshow(pnr)
         
     w = ipw.interactive(DrawPnrImage,
-                        data = ipw.fixed(data),
-                        gSig = ipw.BoundedIntText(value=default_gsig, min=0),
-                        dpi = ipw.fixed(300))
+                        data=ipw.fixed(data),
+                        gSig=ipw.BoundedIntText(value=default_gsig, min=0),
+                        dpi=ipw.fixed(300))
     display(w)
