@@ -15,7 +15,9 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
-from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,PointDrawTool, TapTool
+from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
+                          RadioButtonGroup, PointDrawTool, TapTool)
+
 from bokeh.layouts import column, row
 from bokeh.events import Tap
 from bokeh.io import push_notebook
@@ -69,6 +71,7 @@ def get_timestamps(name, n_frames, default_fps=20):
     #try to load timestamps, in case of failure use constant fps
     ts_files = glob(name + '*_timestamp.csv')
     if len(ts_files) == 0:
+        #raise FileNotFoundError(f'No timestamp files found for {name}, default fps has been disabled')
         return np.linspace(0, n_frames//default_fps, n_frames)
     else:
         ts_df = pd.read_csv(ts_files[0])
@@ -112,10 +115,10 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
-    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
+    return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=None, ds=1):
+def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None, ds=1):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -145,8 +148,7 @@ def EstimatesToSrcFast(estimates, comps_to_select = [], cthr=0.3, sf=None, ef=No
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours] # flip for y-axis inversion
-    return dict(xs = xs, ys = ys, times = times, traces = traces, colors=colors, idx=comps_to_select)
-
+    return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma = 3):
@@ -191,7 +193,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
     def bkapp(doc):
 
-        class Storage():
+        class Storage:
             def __init__(self):
                 self.estimates=None
                 self.estimates_partial=None
@@ -240,11 +242,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
         src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
-
-        
         
         dims = estimates.imax.shape
-
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "reset"]
@@ -273,20 +272,20 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p1 = figure(width = imwidth, height = height, tools = tools1, toolbar_location = 'below', title=title, output_backend=backend)
         p1.image(image=[imdata], color_mapper=color_mapper, dh = dims[0], dw = dims[1], x=0, y=0)
 
-        p2 = figure(width = trwidth, height = height, tools = tools2, toolbar_location = 'below', output_backend=backend)
+        p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below', output_backend=backend)
 
         if not emergency:
             p1.patches('xs',
                        'ys',
-                       fill_alpha = fill_alpha,
-                       nonselection_alpha = nonselection_alpha,
-                       color = 'colors',
+                       fill_alpha=fill_alpha,
+                       nonselection_alpha=nonselection_alpha,
+                       color='colors',
                        selection_line_color="yellow",
                        line_width=line_width,
                        line_alpha=line_alpha,
                        source=src_partial)
 
-            null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
+            #null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
 
             p2.multi_line('times',
                           'traces',
@@ -456,8 +455,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             storage.estimates_partial = copy.deepcopy(estimates)
 
         def revert_callback(event, storage=None):
-            prev_estimates = copy.deepcopy(storage.prev_estimates)
-            prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
+            #prev_estimates = copy.deepcopy(storage.prev_estimates)
+            #prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
             prev_data = storage.prev_data
             prev_data_partial = storage.prev_data
 
@@ -512,12 +511,25 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
+        def sort_callback(event, storage=None, active=-1):
+            estimates = copy.deepcopy(storage.estimates)
+            estimates_partial = copy.deepcopy(storage.estimates_partial)
+            print(active)
+            '''
+            if active == 0:
+                print(len(estimates))
+            if active == 1:
+                print('1')
+            else:
+                print('---')
+            '''
+
         # Buttons themselves
         button_del = Button(label="Delete selected", button_type="success", width=bwidth)
-        button_del.on_event('button_click',partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
+        button_del.on_event('button_click', partial(del_callback, storage=storage), partial(restore_callback, storage=storage))
 
         button_merge = Button(label="Merge selected", button_type="success", width=bwidth)
-        button_merge.on_event('button_click',partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
+        button_merge.on_event('button_click', partial(merge_callback, storage=storage), partial(restore_callback, storage=storage))
 
         button_show = Button(label="Show selected", button_type="success", width=bwidth)
         button_show.on_event('button_click', partial(show_callback, storage=storage))
@@ -540,6 +552,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_save_final = Button(label="Save results", button_type="success", width=bwidth)
         button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
+        radio_button_group = RadioButtonGroup(labels=["Option 1", "Option 2", "Option 3"], active=0)
+        rb_js_callback = CustomJS(
+            code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
+        radio_button_group.js_on_event("button_click", rb_js_callback)
+        radio_button_group.on_event("button_click", partial(sort_callback, storage=storage, active=radio_button_group.active))
+
         doc.add_root(
             column(
                 row(
@@ -551,7 +569,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_discard,
                     button_seed,
                     button_save,
-                    button_save_final
+                    button_save_final,
+                    radio_button_group
                 ),
                 row(p1, p2)
             )
@@ -578,8 +597,8 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
 
         title = get_session_name_from_path(fname)
         color_mapper = LinearColorMapper(palette="Greys256", low=1, high=256)
-        p1 = figure(width=imwidth, height = height, tools = tools, toolbar_location = 'below', title=title)
-        p1.image(image=[imdata], dh = dims[0], dw = dims[1], x=0, y=0, color_mapper=color_mapper)
+        p1 = figure(width=imwidth, height=height, tools=tools, toolbar_location='below', title=title)
+        p1.image(image=[imdata], dh=dims[0], dw=dims[1], x=0, y=0, color_mapper=color_mapper)
 
         #this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
