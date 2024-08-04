@@ -513,3 +513,103 @@ def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
                         gSig=ipw.BoundedIntText(value=default_gsig, min=0),
                         dpi=ipw.fixed(300))
     display(w)
+
+
+def plot_gsig_range(fnames, maxframes=np.inf, min_gsig=3, max_gsig=6, step=5, dpi=300,
+                    show_images=False, save_images=True):
+
+    for fname in tqdm.tqdm(fnames):
+        tlen = len(tfl.TiffFile(fname).pages)
+        data = tfl.imread(fname, key=range(0, min(maxframes, tlen), step))
+
+        fig, axs = plt.subplots(2, 2, figsize=(10, 10), dpi=dpi)
+        fig.set_tight_layout(True)
+
+        for i, gsig in enumerate(np.arange(min_gsig, max_gsig + 1)):
+            _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+            pnr[np.where(pnr == np.inf)] = 0
+            pnr[np.isnan(pnr)] = 0
+
+            ax = axs.ravel()[i]
+            ax.imshow(pnr)
+            ax.set_title(f'gSig = {gsig}')
+
+        fig.suptitle(os.path.basename(fname)[:-4])
+        if save_images:
+            os.makedirs(os.path.normpath(
+                os.path.join(os.path.dirname(fname),
+                             'param_images')),
+            exist_ok=True)
+
+            figpath = os.path.normpath(
+                os.path.join(os.path.dirname(fname),
+                             'param_images',
+                             os.path.basename(fname)[:-4] + '_gSig.png')
+            )
+            fig.savefig(figpath)
+
+        if show_images:
+            fig.show()
+        else:
+            plt.close()
+
+
+def plot_min_corr_and_pnr_range(fnames, maxframes=np.inf,
+                                gsig_range=[3,4,5], pnr_range=[5,10,15],
+                                mincorr_range=[0.85, 0.9, 0.95],
+                                step=5, dpi=300,
+                                show_images=False, save_images=True):
+
+    for fname in tqdm.tqdm(fnames):
+        tlen = len(tfl.TiffFile(fname).pages)
+        data = tfl.imread(fname, key=range(0, min(maxframes, tlen), step))
+
+        fig1, axs1 = plt.subplots(len(gsig_range), len(pnr_range), figsize=(3*len(gsig_range), 3*len(pnr_range)), dpi=dpi)
+        fig2, axs2 = plt.subplots(len(gsig_range), len(mincorr_range), figsize=(3*len(gsig_range), 3*len(mincorr_range)), dpi=dpi)
+        fig1.set_tight_layout(True)
+        fig2.set_tight_layout(True)
+        fig1.suptitle(os.path.basename(fname)[:-4])
+        fig2.suptitle(os.path.basename(fname)[:-4])
+
+        for i, gsig in enumerate(gsig_range):
+            correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+            pnr_image[np.where(pnr_image == np.inf)] = 0
+            correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
+            pnr_image[np.isnan(pnr_image)] = 0
+            correlation_image_pnr[np.isnan(correlation_image_pnr)] = 0
+
+            for j, pnr in enumerate(pnr_range):
+                ax1 = axs1[i][j]
+                ax1.imshow(pnr_image, cmap='jet', vmin=pnr)
+                ax1.set_title(f'gSig = {gsig}, pnr = {pnr}')
+
+            for j, mincorr in enumerate(mincorr_range):
+                ax2 = axs2[i][j]
+                ax2.imshow(correlation_image_pnr, cmap='jet', vmin=mincorr)
+                ax2.set_title(f'gSig = {gsig}, min_corr = {mincorr}')
+
+        if save_images:
+            os.makedirs(os.path.normpath(
+                os.path.join(os.path.dirname(fname),
+                             'param_images')),
+            exist_ok=True)
+
+            figpath1 = os.path.normpath(
+                os.path.join(os.path.dirname(fname),
+                             'param_images',
+                             os.path.basename(fname)[:-4] + '_gSig-pnr.png')
+            )
+
+            figpath2 = os.path.normpath(
+                os.path.join(os.path.dirname(fname),
+                             'param_images',
+                             os.path.basename(fname)[:-4] + '_gSig-min_corr.png')
+            )
+            fig1.savefig(figpath1)
+            fig2.savefig(figpath2)
+
+        if show_images:
+            fig1.show()
+            fig2.show()
+        else:
+            plt.close()
