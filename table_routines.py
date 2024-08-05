@@ -60,7 +60,7 @@ def _calc_fps(vals, verbose):
     fps = -1
     decimal_multipliers = [10**_ for _ in range(8)]
     for dm in decimal_multipliers:
-        fps = int(np.round(np.mean([dm/d for d in diffs])))
+        fps = np.round(np.mean([dm/d for d in diffs]),2)
         if (min(ALLOWED_FPS) <= fps) and (fps < max(ALLOWED_FPS)):
             break
 
