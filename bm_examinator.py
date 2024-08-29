@@ -81,7 +81,7 @@ def get_timestamps(name, n_frames, default_fps=20):
 
 def get_fps_from_timestamps(name, default_fps=20, verbose=True):
     ts_files = glob(name + '*.csv')
-    print(ts_files)
+    print('timestamp found: ', ts_files[0])
     if len(ts_files) == 0:
         if verbose:
             print('no timestamps found, reverting to default fps')

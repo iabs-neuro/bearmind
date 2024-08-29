@@ -366,33 +366,38 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
 
         c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
 
+        # tif loading to memory
         if verbose:
             print('loading tif to memory...')
-        # tif loading to memory
+
         mem_fname = cm.save_memmap([name],
                                    base_name=name[:-4],
                                    order='C',
                                    border_to_0=0,
                                    dview=dview,
                                    slices=[time_crop])
-        print('cm.save_memmap ended...')
         Yr, dims, T = cm.load_memmap(mem_fname)
-        print('cm.load_memmap ended...')
         images = Yr.T.reshape((T,) + dims, order='F')
-        print('Yr.T.reshape ended...')
 
+        # cnmf itself
         if verbose:
             print('Performing CNMF...')
-        # cnmf itself
+
+        if verbose:
+            print('Source extracting...')
         cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
-        print('source_extraction.cnmf')
+
+        if verbose:
+            print('Fitting...')
         cnm.fit(images)
-        print('cnm.fit')
+
+        if verbose:
+            print('Evaluating components...')
         cnm.estimates.evaluate_components(images, params=opts, dview=dview)
-        print('cnm.estimates.evaluate_components')
 
         if verbose:
             print('Computing imax...')
+
         #  addition of some fields to estimates object
         cnm.estimates.tif_name = name
         cnm.estimates.cnmf_dict = cnmf_dict
