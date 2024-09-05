@@ -368,7 +368,7 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
 
         # tif loading to memory
         if verbose:
-            print('loading tif to memory...')
+            print('Loading tif to memory...')
 
         mem_fname = cm.save_memmap([name],
                                    base_name=name[:-4],
@@ -385,7 +385,7 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
 
         if verbose:
             print('Source extracting...')
-        cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes, dview=dview, params=opts)
+        cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes-1, dview=dview, params=opts)
 
         if verbose:
             print('Fitting...')

@@ -23,6 +23,11 @@ from bokeh.events import Tap
 from bokeh.io import push_notebook
 from glob import glob
 from caiman.source_extraction.cnmf import params
+from caiman.components_evaluation import (
+        evaluate_components_CNN, estimate_components_quality_auto,
+        select_components_from_metrics, compute_eccentricity,
+        compute_event_exceptionality)
+
 from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
@@ -68,7 +73,7 @@ def LoadEstimates(name, default_fps=20):
 
 def get_timestamps(name, n_frames, default_fps=20):
     # try to load timestamps, in case of failure use constant fps
-    ts_files = glob(name + '*_timestamp.csv')
+    ts_files = glob(name + '*timestamp.csv')
     if len(ts_files) == 0:
         # raise FileNotFoundError(f'No timestamp files found for {name}, default fps has been disabled')
         return np.linspace(0, n_frames // default_fps, n_frames)
@@ -532,6 +537,41 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             if len(sel_inds) != 0:
                 estimates.manual_merge([sel_comps],
                                        params=params.CNMFParams(params_dict=estimates.cnmf_dict))
+                #estimates.evaluate_components()
+                oest = storage.prev_estimates
+                def get_unmerged_comp_mapping():
+                    nr = oest.C.shape[0]
+                    good_neurons = np.setdiff1d(list(range(nr)), np.array(sel_comps))
+                    mapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
+                    return mapping
+
+                def reassign_quality_metrics():
+                    cmapping = get_unmerged_comp_mapping()
+
+                    old_snr = oest.SNR_comp
+                    new_snr = np.zeros(len(cmapping)+1)
+
+                    # for untouched components
+                    for oi, ni in cmapping.items():
+                        new_snr[ni] = old_snr[oi]
+                    # manual for merged components
+                    merged_snrs = old_snr[sel_comps]
+                    new_snr[-1] = np.mean(merged_snrs[~np.isinf(merged_snrs)])
+                    estimates.SNR_comp = new_snr
+
+                    old_r = oest.r_values
+                    new_r = np.zeros(len(cmapping) + 1)
+
+                    # for untouched components
+                    for oi, ni in cmapping.items():
+                        new_r[ni] = old_r[oi]
+                    # manual for merged components
+                    merged_rs = old_r[sel_comps]
+                    new_r[-1] = np.mean(merged_rs[~np.isinf(merged_rs)])
+                    estimates.r_values = new_r
+
+                reassign_quality_metrics()
+
                 # print('after', [c for c in estimates.idx_components if c in sel_comps])
                 '''
                 merged_data = EstimatesToSrcFast(estimates, cthr=cthr, comps_to_select=[estimates.idx_components[-1]])
@@ -580,7 +620,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             if len(sel_inds) != 0:
 
                 estimates_partial.idx_components = np.array(
-                    [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
+                    [ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds])
 
                 part_to_total_mapping = {i: ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds}
                 if verbose:
