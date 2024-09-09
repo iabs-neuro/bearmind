@@ -244,7 +244,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
     def add_dummy_data(cds, ordering=None):
         ctraces = dict(cds.data)['traces']
-        time = dict(cds.data)['times'][0]
+        #time = dict(cds.data)['times'][0]
         if ordering is None:
             hdata = np.arange(len(ctraces))
         else:
@@ -337,8 +337,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width=imwidth, height=height, tools=tools1, toolbar_location='below', title=title,
-                    output_backend=backend)
-        p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
+                    output_backend=backend, background_fill_color='black', border_fill_color='black')
+        p1.xgrid.grid_line_color = None
+        p1.ygrid.grid_line_color = None
+        p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0, syncable=False)
 
         p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below', output_backend=backend)
 
@@ -363,7 +365,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           source=src_partial)
 
             # add dummy height property to ColumnDataSource to make traces selectable
-            # (since multi_line does not support box selection, we have to plot additional scatter
+            # (since multi_line does not support box selection, we have to plot additional scatter)
 
             add_dummy_data(src, ordering=None)
             add_dummy_data(src_partial, ordering=None)
@@ -388,6 +390,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # image reload on tap
         def tap_callback(event):
+
             p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
 
             p1.patches('xs',
@@ -400,6 +403,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        line_alpha=line_alpha,
                        source=src_partial)
 
+
             if emergency:
                 p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below',
                             output_backend=backend)
@@ -409,11 +413,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                               line_alpha=trace_alpha,
                               selection_line_width=trace_line_width,
                               source=src_partial)
-
             pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
 
-        p1.add_tools(TapTool())
-        p1.on_event(Tap, tap_callback)
+        #p1.add_tools(TapTool())
+        #p1.on_event(Tap, tap_callback)
 
         # Button callbacks
 
@@ -504,7 +507,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             # src.data = EstimatesToSrc(estimates, cthr=cthr)
             src.data = slice_cds(src, estimates.idx_components)
-            #add_dummy_data(src)
+            add_dummy_data(src)
             src_partial.data = dict(src.data)
             src_partial.selected.indices = np.arange(len(estimates.idx_components))
             storage.estimates = copy.deepcopy(estimates)
@@ -646,7 +649,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             overall_data = dict(src.data)
             src_partial.data = copy.deepcopy(overall_data)
-            add_dummy_data(src_partial, ordering=None)
+            #add_dummy_data(src_partial, ordering=None)
             if verbose:
                 print('est comp:', estimates.idx_components)
                 print('num est comp:', len(estimates.idx_components))
@@ -698,7 +701,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         def save_callback(event, storage=None):
             dt = get_datetime()
             base_name = fname.partition('_estimates')[0]
-            out_name = base_name + '_in_progress_' + dt.replace(':', '-') + '_estimates.pickle'
+
+            # remove previous date if it exists
+            if '-' in base_name:
+                base_name = base_name[:2+1+2+1+4+1 + 2+1+2+1+2]
+            out_name = base_name + '_' + dt.replace(':', '-') + '_estimates.pickle'
             with open(out_name, "wb") as f:
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')
@@ -715,7 +722,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["---", "SNR", "R-val"], active=0)
+        radio_button_group = RadioButtonGroup(labels=["Space", "SNR", "R-val"], active=0)
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)
@@ -741,7 +748,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_restore.on_event('button_click', partial(restore_callback, storage=storage),
                                 partial(sort_callback, storage=storage, rb=radio_button_group))
 
-        button_revert = Button(label="Revert change", button_type="primary", width=bwidth, width_policy='fit')
+        button_revert = Button(label="Revert change", button_type="danger", width=bwidth, width_policy='fit')
         button_revert.on_event('button_click', partial(revert_callback, storage=storage),
                                partial(restore_callback, storage=storage),
                                partial(sort_callback, storage=storage, rb=radio_button_group))
@@ -768,7 +775,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_restore,
                     button_revert,
                     button_discard,
-                    button_seed,
+                    #button_seed,
                     button_save,
                     button_save_final,
                     radio_button_group

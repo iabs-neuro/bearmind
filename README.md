@@ -5,7 +5,7 @@ A pipeline for Batch Examination & Analysis of Raw MIniscopic Neural Data
 The main idea of the project is to optimize user's efforts and time for batch miniscopic data processing. Instead of one-by-one analysing of each imaging session, here you should spend some time at the beginning, examinating all raw videos, specifying field of view and other parameters, then launch the batch routines for motion correction and cnmf for all videos, which may take a while if the amount of data is significant, and then all you need is just to examine the results and make some corrections if you want! Also, you can use a special designed handy module for detection of significant calcium events based on scalable thresholding and trace approximation.
 </br>
 </br>
-NB!! This pipenine requires Jupyter Lab or Notebook 7 installed. If you don't want to update your Jupyter notebook, use old good CaDet pipeline, it moved to a separate folder CaDet, where you can run it as usual.
+NB!! This pipeline requires Jupyter Lab or Notebook 7 installed. If you don't want to update your Jupyter notebook, use old good CaDet pipeline, it moved to a separate folder CaDet, where you can run it as usual.
 
 ## Installation
 First, you need to install CaImAn environment: https://github.com/flatironinstitute/CaImAn</br>
