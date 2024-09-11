@@ -386,37 +386,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
 
-        '''
-        # image reload on tap
-        def tap_callback(event):
-
-            p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0)
-
-            p1.patches('xs',
-                       'ys',
-                       fill_alpha=fill_alpha,
-                       nonselection_alpha=nonselection_alpha,
-                       color='colors',
-                       selection_line_color="yellow",
-                       line_width=line_width,
-                       line_alpha=line_alpha,
-                       source=src_partial)
-
-
-            if emergency:
-                p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below',
-                            output_backend=backend)
-                p2.multi_line('times',
-                              'traces',
-                              line_color='colors',
-                              line_alpha=trace_alpha,
-                              selection_line_width=trace_line_width,
-                              source=src_partial)
-            pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
-        '''
-        #p1.add_tools(TapTool())
-        #p1.on_event(Tap, tap_callback)
-
         # Button callbacks
 
         def sort_callback(event, storage=None, rb=None):
