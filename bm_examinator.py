@@ -1,5 +1,6 @@
 # Stuff needed for plotting and widget callbacks
 import copy
+from scipy.stats import median_abs_deviation
 
 from functools import partial
 import tifffile as tfl
@@ -135,9 +136,16 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None
     if ef is None:
         ef = estimates.C.shape[1]
 
-    traces = [tr / np.max(tr) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef][:, ::ds])]
+    traces = [(tr-min(tr)) / (np.max(tr)-np.min(tr)) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef][:, ::ds])]
     times = [estimates.time[sf:ef][::ds] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
+
+    hvals = []
+    for tr in traces:
+        med = np.median(tr)
+        meddev = median_abs_deviation(tr)
+        hval = np.round(1.0 * len(np.where(tr >= med + 4 * meddev)[0]) / len(tr), 4)
+        hvals.append(hval)
 
     estimates_data = estimates.A[:, comps_to_select]
     dims = estimates.imax.shape
@@ -152,7 +160,7 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
-    return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
+    return dict(xs=xs, ys=ys, times=times, traces=traces, hvals=hvals, colors=colors, idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma=3):
@@ -229,16 +237,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           'dummy_id': new_ids,
                           'metric': [np.round(x, 2) for x in metric]
                           })
-        '''
-        low_inds = np.where(show_data['dummy_id'] < 10)[0]
-        #print(show_data['traces'][low_inds])
-        print('low inds in cds:', low_inds)
-        print(show_data['metric'][low_inds])
-        #print(show_data['metric'][indices][:10])
-        print(show_data['dummy_id'][low_inds])
-        #print(show_data['metric'][show_data['dummy_id'][:10]])
-        print('--------')
-        '''
 
         return show_data, indices
 
@@ -388,6 +386,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
 
+        '''
         # image reload on tap
         def tap_callback(event):
 
@@ -414,7 +413,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                               selection_line_width=trace_line_width,
                               source=src_partial)
             pts_renderer = p1.scatter(x='x', y='y', source=pts_src, color='color', size=5)
-
+        '''
         #p1.add_tools(TapTool())
         #p1.on_event(Tap, tap_callback)
 
@@ -437,11 +436,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             elif mode == 2:
                 # space correlation for each component
                 metric = np.array(estimates_partial.r_values)[estimates_partial.idx_components]#[old_sel_indices]
-                '''
-                elif mode == 3:
-                    # CNN predictions for each component
-                    metric = np.array(estimates_partial.cnn_preds)[estimates_partial.idx_components]
-                '''
+            elif mode == 3:
+                # % of high values (>median + 4*MAD) for each component
+                metric = np.array(src_partial.data['hvals'])#[estimates_partial.idx_components]
+
 
             else:
                 raise ValueError('wrong RadioButton value')
@@ -456,19 +454,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             #storage.ordering = indices
 
             src_partial.data = sorted_data
-            '''
-            print('old:')
-            print(old_sel_indices)
-            print('new:')
-            print([old_to_new_mapping[ind] for ind in old_sel_indices])
-            #print(indices[old_indices])
-            print('sort:')
-            print(indices)
-            
-            for prop in ['xs', 'ys', 'colors', 'traces']:
-                print(prop, src_partial.data[prop][0])
-            print('-----')
-            '''
+
             #src_partial.selected.update(indices=[old_to_new_mapping[ind] for ind in old_sel_indices])
             #add_dummy_data(src_partial, ordering=indices)
             #print(dict(src_partial.data)['dummy_id'])
@@ -722,7 +708,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["Space", "SNR", "R-val"], active=0)
+        radio_button_group = RadioButtonGroup(labels=["Space", "SNR", "R-val", "H-val"], active=0)
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)
