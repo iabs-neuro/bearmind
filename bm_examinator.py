@@ -75,6 +75,8 @@ def LoadEstimates(name, default_fps=20):
 def get_timestamps(name, n_frames, default_fps=20):
     # try to load timestamps, in case of failure use constant fps
     ts_files = glob(name + '*timestamp.csv')
+
+    print(ts_files)
     if len(ts_files) == 0:
         # raise FileNotFoundError(f'No timestamp files found for {name}, default fps has been disabled')
         return np.linspace(0, n_frames // default_fps, n_frames)

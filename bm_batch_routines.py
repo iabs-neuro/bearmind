@@ -252,8 +252,12 @@ def DoCropAndRewrite(name):
             data = data[:, :-cr_dict['DOWN'], :]
         if cr_dict['RIGHT']:
             data = data[:, :, :-cr_dict['RIGHT']]
-        #whole_data.append(data[:-1])
-        whole_data.append(data)
+
+        if pathway == 'legacy':
+            whole_data.append(data[:-1])
+        elif pathway == 'bonsai':
+            whole_data.append(data)
+
     mp4_clip = concatenate_videoclips(mp4_clips)
 
     #  cropping per se
@@ -527,7 +531,7 @@ def plot_gsig_range(fnames, maxframes=np.inf, min_gsig=3, max_gsig=6, step=5, dp
     for fname in tqdm.tqdm(fnames):
         tlen = len(tfl.TiffFile(fname).pages)
         data = tfl.imread(fname, key=range(0, min(maxframes, tlen), step))
-
+        print(tlen)
         fig, axs = plt.subplots(2, 2, figsize=(10, 10), dpi=dpi)
         fig.set_tight_layout(True)
 
@@ -539,6 +543,7 @@ def plot_gsig_range(fnames, maxframes=np.inf, min_gsig=3, max_gsig=6, step=5, dp
             ax = axs.ravel()[i]
             ax.imshow(pnr)
             ax.set_title(f'gSig = {gsig}')
+            print(gsig)
 
         fig.suptitle(os.path.basename(fname)[:-4])
         if save_images:
