@@ -77,7 +77,8 @@ class Ridge(object):
         else:
             self.end_scale = self.scales[-1]
             self.length = len(self.scales)
-            self.max_scale = self.scales[maxpos_numba(self.ampls)]
+            mp = maxpos_numba(self.ampls)
+            self.max_scale = self.scales[mp]
             self.max_ampl = max(self.ampls)
             self.start = self.indices[0]
             self.end = self.indices[-1]

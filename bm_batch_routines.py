@@ -330,7 +330,7 @@ def DoMotionCorrection(name, mc_dict):
     dview.terminate()   
 
     
-def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False):
+def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False, noise_ampl=0):
     try:
         # cropping according to user preferences
         if start_frame is None:
@@ -378,6 +378,7 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
                                    slices=[time_crop])
         Yr, dims, T = cm.load_memmap(mem_fname)
         images = Yr.T.reshape((T,) + dims, order='F')
+        images = images + np.random.random(size=images.shape)*noise_ampl
 
         # cnmf itself
         if verbose:
