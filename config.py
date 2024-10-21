@@ -93,6 +93,7 @@ def get_session_name_from_path(fname):
         session_name = splt_path[-2]
     elif CONFIG['DATA_PATHWAY'] == 'legacy':
         session_name = splt_path[-5]
+      
 
     return session_name
 

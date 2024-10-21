@@ -43,7 +43,7 @@ def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5, title=''):
     plt.figure(dpi=dpi, figsize=(size,size))
     plt.imshow(data[x,:,:])
     plt.title(title)
-    plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
+    plt.gca().add_patch(Rectangle((left, up), data.shape[2]-left-right, data.shape[1]-up-down, fill = None, ec = 'r', lw = 1))     
 
 
 def LoadSelectedVideos(fnames, sort = True):
@@ -56,7 +56,9 @@ def LoadSelectedVideos(fnames, sort = True):
             for frame in clip.iter_frames():
                 video.append(frame[:,:,0])
         elif name[-4:] == '.tif' or name[-5:] == '.tiff':
-            video = video + tfl.imread(name).tolist()
+            with tfl.TiffFile(name) as tif:
+                for page in tif.pages:
+                    video.append(page.asarray())
         else:
             raise Exception('Unsupported input file type, only AVI and TIFF files allowed')
     return np.asarray(video)
@@ -188,11 +190,11 @@ def DrawCropper(data, dpi=200, fname=''):
 
 
 def SaveCrops(fname, left, right, up, down):
-    session_name = get_session_name_from_path(fname)
-    save_name = os.path.join(os.path.dirname(fname),
-                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+#    session_name = get_session_name_from_path(fname)
+#    save_name = os.path.join(os.path.dirname(fname),
+#                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
 
-    save_name = os.path.normpath(save_name)
+    save_name = os.path.normpath(base + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     cropping_dict = {
         "LEFT": left,
         "RIGHT": right,
