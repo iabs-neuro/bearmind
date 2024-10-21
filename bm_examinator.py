@@ -29,7 +29,7 @@ from caiman.utils.visualization import inspect_correlation_pnr
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import get_session_name_from_path
 from table_routines import *
-from utils import get_datetime
+from datetime import datetime
 
 output_notebook()
 
@@ -85,6 +85,8 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         fps = get_fps(ts_df, verbose=verbose)
         return fps
 
+def get_datetime():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     n_cells = len(estimates.idx_components)
@@ -458,9 +460,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print(f'Seeds saved to {seeds_fname}\n')
 
         def save_callback(event, storage=None):
-            dt = get_datetime()
             base_name = fname.partition('_estimates')[0]
-            out_name = base_name + '_in_progress_' + dt.replace(':', '-') + '_estimates.pickle'
+            out_name = base_name + '_in_progress_' + get_datetime() + '_estimates.pickle'
             with open(out_name, "wb") as f:
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')

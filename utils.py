@@ -15,9 +15,4 @@ def set_folder_structure():
     return folder_structure
 
 
-def get_datetime():
-    tz = pytz.timezone('Europe/Moscow')
-    now = datetime.datetime.now(tz)
 
-    dt_string = now.strftime("%d-%m-%Y %H:%M:%S")
-    return dt_string
