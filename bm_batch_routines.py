@@ -46,13 +46,19 @@ def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5, title=''):
     plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
 
 
-def LoadSelectedVideos(fnames):
-    fnames.sort(key = len)
+def LoadSelectedVideos(fnames, sort = True):
+    if sort:
+        fnames.sort(key=extract_number) #needed for proper sorting of Miniscope generated files like 1.avi, 22.avi etc
     video = []
     for name in fnames:
-        clip = VideoFileClip(name)
-        for frame in clip.iter_frames():
-            video.append(frame[:,:,0])
+        if name[-4:] == '.avi':
+            clip = VideoFileClip(name)
+            for frame in clip.iter_frames():
+                video.append(frame[:,:,0])
+        elif name[-4:] == '.tif' or name[-5:] == '.tiff':
+            video = video + tfl.imread(name).tolist()
+        else:
+            raise Exception('Unsupported input file type, only AVI and TIFF files allowed')
     return np.asarray(video)
 
 
@@ -216,15 +222,15 @@ def extract_number(filename):
         return int(match.group(1))
     return float('inf')
 
-def DoCropAndRewrite(name, out_fname):
+def DoCropAndRewrite(name, out_fname, sort = True):
     #find, crop and rewrite .avi files
     start = time()
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
-    avi_names.sort(key=extract_number)
+    if sort:
+        avi_names.sort(key=extract_number)
 
     whole_data = []
     mp4_clips = []
