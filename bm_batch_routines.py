@@ -190,11 +190,10 @@ def DrawCropper(data, dpi=200, fname=''):
 
 
 def SaveCrops(fname, left, right, up, down):
-#    session_name = get_session_name_from_path(fname)
-#    save_name = os.path.join(os.path.dirname(fname),
-#                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
-
-    save_name = os.path.normpath(base + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+    session_name = get_session_name_from_path(fname)
+    save_name = os.path.join(os.path.dirname(fname),
+                             session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+#   save_name = os.path.normpath(base + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     cropping_dict = {
         "LEFT": left,
         "RIGHT": right,
