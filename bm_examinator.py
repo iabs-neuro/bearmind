@@ -74,6 +74,7 @@ def LoadEstimates(name, default_fps=20):
 
 def get_timestamps(name, n_frames, default_fps=20):
     # try to load timestamps, in case of failure use constant fps
+    print(name)
     ts_files = glob(name + '*timestamp.csv')
 
     print(ts_files)
@@ -83,7 +84,7 @@ def get_timestamps(name, n_frames, default_fps=20):
     else:
         ts_df = pd.read_csv(ts_files[0])
         time_col = find_time_column(ts_df)
-        timeline = ts_df[time_col].values
+        timeline = ts_df[time_col].values/1000
         return timeline[:n_frames]
 
 
