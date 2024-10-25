@@ -193,7 +193,7 @@ def SaveCrops(fname, left, right, up, down):
     session_name = get_session_name_from_path(fname)
     save_name = os.path.join(os.path.dirname(fname),
                              session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
-#   save_name = os.path.normpath(base + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
+#   save_name = os.path.normpath(fname + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     cropping_dict = {
         "LEFT": left,
         "RIGHT": right,
@@ -217,13 +217,17 @@ def get_file_num_id(name, pathway='bonsai'):
 
     return int(num_id)
 
+def get_bit_depth_tif(fname): #returns dtype of tiff file
+    with tfl.TiffFile(fname) as tif:
+        return tif.pages[0].dtype
+
 def extract_number(filename):
     match = re.search(r'(\d+)\.', os.path.basename(filename))
     if match:
         return int(match.group(1))
     return float('inf')
 
-def DoCropAndRewrite(name, out_fname, sort = True):
+def DoCropAndRewrite(name, out_fname, sort = True, write_mp4 = True):
     #find, crop and rewrite .avi files
     start = time()
     with open(name, 'rb') as f:
@@ -239,7 +243,10 @@ def DoCropAndRewrite(name, out_fname, sort = True):
     for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
 
         clip = VideoFileClip(av_name)
-        mp4_clips.append(clip)
+        
+        if write_mp4:
+            mp4_clips.append(clip)
+            
         num_frames = clip.reader.nframes
         num_frames_whole = num_frames_whole + num_frames
         print(f"{av_name} - {num_frames} frames")
@@ -252,15 +259,36 @@ def DoCropAndRewrite(name, out_fname, sort = True):
             data = data[:, :, :-cr_dict['RIGHT']]
         #whole_data.append(data[:-1])
         whole_data.append(data)
-    mp4_clip = concatenate_videoclips(mp4_clips)
-
 
     tfl.imwrite(out_fname, np.concatenate(whole_data, axis=0), photometric='minisblack')
-    mp4_clip.write_videofile(out_fname[:-4] + '.mp4')
-    mp4_video_out = VideoFileClip(out_fname[:-4] + '.mp4')
-    #tif_video_out = VideoFileClip(out_fpath)
-    print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
+    
+    if write_mp4:
+        mp4_clip = concatenate_videoclips(mp4_clips)
+        mp4_clip.write_videofile(out_fname[:-4] + '.mp4')
+        mp4_video_out = VideoFileClip(out_fname[:-4] + '.mp4')
+        #tif_video_out = VideoFileClip(out_fpath)
+        print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
     print(f'{out_fname} cropped in {time() - start:.1f}s')
+
+
+def DoCropAndRewriteTiff(cr_fname, tif_fname, out_fname):
+    #crop and rewrite given .tif file with crops provided in cropping pickle
+    start = time()
+    with open(cr_fname, 'rb') as f:
+        cr_dict = pickle.load(f,)
+        
+    data = tfl.imread(tif_fname)
+    data = data[cr_dict['UP']:, cr_dict['LEFT']:, :]
+#    with tfl.TiffFile(tif_fname) as tif:
+#        data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in tif.pages])
+    if cr_dict['DOWN']:
+        data = data[:, :-cr_dict['DOWN'], :]
+    if cr_dict['RIGHT']:
+        data = data[:, :, :-cr_dict['RIGHT']]
+
+    tfl.imwrite(out_fname, data, photometric='minisblack')  
+    print(f'{out_fname} cropped in {time() - start:.1f}s')
+
 
 def extract_and_copy_ts(name):
     pathway = CONFIG['DATA_PATHWAY']
@@ -293,9 +321,10 @@ def DoMotionCorrection(name, mc_dict):
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=14, single_thread=False)
     
     opts = params.CNMFParams(params_dict=mc_dict)
+    dtype = get_bit_depth_tif(name)
 
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
-    #mc = MotionCorrect([name], dview=None, **opts.get_group('motion'))
+    
     print(f'Start of motion_correct {time() - start:.1f}s')
     mc.motion_correct(save_movie=True)
     print(f'End of motion_correct {time() - start:.1f}s')
@@ -310,14 +339,14 @@ def DoMotionCorrection(name, mc_dict):
     print(f'Start of apply_shifts_movie {time() - start:.1f}s')
     mov = mc.apply_shifts_movie([name])
     print(f'End of apply_shifts_movie {time() - start:.1f}s')
-    tfl.imwrite(name[:-4] + '_MC.tif', np.array(mov, dtype='uint8'), photometric='minisblack')
+    tfl.imwrite(name[:-4] + '_MC.tif',  np.array(mov, dtype=dtype), photometric='minisblack')
     print(os.path.split(name)[-1] + f' motion corrected in {time() - start:.1f}s')
 
-    # mp4-video creation
-    tiff_frames = tfl.imread(name)
-    frames_list = [np.stack((frame,) * 3, axis=-1) for frame in np.array(mov, dtype='uint8')]
-    mp4_clip = ImageSequenceClip(frames_list, fps=30)
-    mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
+    if mc_dict['write_mp4']: # mp4-video creation
+        tiff_frames = tfl.imread(name)
+        frames_list = [np.stack((frame,) * 3, axis=-1) for frame in np.array(mov, dtype='uint8')]
+        mp4_clip = ImageSequenceClip(frames_list, fps=30)
+        mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
     
     cm.stop_server(dview=dview)
     dview.terminate()   

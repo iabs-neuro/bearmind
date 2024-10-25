@@ -1,6 +1,4 @@
 from config import read_config
-import pytz
-import datetime
 
 def set_folder_structure():
     config = read_config()
