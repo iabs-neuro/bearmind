@@ -249,7 +249,7 @@ def DoCropAndRewrite(name):
 
     splt_path = os.path.normpath(name).split(os.sep)
     if pathway == 'legacy':
-        out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
+        #out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
         out_fname = splt_path[-5] + '_CR.tif'
     elif pathway == 'bonsai':
         out_fname = splt_path[-2] + '_CR.tif'
@@ -262,7 +262,7 @@ def DoCropAndRewrite(name):
     whole_data = []
     mp4_clips = []
     num_frames_whole = 0
-    for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
+    for i, av_name in enumerate(tqdm.tqdm(avi_names, position=0, leave=True)):
 
         clip = VideoFileClip(av_name)
         mp4_clips.append(clip)
@@ -277,7 +277,10 @@ def DoCropAndRewrite(name):
             data = data[:, :, :-cr_dict['RIGHT']]
 
         if pathway == 'legacy':
-            whole_data.append(data[:-1])
+            if i == len(avi_names) - 1:
+                whole_data.append(data)
+            else:
+                whole_data.append(data[:-1])
         elif pathway == 'bonsai':
             whole_data.append(data)
 
