@@ -12,6 +12,7 @@ from IPython.display import display
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import tqdm
+import copy
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.models import LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button, IndexFilter, \
     PointDrawTool
@@ -32,6 +33,26 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 
 
 warnings.filterwarnings('ignore')
+
+def find_identifiers(text):
+    pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)(_\dT)?'
+    match = re.search(pattern, text)
+    if match:
+        identifier = match.group(0)
+    else:
+        print("ID not found")
+
+    return identifier
+
+def extract_name_with_pattern(text):
+    pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)_(_?\dT_)?'
+    match = re.search(pattern, text)
+
+    if match:
+        end_pos = match.end()
+        return text[:end_pos]
+    else:
+        return None
 
 
 def CleanMemmaps(name):
@@ -224,22 +245,24 @@ def DoCropAndRewrite(name):
     with open(name, 'rb') as f:
         cr_dict = pickle.load(f,)
 
+    #cr_dict = {"LEFT": 0,"RIGHT": 0,"UP": 0,"DOWN": 0}
+
     splt_path = os.path.normpath(name).split(os.sep)
     if pathway == 'legacy':
-        out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
+        #out_fname = '_'.join(splt_path[-5:-2]) + '_CR.tif'
+        out_fname = splt_path[-5] + '_CR.tif'
     elif pathway == 'bonsai':
         out_fname = splt_path[-2] + '_CR.tif'
     else:
         raise ValueError('Wrong pathway!')
 
     avi_names = glob(os.path.join(os.path.dirname(name), '*.avi'))
-    #avi_names.sort(key=lambda vname: get_file_num_id(vname, pathway=pathway))
     avi_names.sort(key=extract_number)
 
     whole_data = []
     mp4_clips = []
     num_frames_whole = 0
-    for av_name in tqdm.tqdm(avi_names, position=0, leave=True):
+    for i, av_name in enumerate(tqdm.tqdm(avi_names, position=0, leave=True)):
 
         clip = VideoFileClip(av_name)
         mp4_clips.append(clip)
@@ -254,7 +277,10 @@ def DoCropAndRewrite(name):
             data = data[:, :, :-cr_dict['RIGHT']]
 
         if pathway == 'legacy':
-            whole_data.append(data[:-1])
+            if i == len(avi_names) - 1:
+                whole_data.append(data)
+            else:
+                whole_data.append(data[:-1])
         elif pathway == 'bonsai':
             whole_data.append(data)
 
