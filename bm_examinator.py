@@ -35,7 +35,8 @@ from scipy.io import savemat
 from caiman.utils.visualization import inspect_correlation_pnr
 
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
-from config import get_session_name_from_path
+from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
+                    update_config, get_session_name_from_path, get_session_config_path)
 from table_routines import *
 from utils import get_datetime
 from bm_batch_routines import extract_name_with_pattern
@@ -74,6 +75,9 @@ def LoadEstimates(name, default_fps=20):
 
 
 def get_timestamps(name, n_frames, default_fps=20):
+    root = CONFIG['ROOT']
+    pathway = CONFIG['DATA_PATHWAY']
+
     # try to load timestamps, in case of failure use constant fps
     print(name)
     ts_files = glob(name + '*timestamp.csv')
@@ -85,12 +89,19 @@ def get_timestamps(name, n_frames, default_fps=20):
     else:
         ts_df = pd.read_csv(ts_files[0])
         time_col = find_time_column(ts_df)
-        timeline = (ts_df[time_col].values -ts_df[time_col].values[0])/ 10000000
-        #timeline = ts_df[time_col].values/1000
+
+        if pathway == 'legacy':
+            timeline = ts_df[time_col].values / 1000
+        elif pathway == 'bonsai':
+            timeline = (ts_df[time_col].values - ts_df[time_col].values[0]) / 10000000
+        else:
+            raise ValueError('Wrong pathway!')
+
         return timeline[:n_frames]
 
 
 def get_fps_from_timestamps(name, default_fps=20, verbose=True):
+
     ts_files = glob(name + '*.csv')
     if len(ts_files) == 0:
         if verbose:
