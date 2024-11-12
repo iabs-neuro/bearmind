@@ -190,6 +190,7 @@ def SaveResults(estimates, sigma=3):
     if not os.path.exists(fold):
         os.mkdir(fold)
     ims = []
+    #ToDo change transposition of filters
     for i, sp in enumerate(estimates.A.T[estimates.idx_components]):
         im = sp.reshape(estimates.imax.shape[::-1]).todense()
         if sigma:  # gaussian smoothing of neural contours, omitted if sigma=0
