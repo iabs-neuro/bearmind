@@ -652,26 +652,26 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         def seed_callback(event):
             seeds = [[pts_src.data['x']], [pts_src.data['y']]]
-            seeds_fname = fname.partition('_estimates')[0] + '_seeds.pickle'
+            seeds_fname = extract_name_with_pattern(estimates.name) + '_seeds.pickle'
             with open(seeds_fname, "wb") as f:
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
 
         def save_callback(event, storage=None):
             dt = get_datetime()
-            base_name = fname.partition('_estimates')[0]
+            base_name = extract_name_with_pattern(estimates.name)
 
             # remove previous date if it exists
-            if '-' in base_name:
-                base_name = base_name[:2+1+2+1+4+1 + 2+1+2+1+2]
-            out_name = base_name + '_' + dt.replace(':', '-') + '_estimates.pickle'
+            #if '-' in base_name:
+            #    base_name = base_name[:2+1+2+1+4+1 + 2+1+2+1+2]
+            out_name = base_name + dt.replace(':', '-') + '_estimates.pickle'
             with open(out_name, "wb") as f:
                 pickle.dump(storage.estimates, f)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
         def final_save_callback(event, storage=None):
-            base_name = fname.partition('_estimates')[0]
-            out_name = base_name + '_final_estimates.pickle'
+            base_name = extract_name_with_pattern(estimates.name)
+            out_name = base_name + 'final_estimates.pickle'
             with open(out_name, "wb") as f:
                 pickle.dump(storage.estimates, f)
             print(f'Final results for {title} saved to {out_name}\n')
