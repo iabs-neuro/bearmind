@@ -85,7 +85,8 @@ def get_timestamps(name, n_frames, default_fps=20):
     else:
         ts_df = pd.read_csv(ts_files[0])
         time_col = find_time_column(ts_df)
-        timeline = ts_df[time_col].values/1000
+        timeline = (ts_df[time_col].values -ts_df[time_col].values[0])/ 10000000
+        #timeline = ts_df[time_col].values/1000
         return timeline[:n_frames]
 
 
