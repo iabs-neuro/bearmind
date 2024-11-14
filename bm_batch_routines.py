@@ -37,10 +37,10 @@ warnings.filterwarnings('ignore')
 def find_identifiers(text):
     pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)(_\dT)?'
     match = re.search(pattern, text)
-    if match:
-        identifier = match.group(0)
-    else:
-        print("ID not found")
+    identifier = match.group(0) if match else ""
+
+    if not identifier:
+        print("ID not found in text:", text)
 
     return identifier
 
@@ -52,7 +52,8 @@ def extract_name_with_pattern(text):
         end_pos = match.end()
         return text[:end_pos]
     else:
-        return None
+        print(f'Pattern not found in text:", text')
+        return ""
 
 
 def CleanMemmaps(name):
