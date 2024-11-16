@@ -114,6 +114,31 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return fps
 
 
+def calculate_polygon_area(coordinates):
+    # Filter out points with NaN coordinates
+    valid_coordinates = [point for point in coordinates if not (np.isnan(point[0]) or np.isnan(point[1]))]
+
+    # Check if we have enough valid points to form a polygon
+    if len(valid_coordinates) < 3:
+        return 0  # Not enough points to form a polygon
+
+    area = 0
+
+    # Number of vertices
+    n = len(valid_coordinates)
+
+    # Calculate area using the Shoelace formula
+    for i in range(n):
+        j = (i + 1) % n
+        area += valid_coordinates[i][0] * valid_coordinates[j][1]
+        area -= valid_coordinates[j][0] * valid_coordinates[i][1]
+
+    # Take absolute value and divide by 2
+    area = abs(area) / 2
+
+    return area
+
+
 def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     n_cells = len(estimates.idx_components)
     if n_cells == 0:
@@ -170,13 +195,16 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None
                                                    thr=cthr)
 
     contours = []
+    areas = []
     for i, comp in enumerate(comps_to_select):
         coors = cm_conts[i]["coordinates"]
+        area = calculate_polygon_area(coors)
         contours.append(coors[~np.isnan(coors).any(axis=1)])
+        areas.append(area)
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
-    return dict(xs=xs, ys=ys, times=times, traces=traces, hvals=hvals, colors=colors, idx=comps_to_select)
+    return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,  hvals=hvals, colors=colors, idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma=3):
@@ -425,7 +453,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             elif mode == 3:
                 # % of high values (>median + 4*MAD) for each component
                 metric = np.array(src_partial.data['hvals'])#[estimates_partial.idx_components]
-
+            elif mode == 4:
+                # area of each component
+                metric = np.array(src_partial.data['areas'])
 
             else:
                 raise ValueError('wrong RadioButton value')
@@ -694,7 +724,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["Space", "SNR", "R-val", "H-val"], active=0)
+        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area"], active=0)
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)
