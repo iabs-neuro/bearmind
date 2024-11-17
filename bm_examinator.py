@@ -38,7 +38,7 @@ from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_corre
 from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
                     update_config, get_session_name_from_path, get_session_config_path)
 from table_routines import *
-from utils import get_datetime
+from utils import *
 from bm_batch_routines import extract_name_with_pattern
 
 output_notebook()
@@ -164,7 +164,7 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None, ds=1):
+def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6, sf=None, ef=None, ds=1):
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -204,7 +204,39 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, sf=None, ef=None
 
     xs = [[pt[0] for pt in c] for c in contours]
     ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
-    return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,  hvals=hvals, colors=colors, idx=comps_to_select)
+
+    # building correlation matrix and assigning corr scores to neurons
+    CM = np.corrcoef(estimates.C[comps_to_select, sf:ef])
+    np.fill_diagonal(CM, 0)
+    CM[np.isnan(CM)] = 0
+
+    TCM = CM.copy()
+    TCM[np.where(TCM < corr_thr)] = 0
+
+    nontrivial_ccs = [comp for comp in list(get_ccs_from_adj(TCM)) if len(comp) > 1]
+
+    group_corr_scores = np.zeros(len(nontrivial_ccs))
+    corr_scores = np.zeros(len(comps_to_select))
+    corr_groups = np.zeros(len(comps_to_select))
+    for i, group in enumerate(nontrivial_ccs):
+        ordered = np.array(sorted(list(group)))
+        subnetwork = CM[ordered, :][:, ordered]  # we take corr values from initial corr matrix
+        nc = len(ordered)
+        group_density = np.sum(subnetwork) / (nc ** 2 - nc)
+        group_corr_scores[i] = group_density
+        #group_av_nnz = np.mean(subnetwork[np.where(subnetwork != 0)])
+
+    sorted_nontrivial_ccs = [nontrivial_ccs[i] for i in np.argsort(group_corr_scores)[::-1]] # sort components from highest to lowest score
+    sorted_group_corr_scores = sorted(group_corr_scores)
+    for i, group in enumerate(sorted_nontrivial_ccs):
+        for comp in group:
+            corr_scores[comp] = sorted_group_corr_scores[i]
+            corr_groups[comp] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
+
+    return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
+                hvals=hvals, colors=colors, corr_scores=corr_scores,
+                corr_groups=corr_groups,
+                idx=comps_to_select)
 
 
 def SaveResults(estimates, sigma=3):
@@ -310,20 +342,22 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 self.prev_data = None
                 self.prev_data_partial = None
 
-        size = bkapp_kwargs.get('size') if 'size' in bkapp_kwargs else 500
-        cthr = bkapp_kwargs.get('cthr') if 'cthr' in bkapp_kwargs else 0.3
-        ds = bkapp_kwargs.get('downsampling') if 'downsampling' in bkapp_kwargs else 1
-        verbose = bkapp_kwargs.get('verbose') if 'verbose' in bkapp_kwargs else False
-        fill_alpha = bkapp_kwargs.get('fill_alpha') if 'fill_alpha' in bkapp_kwargs else 0.5
-        nonselection_alpha = bkapp_kwargs.get('ns_alpha') if 'ns_alpha' in bkapp_kwargs else 0.2
-        line_width = bkapp_kwargs.get('line_width') if 'line_width' in bkapp_kwargs else 1
-        line_alpha = bkapp_kwargs.get('line_alpha') if 'line_alpha' in bkapp_kwargs else 1
-        trace_line_width = bkapp_kwargs.get('trace_line_width') if 'trace_line_width' in bkapp_kwargs else 1
-        trace_alpha = bkapp_kwargs.get('trace_alpha') if 'trace_alpha' in bkapp_kwargs else 1
-        bwidth = bkapp_kwargs.get('button_width') if 'button_width' in bkapp_kwargs else 110
-        start_frame = bkapp_kwargs.get('start_frame') if 'start_frame' in bkapp_kwargs else 0
-        end_frame = bkapp_kwargs.get('end_frame') if 'end_frame' in bkapp_kwargs else 0
-        emergency = bkapp_kwargs.get('oh_shit') if 'oh_shit' in bkapp_kwargs else False
+        size = bkapp_kwargs.get('size', 500)
+        cthr = bkapp_kwargs.get('cthr', 0.3)
+        ds = bkapp_kwargs.get('downsampling', 1)
+        corr_thr = bkapp_kwargs.get('corr_thr', 0.6)
+        sort_order = bkapp_kwargs.get('sort_order', 'up')
+        verbose = bkapp_kwargs.get('verbose', False)
+        fill_alpha = bkapp_kwargs.get('fill_alpha', 0.5)
+        nonselection_alpha = bkapp_kwargs.get('ns_alpha', 0.2)
+        line_width = bkapp_kwargs.get('line_width', 1)
+        line_alpha = bkapp_kwargs.get('line_alpha', 1)
+        trace_line_width = bkapp_kwargs.get('trace_line_width', 1)
+        trace_alpha = bkapp_kwargs.get('trace_alpha', 1)
+        bwidth = bkapp_kwargs.get('button_width', 110)
+        start_frame = bkapp_kwargs.get('start_frame', 0)
+        end_frame = bkapp_kwargs.get('end_frame', 0)
+        emergency = bkapp_kwargs.get('oh_shit', False)
 
         if 'enable_gpu_backend' in bkapp_kwargs:
             backend = "webgl" if bool(bkapp_kwargs.get('enable_gpu_backend')) else "canvas"
@@ -336,7 +370,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                        cthr=cthr,
                                        sf=start_frame,
                                        ef=end_frame,
-                                       ds=ds)
+                                       ds=ds,
+                                       corr_thr=corr_thr)
 
         estimates = copy.deepcopy(estimates0)
 
@@ -355,6 +390,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         dims = estimates.imax.shape
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
+        curr_traces = src_partial.data['traces']
+        #title_add = f'       active comps: {len(curr_traces)}'
+        title_add = ''
+        title += title_add
 
         tools1 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "box_zoom", "reset"]
         tools2 = ["pan", "tap", "box_select", "zoom_in", "zoom_out", "box_zoom", "reset"]
@@ -456,6 +495,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             elif mode == 4:
                 # area of each component
                 metric = np.array(src_partial.data['areas'])
+            elif mode == 5:
+                # correlation with other components from corr matrix (belonging to the same connected component)
+                metric = np.array(src_partial.data['corr_groups'])
 
             else:
                 raise ValueError('wrong RadioButton value')
@@ -466,7 +508,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             #print(dict(src.data)['dummy_id'])
             #old_to_new_mapping = dict(zip(np.arange(len(indices)), indices))
-            sorted_data, indices = sort_cds(src_partial, metric, order='up')
+            sorted_data, indices = sort_cds(src_partial, metric, order=sort_order)
             #storage.ordering = indices
 
             src_partial.data = sorted_data
@@ -603,7 +645,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                               cthr=cthr,
                                               sf=start_frame,
                                               ef=end_frame,
-                                              ds=ds)
+                                              ds=ds,
+                                              corr_thr=corr_thr)
 
                 add_dummy_data(src)
                 src_partial.data = dict(src.data)
@@ -724,7 +767,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area"], active=0)
+        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr"], active=0)
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)
