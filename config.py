@@ -6,6 +6,7 @@ import psutil
 
 DEFAULT_CONFIG = {
     'ROOT': 'C:\\Users\\1\\HM_NOF_4D',
+    'TEMP_PATHWAY': "c:\\Users\\1\\caiman_data\\temp\\",
     'DATA_PATHWAY': 'bonsai',
     'CPUs': multiprocessing.cpu_count(),
     'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
@@ -39,8 +40,9 @@ def update_config(new_data, cpath='config.json'):
     old_config = read_config(name=cpath)
     if 'ROOT' in new_data:
         new_data['ROOT'] = os.path.normpath(new_data['ROOT'])
+    if 'TEMP_PATHWAY' in new_data:
+        new_data['TEMP_PATHWAY'] = os.path.normpath(new_data['TEMP_PATHWAY'])
     old_config.update(new_data)
-
     if cpath == 'config.json':  # add system info to main config
         system_info = {
             'CPUs': multiprocessing.cpu_count(),
