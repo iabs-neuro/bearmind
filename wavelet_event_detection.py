@@ -232,12 +232,20 @@ def extract_wvt_events(traces, wvt_kwargs):
     return st_ev_inds, end_ev_inds, all_ridges
 
 
-def events_to_csv(time, st_ev_inds, end_ev_inds, tr_fname):
-    ncells = len(end_ev_inds)
+def events_to_csv(time, st_ev_inds, end_ev_inds, tr_fname, time_sp):
+    if time_sp == 'start':
+        ncells = len(st_ev_inds)
+    if time_sp == 'end':
+        ncells = len(end_ev_inds)
+
     length = len(time)
     spikes = np.zeros((ncells, length))
     for i in range(ncells):
-        spk = np.array(end_ev_inds[i]).astype(int)
+        if time_sp == 'start':
+            spk = np.array(st_ev_inds[i]).astype(int)
+        if time_sp == 'end':
+            spk = np.array(end_ev_inds[i]).astype(int)
+
         spikes[i, spk] = 1
 
     spdata = np.vstack((time, spikes))
