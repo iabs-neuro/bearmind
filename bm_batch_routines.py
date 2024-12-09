@@ -308,7 +308,7 @@ def DoCropAndRewrite(name, sort = True, write_mp4 = True):
 
     if write_mp4:
         out_fpath_mp4 = out_fpath[:-4] + '.mp4'
-        mp4_clip = concatenate_videoclips(mp4_clips)
+        mp4_clip = concatenate_videoclips(mp4_clips, method="compose")
         mp4_clip.write_videofile(out_fpath_mp4)
         mp4_video_out = VideoFileClip(out_fpath_mp4)
         print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
