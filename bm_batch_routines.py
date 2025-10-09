@@ -36,7 +36,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 warnings.filterwarnings('ignore')
 
 def find_identifiers(text):
-    pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)(_\dT)?'
+    pattern = r'[A-z0-9]{3,4}_[A-z]{1,2}\d{2}_(\dD|\dT)(_\dT)?'
     match = re.search(pattern, text)
     identifier = match.group(0) if match else ""
 
@@ -46,7 +46,7 @@ def find_identifiers(text):
     return identifier
 
 def extract_name_with_pattern(text):
-    pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)_(_?\dT_)?'
+    pattern = r'[A-z0-9]{3,4}_[A-z]{1,2}\d{2}_(\dD|\dT)(_\dT)?'
     match = re.search(pattern, text)
 
     if match:
