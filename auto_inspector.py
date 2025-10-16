@@ -115,4 +115,3 @@ fname = "D://Projects//estim_data//NOF_H01_3D_CR_MC_4_1_0.85_estimates.pickle"
 fps=20
 df = estimates_to_metrics(fname, fps)
 print(df)
-print('1')
