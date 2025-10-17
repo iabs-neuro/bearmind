@@ -2,6 +2,7 @@ from config import read_config
 import pytz
 import datetime
 import numpy as np
+import pandas as pd
 
 def set_folder_structure():
     config = read_config()
@@ -89,3 +90,19 @@ def calculate_polygon_area(coordinates):
     area = abs(area) / 2
 
     return area
+
+
+def calculate_perimeter(contour):
+    dots_dist = []
+    contour_mask = np.array(pd.Series(contour[:, 0] * contour[:, 1]).notna())
+    contour = contour[contour_mask]
+
+    dot_num = len(contour) - 1
+    while dot_num >= 0:
+        dist = np.linalg.norm(contour[dot_num] - contour[dot_num-1])
+        dots_dist.append(dist)
+
+        dot_num -= 1
+
+    perimeter = np.sum(dots_dist)
+    return perimeter

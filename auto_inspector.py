@@ -37,6 +37,23 @@ def get_contours(est, comps_to_select, cthr=0.3):
     return contours
 
 
+def get_circularities(est, comps_to_select, cthr=0.3):
+    contours = get_contours(est, comps_to_select, cthr=cthr)
+    circularities = []
+
+    for i in range(len(contours)):
+        contour = contours[i]["coordinates"]
+
+        area = calculate_polygon_area(contour)
+        perimeter = calculate_perimeter(contour)
+        circularity = perimeter**2 / (4 * np.pi * area)
+
+        circularities.append(circularity)
+
+    circularities = np.array(circularities)
+    return circularities
+
+
 def get_spike_based_snr(times, traces, fps=DEFAULT_FPS, t_rise=DEFAULT_T_RISE, t_off=DEFAULT_T_OFF):
     st_ev_inds, end_ev_inds, all_ridges = extract_wvt_events(traces, wvt_kwargs=WVT_EVENT_DETECTION_PARAMS)
     for i, tr in enumerate(traces[:1]):
@@ -95,6 +112,7 @@ def estimates_to_metrics(fname, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6,
         areas.append(area)
         centers.append(contours[i]["CoM"])
 
+    circularities = get_circularities(est, comps_to_select, cthr=cthr)
     caiman_snrs = est.SNR_comp[comps_to_select]
     caiman_r_scores = est.r_values[comps_to_select]
 
@@ -103,6 +121,7 @@ def estimates_to_metrics(fname, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     metrics = {
         'component_idx': comps_to_select,
         'area': areas,
+        'circularity': circularities,
         'center': centers,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores
@@ -111,7 +130,10 @@ def estimates_to_metrics(fname, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     return metrics_df
 
 
-fname = "D://Projects//estim_data//NOF_H01_3D_CR_MC_4_1_0.85_estimates.pickle"
+fname = r"D:\Projects\MSS\4_Estimates\MSS_F15_1D_1T_estimates.pickle"
 fps=20
 df = estimates_to_metrics(fname, fps)
-print(df)
+# est = LoadEstimates(fname, default_fps=fps)
+# comps_to_select = est.idx_components
+# df = get_circularities(est, comps_to_select)
+print(df.circularity)
