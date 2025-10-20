@@ -136,4 +136,5 @@ df = estimates_to_metrics(fname, fps)
 # est = LoadEstimates(fname, default_fps=fps)
 # comps_to_select = est.idx_components
 # df = get_circularities(est, comps_to_select)
-print(df.circularity)
+pd.options.display.max_columns = None
+print(df.sort_values(by='circularity')[-4:])
