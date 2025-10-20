@@ -130,6 +130,36 @@ def estimates_to_metrics(fname, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     return metrics_df
 
 
+def area_check(series, pxlthr_area):
+    metric = (series.area > pxlthr_area)
+    return metric
+
+
+def circularity_check(series, circ_thr):
+    metric = (series.circularity <= circ_thr)
+    return metric
+
+
+def final_check(df, circ_thr, pxlthr_area=3, pxlthr_distance=10):
+    # corrss = df['corr'].values
+    series_num = df.shape[0]
+    df = df.assign(new_column=df['delete'] + df['merge'])
+
+    for string_num in range(series_num):
+        string = df.iloc[string_num]
+
+        ### parameters
+        area = area_check(string, pxlthr_area)
+        circle = circularity_check(string, circ_thr)
+
+        delete = not (area and circle)
+        ###
+
+        df.iloc[string_num].delete = int(delete)
+
+    return df
+
+
 fname = r"D:\Projects\MSS\4_Estimates\MSS_F15_1D_1T_estimates.pickle"
 fps=20
 df = estimates_to_metrics(fname, fps)
