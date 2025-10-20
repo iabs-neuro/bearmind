@@ -1,4 +1,3 @@
-from tkinter.filedialog import askopenfilename, askopenfilenames, Tk
 from bm_batch_routines import *
 from bm_examinator import *
 from bm_spike_detection import *
@@ -10,6 +9,7 @@ from glob import glob
 import os
 import tqdm
 from jupyter_server import serverapp
+from tkinter.filedialog import askopenfilename, askopenfilenames, Tk
 
 # This is needed for the proper work of further manual file selection:
 wnd = Tk()
