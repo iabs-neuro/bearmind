@@ -424,9 +424,16 @@ def DoMotionCorrection(name, mc_dict):
     dview.terminate()
 
     
-def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False, noise_ampl=0):
-    #try:
-    # cropping according to user preferences
+def DoCNMF(
+    name,
+    cnmf_dict,
+    out_name=None,
+    start_frame=None,
+    end_frame=None,
+    verbose=False,
+    noise_ampl=0,
+    parallel_mode=True):
+
     if start_frame is None:
         start_frame = 0
         sf_text = '--'
@@ -440,8 +447,6 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         ef_text = str(end_frame)
 
     time_crop = slice(start_frame, end_frame)
-
-    # output name construction
     frames_txt = f'_sf={sf_text}_ef={ef_text}'
     if out_name is None:
         out_name = name[:-4] + frames_txt + '_estimates.pickle'
@@ -450,38 +455,56 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
             out_name = out_name + frames_txt + '_estimates.pickle'
 
     start = time()
-    #cnmf option setting
     opts = params.CNMFParams(params_dict=cnmf_dict)
 
-    #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
-    if 'dview' in locals():
-        cm.stop_server(dview=dview)
-        dview.terminate()
+    dview = None
+    n_processes = 1
+    if parallel_mode:
+        if 'dview' in locals():
+            try:
+                cm.stop_server(dview=dview)
+                dview.terminate()
+            except Exception:
+                pass
 
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+        if verbose:
+            print('Starting parallel cluster...')
+        c, dview, n_processes = cm.cluster.setup_cluster(
+            backend='local',
+            n_processes=None,
+            single_thread=False
+        )
+    else:
+        if verbose:
+            print('Running in single-process mode (parallel disabled).')
+        dview = None
+        n_processes = 1
 
-    # tif loading to memory
     if verbose:
         print('Loading tif to memory...')
 
-    mem_fname = cm.save_memmap([name],
-                               base_name=name[:-4],
-                               order='C',
-                               border_to_0=0,
-                               dview=dview,
-                               slices=[time_crop],
-                               add_to_movie=noise_ampl)
+    mem_fname = cm.save_memmap(
+        [name],
+        base_name=name[:-4],
+        order='C',
+        border_to_0=0,
+        dview=dview,
+        slices=[time_crop],
+        add_to_movie=noise_ampl
+    )
 
     Yr, dims, T = cm.load_memmap(mem_fname)
     images = Yr.T.reshape((T,) + dims, order='F')
 
-    # cnmf itself
     if verbose:
         print('Performing CNMF...')
-
-    if verbose:
         print('Source extracting...')
-    cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes-1, dview=dview, params=opts)
+
+    cnm = cm.source_extraction.cnmf.CNMF(
+        n_processes=max(1, n_processes - 1),
+        dview=dview,
+        params=opts
+    )
 
     if verbose:
         print('Fitting...')
@@ -494,27 +517,40 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
     if verbose:
         print('Computing imax...')
 
-    #  addition of some fields to estimates object
     cnm.estimates.tif_name = name
     cnm.estimates.cnmf_dict = cnmf_dict
-    _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
-    pnr[np.where(pnr == np.inf)] = 0
+
+    _, pnr = cm.summary_images.correlation_pnr(
+        images[::5],
+        gSig=cnmf_dict['gSig'][0],
+        swap_dim=False
+    )
+    pnr[np.isinf(pnr)] = 0
     pnr[np.isnan(pnr)] = 0
-    pnr[np.where(pnr > 70)] = 70
-    cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
+    pnr[pnr > 70] = 70
+    cnm.estimates.imax = (pnr * 255 / np.max(pnr)).astype('uint8')
 
     if verbose:
         print('Saving result...')
-    #estimates object saving
     with open(out_name, "wb") as f:
         pickle.dump(cnm.estimates, f)
 
-    #cluster termination
-    cm.stop_server(dview=dview)
-    dview.terminate()
+    if dview is not None:
+        if verbose:
+            print('Stopping cluster...')
+        try:
+            cm.stop_server(dview=dview)
+        except Exception:
+            pass
+        try:
+            dview.terminate()
+        except Exception:
+            pass
+
     print(os.path.split(name)[-1] + f' cnmf-ed in {time() - start:.1f}s')
 
     return cnm.estimates
+
     '''
     except Exception as e:
     print(f'Problem with {out_name}, computation aborted:')
