@@ -40,6 +40,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
+from auto_inspector import get_multineuron_reconstruction_quality_metrics
 
 output_notebook()
 
@@ -139,7 +140,9 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
-def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6, sf=None, ef=None, ds=1):
+def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
+                       sf=None, ef=None, ds=1, fps=20):
+
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
 
@@ -153,6 +156,9 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6, sf
         ef = estimates.C.shape[1]
 
     traces = [(tr-min(tr)) / (np.max(tr)-np.min(tr)) + i for i, tr in enumerate(estimates.C[comps_to_select, sf:ef][:, ::ds])]
+    traces_flat = [(tr - min(tr)) / (np.max(tr) - np.min(tr)) for i, tr in
+              enumerate(estimates.C[comps_to_select, sf:ef][:, ::ds])]
+
     times = [estimates.time[sf:ef][::ds] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
 
@@ -208,9 +214,17 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6, sf
             corr_scores[comp] = sorted_group_corr_scores[i]
             corr_groups[comp] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
 
+
+    # reconstruction quality metrics
+    r2_scores, mae_values, rmse_values, snr_values = \
+        get_multineuron_reconstruction_quality_metrics(np.array(traces_flat), fps=fps)
+
+
     return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
                 hvals=hvals, colors=colors, corr_scores=corr_scores,
                 corr_groups=corr_groups,
+                r2=r2_scores, mae=mae_values,
+                rmse=rmse_values, snr_rec=snr_values,
                 idx=comps_to_select)
 
 
@@ -473,6 +487,18 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             elif mode == 5:
                 # correlation with other components from corr matrix (belonging to the same connected component)
                 metric = np.array(src_partial.data['corr_groups'])
+            elif mode == 6:
+                # reconstruction: r2
+                metric = np.array(src_partial.data['r2'])
+            elif mode == 7:
+                # reconstruction: mae
+                metric = np.array(src_partial.data['mae'])
+            elif mode == 8:
+                # reconstruction: rmse
+                metric = np.array(src_partial.data['rmse'])
+            elif mode == 9:
+                # reconstruction: snr
+                metric = np.array(src_partial.data['snr_rec'])
 
             else:
                 raise ValueError('wrong RadioButton value')
@@ -742,7 +768,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
         # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr"], active=0)
+        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
+                                                      'R2', 'MAE', 'RMSE', 'SNR+'], active=0)
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)
