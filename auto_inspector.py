@@ -151,12 +151,12 @@ def area_check(series, pxlthr_area):
     return metric
 
 
-def circularity_check(series, circ_thr):
+def circularity_check_(series, circ_thr):
     metric = (series.circularity <= circ_thr)
     return metric
 
 
-def final_check(df, circ_thr, pxlthr_area=3, pxlthr_distance=10):
+def metrics_to_decision(df, circ_thr, pxlthr_area=3, pxlthr_distance=10):
     # corrss = df['corr'].values
     series_num = df.shape[0]
     df = df.assign(new_column=df['delete'] + df['merge'])
