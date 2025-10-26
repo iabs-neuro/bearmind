@@ -105,4 +105,4 @@ def calculate_perimeter(contour):
         dot_num -= 1
 
     perimeter = np.sum(dots_dist)
-    return perimeter
+    return perimeter, dots_dist

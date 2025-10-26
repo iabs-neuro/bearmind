@@ -47,13 +47,30 @@ def get_circularities(est, comps_to_select, cthr=0.3):
         contour = contours[i]["coordinates"]
 
         area = calculate_polygon_area(contour)
-        perimeter = calculate_perimeter(contour)
+        perimeter = calculate_perimeter(contour)[0]
         circularity = perimeter**2 / (4 * np.pi * area)
 
         circularities.append(circularity)
 
     circularities = np.array(circularities)
     return circularities
+
+
+def get_max_edges(est, comps_to_select, cthr=0.3):
+    contours = get_contours(est, comps_to_select, cthr=cthr)
+    max_edges = []
+
+    for i in range(len(contours)):
+        contour = contours[i]["coordinates"]
+
+        edges = calculate_perimeter(contour)[1]
+        max_edge = max(edges)
+
+        max_edges.append(max_edge)
+
+    max_edges = np.array(max_edges)
+    return max_edges
+
 
 def get_multineuron_reconstruction_quality_metrics(traces,
                                                     fps=DEFAULT_FPS):
@@ -123,6 +140,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
         centers.append(contours[i]["CoM"])
 
     circularities = get_circularities(est, comps_to_select, cthr=cthr)
+    max_edges = get_max_edges(est, comps_to_select, cthr=cthr)
     caiman_snrs = est.SNR_comp[comps_to_select]
     caiman_r_scores = est.r_values[comps_to_select]
 
@@ -133,6 +151,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
         'component_idx': comps_to_select,
         'area': areas,
         'circularity': circularities,
+        'max_edge': max_edges,
         'center': centers,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
@@ -151,12 +170,18 @@ def area_check(series, pxlthr_area):
     return metric
 
 
-def circularity_check_(series, circ_thr):
+def circularity_check(series, circ_thr):
     metric = (series.circularity <= circ_thr)
     return metric
 
 
-def metrics_to_decision(df, circ_thr, pxlthr_area=3, pxlthr_distance=10):
+def max_edge_check(series, maxedge_thr):
+    metric = (series.max_edge <= maxedge_thr)
+    return metric
+
+def metrics_to_decision(df,
+                        circ_thr, maxedge_thr, pxlthr_area=3, pxlthr_distance=10,
+                        use_circularity_check=True, use_area_check=True, use_max_edge_check=True):
     # corrss = df['corr'].values
     series_num = df.shape[0]
     df = df.assign(new_column=df['delete'] + df['merge'])
@@ -165,12 +190,18 @@ def metrics_to_decision(df, circ_thr, pxlthr_area=3, pxlthr_distance=10):
         string = df.iloc[string_num]
 
         ### parameters
-        area = area_check(string, pxlthr_area)
-        circle = circularity_check(string, circ_thr)
+        area = area_check(string, pxlthr_area) if use_area_check else area = True
 
-        delete = not (area and circle)
+        circle = circularity_check(string, circ_thr) if use_circularity_check else circle = True
+
+        max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else max_edge = True
+
+        delete = not (area and circle and max_edge)
         ###
 
         df.iloc[string_num].delete = int(delete)
 
     return df
+
+
+
