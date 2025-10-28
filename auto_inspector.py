@@ -3,10 +3,10 @@ from driada.experiment.wavelet_event_detection import extract_wvt_events, WVT_EV
 from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFAULT_FPS
 
 from utils import *
-import caiman as cm
 import numpy as np
 import pandas as pd
 import warnings
+import tqdm
 
 import matplotlib.pyplot as plt
 
@@ -17,7 +17,10 @@ from caiman.components_evaluation import (
 
 
 from scipy.stats import median_abs_deviation
+from scipy.spatial import distance_matrix
 from joblib import Parallel, delayed
+from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
+                     calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities)
 
 
 def get_hvals(traces):
@@ -29,77 +32,6 @@ def get_hvals(traces):
         hvals.append(hval)
 
     return hvals
-
-
-def get_contours(est, comps_to_select, cthr=0.3):
-    estimates_data = est.A[:, comps_to_select]
-    contours = cm.utils.visualization.get_contours(estimates_data,
-                                                   dims=est.imax.shape,
-                                                   thr=cthr)
-    return contours
-
-
-def get_circularities(est, comps_to_select, cthr=0.3):
-    contours = get_contours(est, comps_to_select, cthr=cthr)
-    circularities = []
-
-    for i in range(len(contours)):
-        contour = contours[i]["coordinates"]
-
-        area = calculate_polygon_area(contour)
-        perimeter = calculate_perimeter(contour)[0]
-        circularity = perimeter**2 / (4 * np.pi * area)
-
-        circularities.append(circularity)
-
-    circularities = np.array(circularities)
-    return circularities
-
-
-def get_max_edges(est, comps_to_select, cthr=0.3):
-    contours = get_contours(est, comps_to_select, cthr=cthr)
-    max_edges = []
-
-    for i in range(len(contours)):
-        contour = contours[i]["coordinates"]
-
-        edges = calculate_perimeter(contour)[1]
-        max_edge = max(edges)
-
-        max_edges.append(max_edge)
-
-    max_edges = np.array(max_edges)
-    return max_edges
-
-
-def get_convexities(est, comps_to_select, cthr=0.3):
-    contours = get_contours(est, comps_to_select, cthr=cthr)
-    convexities = []
-
-    for i in range(len(contours)):
-        contour = contours[i]["coordinates"]
-        contour_mask = np.array(pd.Series(contour[:, 0] * contour[:, 1]).notna())
-        contour = contour[contour_mask]
-
-        num_dots = (len(contour))
-        angles = []
-        for dot in range(num_dots):
-            dot_prev = contour[(dot - 1) % num_dots]
-            dot_cur = contour[dot]
-            dot_next = contour[(dot + 1) % num_dots]
-
-            vec_1 = dot_prev - dot_cur
-            vec_2 = dot_next - dot_cur
-
-            cross_product = np.cross(vec_1, vec_2)
-            angle = int(cross_product <= 0)
-            angles.append(angle)
-
-        convexity = sum(angles) / num_dots
-        convexities.append(convexity)
-
-    convexities = np.array(convexities)
-    return convexities
 
 
 def get_multineuron_reconstruction_quality_metrics(traces,
@@ -143,7 +75,87 @@ def get_reconstruction_quality_metrics(trace,
         else:
             return r2_score, mae_value, rmse_value, snr_value
 
-def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, sf=None, ef=None, ds=1):
+
+def footprint_center_distmat(centers):
+    centers = np.array(centers)
+    dist_matrix = distance_matrix(centers, centers)
+    return dist_matrix
+
+
+def footprint_boundary_distmat(contours, mask=None, verbose=True):
+    n = len(contours)
+    if verbose:
+        print('Computing boundary distances...')
+    if mask is None: # mask[i,j] = True means we want to compute for this pair
+        mask = np.ones((n,n), dtype=bool)
+    else:
+        mask = mask.astype(bool)
+
+    cont_distmat = np.zeros((n,n))
+    for i, c1 in tqdm.tqdm(enumerate(contours)):
+        for j, c2 in enumerate(contours):
+            if mask[i,j]:
+                dist = convex_polygons_min_distance(c1["coordinates"], c2["coordinates"])
+                cont_distmat[i,j] = dist
+                cont_distmat[j,i] = dist
+
+    return cont_distmat
+
+
+def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5):
+    match_threshold /= sessions_num
+    corr_num = len(neurons)
+    corr_mtx_sessions = []
+
+    session_time = neurons.shape[1]//sessions_num
+    for session in range(sessions_num):
+        ts_start = session * session_time
+
+        corr_mtx = np.corrcoef(neurons[:, ts_start:ts_start + session_time - 1])
+        corr_mtx = np.where(corr_mtx >= corr_threshold, 1, 0)
+        corr_mtx_sessions.append(corr_mtx)
+
+    corr_mtx_sessions = np.array(corr_mtx_sessions)
+    match_mtx = np.sum(corr_mtx_sessions, axis=0) / sessions_num
+    match_mtx_crop = np.where(match_mtx >= match_threshold, match_mtx, 0)
+
+    CM = match_mtx_crop
+    np.fill_diagonal(CM, 0)
+    CM[np.isnan(CM)] = 0
+
+    TCM = CM.copy()
+    TCM[np.where(TCM < match_threshold)] = 0
+
+    nontrivial_ccs = [comp for comp in list(get_ccs_from_adj(TCM)) if len(comp) > 1]
+
+    group_corr_scores = np.zeros(len(nontrivial_ccs))
+    corr_scores = np.zeros(corr_num)
+    corr_groups = np.zeros(corr_num)
+    for i, group in enumerate(nontrivial_ccs):
+        ordered = np.array(sorted(list(group)))
+        subnetwork = CM[ordered, :][:, ordered]  # we take corr values from initial corr matrix
+        nc = len(ordered)
+        group_density = np.sum(subnetwork) / (nc ** 2 - nc)
+        group_corr_scores[i] = group_density
+        # group_av_nnz = np.mean(subnetwork[np.where(subnetwork != 0)])
+
+    sorted_nontrivial_ccs = [nontrivial_ccs[i] for i in
+                             np.argsort(group_corr_scores)[::-1]]  # sort components from highest to lowest score
+    sorted_group_corr_scores = sorted(group_corr_scores)
+    for i, group in enumerate(sorted_nontrivial_ccs):
+        for neuron in group:
+            corr_scores[neuron] = sorted_group_corr_scores[i]
+            corr_groups[neuron] = len(sorted_group_corr_scores) - i + 1  # big group number = high corr score
+
+    return corr_groups, match_mtx, match_mtx_crop
+
+
+def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
+                         corr_thr=0.6, num_sessions=1, match_threshold=3,
+                         sf=None, ef=None, ds=1, include_reconstruction=False):
+
+    match_threshold = min(match_threshold, num_sessions)
+
     if len(comps_to_select) == 0:
         comps_to_select = est.idx_components
 
@@ -160,6 +172,9 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
               enumerate(est.C[comps_to_select, sf:ef][:, ::ds])]
     times = [est.time[sf:ef][::ds] for _ in range(n_cells)]
 
+    corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces), corr_thr, match_threshold,
+                                                        fps=fps, sessions_num=num_sessions)
+
     contours = get_contours(est, comps_to_select, cthr=cthr)
     areas = []
     centers = []
@@ -169,14 +184,17 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
         areas.append(area)
         centers.append(contours[i]["CoM"])
 
-    circularities = get_circularities(est, comps_to_select, cthr=cthr)
-    max_edges = get_max_edges(est, comps_to_select, cthr=cthr)
-    convexities = get_convexities(est, comps_to_select, cthr=cthr)
+    # distance matrices
+    FCD = footprint_center_distmat(centers)
+    FBD = footprint_boundary_distmat(contours, mask=match_mtx_crop)
+
+    #footprint metrics
+    circularities = get_circularities(contours)
+    max_edges = get_max_edges(contours)
+    convexities = get_convexities(contours)
+
     caiman_snrs = est.SNR_comp[comps_to_select]
     caiman_r_scores = est.r_values[comps_to_select]
-
-    r2_scores, mae_values, rmse_values, snr_values = \
-        get_multineuron_reconstruction_quality_metrics(np.array(traces), fps=DEFAULT_FPS)
 
     metrics = {
         'component_idx': comps_to_select,
@@ -187,14 +205,22 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
         'center': centers,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
-        'r2': r2_scores,
-        'mae': mae_values,
-        'rmse': rmse_values,
-        'snr_rec': snr_values
     }
 
+    if include_reconstruction:
+        r2_scores, mae_values, rmse_values, snr_values = \
+            get_multineuron_reconstruction_quality_metrics(np.array(traces), fps=DEFAULT_FPS)
+
+        rec_metrics = {
+            'r2': r2_scores,
+            'mae': mae_values,
+            'rmse': rmse_values,
+            'snr_rec': snr_values
+        }
+        metrics = {**metrics, **rec_metrics}
+
     metrics_df = pd.DataFrame(metrics)
-    return metrics_df
+    return metrics_df, match_mtx, FCD, FBD
 
 
 def area_check(series, pxlthr_area):
@@ -217,10 +243,12 @@ def convexity_check(series, convex_thr):
     return metric
 
 
+
 def metrics_to_decision(df,
                         circ_thr, maxedge_thr, convex_thr, pxlthr_area=3, pxlthr_distance=10,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
                         use_convexity_check=True):
+
     # corrss = df['corr'].values
     series_num = df.shape[0]
     df = df.assign(new_column=df['delete'] + df['merge'])
@@ -243,3 +271,25 @@ def metrics_to_decision(df,
         df.iloc[string_num].delete = int(delete)
 
     return df
+
+
+def metrics_to_dummy_decision(df):
+    df = df.copy()
+    # Add 'decision' column: 90% 'ok', 10% 'delete'
+    np.random.seed(42)
+    delete_mask = np.random.rand(len(df)) < 0.2
+    df['decision'] = np.where(delete_mask, 'delete', 'ok')
+
+    # Add 'merge' column: 90% are 0, 10% distributed into groups 1-10
+    merge_mask = np.random.rand(len(df)) < 0.2
+    df['merge'] = np.where(merge_mask, np.random.randint(1, 11, len(df)), 0)
+    return df
+
+
+def implement_decision(est, df):
+    # deletion
+    components_to_del = df[df['decision'] == 'delete']['component_idx']
+    temp = est.idx_components_bad.tolist() + components_to_del.tolist()
+    est.idx_components_bad = np.sort(temp)
+    # print('all bad comps', len(temp))
+    est.idx_components = [_ for _ in est.idx_components if _ not in components_to_del]
