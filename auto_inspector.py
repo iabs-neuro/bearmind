@@ -72,6 +72,36 @@ def get_max_edges(est, comps_to_select, cthr=0.3):
     return max_edges
 
 
+def get_convexities(est, comps_to_select, cthr=0.3):
+    contours = get_contours(est, comps_to_select, cthr=cthr)
+    convexities = []
+
+    for i in range(len(contours)):
+        contour = contours[i]["coordinates"]
+        contour_mask = np.array(pd.Series(contour[:, 0] * contour[:, 1]).notna())
+        contour = contour[contour_mask]
+
+        num_dots = (len(contour))
+        angles = []
+        for dot in range(num_dots):
+            dot_prev = contour[(dot - 1) % num_dots]
+            dot_cur = contour[dot]
+            dot_next = contour[(dot + 1) % num_dots]
+
+            vec_1 = dot_prev - dot_cur
+            vec_2 = dot_next - dot_cur
+
+            cross_product = np.cross(vec_1, vec_2)
+            angle = int(cross_product <= 0)
+            angles.append(angle)
+
+        convexity = sum(angles) / num_dots
+        convexities.append(convexity)
+
+    convexities = np.array(convexities)
+    return convexities
+
+
 def get_multineuron_reconstruction_quality_metrics(traces,
                                                     fps=DEFAULT_FPS):
     print('Computing reconstruction metrics...')
@@ -141,6 +171,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
 
     circularities = get_circularities(est, comps_to_select, cthr=cthr)
     max_edges = get_max_edges(est, comps_to_select, cthr=cthr)
+    convexities = get_convexities(est, comps_to_select, cthr=cthr)
     caiman_snrs = est.SNR_comp[comps_to_select]
     caiman_r_scores = est.r_values[comps_to_select]
 
@@ -152,6 +183,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, corr_thr=0.6, s
         'area': areas,
         'circularity': circularities,
         'max_edge': max_edges,
+        'convexity': convexities,
         'center': centers,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
@@ -179,9 +211,16 @@ def max_edge_check(series, maxedge_thr):
     metric = (series.max_edge <= maxedge_thr)
     return metric
 
+
+def convexity_check(series, convex_thr):
+    metric = (series.convexity <= convex_thr)
+    return metric
+
+
 def metrics_to_decision(df,
-                        circ_thr, maxedge_thr, pxlthr_area=3, pxlthr_distance=10,
-                        use_circularity_check=True, use_area_check=True, use_max_edge_check=True):
+                        circ_thr, maxedge_thr, convex_thr, pxlthr_area=3, pxlthr_distance=10,
+                        use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
+                        use_convexity_check=True):
     # corrss = df['corr'].values
     series_num = df.shape[0]
     df = df.assign(new_column=df['delete'] + df['merge'])
@@ -190,18 +229,17 @@ def metrics_to_decision(df,
         string = df.iloc[string_num]
 
         ### parameters
-        area = area_check(string, pxlthr_area) if use_area_check else area = True
+        area = area_check(string, pxlthr_area) if use_area_check else True
 
-        circle = circularity_check(string, circ_thr) if use_circularity_check else circle = True
+        circle = circularity_check(string, circ_thr) if use_circularity_check else True
 
-        max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else max_edge = True
+        max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else True
 
-        delete = not (area and circle and max_edge)
+        convex = convexity_check(string, convex_thr) if use_convexity_check else True
+
+        delete = not (area and circle and max_edge and convex)
         ###
 
         df.iloc[string_num].delete = int(delete)
 
     return df
-
-
-
