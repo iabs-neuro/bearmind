@@ -205,6 +205,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
         'center': centers,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
+        'corr_groups': corr_groups
     }
 
     if include_reconstruction:
@@ -243,34 +244,92 @@ def convexity_check(series, convex_thr):
     return metric
 
 
-
-def metrics_to_decision(df,
-                        circ_thr, maxedge_thr, convex_thr, pxlthr_area=3, pxlthr_distance=10,
+def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
+                        circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=3, pxlthr_distance_boundary=5,
+                        d_snr_thr=42,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
-                        use_convexity_check=True):
-
-    # corrss = df['corr'].values
-    series_num = df.shape[0]
-    df = df.assign(new_column=df['delete'] + df['merge'])
+                        use_convexity_check=True, use_corr_check=True) -> pd.DataFrame:
+    """
+    Classify neurons for merge/delete/keep annotating
+    merge groups by clusters' numbers in 'merge' column,
+    to delete as 1 and keep as 0 in delete column
+    :param metrics_df:
+    :param match_mtx:
+    :param FCD:
+    :param FBD:
+    :param circ_thr:
+    :param maxedge_thr:
+    :param convex_thr:
+    :param pxlthr_area:
+    :param pxlthr_distance_boundary:
+    :param d_snr_thr:
+    :param use_circularity_check:
+    :param use_area_check:
+    :param use_max_edge_check:
+    :param use_convexity_check:
+    :param use_corr_check:
+    :return:
+    """
+    series_num = metrics_df.shape[0]
+    metrics_df[['delete', 'merge']] = 0
 
     for string_num in range(series_num):
-        string = df.iloc[string_num]
+        string = metrics_df.iloc[string_num]
 
         ### parameters
         area = area_check(string, pxlthr_area) if use_area_check else True
-
         circle = circularity_check(string, circ_thr) if use_circularity_check else True
-
         max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else True
-
         convex = convexity_check(string, convex_thr) if use_convexity_check else True
 
         delete = not (area and circle and max_edge and convex)
         ###
 
-        df.iloc[string_num].delete = int(delete)
+        metrics_df.iloc[string_num, metrics_df.columns.get_loc('delete')] = int(delete)
 
-    return df
+    if use_corr_check:
+        # unique number of clusters
+        unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
+        unique_clusters = sorted(unique_clusters, reverse=True)
+
+        metrics_df.sort_values('corr_groups', ascending=False, inplace=True)
+        for cluster_id in unique_clusters:
+            # indeces of neurons in cluster
+            cluster = metrics_df[metrics_df['corr_groups'] == cluster_id]
+            cluster_indices = cluster['component_idx'].tolist()
+
+            for index_1 in cluster_indices:
+                for index_2 in cluster_indices:
+                    # address of current neuron
+                    metrics_df_mask_1 = metrics_df['component_idx'] == index_1
+                    metrics_df_mask_2 = metrics_df['component_idx'] == index_2
+
+                    # execute only if not already classified to delete
+                    if (index_1 != index_2 and metrics_df.loc[metrics_df_mask_1, 'delete'].item() == 0
+                            and metrics_df.loc[metrics_df_mask_2, 'delete'].item() == 0):
+
+                        # pandas df indeces matching with FBD matrix
+                        FBD_idx_1 = metrics_df.loc[metrics_df_mask_1].index[0]
+                        FBD_idx_2 = metrics_df.loc[metrics_df_mask_2].index[0]
+
+                        # SNRs of current neurons
+                        snr = [metrics_df.loc[metrics_df_mask_1, 'caiman_snr'].item(),
+                               metrics_df.loc[metrics_df_mask_2, 'caiman_snr'].item()]
+
+                        # check for merge/delete/keep choice depending on rules
+                        if FBD[FBD_idx_1][FBD_idx_2] <= pxlthr_distance_boundary:
+                            d_snr = max(snr) - min(snr)
+                            # merge neurons with close snr value
+                            if d_snr <= d_snr_thr:
+                                metrics_df.loc[metrics_df_mask_1, 'merge'] = cluster_id
+
+                            # delete all with smaller SNR
+                            elif snr[0] != max(snr):
+                                metrics_df.loc[metrics_df_mask_1, 'delete'] = 1
+                        # else : default value is 0 in 'delete' if it has not been classified already
+
+    metrics_df.sort_index(inplace=True)
+    return metrics_df
 
 
 def metrics_to_dummy_decision(df):
