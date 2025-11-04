@@ -219,7 +219,6 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     r2_scores, mae_values, rmse_values, snr_values = \
         get_multineuron_reconstruction_quality_metrics(np.array(traces_flat), fps=fps)
 
-
     return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
                 hvals=hvals, colors=colors, corr_scores=corr_scores,
                 corr_groups=corr_groups,
@@ -296,7 +295,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             #new_trace = np.full(fill_value=i, shape=1000)
             new_traces[ind] = new_trace  # write new trace data to the current row in CDS
             new_ids[ind] = new_id  # write new height to the current row in CDS
-
 
         # actually update our copy of CDS
         show_data.update({'traces': new_traces,

@@ -1,3 +1,4 @@
+import copy
 
 from driada.experiment.wavelet_event_detection import extract_wvt_events, WVT_EVENT_DETECTION_PARAMS
 from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFAULT_FPS
@@ -10,6 +11,7 @@ import tqdm
 
 import matplotlib.pyplot as plt
 
+from caiman.source_extraction.cnmf import params
 from caiman.components_evaluation import (
         evaluate_components_CNN, estimate_components_quality_auto,
         select_components_from_metrics, compute_eccentricity,
@@ -347,8 +349,210 @@ def metrics_to_dummy_decision(df):
 
 def implement_decision(est, df):
     # deletion
+    est = copy.deepcopy(est)
     components_to_del = df[df['decision'] == 'delete']['component_idx']
     temp = est.idx_components_bad.tolist() + components_to_del.tolist()
     est.idx_components_bad = np.sort(temp)
     # print('all bad comps', len(temp))
     est.idx_components = [_ for _ in est.idx_components if _ not in components_to_del]
+    components_to_merge = df['merge'].values
+    for group_id in np.unique(components_to_merge):
+        if group_id != 0:  # 0 means no need to merge
+            sel_comps = df[df['merge'] == group_id]['component_idx']
+            est.manual_merge([sel_comps], params=params.CNMFParams(params_dict=est.cnmf_dict))
+
+    return est
+
+
+def validate_decision(est_init, est_gt, est, fps=20):
+    df_init = estimates_to_metrics(est_init, fps=fps, include_reconstruction=False)
+    df_gt = estimates_to_metrics(est_gt, fps=fps, include_reconstruction=False)
+    df = estimates_to_metrics(est, fps=fps, include_reconstruction=False)
+
+
+import pandas as pd
+import numpy as np
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
+
+
+def match_coordinates(df1, df2, max_distance=None):
+    """
+    Match coordinates between two dataframes using Hungarian algorithm.
+
+    Args:
+        df1, df2: DataFrames with 'center' column containing 2D coordinates
+        max_distance: Maximum distance to consider a match (None = no limit)
+
+    Returns:
+        matched_pairs: list of (idx1, idx2) tuples
+        unmatched_df1: indices from df1 with no match
+        unmatched_df2: indices from df2 with no match
+    """
+    # Extract coordinates
+    coords1 = np.array([c for c in df1['center']])
+    coords2 = np.array([c for c in df2['center']])
+
+    # Compute pairwise distances
+    distances = cdist(coords1, coords2, metric='euclidean')
+
+    # Hungarian algorithm for optimal matching
+    row_ind, col_ind = linear_sum_assignment(distances)
+
+    # Filter by max_distance if specified
+    matched_pairs = []
+    unmatched_df1 = set(range(len(df1)))
+    unmatched_df2 = set(range(len(df2)))
+
+    for i, j in zip(row_ind, col_ind):
+        if max_distance is None or distances[i, j] <= max_distance:
+            matched_pairs.append((i, j, distances[i, j]))
+            unmatched_df1.discard(i)
+            unmatched_df2.discard(j)
+
+    return matched_pairs, list(unmatched_df1), list(unmatched_df2)
+
+
+def compute_metrics(initial, ground_truth, auto, max_match_distance=50):
+    """
+    Compute comprehensive metrics comparing auto vs ground_truth with initial baseline.
+
+    Args:
+        initial: Baseline DataFrame
+        ground_truth: Ground truth DataFrame
+        auto: Automatically generated DataFrame
+        max_match_distance: Max distance (pixels) to consider elements as matched
+
+    Returns:
+        dict with all metrics
+    """
+    # Match auto to ground_truth
+    matched_auto_gt, unmatched_auto, unmatched_gt = match_coordinates(
+        auto, ground_truth, max_match_distance
+    )
+
+    # Match initial to ground_truth (for baseline)
+    matched_init_gt, unmatched_init, _ = match_coordinates(
+        initial, ground_truth, max_match_distance
+    )
+
+    # === Metric 1: Detection Metrics (Precision/Recall) ===
+    n_auto = len(auto)
+    n_gt = len(ground_truth)
+    n_matched = len(matched_auto_gt)
+
+    precision = n_matched / n_auto if n_auto > 0 else 0
+    recall = n_matched / n_gt if n_gt > 0 else 0
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+
+    false_positives = len(unmatched_auto)  # Elements in auto but not in ground_truth
+    false_negatives = len(unmatched_gt)  # Elements in ground_truth but not in auto
+
+    # === Metric 2: Positional Accuracy ===
+    if matched_auto_gt:
+        # Distance errors for matched pairs
+        distances_auto = [dist for _, _, dist in matched_auto_gt]
+        mean_error_auto = np.mean(distances_auto)
+        median_error_auto = np.median(distances_auto)
+        std_error_auto = np.std(distances_auto)
+        max_error_auto = np.max(distances_auto)
+    else:
+        mean_error_auto = median_error_auto = std_error_auto = max_error_auto = float('nan')
+
+    # === Metric 3: Baseline Comparison ===
+    if matched_init_gt:
+        distances_init = [dist for _, _, dist in matched_init_gt]
+        mean_error_baseline = np.mean(distances_init)
+        improvement = (mean_error_baseline - mean_error_auto) / mean_error_baseline if mean_error_baseline > 0 else 0
+    else:
+        mean_error_baseline = float('nan')
+        improvement = float('nan')
+
+    # === Metric 4: Stability (how much moved) ===
+    # Match auto to initial to see how much each element moved
+    matched_auto_init, _, _ = match_coordinates(auto, initial, max_match_distance)
+    if matched_auto_init:
+        movement_distances = [dist for _, _, dist in matched_auto_init]
+        mean_movement = np.mean(movement_distances)
+        median_movement = np.median(movement_distances)
+    else:
+      mean_movement = median_movement = float('nan')
+
+    return {
+      # Detection metrics
+      'precision': precision,
+      'recall': recall,
+      'f1_score': f1_score,
+      'false_positives': false_positives,
+      'false_negatives': false_negatives,
+
+      # Positional accuracy (auto vs ground_truth)
+      'mean_error': mean_error_auto,
+      'median_error': median_error_auto,
+      'std_error': std_error_auto,
+      'max_error': max_error_auto,
+
+      # Baseline comparison
+      'baseline_mean_error': mean_error_baseline,
+      'improvement_vs_baseline': improvement,
+
+      # Stability/movement
+      'mean_movement_from_initial': mean_movement,
+      'median_movement_from_initial': median_movement,
+
+      # Raw counts
+      'n_auto': n_auto,
+      'n_ground_truth': n_gt,
+      'n_matched': n_matched,
+    }
+
+
+def print_report(metrics):
+    """Pretty print the metrics report."""
+    print("="*60)
+    print("EVALUATION REPORT")
+    print("="*60)
+
+    print("\n📊 DETECTION METRICS")
+    print(f"  Precision:        {metrics['precision']:.2%} ({metrics['n_matched']}/{metrics['n_auto']} detected correctly)")
+    print(f"  Recall:           {metrics['recall']:.2%} ({metrics['n_matched']}/{metrics['n_ground_truth']} ground truth found)")
+    print(f"  F1 Score:         {metrics['f1_score']:.2%}")
+    print(f"  False Positives:  {metrics['false_positives']} (detected but shouldn't exist)")
+    print(f"  False Negatives:  {metrics['false_negatives']} (missing from detection)")
+
+    print("\n📍 POSITIONAL ACCURACY (Auto vs Ground Truth)")
+    print(f"  Mean Error:       {metrics['mean_error']:.2f} pixels")
+    print(f"  Median Error:     {metrics['median_error']:.2f} pixels")
+    print(f"  Std Deviation:    {metrics['std_error']:.2f} pixels")
+    print(f"  Max Error:        {metrics['max_error']:.2f} pixels")
+
+    print("\n📈 BASELINE COMPARISON (vs Initial)")
+    print(f"  Baseline Error:   {metrics['baseline_mean_error']:.2f} pixels")
+    print(f"  Improvement:      {metrics['improvement_vs_baseline']:.2%}")
+
+    print("\n🔄 STABILITY (Movement from Initial)")
+    print(f"  Mean Movement:    {metrics['mean_movement_from_initial']:.2f} pixels")
+    print(f"  Median Movement:  {metrics['median_movement_from_initial']:.2f} pixels")
+
+    print("="*60)
+
+
+  # Example usage:
+if __name__ == "__main__":
+    initial = pd.DataFrame({
+      'center': [(10, 20), (50, 60), (100, 100), (150, 150)]
+    })
+
+    ground_truth = pd.DataFrame({
+      'center': [(12, 22), (51, 61), (102, 103), (155, 152)]
+    })
+
+    auto = pd.DataFrame({
+      'center': [(13, 21), (52, 62), (200, 200), (156, 153)]  # One FP, one FN
+    })
+
+    # Compute metrics
+    metrics = compute_metrics(initial, ground_truth, auto, max_match_distance=50)
+
+    # Print report
+    print_report(metrics)
