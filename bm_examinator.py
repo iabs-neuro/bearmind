@@ -40,7 +40,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
-from auto_inspector import get_multineuron_reconstruction_quality_metrics
+from auto_inspector import get_multineuron_metrics
 
 output_notebook()
 

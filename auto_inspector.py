@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import warnings
 import tqdm
+import time
 
 import matplotlib.pyplot as plt
 
@@ -36,22 +37,7 @@ def get_hvals(traces):
     return hvals
 
 
-def get_multineuron_reconstruction_quality_metrics(traces,
-                                                    fps=DEFAULT_FPS):
-    print('Computing reconstruction metrics...')
-    rec_results = Parallel(n_jobs=-1)(
-        delayed(get_reconstruction_quality_metrics)(traces[i], fps=fps)
-                for i in range(traces.shape[0])
-    )
-    r2_scores, mae_values, rmse_values, snr_values = list(zip(*rec_results))
-    return r2_scores, mae_values, rmse_values, snr_values
-
-
-def get_reconstruction_quality_metrics(trace,
-                                       fps=DEFAULT_FPS,
-                                       return_reconstructed=False):
-    # Get metrics for a single neuron
-
+def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
     # Create Neuron object
     neuron = Neuron(
         cell_id="",
@@ -60,22 +46,90 @@ def get_reconstruction_quality_metrics(trace,
         fps=fps
     )
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # Reconstruct spikes (required before getting metrics)
-        neuron.reconstruct_spikes(method="wavelet")
+    # Reconstruct spikes (required before getting metrics)
+    neuron.reconstruct_spikes(
+        method='wavelet',
+        iterative=False,  # more conservative, we have to be careful since kinetics is still default
+        create_event_regions=True  # Create event regions for quality metrics
+    )
 
-        # Get quality metrics
-        r2_score = neuron.get_reconstruction_r2()
-        mae_value = neuron.get_mae()
-        rmse_value = neuron.get_noise_ampl()
-        snr_value = neuron.get_snr_reconstruction()
-        rec = Neuron.get_restored_calcium(neuron.asp.data, DEFAULT_T_RISE, neuron.t_off)
+    kinetics = neuron.get_kinetics(
+        method='direct',  # Direct measurement from detected events
+        use_cached=False,  # Force recomputation
+        update_reconstruction=not lightweight  # Recompute with optimal parameters
+    )
 
-        if return_reconstructed:
-            return r2_score, mae_value, rmse_value, snr_value, rec
-        else:
-            return r2_score, mae_value, rmse_value, snr_value
+    return neuron
+
+
+def get_signal_metrics(neuron):
+    # metrics that don't require reconstruction
+    n_events = int(np.sum(neuron.asp.data > 0))
+    t_rise = neuron.t_rise
+    t_off = neuron.t_off
+    try:
+        wavelet_snr = neuron.get_wavelet_snr()
+    except ValueError:
+        wavelet_snr = -1
+
+    sig_metrics = {
+        'n_events': n_events,
+        't_rise': t_rise,
+        't_off': t_off,
+        'wavelet_snr': wavelet_snr
+    }
+
+    return sig_metrics
+
+
+def get_reconstruction_quality_metrics(neuron,
+                                       return_reconstructed=False):
+
+    # Get quality metrics
+    r2_score = neuron.get_reconstruction_r2()
+    event_r2_score = neuron.get_reconstruction_r2(event_only=True)
+    nmae = neuron.get_nmae()
+    nrmse = neuron.get_nrmse()
+    snr_recon = neuron.get_snr_reconstruction()
+    rec = neuron.reconstructed
+
+    rec_metrics = {
+            'r2_score': r2_score,
+            'event_r2_score': event_r2_score,
+            'nmae': nmae,
+            'nrmse': nrmse,
+            'snr_recon': snr_recon
+        }
+
+    if return_reconstructed:
+        rec_metrics['reconstruction'] = rec
+
+    return rec_metrics
+
+
+def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False):
+    neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy)
+    signal_metrics = get_signal_metrics(neuron)
+    if include_heavy:
+        rec_metrics = get_reconstruction_quality_metrics(neuron)
+        return {**signal_metrics, **rec_metrics}
+    else:
+        return signal_metrics
+
+
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False):
+    all_metrics = {}
+    n = traces.shape[0]
+    print('Computing wavelet-based events...')
+    metrics_res = Parallel(n_jobs=-1)(
+        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy)
+        for i in range(traces.shape[0])
+    )
+
+    for metric in metrics_res[0].keys():
+        all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
+
+    return all_metrics
 
 
 def footprint_center_distmat(centers):
@@ -154,7 +208,7 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
 
 def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
-                         sf=None, ef=None, ds=1, include_reconstruction=False):
+                         sf=None, ef=None, ds=1, include_heavy=False):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -162,6 +216,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
         comps_to_select = est.idx_components
 
     n_cells = len(comps_to_select)
+    print(n_cells)
     if n_cells == 0:
         return {}
 
@@ -174,8 +229,11 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
               enumerate(est.C[comps_to_select, sf:ef][:, ::ds])]
     times = [est.time[sf:ef][::ds] for _ in range(n_cells)]
 
-    corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces), corr_thr, match_threshold,
-                                                        fps=fps, sessions_num=num_sessions)
+    corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
+                                                                  corr_thr,
+                                                                  match_threshold,
+                                                                  fps=fps,
+                                                                  sessions_num=num_sessions)
 
     contours = get_contours(est, comps_to_select, cthr=cthr)
     areas = []
@@ -210,17 +268,14 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
         'corr_groups': corr_groups
     }
 
-    if include_reconstruction:
-        r2_scores, mae_values, rmse_values, snr_values = \
-            get_multineuron_reconstruction_quality_metrics(np.array(traces), fps=DEFAULT_FPS)
-
-        rec_metrics = {
-            'r2': r2_scores,
-            'mae': mae_values,
-            'rmse': rmse_values,
-            'snr_rec': snr_values
-        }
-        metrics = {**metrics, **rec_metrics}
+    t1 = time.time()
+    event_based_metrics = get_multineuron_metrics(np.array(traces),
+                                                  fps=DEFAULT_FPS,
+                                                  include_heavy=include_heavy)
+    t2 = time.time()
+    etime = np.round(t2-t1, 2)
+    print(f'Elapsed time for metrics: {etime} s, {np.round(etime/n_cells, 2)} s per neuron')
+    metrics = {**metrics, **event_based_metrics}
 
     metrics_df = pd.DataFrame(metrics)
     return metrics_df, match_mtx, FCD, FBD
