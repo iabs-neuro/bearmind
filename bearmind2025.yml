@@ -214,7 +214,6 @@ dependencies:
   - numcodecs=0.13.0=py310hb4db72f_0
   - numpy=1.26.4=py310hf667824_0
   - oauthlib=3.2.2=pyhd8ed1ab_0
-  - opencv=4.6.0=py310ha7641e4_2
   - openh264=2.3.1=h63175ca_2
   - openjpeg=2.5.0=ha2aaf27_2
   - opt_einsum=3.3.0=pyhc1e730c_2
@@ -250,8 +249,6 @@ dependencies:
   - pynwb=2.8.1=pyh2e8e312_0
   - pyopenssl=23.2.0=pyhd8ed1ab_1
   - pyparsing=3.1.2=pyhd8ed1ab_0
-  - pyqt=5.15.4=py310h8a704f9_0
-  - pyqt5-sip=12.9.0=py310h8a704f9_0
   - pyqtgraph=0.13.7=pyhd8ed1ab_0
   - pysocks=1.7.1=pyh0701188_6
   - python=3.10.8=h0269646_0_cpython
