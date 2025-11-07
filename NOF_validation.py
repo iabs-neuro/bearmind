@@ -1,6 +1,6 @@
 import os
 
-compute_val_dataframes = 1
+compute_val_dataframes = True
 
 if compute_val_dataframes:
     val_path = "C://Users//admin//YandexDisk//_Projects//NOF//CalciumData//4_Estimates"
@@ -13,4 +13,8 @@ if compute_val_dataframes:
     sessions = [name[:10] for name in all_gt_files]
     mapping = {}
     for session in sessions:
-        mapping = 1
+        init = [f for f in all_init_files if session in f][0]
+        gt = [f for f in all_gt_files if session in f][0]
+        mapping.update({session: [init, gt]})
+
+print(mapping)

@@ -7,7 +7,7 @@ pd.options.display.max_rows = None
 pd.options.display.max_columns = None
 
 
-fname = "C://Users//admin//Projects//BOWL//CalciumData//Estimates//BOWL_D17_1D_estimates.pickle"
+fname = "D://Projects//estim_data//NOF_H01_3D_CR_MC_4_1_0.85_estimates.pickle"
 fps = 20
 
 est = LoadEstimates(fname, default_fps=fps)

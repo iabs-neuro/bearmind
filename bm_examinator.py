@@ -29,7 +29,7 @@ from caiman.components_evaluation import (
         select_components_from_metrics, compute_eccentricity,
         compute_event_exceptionality)
 
-from time import time
+import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
 from caiman.utils.visualization import inspect_correlation_pnr
@@ -40,7 +40,8 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
-from auto_inspector import get_multineuron_metrics
+from auto_inspector import estimates_to_metrics
+from polygon import get_contours
 
 output_notebook()
 
@@ -214,17 +215,55 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
             corr_scores[comp] = sorted_group_corr_scores[i]
             corr_groups[comp] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
 
-
-    # reconstruction quality metrics
-    r2_scores, mae_values, rmse_values, snr_values = \
-        get_multineuron_reconstruction_quality_metrics(np.array(traces_flat), fps=fps)
-
     return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
                 hvals=hvals, colors=colors, corr_scores=corr_scores,
                 corr_groups=corr_groups,
-                r2=r2_scores, mae=mae_values,
-                rmse=rmse_values, snr_rec=snr_values,
                 idx=comps_to_select)
+
+
+def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
+                         corr_thr=0.6, num_sessions=1, match_threshold=3,
+                         sf=None, ef=None, ds=1,
+                         include_wavelet=True, include_heavy=False):
+
+    if len(comps_to_select) == 0:
+        comps_to_select = est.idx_components
+    if sf is None:
+        sf = 0
+    if ef is None:
+        ef = est.C.shape[1]
+
+    traces = [(tr - min(tr)) / (np.max(tr) - np.min(tr)) + i for i, tr in
+              enumerate(est.C[comps_to_select, sf:ef][:, ::ds])]
+
+    n_cells = len(comps_to_select)
+    times = [est.time[sf:ef][::ds] for _ in range(n_cells)]
+    colors = [colornum_Metro(i) for i in range(n_cells)]
+
+    # we have to compute contours here OR pollute metrics dataframe (further) with xs, ys and other garbage
+    # here we choose option 1 - a little overhead for the sake of modularity
+
+    dims = est.imax.shape
+    contours = get_contours(est, comps_to_select, cthr=cthr)
+    coords = [c["coordinates"] for c in contours]
+    coords = [crd[~np.isnan(crd).any(axis=1)] for crd in coords]
+
+    xs = [[pt[0] for pt in c] for c in coords]
+    ys = [[dims[0] - pt[1] for pt in c] for c in coords]  # flip for y-axis inversion
+
+    t1 = time.time()
+    mdf, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
+                                        corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
+                                        sf=sf, ef=ef, ds=ds, include_wavelet=include_wavelet, include_heavy=include_heavy)
+
+    t2 = time.time()
+    etime = np.round(t2 - t1, 2)
+    print(f'Elapsed time for all metrics: {etime} s,'
+          f'{np.round(etime / n_cells, 2)} s per neuron')
+
+    technical = dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors)
+    metrics = {k: v for k, v in mdf.to_dict(orient='list').items() if k not in ['component_idx', 'center']}
+    return {**technical, **metrics}, {i: mname for i, mname in enumerate(list(metrics.keys()))}
 
 
 def SaveResults(estimates, sigma=3):
@@ -333,8 +372,14 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         cthr = bkapp_kwargs.get('cthr', 0.3)
         ds = bkapp_kwargs.get('downsampling', 1)
         corr_thr = bkapp_kwargs.get('corr_thr', 0.6)
+        num_sessions = bkapp_kwargs.get('num_sessions', 1)
+        match_threshold = bkapp_kwargs.get('match_threshold', 1)
+        include_wavelet = bkapp_kwargs.get('include_wavelet', True)
+        include_heavy = bkapp_kwargs.get('include_heavy', False)
+
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
+
         fill_alpha = bkapp_kwargs.get('fill_alpha', 0.5)
         nonselection_alpha = bkapp_kwargs.get('ns_alpha', 0.2)
         line_width = bkapp_kwargs.get('line_width', 1)
@@ -342,6 +387,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         trace_line_width = bkapp_kwargs.get('trace_line_width', 1)
         trace_alpha = bkapp_kwargs.get('trace_alpha', 1)
         bwidth = bkapp_kwargs.get('button_width', 110)
+
         start_frame = bkapp_kwargs.get('start_frame', 0)
         end_frame = bkapp_kwargs.get('end_frame', 0)
         emergency = bkapp_kwargs.get('oh_shit', False)
@@ -353,12 +399,20 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
+        '''
         est_data0 = EstimatesToSrcFast(estimates0,
                                        cthr=cthr,
                                        sf=start_frame,
                                        ef=end_frame,
                                        ds=ds,
                                        corr_thr=corr_thr)
+        '''
+        est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps, comps_to_select=[], cthr=cthr,
+                                       corr_thr=corr_thr, num_sessions=num_sessions,
+                                       match_threshold=match_threshold,
+                                       sf=start_frame, ef=end_frame, ds=ds,
+                                       include_wavelet=include_wavelet,
+                                       include_heavy=include_heavy)
 
         estimates = copy.deepcopy(estimates0)
 
@@ -372,6 +426,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         storage.prev_estimates_partial = copy.deepcopy(estimates0)
         storage.prev_data = copy.deepcopy(est_data0)
         storage.prev_data_partial = copy.deepcopy(est_data0)
+        storage.metric_mapping = metric_mapping
         n_traces0 = len(est_data0['traces'])
         #storage.ordering = np.arange(n_traces0)
 
@@ -470,6 +525,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             mode = rb.active
             if mode == 0:
                 metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
+            else:
+                mname = storage.metric_mapping[mode-1]
+                metric = np.array(src_partial.data[mname])
+            '''
             elif mode == 1:
                 # trace SNR for each component
                 metric = np.array(estimates_partial.SNR_comp)[estimates_partial.idx_components]#[old_sel_indices]
@@ -500,7 +559,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             else:
                 raise ValueError('wrong RadioButton value')
-
+            '''
 
             #print('mode=', mode)
             #print(metric[indices])
@@ -765,9 +824,14 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
+        '''
         # Sorting radiobutton
         radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
                                                       'R2', 'MAE', 'RMSE', 'SNR+'], active=0)
+        '''
+        auto_metric_names = [storage.metric_mapping[i] for i in range(len(storage.metric_mapping))]
+        radio_button_group = RadioButtonGroup(labels=["XY"] + auto_metric_names, active=0)
+
         rb_js_callback = CustomJS(
             code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
         radio_button_group.js_on_event("button_click", rb_js_callback)

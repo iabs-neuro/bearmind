@@ -27,6 +27,7 @@ from polygon import (get_contours, get_circularities, convex_polygons_min_distan
 
 
 def get_hvals(traces):
+    # DEPRECATED: old attempt to quantify "spike vs baseline timing"
     hvals = []
     for tr in traces:
         med = np.median(tr)
@@ -63,17 +64,25 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
 
 
 def get_signal_metrics(neuron):
-    # metrics that don't require reconstruction
+    # metrics that don't require precise reconstruction
+
     n_events = int(np.sum(neuron.asp.data > 0))
-    t_rise = neuron.t_rise
-    t_off = neuron.t_off
+    duration_min = len(neuron.asp.data)//neuron.fps/60.0
+    epm = n_events/duration_min
+    events_dur = 1.0*np.sum(neuron.sp.data.astype(int))
+    events_fraction = events_dur/len(neuron.sp.data)
+
+    t_rise = neuron.t_rise/neuron.fps if not pd.isna(neuron.t_rise) else -1
+    t_off = neuron.t_off/neuron.fps if not pd.isna(neuron.t_off) else -1
+
     try:
         wavelet_snr = neuron.get_wavelet_snr()
     except ValueError:
         wavelet_snr = -1
 
     sig_metrics = {
-        'n_events': n_events,
+        'events_per_min': epm,
+        'events_fraction': events_fraction,
         't_rise': t_rise,
         't_off': t_off,
         'wavelet_snr': wavelet_snr
@@ -206,9 +215,9 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
     return corr_groups, match_mtx, match_mtx_crop
 
 
-def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
+def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
-                         sf=None, ef=None, ds=1, include_heavy=False):
+                         sf=None, ef=None, ds=1, include_wavelet=True, include_heavy=False):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -235,12 +244,14 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
                                                                   fps=fps,
                                                                   sessions_num=num_sessions)
 
-    contours = get_contours(est, comps_to_select, cthr=cthr)
+    if contours is None:
+        contours = get_contours(est, comps_to_select, cthr=cthr)
+
     areas = []
     centers = []
     for i, comp in enumerate(comps_to_select):
-        coors = contours[i]["coordinates"]
-        area = calculate_polygon_area(coors)
+        coords = contours[i]["coordinates"]
+        area = calculate_polygon_area(coords)
         areas.append(area)
         centers.append(contours[i]["CoM"])
 
@@ -268,14 +279,16 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3,
         'corr_groups': corr_groups
     }
 
-    t1 = time.time()
-    event_based_metrics = get_multineuron_metrics(np.array(traces),
-                                                  fps=DEFAULT_FPS,
-                                                  include_heavy=include_heavy)
-    t2 = time.time()
-    etime = np.round(t2-t1, 2)
-    print(f'Elapsed time for metrics: {etime} s, {np.round(etime/n_cells, 2)} s per neuron')
-    metrics = {**metrics, **event_based_metrics}
+    if include_wavelet:
+        print('computing wavelet event reconstruction...')
+        t1 = time.time()
+        event_based_metrics = get_multineuron_metrics(np.array(traces),
+                                                      fps=DEFAULT_FPS,
+                                                      include_heavy=include_heavy)
+        t2 = time.time()
+        etime = np.round(t2-t1, 2)
+        #print(f'Elapsed time for metrics: {etime} s, {np.round(etime/n_cells, 2)} s per neuron')
+        metrics = {**metrics, **event_based_metrics}
 
     metrics_df = pd.DataFrame(metrics)
     return metrics_df, match_mtx, FCD, FBD
