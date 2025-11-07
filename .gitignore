@@ -99,6 +99,7 @@ dmypy.json
 .pyre/
 
 # Project-specific
+CLAUDE.md
 temp/
 tmp/
 *.h5
