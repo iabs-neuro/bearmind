@@ -102,6 +102,7 @@ dmypy.json
 CLAUDE.md
 temp/
 tmp/
+dev/
 *.h5
 *.hdf5
 *.mat
@@ -121,3 +122,7 @@ Thumbs.db
 
 # Conda
 *.conda
+
+# Auto-inspection outputs (can be in any directory)
+**/capcan_artifacts_*/
+batch_autoinspect_summary.csv

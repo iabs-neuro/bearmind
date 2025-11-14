@@ -252,7 +252,7 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
     ys = [[dims[0] - pt[1] for pt in c] for c in coords]  # flip for y-axis inversion
 
     t1 = time.time()
-    mdf, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
+    mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
                                         corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
                                         sf=sf, ef=ef, ds=ds, include_wavelet=include_wavelet, include_heavy=include_heavy)
 

@@ -1,4 +1,6 @@
 import copy
+import os
+from pathlib import Path
 
 from driada.experiment.wavelet_event_detection import extract_wvt_events, WVT_EVENT_DETECTION_PARAMS
 from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFAULT_FPS
@@ -24,6 +26,7 @@ from scipy.spatial import distance_matrix
 from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
                      calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities)
+from corner_artifacts import detect_corner_artifacts
 
 
 def get_hvals(traces):
@@ -117,13 +120,42 @@ def get_reconstruction_quality_metrics(neuron,
 
 
 def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False):
-    neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy)
-    signal_metrics = get_signal_metrics(neuron)
-    if include_heavy:
-        rec_metrics = get_reconstruction_quality_metrics(neuron)
-        return {**signal_metrics, **rec_metrics}
-    else:
-        return signal_metrics
+    """
+    Extract metrics from a single neuron trace.
+
+    Handles flat/zero traces by returning NaN for all metrics.
+    """
+    try:
+        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy)
+        signal_metrics = get_signal_metrics(neuron)
+        if include_heavy:
+            rec_metrics = get_reconstruction_quality_metrics(neuron)
+            return {**signal_metrics, **rec_metrics}
+        else:
+            return signal_metrics
+
+    except (ValueError, ZeroDivisionError, Exception) as e:
+        # Handle flat/zero traces or other processing failures
+        # Return NaN for all metrics
+        nan_signal_metrics = {
+            'events_per_min': np.nan,
+            'events_fraction': np.nan,
+            't_rise': np.nan,
+            't_off': np.nan,
+            'wavelet_snr': np.nan
+        }
+
+        if include_heavy:
+            nan_rec_metrics = {
+                'r2_score': np.nan,
+                'event_r2_score': np.nan,
+                'nmae': np.nan,
+                'nrmse': np.nan,
+                'snr_recon': np.nan
+            }
+            return {**nan_signal_metrics, **nan_rec_metrics}
+        else:
+            return nan_signal_metrics
 
 
 def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False):
@@ -217,7 +249,8 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
 
 def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
-                         sf=None, ef=None, ds=1, include_wavelet=True, include_heavy=False):
+                         sf=None, ef=None, ds=1, include_wavelet=True, include_heavy=False,
+                         detect_corner_artifacts_flag=True, corner_artifact_params=None):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -234,9 +267,22 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     if ef is None:
         ef = est.C.shape[1]
 
-    traces = [(tr - min(tr)) / (np.max(tr) - np.min(tr)) for i, tr in
-              enumerate(est.C[comps_to_select, sf:ef][:, ::ds])]
-    times = [est.time[sf:ef][::ds] for _ in range(n_cells)]
+    # Normalize traces, handling flat traces (where max == min)
+    traces = []
+    for i, tr in enumerate(est.C[comps_to_select, sf:ef][:, ::ds]):
+        tr_min = np.min(tr)
+        tr_max = np.max(tr)
+        tr_range = tr_max - tr_min
+
+        if tr_range == 0 or np.isclose(tr_range, 0, atol=1e-10):
+            # Flat trace: set to zeros (will be handled as NaN in metrics)
+            normalized = np.zeros_like(tr)
+        else:
+            normalized = (tr - tr_min) / tr_range
+
+        traces.append(normalized)
+
+    # times = [est.time[sf:ef][::ds] for _ in range(n_cells)]  # Note: time attribute not always present, variable unused
 
     corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
                                                                   corr_thr,
@@ -291,7 +337,24 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         metrics = {**metrics, **event_based_metrics}
 
     metrics_df = pd.DataFrame(metrics)
-    return metrics_df, match_mtx, FCD, FBD
+
+    # Detect corner artifacts if enabled
+    corner_info = None
+    if detect_corner_artifacts_flag:
+        if corner_artifact_params is None:
+            corner_artifact_params = {}
+
+        try:
+            metrics_df, corner_info, _ = detect_corner_artifacts(metrics_df, **corner_artifact_params)
+            n_artifacts = (metrics_df['is_corner_artifact'] == 1).sum()
+            if n_artifacts > 0:
+                print(f'Corner artifact detection: {n_artifacts} artifacts detected ({n_artifacts/len(metrics_df)*100:.1f}%)')
+        except Exception as e:
+            print(f'Warning: Corner artifact detection failed: {e}')
+            metrics_df['is_corner_artifact'] = 0
+            corner_info = None
+
+    return metrics_df, match_mtx, FCD, FBD, corner_info
 
 
 def area_check(series, pxlthr_area):
@@ -314,15 +377,50 @@ def convexity_check(series, convex_thr):
     return metric
 
 
+def t_rise_check(series, t_rise_min):
+    """Check if rise time is above minimum threshold."""
+    if pd.isna(series.t_rise) or series.t_rise < 0:
+        return False
+    return series.t_rise >= t_rise_min
+
+
+def caiman_r_score_check(series, r_score_min):
+    """Check if CaImAn spatial correlation is above minimum threshold."""
+    if pd.isna(series.caiman_r_score):
+        return False
+    return series.caiman_r_score >= r_score_min
+
+
+def caiman_snr_check(series, snr_min):
+    """Check if CaImAn SNR is above minimum threshold."""
+    if pd.isna(series.caiman_snr):
+        return False
+    return series.caiman_snr >= snr_min
+
+
+def t_off_check(series, t_off_min):
+    """Check if decay time is above minimum threshold."""
+    if pd.isna(series.t_off) or series.t_off < 0:
+        return False
+    return series.t_off >= t_off_min
+
+
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
-                        circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=3, pxlthr_distance_boundary=5,
+                        circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
+                        pxlthr_distance_boundary=5,
                         d_snr_thr=42,
+                        t_rise_min=0.133, caiman_r_score_min=0.125,
+                        caiman_snr_min=3.1, t_off_min=1.98,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
-                        use_convexity_check=True, use_corr_check=True) -> pd.DataFrame:
+                        use_convexity_check=True, use_corr_check=True,
+                        use_t_rise_check=True, use_caiman_r_score_check=True,
+                        use_caiman_snr_check=True, use_t_off_check=True,
+                        track_criteria_failures=True) -> pd.DataFrame:
     """
     Classify neurons for merge/delete/keep annotating
     merge groups by clusters' numbers in 'merge' column,
     to delete as 1 and keep as 0 in delete column
+
     :param metrics_df:
     :param match_mtx:
     :param FCD:
@@ -338,24 +436,66 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
     :param use_max_edge_check:
     :param use_convexity_check:
     :param use_corr_check:
-    :return:
+    :param track_criteria_failures: If True, add columns for each failed criterion
+    :return: metrics_df with decision columns
     """
     series_num = metrics_df.shape[0]
     metrics_df[['delete', 'merge']] = 0
 
+    # Track criteria failures if requested
+    if track_criteria_failures:
+        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                       'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off', 'failed_corner_artifact']
+        for col in failure_cols:
+            metrics_df[col] = 0
+
+    # Check for corner artifacts first
+    has_corner_artifacts = 'is_corner_artifact' in metrics_df.columns
+
     for string_num in range(series_num):
         string = metrics_df.iloc[string_num]
 
-        ### parameters
+        # Corner artifact check - highest priority
+        if has_corner_artifacts and string.get('is_corner_artifact', 0) == 1:
+            metrics_df.iloc[string_num, metrics_df.columns.get_loc('delete')] = 1
+            if track_criteria_failures:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_corner_artifact')] = 1
+            continue
+
+        ### Quality criteria checks
         area = area_check(string, pxlthr_area) if use_area_check else True
         circle = circularity_check(string, circ_thr) if use_circularity_check else True
         max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else True
         convex = convexity_check(string, convex_thr) if use_convexity_check else True
 
-        delete = not (area and circle and max_edge and convex)
-        ###
+        # New quality metrics (lower bound checks)
+        t_rise_ok = t_rise_check(string, t_rise_min) if use_t_rise_check else True
+        r_score_ok = caiman_r_score_check(string, caiman_r_score_min) if use_caiman_r_score_check else True
+        snr_ok = caiman_snr_check(string, caiman_snr_min) if use_caiman_snr_check else True
+        t_off_ok = t_off_check(string, t_off_min) if use_t_off_check else True
+
+        delete = not (area and circle and max_edge and convex and t_rise_ok and r_score_ok and snr_ok and t_off_ok)
 
         metrics_df.iloc[string_num, metrics_df.columns.get_loc('delete')] = int(delete)
+
+        # Track which criteria failed
+        if track_criteria_failures and delete:
+            if use_area_check and not area:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_area')] = 1
+            if use_circularity_check and not circle:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_circularity')] = 1
+            if use_max_edge_check and not max_edge:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_max_edge')] = 1
+            if use_convexity_check and not convex:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_convexity')] = 1
+            if use_t_rise_check and not t_rise_ok:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_t_rise')] = 1
+            if use_caiman_r_score_check and not r_score_ok:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_r_score')] = 1
+            if use_caiman_snr_check and not snr_ok:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_snr')] = 1
+            if use_t_off_check and not t_off_ok:
+                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_t_off')] = 1
 
     if use_corr_check:
         # unique number of clusters
@@ -481,7 +621,7 @@ def match_coordinates(df1, df2, max_distance=None):
     return matched_pairs, list(unmatched_df1), list(unmatched_df2)
 
 
-def compute_metrics(initial, ground_truth, auto, max_match_distance=50):
+def compute_metrics(initial, ground_truth, auto, max_match_distance=3):
     """
     Compute comprehensive metrics comparing auto vs ground_truth with initial baseline.
 
@@ -581,24 +721,24 @@ def print_report(metrics):
     print("EVALUATION REPORT")
     print("="*60)
 
-    print("\n📊 DETECTION METRICS")
+    print("\n[DETECTION METRICS]")
     print(f"  Precision:        {metrics['precision']:.2%} ({metrics['n_matched']}/{metrics['n_auto']} detected correctly)")
     print(f"  Recall:           {metrics['recall']:.2%} ({metrics['n_matched']}/{metrics['n_ground_truth']} ground truth found)")
     print(f"  F1 Score:         {metrics['f1_score']:.2%}")
     print(f"  False Positives:  {metrics['false_positives']} (detected but shouldn't exist)")
     print(f"  False Negatives:  {metrics['false_negatives']} (missing from detection)")
 
-    print("\n📍 POSITIONAL ACCURACY (Auto vs Ground Truth)")
+    print("\n[POSITIONAL ACCURACY] (Auto vs Ground Truth)")
     print(f"  Mean Error:       {metrics['mean_error']:.2f} pixels")
     print(f"  Median Error:     {metrics['median_error']:.2f} pixels")
     print(f"  Std Deviation:    {metrics['std_error']:.2f} pixels")
     print(f"  Max Error:        {metrics['max_error']:.2f} pixels")
 
-    print("\n📈 BASELINE COMPARISON (vs Initial)")
+    print("\n[BASELINE COMPARISON] (vs Initial)")
     print(f"  Baseline Error:   {metrics['baseline_mean_error']:.2f} pixels")
     print(f"  Improvement:      {metrics['improvement_vs_baseline']:.2%}")
 
-    print("\n🔄 STABILITY (Movement from Initial)")
+    print("\n[STABILITY] (Movement from Initial)")
     print(f"  Mean Movement:    {metrics['mean_movement_from_initial']:.2f} pixels")
     print(f"  Median Movement:  {metrics['median_movement_from_initial']:.2f} pixels")
 
