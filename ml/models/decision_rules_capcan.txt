@@ -1,0 +1,98 @@
+DECISION TREE RULES FOR NEURON QUALITY CLASSIFICATION
+(Trained on capcan_artifacts data)
+============================================================
+
+Class 0 = DELETE neuron
+Class 1 = KEEP neuron
+
+|--- caiman_snr <= 4.35
+|   |--- caiman_snr <= 3.53
+|   |   |--- caiman_snr <= 2.99
+|   |   |   |--- area <= 84.90
+|   |   |   |   |--- wavelet_snr <= 2.00
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- wavelet_snr >  2.00
+|   |   |   |   |   |--- class: 0
+|   |   |   |--- area >  84.90
+|   |   |   |   |--- class: 1
+|   |   |--- caiman_snr >  2.99
+|   |   |   |--- t_rise <= 0.20
+|   |   |   |   |--- events_per_min <= 6.79
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- events_per_min >  6.79
+|   |   |   |   |   |--- class: 0
+|   |   |   |--- t_rise >  0.20
+|   |   |   |   |--- area <= 28.75
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- area >  28.75
+|   |   |   |   |   |--- class: 0
+|   |--- caiman_snr >  3.53
+|   |   |--- wavelet_snr <= 2.83
+|   |   |   |--- caiman_r_score <= 0.84
+|   |   |   |   |--- t_rise <= 0.20
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- t_rise >  0.20
+|   |   |   |   |   |--- class: 0
+|   |   |   |--- caiman_r_score >  0.84
+|   |   |   |   |--- caiman_snr <= 4.06
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- caiman_snr >  4.06
+|   |   |   |   |   |--- class: 0
+|   |   |--- wavelet_snr >  2.83
+|   |   |   |--- t_off <= 4.68
+|   |   |   |   |--- caiman_snr <= 4.15
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- caiman_snr >  4.15
+|   |   |   |   |   |--- class: 1
+|   |   |   |--- t_off >  4.68
+|   |   |   |   |--- wavelet_snr <= 3.13
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- wavelet_snr >  3.13
+|   |   |   |   |   |--- class: 0
+|--- caiman_snr >  4.35
+|   |--- corr_groups <= 1.00
+|   |   |--- t_off <= 4.10
+|   |   |   |--- event_r2_score <= 0.30
+|   |   |   |   |--- t_rise <= 0.16
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- t_rise >  0.16
+|   |   |   |   |   |--- class: 1
+|   |   |   |--- event_r2_score >  0.30
+|   |   |   |   |--- nrmse <= 1.09
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- nrmse >  1.09
+|   |   |   |   |   |--- class: 1
+|   |   |--- t_off >  4.10
+|   |   |   |--- wavelet_snr <= 2.29
+|   |   |   |   |--- area <= 37.86
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- area >  37.86
+|   |   |   |   |   |--- class: 1
+|   |   |   |--- wavelet_snr >  2.29
+|   |   |   |   |--- t_off <= 5.07
+|   |   |   |   |   |--- class: 1
+|   |   |   |   |--- t_off >  5.07
+|   |   |   |   |   |--- class: 1
+|   |--- corr_groups >  1.00
+|   |   |--- corr_groups <= 2.50
+|   |   |   |--- event_r2_score <= 0.71
+|   |   |   |   |--- nmae <= 0.49
+|   |   |   |   |   |--- class: 1
+|   |   |   |   |--- nmae >  0.49
+|   |   |   |   |   |--- class: 0
+|   |   |   |--- event_r2_score >  0.71
+|   |   |   |   |--- caiman_r_score <= 0.73
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- caiman_r_score >  0.73
+|   |   |   |   |   |--- class: 0
+|   |   |--- corr_groups >  2.50
+|   |   |   |--- event_r2_score <= 0.57
+|   |   |   |   |--- snr_recon <= 1.07
+|   |   |   |   |   |--- class: 0
+|   |   |   |   |--- snr_recon >  1.07
+|   |   |   |   |   |--- class: 1
+|   |   |   |--- event_r2_score >  0.57
+|   |   |   |   |--- event_r2_score <= 0.96
+|   |   |   |   |   |--- class: 1
+|   |   |   |   |--- event_r2_score >  0.96
+|   |   |   |   |   |--- class: 1
