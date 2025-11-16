@@ -409,8 +409,8 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
                         pxlthr_distance_boundary=5,
                         d_snr_thr=42,
-                        t_rise_min=0.133, caiman_r_score_min=0.125,
-                        caiman_snr_min=3.1, t_off_min=1.98,
+                        t_rise_min=0.10, caiman_r_score_min=0.05,
+                        caiman_snr_min=2.9, t_off_min=1.5,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
                         use_convexity_check=True, use_corr_check=True,
                         use_t_rise_check=True, use_caiman_r_score_check=True,
@@ -538,6 +538,11 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                                 metrics_df.loc[metrics_df_mask_1, 'delete'] = 1
                         # else : default value is 0 in 'delete' if it has not been classified already
 
+        # Clean up conflicts: if neuron is marked for deletion, remove from merge groups
+        # Deletion is primary - no further actions allowed on deleted neurons
+        deleted_neurons = metrics_df['delete'] == 1
+        metrics_df.loc[deleted_neurons, 'merge'] = 0
+
     metrics_df.sort_index(inplace=True)
     return metrics_df
 
@@ -566,8 +571,16 @@ def implement_decision(est, df):
     components_to_merge = df['merge'].values
     for group_id in np.unique(components_to_merge):
         if group_id != 0:  # 0 means no need to merge
-            sel_comps = df[df['merge'] == group_id]['component_idx']
-            est.manual_merge([sel_comps], params=params.CNMFParams(params_dict=est.cnmf_dict))
+            sel_comps = df[df['merge'] == group_id]['component_idx'].tolist()
+
+            # Filter out components that were already deleted
+            # This handles edge cases where merge groups lost members during deletion
+            sel_comps_valid = [c for c in sel_comps if c in est.idx_components]
+
+            # Only perform merge if 2 or more valid components remain
+            # Single-component groups don't need merging
+            if len(sel_comps_valid) >= 2:
+                est.manual_merge([sel_comps_valid], params=params.CNMFParams(params_dict=est.cnmf_dict))
 
     return est
 

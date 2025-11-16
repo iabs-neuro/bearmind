@@ -1,7 +1,6 @@
 from bm_batch_routines import *
 from bm_examinator import *
 from bm_spike_detection import *
-from wavelet_event_detection import *
 from utils import *
 from config import *
 

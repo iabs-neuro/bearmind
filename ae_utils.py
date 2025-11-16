@@ -277,3 +277,149 @@ def save_auto_inspection_outputs(session_name, metrics_df, decision_df, corner_i
     print(f'\nAll outputs saved to: {output_folder}')
 
     return output_folder
+
+
+def save_validation_outputs(session_name, metrics_df_init, metrics_df_gt, metrics_df_auto,
+                            decision_df, validation_metrics, corner_info=None, base_path='.'):
+    """
+    Save validation-specific outputs to capcan_artifacts folder.
+
+    Parameters:
+        session_name: Name/ID of the session
+        metrics_df_init: Initial/raw metrics dataframe
+        metrics_df_gt: Ground truth metrics dataframe
+        metrics_df_auto: Automated result metrics dataframe
+        decision_df: Decision dataframe with criteria
+        validation_metrics: Dict with validation metrics (precision, recall, etc.)
+        corner_info: Optional corner detection info
+        base_path: Directory where artifact folders will be created
+
+    Returns:
+        output_folder: Path to created folder
+    """
+    # Create folder
+    output_folder = create_capcan_artifacts_folder(session_name, base_path)
+
+    # Save all metrics dataframes
+    init_path = Path(output_folder) / 'metrics_init.csv'
+    metrics_df_init.to_csv(init_path, index=False)
+    print(f'Saved initial metrics to {init_path}')
+
+    gt_path = Path(output_folder) / 'metrics_gt.csv'
+    metrics_df_gt.to_csv(gt_path, index=False)
+    print(f'Saved ground truth metrics to {gt_path}')
+
+    auto_path = Path(output_folder) / 'metrics_auto_final.csv'
+    metrics_df_auto.to_csv(auto_path, index=False)
+    print(f'Saved automated final metrics to {auto_path}')
+
+    # Save decision dataframe
+    save_decision_dataframe(decision_df, output_folder)
+    save_rejected_neurons_summary(decision_df, output_folder)
+
+    # Save validation metrics
+    val_path = Path(output_folder) / 'validation_metrics.csv'
+    val_df = pd.DataFrame([validation_metrics])
+    val_df.to_csv(val_path, index=False)
+    print(f'Saved validation metrics to {val_path}')
+
+    # Create visualizations
+    if corner_info is not None:
+        visualize_corner_artifacts(metrics_df_init, corner_info, output_folder, session_name)
+
+    # Create validation summary
+    create_validation_summary(metrics_df_init, metrics_df_gt, metrics_df_auto,
+                             decision_df, validation_metrics, corner_info, output_folder)
+
+    print(f'\nAll validation outputs saved to: {output_folder}')
+
+    return output_folder
+
+
+def create_validation_summary(metrics_df_init, metrics_df_gt, metrics_df_auto,
+                              decision_df, validation_metrics, corner_info, output_folder):
+    """
+    Create text summary of validation results.
+
+    Parameters:
+        metrics_df_init: Initial metrics
+        metrics_df_gt: Ground truth metrics
+        metrics_df_auto: Automated result metrics
+        decision_df: Decision dataframe
+        validation_metrics: Validation metrics dict
+        corner_info: Corner detection info
+        output_folder: Path to output folder
+    """
+    summary_lines = []
+    summary_lines.append('='*60)
+    summary_lines.append('VALIDATION SUMMARY')
+    summary_lines.append('='*60)
+    summary_lines.append('')
+
+    # Neuron counts
+    summary_lines.append(f'NEURON COUNTS:')
+    summary_lines.append(f'  Initial (raw): {validation_metrics.get("n_initial", len(metrics_df_init))}')
+
+    n_corner = validation_metrics.get('n_corner_artifacts', 0)
+    if n_corner > 0:
+        summary_lines.append(f'  Corner artifacts: {n_corner}')
+        summary_lines.append(f'  Initial (after corner filter): {validation_metrics.get("n_initial_filtered", len(metrics_df_init))}')
+
+    summary_lines.append(f'  Ground truth: {validation_metrics.get("n_ground_truth", len(metrics_df_gt))}')
+    summary_lines.append(f'  Automated result: {validation_metrics.get("n_auto", len(metrics_df_auto))}')
+    summary_lines.append(f'  Deleted by automation: {validation_metrics.get("n_deleted", 0)}')
+    summary_lines.append('')
+
+    # Validation metrics
+    summary_lines.append(f'DETECTION PERFORMANCE:')
+    summary_lines.append(f'  Precision: {validation_metrics.get("precision", 0):.2%}')
+    summary_lines.append(f'  Recall: {validation_metrics.get("recall", 0):.2%}')
+    summary_lines.append(f'  F1 Score: {validation_metrics.get("f1_score", 0):.2%}')
+    summary_lines.append('')
+
+    summary_lines.append(f'DETECTION DETAILS:')
+    summary_lines.append(f'  True Positives: {validation_metrics.get("true_positives", 0)}')
+    summary_lines.append(f'  False Positives: {validation_metrics.get("false_positives", 0)}')
+    summary_lines.append(f'  False Negatives: {validation_metrics.get("false_negatives", 0)}')
+    summary_lines.append('')
+
+    # Positional accuracy
+    summary_lines.append(f'POSITIONAL ACCURACY:')
+    summary_lines.append(f'  Mean error: {validation_metrics.get("mean_error", 0):.2f} pixels')
+    summary_lines.append(f'  Median error: {validation_metrics.get("median_error", 0):.2f} pixels')
+    summary_lines.append(f'  Max error: {validation_metrics.get("max_error", 0):.2f} pixels')
+    summary_lines.append('')
+
+    # Decision statistics
+    n_merge = validation_metrics.get('n_merge_groups', 0)
+    if n_merge > 0:
+        summary_lines.append(f'MERGE OPERATIONS:')
+        summary_lines.append(f'  Merge groups: {n_merge}')
+        summary_lines.append('')
+
+    # Rejection criteria breakdown
+    failure_cols = [col for col in decision_df.columns if col.startswith('failed_')]
+    if failure_cols:
+        n_rejected = validation_metrics.get('n_deleted', 0)
+        summary_lines.append('REJECTION CRITERIA BREAKDOWN:')
+        rejected_df = decision_df[decision_df['delete'] == 1]
+
+        for col in failure_cols:
+            criterion_name = col.replace('failed_', '').replace('_', ' ').title()
+            n_failed = rejected_df[col].sum() if len(rejected_df) > 0 else 0
+            if n_failed > 0:
+                pct = n_failed/n_rejected*100 if n_rejected > 0 else 0
+                summary_lines.append(f'  {criterion_name}: {n_failed} neurons ({pct:.1f}% of rejected)')
+        summary_lines.append('')
+
+    summary_lines.append('='*60)
+
+    # Save to file
+    output_path = Path(output_folder) / 'validation_summary.txt'
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(summary_lines))
+
+    print(f'Saved validation summary to {output_path}')
+
+    # Also print to console
+    print('\n'.join(summary_lines))
