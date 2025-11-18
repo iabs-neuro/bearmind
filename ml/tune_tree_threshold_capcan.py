@@ -71,6 +71,7 @@ def create_test_data(session_dirs, max_distance=3):
                 labels[i] = 0
 
         # Extract ALL features (same as training)
+        # Exclude: corr_groups (merge group ID, not a quality metric)
         feature_cols = [
             'area',
             'circularity',
@@ -78,7 +79,6 @@ def create_test_data(session_dirs, max_distance=3):
             'convexity',
             'caiman_snr',
             'caiman_r_score',
-            'corr_groups',
             'events_per_min',
             'events_fraction',
             't_rise',

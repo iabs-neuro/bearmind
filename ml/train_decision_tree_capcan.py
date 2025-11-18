@@ -103,6 +103,7 @@ def create_training_data(session_dirs, max_distance=3):
 
         # Select features for training - USE ALL AVAILABLE NUMERICAL FEATURES
         # Exclude: component_idx (ID), center (spatial position), is_corner_artifact (already filtered)
+        # Exclude: corr_groups (merge group ID, not a quality metric)
         feature_cols = [
             'area',
             'circularity',
@@ -110,7 +111,6 @@ def create_training_data(session_dirs, max_distance=3):
             'convexity',
             'caiman_snr',
             'caiman_r_score',
-            'corr_groups',
             'events_per_min',
             'events_fraction',
             't_rise',
