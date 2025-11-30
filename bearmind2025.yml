@@ -85,7 +85,7 @@ dependencies:
   - gstreamer=1.18.5=hdff456e_3
   - h11=0.14.0=pyhd8ed1ab_0
   - h2=4.1.0=pyhd8ed1ab_0
-  - h5py=3.9.0=nompi_py310h727aef9_100
+  - h5py>=3.11.0
   - hdf5=1.14.0=nompi_h97a5375_103
   - hdmf=3.14.3=pyh2e8e312_0
   - holoviews=1.19.1=pyhd8ed1ab_0

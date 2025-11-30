@@ -1,5 +1,6 @@
 import copy
 import os
+import pickle
 from pathlib import Path
 
 from driada.experiment.wavelet_event_detection import extract_wvt_events, WVT_EVENT_DETECTION_PARAMS
@@ -21,12 +22,23 @@ from caiman.components_evaluation import (
         compute_event_exceptionality)
 
 
-from scipy.stats import median_abs_deviation
+from scipy.stats import median_abs_deviation, skew, kurtosis
 from scipy.spatial import distance_matrix
 from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
-                     calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities)
-from corner_artifacts import detect_corner_artifacts
+                     calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities,
+                     convex_hull, get_aspect_ratios)
+from corner_artifacts import detect_edge_artifacts
+
+
+# Feature columns expected by ML models (must match ml/data_utils.py FEATURE_COLS)
+ML_FEATURE_COLS = [
+    'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
+    'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
+    'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
+    'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
+    'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
+]
 
 
 def get_hvals(traces):
@@ -50,18 +62,42 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
         fps=fps
     )
 
-    # Reconstruct spikes (required before getting metrics)
+    # Stage 1: Initial single-pass detection with default kinetics (conservative)
+    # Using threshold method - simpler and faster than wavelet
     neuron.reconstruct_spikes(
-        method='wavelet',
-        iterative=False,  # more conservative, we have to be careful since kinetics is still default
-        create_event_regions=True  # Create event regions for quality metrics
+        method='threshold',
+        iterative=False,  # Single-pass to get initial events safely
+        create_event_regions=True,  # Create event regions for quality metrics
+        fps=fps  # Pass fps explicitly so DRIADA uses correct value (not DEFAULT_FPS)
     )
 
+    # Validation: check fps propagation (defense against future regressions)
+    if hasattr(neuron, 'fps') and neuron.fps != fps:
+        warnings.warn(
+            f"FPS mismatch detected: neuron.fps={neuron.fps} != expected {fps}. "
+            f"This indicates a parameter propagation bug.",
+            RuntimeWarning
+        )
+
+    # Stage 2: Measure kinetics from initial events
     kinetics = neuron.get_kinetics(
         method='direct',  # Direct measurement from detected events
         use_cached=False,  # Force recomputation
-        update_reconstruction=not lightweight  # Recompute with optimal parameters
+        #update_reconstruction=not lightweight  # Re-run detection with optimized kinetics
+        update_reconstruction=False  # Re-run detection with optimized kinetics
     )
+
+    # Stage 3: optionally re-run detection with optimized kinetics
+    if not lightweight:
+        neuron.reconstruct_spikes(
+            method='threshold',
+            n_mad=4.0,  # Balanced threshold for noisy data
+            min_duration_frames=2,  # Allow shorter events
+            create_event_regions=True,
+            iterative=True,
+            n_iter=3,
+            adaptive_thresholds=True
+        )
 
     return neuron
 
@@ -80,6 +116,12 @@ def get_signal_metrics(neuron):
 
     try:
         wavelet_snr = neuron.get_wavelet_snr()
+        # Log transform to handle extreme outliers (corrupted values can reach millions)
+        # log1p handles 0 values gracefully: log1p(x) = log(1+x)
+        if wavelet_snr > 0:
+            wavelet_snr = np.log1p(wavelet_snr)
+        else:
+            wavelet_snr = 0.0
     except ValueError:
         wavelet_snr = -1
 
@@ -199,6 +241,146 @@ def footprint_boundary_distmat(contours, mask=None, verbose=True):
     return cont_distmat
 
 
+def get_edge_distances(centers, fov_shape):
+    """
+    Compute minimum distance from each center to FOV boundary, normalized by FOV size.
+
+    Edge artifacts tend to have low edge_distance values.
+
+    Args:
+        centers: List of (y, x) coordinates
+        fov_shape: Tuple of (height, width) of FOV
+
+    Returns:
+        np.array of relative edge distances (0 = at edge, 0.5 = at center)
+    """
+    fov_height, fov_width = fov_shape
+    # Normalize by half of min dimension so range is [0, 0.5] for center
+    norm_factor = min(fov_height, fov_width) / 2.0
+    edge_distances = []
+    for center in centers:
+        cy, cx = center  # Note: center is (y, x) format
+        dist_to_edges = [
+            cx,                 # distance to left edge
+            fov_width - cx,     # distance to right edge
+            cy,                 # distance to top edge
+            fov_height - cy     # distance to bottom edge
+        ]
+        edge_distances.append(min(dist_to_edges) / norm_factor)
+    return np.array(edge_distances)
+
+
+def get_nn_distances(distance_matrix):
+    """
+    Compute nearest neighbor distance for each element from a distance matrix.
+
+    Low values indicate overlapping/merged neurons.
+
+    Args:
+        distance_matrix: Square distance matrix (e.g., FCD or FBD)
+
+    Returns:
+        np.array of nearest neighbor distances
+    """
+    n = distance_matrix.shape[0]
+    nn_distances = []
+    for i in range(n):
+        row = distance_matrix[i].copy()
+        row[i] = np.inf  # exclude self
+        nn_distances.append(np.min(row))
+    return np.array(nn_distances)
+
+
+def get_tau_decays(est, comps_to_select):
+    """
+    Compute tau_decay from CaImAn autoregressive parameter g.
+
+    tau = -1/log(g) in frames. Represents calcium indicator decay time.
+
+    Args:
+        est: CaImAn estimates object
+        comps_to_select: List of component indices
+
+    Returns:
+        np.array of tau_decay values
+    """
+    n_cells = len(comps_to_select)
+    if not hasattr(est, 'g'):
+        return np.full(n_cells, np.nan)
+
+    tau_decays = []
+    for i in comps_to_select:
+        g_val = est.g[i]
+        # Handle both list and array cases, extract first AR parameter
+        if isinstance(g_val, (list, np.ndarray)):
+            g_val = g_val[0] if len(g_val) > 0 else np.nan
+        # Convert g to tau: tau = -1/log(g) in frames
+        if not np.isnan(g_val) and 0 < g_val < 1:
+            tau_decays.append(-1.0 / np.log(g_val))
+        else:
+            tau_decays.append(np.nan)
+    return np.array(tau_decays)
+
+
+def get_trace_stats(traces):
+    """
+    Compute trace statistics (skewness and kurtosis) for multiple traces.
+
+    Real neurons have high positive skewness (baseline + rare spikes)
+    and high kurtosis (heavy tails from spike events).
+
+    Args:
+        traces: 2D array of shape (n_cells, n_timepoints)
+
+    Returns:
+        Tuple of (skewnesses, kurtoses) as np.arrays
+    """
+    n_cells = traces.shape[0]
+    skewnesses = []
+    kurtoses = []
+
+    for i in range(n_cells):
+        trace = traces[i]
+        if len(trace) > 3:  # stats need at least 3 points
+            skewnesses.append(skew(trace))
+            kurtoses.append(kurtosis(trace))
+        else:
+            skewnesses.append(np.nan)
+            kurtoses.append(np.nan)
+
+    return np.array(skewnesses), np.array(kurtoses)
+
+
+def get_compactnesses(contours, areas):
+    """
+    Compute footprint compactness for each contour.
+
+    Compactness = area / convex_hull_area.
+    Multi-blob neurons (merge artifacts) have low compactness.
+
+    Args:
+        contours: List of contour dicts with 'coordinates' key
+        areas: List/array of pre-computed areas
+
+    Returns:
+        np.array of compactness values
+    """
+    compactnesses = []
+    for i in range(len(contours)):
+        coords = contours[i]["coordinates"]
+        try:
+            hull = convex_hull(coords)
+            if len(hull) >= 3:
+                hull_area = calculate_polygon_area(hull)
+                compactness = areas[i] / hull_area if hull_area > 0 else np.nan
+                compactnesses.append(compactness)
+            else:
+                compactnesses.append(np.nan)
+        except Exception:
+            compactnesses.append(np.nan)
+    return np.array(compactnesses)
+
+
 def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5):
     match_threshold /= sessions_num
     corr_num = len(neurons)
@@ -309,9 +491,32 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     circularities = get_circularities(contours)
     max_edges = get_max_edges(contours)
     convexities = get_convexities(contours)
+    aspect_ratios = get_aspect_ratios(contours)
+
+    # Eccentricity from CaImAn - measures elongation of footprint
+    try:
+        eccentricities = compute_eccentricity(est.A[:, comps_to_select], est.imax.shape)
+    except Exception:
+        eccentricities = np.full(n_cells, np.nan)
+
+    # Spatial metrics using helper functions
+    edge_distances = get_edge_distances(centers, est.imax.shape)
+    nn_distances_center = get_nn_distances(FCD)
 
     caiman_snrs = est.SNR_comp[comps_to_select]
     caiman_r_scores = est.r_values[comps_to_select]
+
+    # CaImAn estimates attributes
+    noise_levels = est.neurons_sn[comps_to_select] if hasattr(est, 'neurons_sn') else np.full(n_cells, np.nan)
+    baselines = est.bl[comps_to_select] if hasattr(est, 'bl') else np.full(n_cells, np.nan)
+    tau_decays = get_tau_decays(est, comps_to_select)
+
+    # Trace statistics (skewness and kurtosis)
+    raw_traces = est.C[comps_to_select, sf:ef]
+    trace_skewnesses, trace_kurtoses = get_trace_stats(raw_traces)
+
+    # Footprint compactness
+    compactnesses = get_compactnesses(contours, areas)
 
     metrics = {
         'component_idx': comps_to_select,
@@ -319,9 +524,19 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'circularity': circularities,
         'max_edge': max_edges,
         'convexity': convexities,
+        'aspect_ratio': aspect_ratios,
+        'eccentricity': eccentricities,
         'center': centers,
+        'edge_distance': edge_distances,
+        'nn_distance_center': nn_distances_center,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
+        'noise_level': noise_levels,
+        'baseline': baselines,
+        'tau_decay': tau_decays,
+        'trace_skewness': trace_skewnesses,
+        'trace_kurtosis': trace_kurtoses,
+        'footprint_compactness': compactnesses,
         'corr_groups': corr_groups
     }
 
@@ -329,7 +544,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         print('computing wavelet event reconstruction...')
         t1 = time.time()
         event_based_metrics = get_multineuron_metrics(np.array(traces),
-                                                      fps=DEFAULT_FPS,
+                                                      fps=fps,
                                                       include_heavy=include_heavy)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
@@ -338,23 +553,27 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     metrics_df = pd.DataFrame(metrics)
 
-    # Detect corner artifacts if enabled
-    corner_info = None
+    # Detect edge artifacts if enabled (combined corner + ellipse detection)
+    edge_info = None
     if detect_corner_artifacts_flag:
         if corner_artifact_params is None:
             corner_artifact_params = {}
 
         try:
-            metrics_df, corner_info, _ = detect_corner_artifacts(metrics_df, **corner_artifact_params)
+            metrics_df, edge_info, _ = detect_edge_artifacts(metrics_df, **corner_artifact_params)
             n_artifacts = (metrics_df['is_corner_artifact'] == 1).sum()
             if n_artifacts > 0:
-                print(f'Corner artifact detection: {n_artifacts} artifacts detected ({n_artifacts/len(metrics_df)*100:.1f}%)')
+                corner_only = edge_info.get('n_corner_only', 0)
+                ellipse_only = edge_info.get('n_ellipse_only', 0)
+                both = edge_info.get('n_both', 0)
+                print(f'Edge artifact detection: {n_artifacts} artifacts ({n_artifacts/len(metrics_df)*100:.1f}%) '
+                      f'[corner:{corner_only}, ellipse:{ellipse_only}, both:{both}]')
         except Exception as e:
-            print(f'Warning: Corner artifact detection failed: {e}')
+            print(f'Warning: Edge artifact detection failed: {e}')
             metrics_df['is_corner_artifact'] = 0
-            corner_info = None
+            edge_info = None
 
-    return metrics_df, match_mtx, FCD, FBD, corner_info
+    return metrics_df, match_mtx, FCD, FBD, edge_info
 
 
 def area_check(series, pxlthr_area):
@@ -405,6 +624,135 @@ def t_off_check(series, t_off_min):
     return series.t_off >= t_off_min
 
 
+def _apply_threshold_brain(metrics_df, thresholds, use_checks, track_failures=True):
+    """
+    Apply threshold-based deletion logic to determine which neurons to delete.
+
+    This is the original threshold-based decision logic, refactored into a standalone
+    function to support pluggable 'brains' for deletion decisions.
+
+    Args:
+        metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
+        thresholds: dict with threshold values:
+            - pxlthr_area, circ_thr, maxedge_thr, convex_thr
+            - t_rise_min, caiman_r_score_min, caiman_snr_min, t_off_min
+        use_checks: dict with boolean flags:
+            - use_area_check, use_circularity_check, use_max_edge_check, use_convexity_check
+            - use_t_rise_check, use_caiman_r_score_check, use_caiman_snr_check, use_t_off_check
+        track_failures: If True, track which criteria failed for each neuron
+
+    Returns:
+        delete_mask: np.ndarray of bool, True = should delete
+        failure_info: dict mapping failure column names to arrays (if track_failures)
+    """
+    n = len(metrics_df)
+    delete_mask = np.zeros(n, dtype=bool)
+
+    # Initialize failure tracking arrays
+    failure_info = {}
+    if track_failures:
+        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                        'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
+        for col in failure_cols:
+            failure_info[col] = np.zeros(n, dtype=int)
+
+    # Apply checks to each row
+    for i, (idx, row) in enumerate(metrics_df.iterrows()):
+        area_ok = area_check(row, thresholds['pxlthr_area']) if use_checks['use_area_check'] else True
+        circle_ok = circularity_check(row, thresholds['circ_thr']) if use_checks['use_circularity_check'] else True
+        max_edge_ok = max_edge_check(row, thresholds['maxedge_thr']) if use_checks['use_max_edge_check'] else True
+        convex_ok = convexity_check(row, thresholds['convex_thr']) if use_checks['use_convexity_check'] else True
+        t_rise_ok = t_rise_check(row, thresholds['t_rise_min']) if use_checks['use_t_rise_check'] else True
+        r_score_ok = caiman_r_score_check(row, thresholds['caiman_r_score_min']) if use_checks['use_caiman_r_score_check'] else True
+        snr_ok = caiman_snr_check(row, thresholds['caiman_snr_min']) if use_checks['use_caiman_snr_check'] else True
+        t_off_ok = t_off_check(row, thresholds['t_off_min']) if use_checks['use_t_off_check'] else True
+
+        should_delete = not (area_ok and circle_ok and max_edge_ok and convex_ok and
+                             t_rise_ok and r_score_ok and snr_ok and t_off_ok)
+        delete_mask[i] = should_delete
+
+        # Track failures
+        if track_failures and should_delete:
+            if use_checks['use_area_check'] and not area_ok:
+                failure_info['failed_area'][i] = 1
+            if use_checks['use_circularity_check'] and not circle_ok:
+                failure_info['failed_circularity'][i] = 1
+            if use_checks['use_max_edge_check'] and not max_edge_ok:
+                failure_info['failed_max_edge'][i] = 1
+            if use_checks['use_convexity_check'] and not convex_ok:
+                failure_info['failed_convexity'][i] = 1
+            if use_checks['use_t_rise_check'] and not t_rise_ok:
+                failure_info['failed_t_rise'][i] = 1
+            if use_checks['use_caiman_r_score_check'] and not r_score_ok:
+                failure_info['failed_r_score'][i] = 1
+            if use_checks['use_caiman_snr_check'] and not snr_ok:
+                failure_info['failed_snr'][i] = 1
+            if use_checks['use_t_off_check'] and not t_off_ok:
+                failure_info['failed_t_off'][i] = 1
+
+    return delete_mask, failure_info
+
+
+def _apply_ml_brain(metrics_df, model_path, threshold=0.5, feature_cols=None):
+    """
+    Apply ML model-based deletion logic to determine which neurons to delete.
+
+    Uses a trained classifier (e.g., EBM) to predict P(KEEP) for each neuron.
+    Neurons with P(KEEP) < threshold are marked for deletion.
+
+    Args:
+        metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
+        model_path: Path to pickled model file (required, raises ValueError if None)
+        threshold: P(KEEP) below this value triggers deletion (default 0.5)
+        feature_cols: Feature columns for model (default: ML_FEATURE_COLS)
+
+    Returns:
+        delete_mask: np.ndarray of bool, True = should delete
+        failure_info: dict with 'ml_keep_probability' -> array of P(KEEP) values
+
+    Raises:
+        ValueError: If model_path is None
+        FileNotFoundError: If model file doesn't exist
+    """
+    if model_path is None:
+        raise ValueError("brain='ml' requires ml_model_path to be specified")
+
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise FileNotFoundError(f"ML model file not found: {model_path}")
+
+    if feature_cols is None:
+        feature_cols = ML_FEATURE_COLS
+
+    # Load model
+    with open(model_path, 'rb') as f:
+        model = pickle.load(f)
+
+    # Extract features
+    available_cols = [c for c in feature_cols if c in metrics_df.columns]
+    X = metrics_df[available_cols].copy()
+    X = X.replace([np.inf, -np.inf], np.nan)
+
+    # Add missing columns as NaN
+    for col in feature_cols:
+        if col not in X.columns:
+            X[col] = np.nan
+    X = X[feature_cols]
+
+    # Predict probabilities
+    probabilities = model.predict_proba(X)[:, 1]  # P(KEEP) = class 1
+
+    # Determine deletions
+    delete_mask = probabilities < threshold
+
+    # Return probabilities for tracking
+    failure_info = {
+        'ml_keep_probability': probabilities
+    }
+
+    return delete_mask, failure_info
+
+
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
                         pxlthr_distance_boundary=5,
@@ -415,88 +763,126 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         use_convexity_check=True, use_corr_check=True,
                         use_t_rise_check=True, use_caiman_r_score_check=True,
                         use_caiman_snr_check=True, use_t_off_check=True,
-                        track_criteria_failures=True) -> pd.DataFrame:
+                        track_criteria_failures=True,
+                        brain='thresholds',
+                        ml_model_path=None,
+                        ml_threshold=0.5) -> pd.DataFrame:
     """
-    Classify neurons for merge/delete/keep annotating
-    merge groups by clusters' numbers in 'merge' column,
-    to delete as 1 and keep as 0 in delete column
+    Classify neurons for merge/delete/keep annotating.
 
-    :param metrics_df:
-    :param match_mtx:
-    :param FCD:
-    :param FBD:
-    :param circ_thr:
-    :param maxedge_thr:
-    :param convex_thr:
-    :param pxlthr_area:
-    :param pxlthr_distance_boundary:
-    :param d_snr_thr:
-    :param use_circularity_check:
-    :param use_area_check:
-    :param use_max_edge_check:
-    :param use_convexity_check:
-    :param use_corr_check:
-    :param track_criteria_failures: If True, add columns for each failed criterion
-    :return: metrics_df with decision columns
+    Supports two 'brain' types for deletion decisions:
+    - 'thresholds': Original threshold-based logic (default)
+    - 'ml': Machine learning model-based decisions
+
+    Merge logic remains unchanged regardless of brain type.
+
+    Args:
+        metrics_df: DataFrame with neuron metrics
+        match_mtx: Correlation match matrix
+        FCD: Footprint Center Distance matrix
+        FBD: Footprint Boundary Distance matrix
+        circ_thr: Circularity threshold (for threshold brain)
+        maxedge_thr: Max edge threshold (for threshold brain)
+        convex_thr: Convexity threshold (for threshold brain)
+        pxlthr_area: Area threshold in pixels (for threshold brain)
+        pxlthr_distance_boundary: Distance threshold for merge detection
+        d_snr_thr: SNR difference threshold for merge detection
+        t_rise_min: Minimum rise time (for threshold brain)
+        caiman_r_score_min: Minimum CaImAn r-score (for threshold brain)
+        caiman_snr_min: Minimum CaImAn SNR (for threshold brain)
+        t_off_min: Minimum decay time (for threshold brain)
+        use_*_check: Boolean flags to enable/disable individual checks (threshold brain)
+        use_corr_check: Enable correlation-based merge detection
+        track_criteria_failures: Track which criteria failed for each neuron
+        brain: Decision brain type - 'thresholds' or 'ml'
+        ml_model_path: Path to ML model pickle (required if brain='ml')
+        ml_threshold: P(KEEP) threshold for ML brain (default 0.5)
+
+    Returns:
+        metrics_df with 'delete' and 'merge' columns added
     """
     series_num = metrics_df.shape[0]
     metrics_df[['delete', 'merge']] = 0
 
-    # Track criteria failures if requested
+    # Initialize failure tracking columns
     if track_criteria_failures:
-        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
-                       'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off', 'failed_corner_artifact']
-        for col in failure_cols:
-            metrics_df[col] = 0
+        # Common column
+        metrics_df['failed_corner_artifact'] = 0
 
-    # Check for corner artifacts first
+        if brain == 'thresholds':
+            failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                           'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
+            for col in failure_cols:
+                metrics_df[col] = 0
+        elif brain == 'ml':
+            metrics_df['ml_keep_probability'] = np.nan
+
+    # Step 1: Handle corner artifacts (always, regardless of brain)
     has_corner_artifacts = 'is_corner_artifact' in metrics_df.columns
+    if has_corner_artifacts:
+        corner_mask = metrics_df['is_corner_artifact'] == 1
+        metrics_df.loc[corner_mask, 'delete'] = 1
+        if track_criteria_failures:
+            metrics_df.loc[corner_mask, 'failed_corner_artifact'] = 1
 
-    for string_num in range(series_num):
-        string = metrics_df.iloc[string_num]
+    # Step 2: Apply brain for deletion decisions (only on non-corner neurons)
+    if has_corner_artifacts:
+        non_corner_mask = metrics_df['is_corner_artifact'] == 0
+    else:
+        non_corner_mask = pd.Series([True] * series_num, index=metrics_df.index)
 
-        # Corner artifact check - highest priority
-        if has_corner_artifacts and string.get('is_corner_artifact', 0) == 1:
-            metrics_df.iloc[string_num, metrics_df.columns.get_loc('delete')] = 1
+    non_corner_indices = metrics_df[non_corner_mask].index
+
+    if len(non_corner_indices) > 0:
+        if brain == 'thresholds':
+            # Build threshold and use_checks dicts for the brain function
+            thresholds = {
+                'pxlthr_area': pxlthr_area,
+                'circ_thr': circ_thr,
+                'maxedge_thr': maxedge_thr,
+                'convex_thr': convex_thr,
+                't_rise_min': t_rise_min,
+                'caiman_r_score_min': caiman_r_score_min,
+                'caiman_snr_min': caiman_snr_min,
+                't_off_min': t_off_min
+            }
+            use_checks = {
+                'use_area_check': use_area_check,
+                'use_circularity_check': use_circularity_check,
+                'use_max_edge_check': use_max_edge_check,
+                'use_convexity_check': use_convexity_check,
+                'use_t_rise_check': use_t_rise_check,
+                'use_caiman_r_score_check': use_caiman_r_score_check,
+                'use_caiman_snr_check': use_caiman_snr_check,
+                'use_t_off_check': use_t_off_check
+            }
+
+            delete_mask, failure_info = _apply_threshold_brain(
+                metrics_df.loc[non_corner_indices], thresholds, use_checks, track_criteria_failures)
+
+            # Update delete column
+            metrics_df.loc[non_corner_indices, 'delete'] = delete_mask.astype(int)
+
+            # Update failure columns
             if track_criteria_failures:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_corner_artifact')] = 1
-            continue
+                for col, values in failure_info.items():
+                    metrics_df.loc[non_corner_indices, col] = values
 
-        ### Quality criteria checks
-        area = area_check(string, pxlthr_area) if use_area_check else True
-        circle = circularity_check(string, circ_thr) if use_circularity_check else True
-        max_edge = max_edge_check(string, maxedge_thr) if use_max_edge_check else True
-        convex = convexity_check(string, convex_thr) if use_convexity_check else True
+        elif brain == 'ml':
+            delete_mask, failure_info = _apply_ml_brain(
+                metrics_df.loc[non_corner_indices], ml_model_path, ml_threshold)
 
-        # New quality metrics (lower bound checks)
-        t_rise_ok = t_rise_check(string, t_rise_min) if use_t_rise_check else True
-        r_score_ok = caiman_r_score_check(string, caiman_r_score_min) if use_caiman_r_score_check else True
-        snr_ok = caiman_snr_check(string, caiman_snr_min) if use_caiman_snr_check else True
-        t_off_ok = t_off_check(string, t_off_min) if use_t_off_check else True
+            # Update delete column
+            metrics_df.loc[non_corner_indices, 'delete'] = delete_mask.astype(int)
 
-        delete = not (area and circle and max_edge and convex and t_rise_ok and r_score_ok and snr_ok and t_off_ok)
+            # Update probability column for tracking
+            if track_criteria_failures:
+                metrics_df.loc[non_corner_indices, 'ml_keep_probability'] = failure_info['ml_keep_probability']
 
-        metrics_df.iloc[string_num, metrics_df.columns.get_loc('delete')] = int(delete)
+        else:
+            raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml'")
 
-        # Track which criteria failed
-        if track_criteria_failures and delete:
-            if use_area_check and not area:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_area')] = 1
-            if use_circularity_check and not circle:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_circularity')] = 1
-            if use_max_edge_check and not max_edge:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_max_edge')] = 1
-            if use_convexity_check and not convex:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_convexity')] = 1
-            if use_t_rise_check and not t_rise_ok:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_t_rise')] = 1
-            if use_caiman_r_score_check and not r_score_ok:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_r_score')] = 1
-            if use_caiman_snr_check and not snr_ok:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_snr')] = 1
-            if use_t_off_check and not t_off_ok:
-                metrics_df.iloc[string_num, metrics_df.columns.get_loc('failed_t_off')] = 1
-
+    # Step 3: Correlation-based merge logic (UNCHANGED)
     if use_corr_check:
         # unique number of clusters
         unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
@@ -583,6 +969,43 @@ def implement_decision(est, df):
                 est.manual_merge([sel_comps_valid], params=params.CNMFParams(params_dict=est.cnmf_dict))
 
     return est
+
+
+def save_processed_estimates(est, output_path, session_name=None):
+    """
+    Save processed estimates to pickle file.
+
+    Args:
+        est: CaImAn estimates object after implement_decision
+        output_path: Directory or full path to save the file
+        session_name: Optional session name for filename (if output_path is directory)
+
+    Returns:
+        Path to saved file
+    """
+    import pickle
+    from pathlib import Path
+
+    output_path = Path(output_path)
+
+    # Determine full file path
+    if output_path.suffix == '.pickle':
+        # Full path provided
+        filepath = output_path
+    else:
+        # Directory provided, create filename
+        if session_name:
+            filename = f"{session_name}_processed.pickle"
+        else:
+            filename = "processed_estimates.pickle"
+        output_path.mkdir(parents=True, exist_ok=True)
+        filepath = output_path / filename
+
+    # Save estimates
+    with open(filepath, 'wb') as f:
+        pickle.dump(est, f)
+
+    return filepath
 
 
 def validate_decision(est_init, est_gt, est, fps=20):

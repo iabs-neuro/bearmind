@@ -120,7 +120,12 @@ def create_training_data(session_dirs, max_distance=3):
             'event_r2_score',
             'nmae',
             'nrmse',
-            'snr_recon'
+            'snr_recon',
+            'noise_level',
+            'baseline',
+            'tau_decay',
+            'trace_skewness',
+            'footprint_compactness'
         ]
 
         features = df_raw_filtered[feature_cols].copy()
@@ -249,7 +254,8 @@ def extract_rules(clf, feature_names, output_dir="ml/models"):
 
 def main(train_fraction=0.75, max_depth=5, min_samples_split=100, min_samples_leaf=50,
          artifacts_dir="dev/validation_artifacts",
-         output_dir="ml/models"):
+         output_dir="ml/models",
+         experiments=None):
     """
     Main training pipeline for capcan_artifacts data.
 
@@ -260,6 +266,7 @@ def main(train_fraction=0.75, max_depth=5, min_samples_split=100, min_samples_le
         min_samples_leaf: Minimum samples in leaf
         artifacts_dir: Directory containing capcan_artifacts_* subdirectories
         output_dir: Where to save outputs
+        experiments: List of experiment IDs to include (e.g., ['NOF', '3DM']). If None, use all.
     """
     print("="*60)
     print("DECISION TREE TRAINING ON CAPCAN_ARTIFACTS DATA")
@@ -269,6 +276,17 @@ def main(train_fraction=0.75, max_depth=5, min_samples_split=100, min_samples_le
     artifacts_path = Path(artifacts_dir)
     session_dirs = sorted([d for d in artifacts_path.iterdir()
                           if d.is_dir() and d.name.startswith('capcan_artifacts_')])
+
+    # Filter by experiment IDs if specified
+    if experiments is not None and len(experiments) > 0:
+        filtered_dirs = []
+        for d in session_dirs:
+            session_name = d.name.replace('capcan_artifacts_', '')
+            exp_id = session_name.split('_')[0]
+            if exp_id in experiments:
+                filtered_dirs.append(d)
+        session_dirs = filtered_dirs
+        print(f"Filtered to experiments: {experiments}")
 
     print(f"Found {len(session_dirs)} total sessions")
 
@@ -324,12 +342,14 @@ def main(train_fraction=0.75, max_depth=5, min_samples_split=100, min_samples_le
 def run_multiple_seeds(n_seeds=10, train_fraction=0.75, max_depth=5,
                        min_samples_split=100, min_samples_leaf=50,
                        artifacts_dir="dev/validation_artifacts",
-                       output_dir="ml/models"):
+                       output_dir="ml/models",
+                       experiments=None):
     """
     Run training with multiple random seeds to assess stability.
 
     Args:
         n_seeds: Number of different random seeds to try
+        experiments: List of experiment IDs to include (e.g., ['NOF', '3DM']). If None, use all.
         Other args: Same as main()
 
     Returns:
@@ -346,6 +366,18 @@ def run_multiple_seeds(n_seeds=10, train_fraction=0.75, max_depth=5,
     session_dirs = sorted([d for d in artifacts_path.iterdir()
                           if d.is_dir() and d.name.startswith('capcan_artifacts_')])
 
+    # Filter by experiment IDs if specified
+    if experiments is not None and len(experiments) > 0:
+        filtered_dirs = []
+        for d in session_dirs:
+            session_name = d.name.replace('capcan_artifacts_', '')
+            exp_id = session_name.split('_')[0]
+            if exp_id in experiments:
+                filtered_dirs.append(d)
+        session_dirs = filtered_dirs
+        print(f"Filtered to experiments: {experiments}")
+
+    print(f"Total sessions: {len(session_dirs)}")
     n_train = int(len(session_dirs) * train_fraction)
 
     for seed in range(n_seeds):
@@ -472,6 +504,10 @@ if __name__ == "__main__":
         "--multi-seed", type=int, default=0,
         help="Run with multiple random seeds (specify number, e.g., 10). Default: 0 (single run)"
     )
+    parser.add_argument(
+        "--experiments", type=str, nargs='+', default=None,
+        help="Filter to specific experiments (e.g., --experiments NOF 3DM). If not specified, uses all experiments."
+    )
 
     args = parser.parse_args()
 
@@ -484,7 +520,8 @@ if __name__ == "__main__":
             min_samples_split=args.min_samples_split,
             min_samples_leaf=args.min_samples_leaf,
             artifacts_dir=args.artifacts_dir,
-            output_dir=args.output_dir
+            output_dir=args.output_dir,
+            experiments=args.experiments
         )
     else:
         # Single run
@@ -494,5 +531,6 @@ if __name__ == "__main__":
             min_samples_split=args.min_samples_split,
             min_samples_leaf=args.min_samples_leaf,
             artifacts_dir=args.artifacts_dir,
-            output_dir=args.output_dir
+            output_dir=args.output_dir,
+            experiments=args.experiments
         )

@@ -9,6 +9,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 from pathlib import Path
 
 
@@ -91,18 +92,24 @@ def save_rejected_neurons_summary(decision_df, output_folder):
     print(f'Saved {len(rejected)} rejected neurons to {output_path}')
 
 
-def visualize_corner_artifacts(metrics_df, corner_info, output_folder, session_name='session'):
+def visualize_corner_artifacts(metrics_df, edge_info, output_folder, session_name='session'):
     """
-    Create visualization of corner artifact detection.
+    Create visualization of edge artifact detection with CoM and ellipse boundary.
+
+    Shows three-color scheme:
+    - Blue: main neurons (not artifacts)
+    - Yellow: corner-only artifacts
+    - Black: ellipse-only artifacts
+    - Red: detected by both methods
 
     Parameters:
         metrics_df: DataFrame with 'center' and 'is_corner_artifact' columns
-        corner_info: Dict with corner detection information
+        edge_info: Dict with edge detection information (from detect_edge_artifacts)
         output_folder: Path to output folder
         session_name: Session name for plot title
     """
     if 'is_corner_artifact' not in metrics_df.columns:
-        print('No corner artifact information to visualize')
+        print('No edge artifact information to visualize')
         return
 
     if 'center' not in metrics_df.columns:
@@ -113,48 +120,84 @@ def visualize_corner_artifacts(metrics_df, corner_info, output_folder, session_n
     positions = np.array([np.array(c) if not isinstance(c, np.ndarray) else c
                          for c in metrics_df['center']])
 
-    is_artifact = metrics_df['is_corner_artifact'].values == 1
-    is_main = ~is_artifact
+    # Compute FOV dimensions and center
+    x_min, x_max = positions[:, 0].min(), positions[:, 0].max()
+    y_min, y_max = positions[:, 1].min(), positions[:, 1].max()
+    fov_width = x_max - x_min
+    fov_height = y_max - y_min
+    center_x, center_y = np.mean(positions[:, 0]), np.mean(positions[:, 1])
+
+    # Get breakdown from edge_info if available
+    n_corner_only = edge_info.get('n_corner_only', 0) if edge_info else 0
+    n_ellipse_only = edge_info.get('n_ellipse_only', 0) if edge_info else 0
+    n_both = edge_info.get('n_both', 0) if edge_info else 0
+
+    # Compute corner and ellipse labels to determine colors
+    # We need to recompute these to get the breakdown
+    from corner_artifacts import detect_corner_artifacts_from_positions, detect_ellipse_artifacts_from_positions
+
+    corner_labels, _ = detect_corner_artifacts_from_positions(positions, fov_width, fov_height)
+    ellipse_labels, ellipse_info = detect_ellipse_artifacts_from_positions(positions, fov_width, fov_height, threshold=0.9)
+
+    # Create masks for different categories
+    corner_only = (corner_labels == 1) & (ellipse_labels == 0)
+    ellipse_only = (corner_labels == 0) & (ellipse_labels == 1)
+    both = (corner_labels == 1) & (ellipse_labels == 1)
+    main_mask = (corner_labels == 0) & (ellipse_labels == 0)
 
     # Create figure
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    # Plot main cluster
-    if is_main.any():
-        ax.scatter(positions[is_main, 0], positions[is_main, 1],
-                  c='blue', s=30, alpha=0.6, edgecolors='darkblue',
-                  linewidths=0.5, label=f'Main ({is_main.sum()})')
+    # Plot with colors: blue=main, yellow=corner-only, black=ellipse-only, red=both
+    if main_mask.any():
+        ax.scatter(positions[main_mask, 0], positions[main_mask, 1],
+                  c='blue', alpha=0.6, s=20, label=f'Main ({main_mask.sum()})')
 
-    # Plot corner artifacts
-    if is_artifact.any():
-        ax.scatter(positions[is_artifact, 0], positions[is_artifact, 1],
-                  c='red', s=30, alpha=0.6, edgecolors='darkred',
-                  linewidths=0.5, label=f'Corner Artifacts ({is_artifact.sum()})')
+    if corner_only.any():
+        ax.scatter(positions[corner_only, 0], positions[corner_only, 1],
+                  c='yellow', edgecolors='orange', alpha=0.9, s=30,
+                  label=f'Corner only ({corner_only.sum()})')
+
+    if ellipse_only.any():
+        ax.scatter(positions[ellipse_only, 0], positions[ellipse_only, 1],
+                  c='black', alpha=0.8, s=30,
+                  label=f'Ellipse only ({ellipse_only.sum()})')
+
+    if both.any():
+        ax.scatter(positions[both, 0], positions[both, 1],
+                  c='red', alpha=0.9, s=35,
+                  label=f'Both ({both.sum()})')
+
+    # Draw ellipse boundary (r=0.9)
+    ellipse_threshold = 0.9
+    ellipse_width = fov_width * ellipse_threshold
+    ellipse_height = fov_height * ellipse_threshold
+    ellipse_patch = Ellipse((center_x, center_y), ellipse_width, ellipse_height,
+                            fill=False, edgecolor='darkred', linestyle='--', linewidth=2)
+    ax.add_patch(ellipse_patch)
+
+    # Mark center of mass
+    ax.scatter([center_x], [center_y], c='green', marker='+', s=200, linewidths=3,
+              label='CoM', zorder=10)
 
     ax.set_xlabel('X position (pixels)')
     ax.set_ylabel('Y position (pixels)')
-    ax.set_title(f'{session_name} - Corner Artifact Detection')
-    ax.legend(loc='best')
+
+    n_total = len(positions)
+    n_artifacts = corner_only.sum() + ellipse_only.sum() + both.sum()
+    ax.set_title(f'{session_name}\nArtifacts: {n_artifacts}/{n_total} ({n_artifacts/n_total*100:.1f}%)')
+
+    ax.legend(loc='upper right', fontsize=9)
     ax.grid(True, alpha=0.3)
     ax.set_aspect('equal')
 
-    # Add corner info as text
-    if corner_info:
-        corners_detected = [name for name, info in corner_info.items()
-                          if info.get('cluster_found', False)]
-        if corners_detected:
-            info_text = 'Detected corners:\n' + ', '.join(corners_detected)
-            ax.text(0.02, 0.98, info_text, transform=ax.transAxes,
-                   verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
-                   fontsize=9)
-
     plt.tight_layout()
 
-    output_path = Path(output_folder) / 'corner_artifacts.png'
+    output_path = Path(output_folder) / 'edge_artifacts.png'
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-    print(f'Saved corner artifact visualization to {output_path}')
+    print(f'Saved edge artifact visualization to {output_path}')
 
 
 def create_inspection_summary(metrics_df, decision_df, corner_info, output_folder):

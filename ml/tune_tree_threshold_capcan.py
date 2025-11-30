@@ -88,7 +88,12 @@ def create_test_data(session_dirs, max_distance=3):
             'event_r2_score',
             'nmae',
             'nrmse',
-            'snr_recon'
+            'snr_recon',
+            'noise_level',
+            'baseline',
+            'tau_decay',
+            'trace_skewness',
+            'footprint_compactness'
         ]
 
         features = df_raw_filtered[feature_cols].copy()

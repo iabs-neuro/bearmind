@@ -222,6 +222,40 @@ def get_max_edges(contours):
     return max_edges
 
 
+def get_aspect_ratios(contours):
+    """
+    Compute aspect ratio (elongation) for each contour.
+
+    Aspect ratio = max(width, height) / min(width, height) of bounding box.
+    - 1.0 = square bounding box (roughly circular footprint)
+    - >2.0 = elongated (potential blood vessel, merged neurons, motion artifact)
+    """
+    aspect_ratios = []
+
+    for i in range(len(contours)):
+        coords = contours[i]["coordinates"]
+        # Filter NaN
+        valid_coords = np.array([pt for pt in coords if not (np.isnan(pt[0]) or np.isnan(pt[1]))])
+
+        if len(valid_coords) < 3:
+            aspect_ratios.append(np.nan)
+            continue
+
+        # Bounding box dimensions
+        x_min, x_max = valid_coords[:, 0].min(), valid_coords[:, 0].max()
+        y_min, y_max = valid_coords[:, 1].min(), valid_coords[:, 1].max()
+
+        width = x_max - x_min
+        height = y_max - y_min
+
+        if min(width, height) < 1e-6:
+            aspect_ratios.append(np.nan)
+        else:
+            aspect_ratios.append(max(width, height) / min(width, height))
+
+    return np.array(aspect_ratios)
+
+
 def convex_polygons_min_distance(P, Q):
     P, Q = _clean(P), _clean(Q)
     P = convex_hull(P)

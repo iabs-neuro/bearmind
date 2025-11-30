@@ -2,10 +2,12 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from auto_inspector import (
     estimates_to_metrics,
     metrics_to_decision,
     implement_decision,
+    save_processed_estimates,
     compute_metrics,
     print_report
 )
@@ -14,20 +16,66 @@ from ae_utils import save_validation_outputs
 # Configuration
 project_root = os.path.dirname(os.path.abspath(__file__))
 val_path = os.path.join(project_root, 'data')
-init_path = os.path.join(val_path, '4.1_EstimatesRaw')
-gt_path = os.path.join(val_path, '4.1_EstimatesFinal')
 
-# Build session mapping
-all_init_files = os.listdir(init_path)
-all_gt_files = os.listdir(gt_path)
+# Default paths (use ultra-lightweight compressed data)
+init_path = os.path.join(val_path, 'raw_ultra_lightweight')
+gt_path = os.path.join(val_path, 'final_ultra_lightweight')
 
-sessions = [name[:10] for name in all_gt_files]
-mapping = {}
-for session in sessions:
-    init = [f for f in all_init_files if session in f][0]
-    gt = [f for f in all_gt_files if session in f][0]
-    mapping.update({session: [init, gt]})
 
+def load_fps_data(fps_file='fps_data.csv'):
+    """
+    Load FPS data from CSV file.
+
+    Args:
+        fps_file: Path to FPS data CSV file
+
+    Returns:
+        dict: Mapping of session_id -> fps (rounded to nearest int)
+    """
+    fps_path = os.path.join(project_root, fps_file)
+    fps_df = pd.read_csv(fps_path)
+
+    # Create mapping: filename (first 10 chars) -> rounded FPS
+    fps_map = {}
+    for _, row in fps_df.iterrows():
+        session_id = row['Filename'][:10]
+        fps_rounded = int(round(row['FPS']))
+        fps_map[session_id] = fps_rounded
+
+    return fps_map
+
+
+# Load FPS data
+fps_map = load_fps_data()
+print(f"Loaded FPS data for {len(fps_map)} sessions\n")
+
+
+def build_session_mapping(init_path, gt_path):
+    """
+    Build session mapping from init and ground truth paths.
+
+    Args:
+        init_path: Path to raw/initial estimates
+        gt_path: Path to final/ground truth estimates
+
+    Returns:
+        dict: Mapping of session_id -> [init_file, gt_file]
+    """
+    all_init_files = os.listdir(init_path)
+    all_gt_files = os.listdir(gt_path)
+
+    sessions = [name[:10] for name in all_gt_files]
+    mapping = {}
+    for session in sessions:
+        init = [f for f in all_init_files if session in f][0]
+        gt = [f for f in all_gt_files if session in f][0]
+        mapping.update({session: [init, gt]})
+
+    return mapping
+
+
+# Build default session mapping (for module-level usage)
+mapping = build_session_mapping(init_path, gt_path)
 print(f"Found {len(mapping)} sessions to validate\n")
 
 
@@ -38,7 +86,7 @@ def load_estimates(filepath):
     return estimates
 
 
-def validate_single_session(session_id, init_file, gt_file, fps=20, verbose=True):
+def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=True):
     """
     Validate automated pipeline on a single session.
 
@@ -46,18 +94,23 @@ def validate_single_session(session_id, init_file, gt_file, fps=20, verbose=True
         session_id: Session identifier
         init_file: Filename for raw estimates
         gt_file: Filename for final (ground truth) estimates
-        fps: Frames per second for calcium imaging
+        fps: Frames per second (if None, will lookup from fps_map)
         verbose: Print detailed progress
 
     Returns:
         dict: Validation metrics
     """
+    # Get FPS from map if not provided
+    if fps is None:
+        fps = fps_map.get(session_id, 20)  # Default to 20 if not found
+
     if verbose:
         print(f"\n{'='*60}")
         print(f"VALIDATING SESSION: {session_id}")
         print(f"{'='*60}")
         print(f"Raw estimates: {init_file}")
-        print(f"Final estimates: {gt_file}\n")
+        print(f"Final estimates: {gt_file}")
+        print(f"FPS: {fps}\n")
 
     # === PART 1: Load estimates ===
     if verbose:
@@ -146,6 +199,13 @@ def validate_single_session(session_id, init_file, gt_file, fps=20, verbose=True
     if verbose:
         print("[5/6] Implementing automated decisions...")
 
+    # Convert S to dense if sparse (CaImAn's manual_merge doesn't handle sparse S)
+    from scipy import sparse
+    if sparse.issparse(est_init.S):
+        if verbose:
+            print("  Converting sparse S to dense for merging...")
+        est_init.S = est_init.S.toarray()
+
     # Apply ALL decisions including corner artifacts
     # Corner artifacts are already marked for deletion via 'delete' column
     est_auto = implement_decision(est_init, metrics_df_auto)
@@ -206,20 +266,23 @@ def validate_single_session(session_id, init_file, gt_file, fps=20, verbose=True
     return validation_metrics
 
 
-def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_artifacts=True,
-                   artifacts_base_path='.', verbose=False, session_list=None):
+def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save_artifacts=True,
+                   artifacts_base_path='.', verbose=False, session_list=None,
+                   save_estimates=False, estimates_output_path=None):
     """
     Run validation on all sessions or specific sessions.
 
     Args:
         mapping: Dict mapping session names to (init_file, gt_file)
-        fps: Frames per second
+        fps: Frames per second (if None, will lookup from fps_map for each session)
         include_heavy: Include heavy reconstruction metrics
         output_file: Where to save results CSV (optional)
         save_artifacts: Save detailed per-session artifacts to capcan_artifacts folders
         artifacts_base_path: Base path for artifact folders
         verbose: Print progress for each session
         session_list: Optional list of specific session IDs to validate
+        save_estimates: Save processed estimates pickle files
+        estimates_output_path: Directory to save processed estimates
 
     Returns:
         pd.DataFrame: Validation results
@@ -238,6 +301,9 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
     print(f"Save detailed artifacts: {save_artifacts}")
     if save_artifacts:
         print(f"Artifacts base path: {artifacts_base_path}")
+    print(f"Save processed estimates: {save_estimates}")
+    if save_estimates:
+        print(f"Estimates output path: {estimates_output_path}")
     print()
 
     results = []
@@ -249,6 +315,9 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
 
     for session_id, (init_file, gt_file) in tqdm(mapping.items(), desc="Validating"):
         try:
+            # Get FPS for this session
+            session_fps = fps if fps is not None else fps_map.get(session_id, 20)
+
             # Load estimates
             est_init = load_estimates(os.path.join(init_path, init_file))
             est_gt = load_estimates(os.path.join(gt_path, gt_file))
@@ -256,14 +325,14 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
             # Extract metrics with heavy option
             metrics_df_init, match_mtx_init, FCD_init, FBD_init, corner_info = estimates_to_metrics(
                 est_init,
-                fps=fps,
+                fps=session_fps,
                 include_wavelet=True,
                 include_heavy=include_heavy
             )
 
             metrics_df_gt, _, _, _, _ = estimates_to_metrics(
                 est_gt,
-                fps=fps,
+                fps=session_fps,
                 include_wavelet=True,
                 include_heavy=include_heavy
             )
@@ -298,8 +367,25 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
                 lambda x: 'delete' if x == 1 else 'ok'
             )
 
+            # Convert S to dense if sparse (CaImAn's manual_merge doesn't handle sparse S)
+            from scipy import sparse
+            if sparse.issparse(est_init.S):
+                est_init.S = est_init.S.toarray()
+
             # Implement decisions (handles merges) - apply ALL decisions including corner artifacts
             est_auto = implement_decision(est_init, metrics_df_auto)
+
+            # Save processed estimates if requested (inside artifacts folder)
+            if save_estimates:
+                try:
+                    # Save inside the artifacts folder for this session
+                    artifacts_folder = Path(artifacts_base_path) / f'capcan_artifacts_{session_id}'
+                    artifacts_folder.mkdir(parents=True, exist_ok=True)
+                    save_path = save_processed_estimates(est_auto, artifacts_folder, session_id)
+                    if verbose:
+                        print(f"  Saved: {save_path}")
+                except Exception as e:
+                    print(f"  WARNING: Failed to save estimates for {session_id}: {e}")
 
             # Filter corner artifacts for validation metrics AFTER implementing decisions
             if n_corner > 0:
@@ -311,7 +397,7 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
             # Extract metrics from automated result
             metrics_df_auto_final, _, _, _, _ = estimates_to_metrics(
                 est_auto,
-                fps=fps,
+                fps=session_fps,
                 include_wavelet=False,
                 include_heavy=False
             )
@@ -326,6 +412,7 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
 
             # Add metadata
             validation_metrics['session_id'] = session_id
+            validation_metrics['fps'] = session_fps
             validation_metrics['n_initial'] = len(est_init.idx_components)
             validation_metrics['n_initial_filtered'] = len(metrics_df_init_filtered)
             validation_metrics['n_ground_truth'] = len(est_gt.idx_components)
@@ -340,9 +427,10 @@ def batch_validate(mapping, fps=20, include_heavy=True, output_file=None, save_a
             # Save detailed artifacts if requested
             if save_artifacts:
                 try:
+                    # Pass UNFILTERED metrics_df_init so visualization shows corner artifacts in red
                     artifact_folder = save_validation_outputs(
                         session_name=session_id,
-                        metrics_df_init=metrics_df_init_filtered,
+                        metrics_df_init=metrics_df_init,  # UNFILTERED for visualization
                         metrics_df_gt=metrics_df_gt,
                         metrics_df_auto=metrics_df_auto_final,
                         decision_df=metrics_df_auto,
@@ -408,15 +496,33 @@ if __name__ == "__main__":
     parser.add_argument("--batch", action="store_true", help="Run on all sessions (default: single test session)")
     parser.add_argument("--session", type=str, help="Specific session to validate (default: first)")
     parser.add_argument("--sessions", type=str, help="Comma-separated list of specific sessions to validate in batch mode")
-    parser.add_argument("--fps", type=float, default=20, help="Frames per second")
+    parser.add_argument("--raw-path", type=str, help="Path to raw estimates folder (default: data/raw_ultra_lightweight)")
+    parser.add_argument("--final-path", type=str, help="Path to final estimates folder (default: data/final_ultra_lightweight)")
+    parser.add_argument("--fps", type=float, help="Override FPS for all sessions (default: use fps_data.csv lookup)")
     parser.add_argument("--include-heavy", action="store_true", help="Include heavy reconstruction metrics")
     parser.add_argument("--output", "-o", help="Output CSV file for batch mode")
     parser.add_argument("--save-artifacts", action="store_true", default=True, help="Save detailed artifacts to capcan_artifacts folders (default: True)")
     parser.add_argument("--no-save-artifacts", dest="save_artifacts", action="store_false", help="Disable saving artifacts")
     parser.add_argument("--artifacts-path", default=".", help="Base path for artifact folders (default: current directory)")
+    parser.add_argument("--save-estimates", action="store_true", help="Save processed estimates pickle files")
+    parser.add_argument("--estimates-path", default="data/processed_estimates", help="Directory to save processed estimates (default: data/processed_estimates)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
+
+    # Override paths if specified
+    if args.raw_path:
+        init_path = args.raw_path
+    if args.final_path:
+        gt_path = args.final_path
+
+    # Rebuild mapping with specified paths
+    if args.raw_path or args.final_path:
+        mapping = build_session_mapping(init_path, gt_path)
+        print(f"Using custom paths:")
+        print(f"  Raw estimates: {init_path}")
+        print(f"  Final estimates: {gt_path}")
+        print(f"  Sessions found: {len(mapping)}\n")
 
     if args.batch:
         # Batch mode - all sessions or specific sessions
@@ -430,13 +536,15 @@ if __name__ == "__main__":
 
         results_df = batch_validate(
             mapping,
-            fps=args.fps,
+            fps=args.fps,  # None by default, will use fps_map lookup
             include_heavy=args.include_heavy,
             output_file=output_file,
             save_artifacts=args.save_artifacts,
             artifacts_base_path=args.artifacts_path,
             verbose=args.verbose,
-            session_list=session_list
+            session_list=session_list,
+            save_estimates=args.save_estimates,
+            estimates_output_path=args.estimates_path
         )
     else:
         # Single session mode
@@ -457,7 +565,7 @@ if __name__ == "__main__":
             session_id=test_session,
             init_file=init_file,
             gt_file=gt_file,
-            fps=args.fps,
+            fps=args.fps,  # None by default, will use fps_map lookup
             verbose=True
         )
 

@@ -1,10 +1,11 @@
 """
-Corner Artifact Detection Module
+Edge Artifact Detection Module
 
-Detects corner/edge artifacts in calcium imaging data using valley detection
-on spatial distributions of neuron positions.
+Detects edge artifacts in calcium imaging data using two complementary methods:
+1. Corner-based: Valley detection on sum of border distances (detects corner clusters)
+2. Ellipse-based: Normalized radial distance > 0.9 (detects outer-edge neurons)
 
-Based on spatial_clustering.py v5 algorithm.
+Combined detection uses union of both methods for robust artifact identification.
 """
 
 import numpy as np
@@ -258,3 +259,136 @@ def detect_corner_artifacts(metrics_df, **gap_params):
     metrics_df['is_corner_artifact'] = labels
 
     return metrics_df, corner_info, labels
+
+
+def detect_ellipse_artifacts_from_positions(positions, fov_width=None, fov_height=None, threshold=0.9):
+    """
+    Detect edge artifacts using normalized radial distance from center of mass.
+
+    Neurons beyond the threshold ellipse (r > threshold) are marked as artifacts.
+    r = sqrt((dx/(fov_width/2))^2 + (dy/(fov_height/2))^2)
+    where r=1.0 is the ellipse touching the bounding box edges.
+
+    Parameters:
+        positions: Nx2 array of neuron positions (x, y coordinates)
+        fov_width: Width of field of view (optional, calculated from positions if not provided)
+        fov_height: Height of field of view (optional, calculated from positions if not provided)
+        threshold: Normalized radial distance threshold (default: 0.9)
+
+    Returns:
+        labels: 1 = edge artifact, 0 = main cluster
+        ellipse_info: dict with detection info
+    """
+    x_min, x_max = positions[:, 0].min(), positions[:, 0].max()
+    y_min, y_max = positions[:, 1].min(), positions[:, 1].max()
+
+    if fov_width is None:
+        fov_width = x_max - x_min
+    if fov_height is None:
+        fov_height = y_max - y_min
+
+    # Compute center of mass
+    center_x, center_y = np.mean(positions[:, 0]), np.mean(positions[:, 1])
+
+    # Compute normalized radial distance
+    dx = positions[:, 0] - center_x
+    dy = positions[:, 1] - center_y
+    dx_norm = dx / (fov_width / 2) if fov_width > 0 else dx
+    dy_norm = dy / (fov_height / 2) if fov_height > 0 else dy
+    radial_dist = np.sqrt(dx_norm**2 + dy_norm**2)
+
+    # Mark neurons beyond threshold as artifacts
+    labels = (radial_dist > threshold).astype(int)
+    n_artifacts = labels.sum()
+
+    ellipse_info = {
+        'n_artifacts': n_artifacts,
+        'threshold': threshold,
+        'center': (center_x, center_y),
+        'fov_width': fov_width,
+        'fov_height': fov_height,
+        'max_radial': radial_dist.max()
+    }
+
+    return labels, ellipse_info
+
+
+def detect_edge_artifacts_from_positions(positions, fov_width=None, fov_height=None,
+                                         ellipse_threshold=0.9, **gap_params):
+    """
+    Detect edge artifacts using BOTH corner-based and ellipse-based methods.
+
+    Returns the union of both detection methods for robust artifact identification.
+
+    Parameters:
+        positions: Nx2 array of neuron positions (x, y coordinates)
+        fov_width: Width of field of view (optional)
+        fov_height: Height of field of view (optional)
+        ellipse_threshold: Threshold for ellipse detection (default: 0.9)
+        **gap_params: Parameters for corner-based gap detection
+
+    Returns:
+        labels: 1 = edge artifact, 0 = main cluster (union of both methods)
+        info: dict with detection info including breakdown by method
+    """
+    # Run corner-based detection
+    corner_labels, corner_info = detect_corner_artifacts_from_positions(
+        positions, fov_width=fov_width, fov_height=fov_height, **gap_params
+    )
+
+    # Run ellipse-based detection
+    ellipse_labels, ellipse_info = detect_ellipse_artifacts_from_positions(
+        positions, fov_width=fov_width, fov_height=fov_height, threshold=ellipse_threshold
+    )
+
+    # Union of both methods
+    combined_labels = np.maximum(corner_labels, ellipse_labels)
+
+    # Count categories
+    corner_only = ((corner_labels == 1) & (ellipse_labels == 0)).sum()
+    ellipse_only = ((corner_labels == 0) & (ellipse_labels == 1)).sum()
+    both = ((corner_labels == 1) & (ellipse_labels == 1)).sum()
+
+    info = {
+        'n_artifacts': combined_labels.sum(),
+        'n_corner_only': int(corner_only),
+        'n_ellipse_only': int(ellipse_only),
+        'n_both': int(both),
+        'corner_info': corner_info,
+        'ellipse_info': ellipse_info
+    }
+
+    return combined_labels, info
+
+
+def detect_edge_artifacts(metrics_df, ellipse_threshold=0.9, **gap_params):
+    """
+    Detect edge artifacts from metrics DataFrame using combined corner+ellipse detection.
+
+    Parameters:
+        metrics_df: DataFrame with 'center' column containing neuron positions
+        ellipse_threshold: Threshold for ellipse detection (default: 0.9)
+        **gap_params: Parameters for corner-based gap detection
+
+    Returns:
+        metrics_df: DataFrame with 'is_corner_artifact' column added
+        info: Dict with information about detected artifacts
+        labels: Array of 0/1 labels (1 = artifact)
+    """
+    if 'center' not in metrics_df.columns:
+        raise ValueError("metrics_df must have 'center' column")
+
+    # Extract positions
+    positions = np.array([np.array(c) if not isinstance(c, np.ndarray) else c
+                         for c in metrics_df['center']])
+
+    # Detect edge artifacts using combined method
+    labels, info = detect_edge_artifacts_from_positions(
+        positions, ellipse_threshold=ellipse_threshold, **gap_params
+    )
+
+    # Add column to dataframe (keep column name for backward compatibility)
+    metrics_df = metrics_df.copy()
+    metrics_df['is_corner_artifact'] = labels
+
+    return metrics_df, info, labels
