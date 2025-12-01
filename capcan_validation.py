@@ -436,7 +436,10 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                         decision_df=metrics_df_auto,
                         validation_metrics=validation_metrics,
                         corner_info=corner_info,
-                        base_path=artifacts_base_path
+                        base_path=artifacts_base_path,
+                        FCD=FCD_init,
+                        FBD=FBD_init,
+                        match_mtx=match_mtx_init
                     )
                     artifact_folders.append(str(artifact_folder))
                 except Exception as e:
