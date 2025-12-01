@@ -323,7 +323,8 @@ def save_auto_inspection_outputs(session_name, metrics_df, decision_df, corner_i
 
 
 def save_validation_outputs(session_name, metrics_df_init, metrics_df_gt, metrics_df_auto,
-                            decision_df, validation_metrics, corner_info=None, base_path='.'):
+                            decision_df, validation_metrics, corner_info=None, base_path='.',
+                            FCD=None, FBD=None, match_mtx=None):
     """
     Save validation-specific outputs to capcan_artifacts folder.
 
@@ -365,6 +366,22 @@ def save_validation_outputs(session_name, metrics_df_init, metrics_df_gt, metric
     val_df = pd.DataFrame([validation_metrics])
     val_df.to_csv(val_path, index=False)
     print(f'Saved validation metrics to {val_path}')
+
+    # Save FCD, FBD, and match_mtx if provided
+    if FCD is not None:
+        fcd_path = Path(output_folder) / 'FCD.npy'
+        np.save(fcd_path, FCD)
+        print(f'Saved FCD to {fcd_path}')
+
+    if FBD is not None:
+        fbd_path = Path(output_folder) / 'FBD.npy'
+        np.save(fbd_path, FBD)
+        print(f'Saved FBD to {fbd_path}')
+
+    if match_mtx is not None:
+        match_path = Path(output_folder) / 'match_mtx.npy'
+        np.save(match_path, match_mtx)
+        print(f'Saved match_mtx to {match_path}')
 
     # Create visualizations
     if corner_info is not None:

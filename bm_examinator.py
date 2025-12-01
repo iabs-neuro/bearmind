@@ -17,7 +17,7 @@ from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
-                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet)
+                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText)
 
 from bokeh.layouts import column, row
 from bokeh.events import Tap
@@ -42,6 +42,7 @@ from utils import *
 from bm_batch_routines import extract_name_with_pattern
 from auto_inspector import estimates_to_metrics
 from polygon import get_contours
+import matplotlib.colors as mcolors
 
 output_notebook()
 
@@ -59,6 +60,41 @@ def colornum_Metro(num):
         8: "gold",
         9: "magenta",
         0: "lawngreen"}.get(num % 10)
+
+
+def get_ml_probability_color(prob, threshold=0.5, is_deleted=False):
+    """
+    Map ML keep probability to color gradient.
+
+    Args:
+        prob: P(KEEP) probability (0-1)
+        threshold: Decision threshold (neurons below this were deleted)
+        is_deleted: Whether neuron was deleted
+
+    Returns:
+        str: Hex color code
+    """
+    if is_deleted or np.isnan(prob):
+        return '#808080'  # Grey for deleted or missing probability
+
+    # Map probability to 0-1 range for colormap
+    # Red (0.0) = at threshold, Green (1.0) = probability of 1.0
+    if prob <= threshold:
+        # Below threshold (shouldn't happen for kept neurons, but handle it)
+        normalized = 0.0
+    else:
+        # Map [threshold, 1.0] to [0.0, 1.0]
+        normalized = (prob - threshold) / (1.0 - threshold)
+
+    # Use RdYlGn colormap (Red-Yellow-Green)
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        'RedYellowGreen',
+        ['#d73027', '#fee08b', '#1a9850']  # Red, Yellow, Green
+    )
+
+    rgba = cmap(normalized)
+    # Convert RGBA to hex
+    return mcolors.to_hex(rgba)
 
 
 def LoadEstimates(name, default_fps=20):
@@ -224,7 +260,8 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
 def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1,
-                         include_wavelet=True, include_heavy=False):
+                         include_wavelet=True, include_heavy=False,
+                         color_by_ml_probability=False, ml_threshold=0.5):
 
     if len(comps_to_select) == 0:
         comps_to_select = est.idx_components
@@ -252,16 +289,46 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
     ys = [[dims[0] - pt[1] for pt in c] for c in coords]  # flip for y-axis inversion
 
     t1 = time.time()
-    mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
-                                        corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
-                                        sf=sf, ef=ef, ds=ds, include_wavelet=include_wavelet, include_heavy=include_heavy)
+
+    # Check if pre-computed metrics exist on the estimates object
+    if hasattr(est, 'metrics_df') and est.metrics_df is not None:
+        # Use pre-computed metrics from run_auto_inspection()
+        mdf = est.metrics_df.copy()
+        # Filter to requested components if needed
+        if 'component_idx' in mdf.columns and len(comps_to_select) > 0:
+            mdf = mdf[mdf['component_idx'].isin(comps_to_select)].reset_index(drop=True)
+        print(f'Using pre-computed metrics from estimates.metrics_df ({len(mdf)} neurons)')
+    else:
+        # Compute metrics from scratch
+        mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
+                                            corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
+                                            sf=sf, ef=ef, ds=ds, include_wavelet=include_wavelet, include_heavy=include_heavy)
 
     t2 = time.time()
     etime = np.round(t2 - t1, 2)
     print(f'Elapsed time for all metrics: {etime} s,'
           f'{np.round(etime / n_cells, 2)} s per neuron')
 
-    technical = dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors)
+    # Apply ML probability-based coloring if requested
+    if color_by_ml_probability:
+        if 'ml_keep_probability' in mdf.columns and 'delete' in mdf.columns:
+            colors = []
+            for i in range(len(mdf)):
+                prob = mdf.iloc[i]['ml_keep_probability']
+                is_deleted = mdf.iloc[i]['delete'] == 1
+                color = get_ml_probability_color(prob, threshold=ml_threshold, is_deleted=is_deleted)
+                colors.append(color)
+            print(f'Applied ML probability-based coloring (threshold={ml_threshold})')
+        else:
+            missing_cols = []
+            if 'ml_keep_probability' not in mdf.columns:
+                missing_cols.append('ml_keep_probability')
+            if 'delete' not in mdf.columns:
+                missing_cols.append('delete')
+            print(f'WARNING: Cannot apply ML coloring - missing columns: {missing_cols}')
+            print(f'         Using default Metro colors instead')
+
+    technical = dict(idx=comps_to_select, xs=xs, ys=ys, times=times, traces=traces, colors=colors)
     metrics = {k: v for k, v in mdf.to_dict(orient='list').items() if k not in ['component_idx', 'center']}
     return {**technical, **metrics}, {i: mname for i, mname in enumerate(list(metrics.keys()))}
 
@@ -288,6 +355,22 @@ def SaveResults(estimates, sigma=3):
 
 
 def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
+    """
+    Interactive neuron examination GUI.
+
+    Args:
+        fname: Path to estimates pickle file
+        default_fps: Default frames per second (default: 20)
+        bkapp_kwargs: Dict with configuration options:
+            - mode: 'legacy' or 'capcan' (default: 'legacy')
+            - color_by_ml_probability: Color neurons by ML keep probability (default: False)
+                ONLY works in 'capcan' mode. Requires estimates with metrics_df containing
+                'ml_keep_probability' and 'delete' columns (from run_auto_inspection).
+                - Grey: deleted neurons
+                - Red to Green: kept neurons (red=low confidence, green=high confidence)
+            - ml_threshold: P(KEEP) threshold used for coloring (default: 0.5)
+            - Other options: size, cthr, downsampling, corr_thr, etc.
+    """
     # This is the main plotting functions which plots all images and traces and contains all button callbacks
 
     def slice_cds(cds, comps_to_leave):
@@ -368,6 +451,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 self.prev_data = None
                 self.prev_data_partial = None
 
+        operation_mode = bkapp_kwargs.get('mode', 'legacy')
         size = bkapp_kwargs.get('size', 500)
         cthr = bkapp_kwargs.get('cthr', 0.3)
         ds = bkapp_kwargs.get('downsampling', 1)
@@ -376,6 +460,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         match_threshold = bkapp_kwargs.get('match_threshold', 1)
         include_wavelet = bkapp_kwargs.get('include_wavelet', True)
         include_heavy = bkapp_kwargs.get('include_heavy', False)
+        color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
+        ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
 
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
@@ -399,20 +485,27 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
-        '''
-        est_data0 = EstimatesToSrcFast(estimates0,
-                                       cthr=cthr,
-                                       sf=start_frame,
-                                       ef=end_frame,
-                                       ds=ds,
-                                       corr_thr=corr_thr)
-        '''
-        est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps, comps_to_select=[], cthr=cthr,
-                                       corr_thr=corr_thr, num_sessions=num_sessions,
-                                       match_threshold=match_threshold,
-                                       sf=start_frame, ef=end_frame, ds=ds,
-                                       include_wavelet=include_wavelet,
-                                       include_heavy=include_heavy)
+
+        if operation_mode == 'legacy':
+            est_data0 = EstimatesToSrcFast(estimates0,
+                                           cthr=cthr,
+                                           sf=start_frame,
+                                           ef=end_frame,
+                                           ds=ds,
+                                           corr_thr=corr_thr)
+
+        elif operation_mode == 'capcan':
+            est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps,
+                                                           comps_to_select=[], cthr=cthr,
+                                           corr_thr=corr_thr, num_sessions=num_sessions,
+                                           match_threshold=match_threshold,
+                                           sf=start_frame, ef=end_frame, ds=ds,
+                                           include_wavelet=include_wavelet,
+                                           include_heavy=include_heavy,
+                                           color_by_ml_probability=color_by_ml_probability,
+                                           ml_threshold=ml_threshold)
+        else:
+            raise ValueError('wrong operation mode!')
 
         estimates = copy.deepcopy(estimates0)
 
@@ -426,7 +519,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         storage.prev_estimates_partial = copy.deepcopy(estimates0)
         storage.prev_data = copy.deepcopy(est_data0)
         storage.prev_data_partial = copy.deepcopy(est_data0)
-        storage.metric_mapping = metric_mapping
+        storage.mode = operation_mode
+
+        if operation_mode == 'capcan':
+            storage.metric_mapping = metric_mapping
+
         n_traces0 = len(est_data0['traces'])
         #storage.ordering = np.arange(n_traces0)
 
@@ -500,11 +597,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                        color='black',
                        size=5)
 
-
             p2.text(x='dummy_x', y='dummy_id', text='metric',
                     x_offset=5, y_offset=5, anchor="bottom_left",
                     source=src_partial, text_font_size='8pt')
-
 
         # this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -512,54 +607,133 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         draw_tool = PointDrawTool(renderers=[pts_renderer], empty_value='yellow')
         p1.add_tools(draw_tool)
 
+        # --- Metrics display on tap ---
+        metrics_div = Div(
+            text="<b>Neuron Metrics</b><br><i>Tap a neuron to see metrics</i>",
+            width=125,
+            height=height,
+            styles={'overflow-y': 'scroll', 'border': '1px solid #ccc', 'padding': '5px',
+                    'font-family': 'monospace', 'font-size': '9px'}
+        )
+
+        def on_selection_change(attr, old, new):
+            """Handle selection changes to show metrics"""
+            if len(new) == 0:
+                return
+
+            # Get the first selected neuron index
+            selected_idx = new[0]
+
+            # Get neuron data from source
+            neuron_idx = src_partial.data['idx'][selected_idx]
+
+            # Build metrics HTML
+            html = f"<b>Neuron #{neuron_idx}</b><br>"
+            html += "<hr style='margin: 3px 0;'>"
+
+            # Get all metrics from the source
+            exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'colors', 'dummy_x', 'dummy_id', 'metric']
+            metrics_data = {}
+
+            for key in src_partial.data.keys():
+                if key not in exclude_keys:
+                    value = src_partial.data[key][selected_idx]
+                    metrics_data[key] = value
+
+            # Sort metrics alphabetically
+            for key in sorted(metrics_data.keys()):
+                value = metrics_data[key]
+
+                # Format value
+                if isinstance(value, (int, np.integer)):
+                    formatted_value = f"{value}"
+                elif isinstance(value, (float, np.floating)):
+                    if np.isnan(value):
+                        formatted_value = "NaN"
+                    else:
+                        formatted_value = f"{value:.4f}"
+                else:
+                    formatted_value = str(value)
+
+                # Color code special columns
+                if key == 'delete' and value == 1:
+                    html += f"<span style='color: red;'><b>{key}:</b> {formatted_value}</span><br>"
+                elif key == 'ml_keep_probability':
+                    if not np.isnan(value):
+                        if value > 0.75:
+                            color = 'green'
+                        elif value > 0.5:
+                            color = 'orange'
+                        else:
+                            color = 'red'
+                        html += f"<span style='color: {color};'><b>{key}:</b> {formatted_value}</span><br>"
+                    else:
+                        html += f"<b>{key}:</b> {formatted_value}<br>"
+                else:
+                    html += f"<b>{key}:</b> {formatted_value}<br>"
+
+            metrics_div.text = html
+
+        # Attach selection callback to the source
+        src_partial.selected.on_change('indices', on_selection_change)
+
         # Button callbacks
 
         def sort_callback(event, storage=None, rb=None):
             # estimates = copy.deepcopy(storage.estimates)
 
+            regime = storage.mode
             estimates_partial = copy.deepcopy(storage.estimates_partial)
             old_sel_indices = src_partial.selected.indices
             if len(old_sel_indices) == 0:
                 old_sel_indices = np.arange(len(estimates_partial.idx_components))
                 
             mode = rb.active
-            if mode == 0:
-                metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
-            else:
-                mname = storage.metric_mapping[mode-1]
-                metric = np.array(src_partial.data[mname])
-            '''
-            elif mode == 1:
-                # trace SNR for each component
-                metric = np.array(estimates_partial.SNR_comp)[estimates_partial.idx_components]#[old_sel_indices]
-            elif mode == 2:
-                # space correlation for each component
-                metric = np.array(estimates_partial.r_values)[estimates_partial.idx_components]#[old_sel_indices]
-            elif mode == 3:
-                # % of high values (>median + 4*MAD) for each component
-                metric = np.array(src_partial.data['hvals'])#[estimates_partial.idx_components]
-            elif mode == 4:
-                # area of each component
-                metric = np.array(src_partial.data['areas'])
-            elif mode == 5:
-                # correlation with other components from corr matrix (belonging to the same connected component)
-                metric = np.array(src_partial.data['corr_groups'])
-            elif mode == 6:
-                # reconstruction: r2
-                metric = np.array(src_partial.data['r2'])
-            elif mode == 7:
-                # reconstruction: mae
-                metric = np.array(src_partial.data['mae'])
-            elif mode == 8:
-                # reconstruction: rmse
-                metric = np.array(src_partial.data['rmse'])
-            elif mode == 9:
-                # reconstruction: snr
-                metric = np.array(src_partial.data['snr_rec'])
+
+            if regime == 'capcan':
+                # automated metric
+                if mode == 0:
+                    metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
+                else:
+                    mname = storage.metric_mapping[mode-1]
+                    metric = np.array(src_partial.data[mname])
+
+            elif regime == 'legacy':
+                if mode == 0:
+                    metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
+                elif mode == 1:
+                    # trace SNR for each component
+                    metric = np.array(estimates_partial.SNR_comp)[estimates_partial.idx_components]#[old_sel_indices]
+                elif mode == 2:
+                    # space correlation for each component
+                    metric = np.array(estimates_partial.r_values)[estimates_partial.idx_components]#[old_sel_indices]
+                elif mode == 3:
+                    # % of high values (>median + 4*MAD) for each component
+                    metric = np.array(src_partial.data['hvals'])#[estimates_partial.idx_components]
+                elif mode == 4:
+                    # area of each component
+                    metric = np.array(src_partial.data['areas'])
+                elif mode == 5:
+                    # correlation with other components from corr matrix (belonging to the same connected component)
+                    metric = np.array(src_partial.data['corr_groups'])
+                elif mode == 6:
+                    # reconstruction: r2
+                    metric = np.array(src_partial.data['r2'])
+                elif mode == 7:
+                    # reconstruction: mae
+                    metric = np.array(src_partial.data['mae'])
+                elif mode == 8:
+                    # reconstruction: rmse
+                    metric = np.array(src_partial.data['rmse'])
+                elif mode == 9:
+                    # reconstruction: snr
+                    metric = np.array(src_partial.data['snr_rec'])
+                else:
+                    raise ValueError('wrong RadioButton value')
 
             else:
-                raise ValueError('wrong RadioButton value')
-            '''
+                raise NotImplementedError()
+
 
             #print('mode=', mode)
             #print(metric[indices])
@@ -824,19 +998,100 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             SaveResults(storage.estimates)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
-        '''
-        # Sorting radiobutton
-        radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
-                                                      'R2', 'MAE', 'RMSE', 'SNR+'], active=0)
-        '''
-        auto_metric_names = [storage.metric_mapping[i] for i in range(len(storage.metric_mapping))]
-        radio_button_group = RadioButtonGroup(labels=["XY"] + auto_metric_names, active=0)
 
-        rb_js_callback = CustomJS(
-            code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
-        radio_button_group.js_on_event("button_click", rb_js_callback)
-        radio_button_group.on_event("button_click", partial(sort_callback, storage=storage,
-                                                            rb=radio_button_group))
+        # Sorting radiobutton
+        if storage.mode == 'legacy':
+            radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
+                                                          'R2', 'MAE', 'RMSE', 'SNR+'], active=0, width=60)
+
+            rb_js_callback = CustomJS(
+                code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
+            radio_button_group.js_on_event("button_click", rb_js_callback)
+            radio_button_group.on_event("button_click", partial(sort_callback, storage=storage,
+                                                                rb=radio_button_group))
+
+            sorting_row = row(radio_button_group)
+
+        elif storage.mode == 'capcan':
+            auto_metric_names = [storage.metric_mapping[i] for i in range(len(storage.metric_mapping))]
+            all_labels = ["XY"] + auto_metric_names
+
+            # Split buttons into 3 rows
+            n_labels = len(all_labels)
+            n_per_row = (n_labels + 2) // 3  # Ceiling division
+
+            row1_labels = all_labels[:n_per_row]
+            row2_labels = all_labels[n_per_row:2*n_per_row]
+            row3_labels = all_labels[2*n_per_row:]
+
+            # Create a virtual radio button group that tracks which is selected
+            class SortingState:
+                def __init__(self):
+                    self.active = 0
+
+            sorting_state = SortingState()
+
+            # Create three button groups
+            radio_group1 = RadioButtonGroup(labels=row1_labels, active=0, width=60)
+            radio_group2 = RadioButtonGroup(labels=row2_labels, active=-1, width=60) if row2_labels else None
+            radio_group3 = RadioButtonGroup(labels=row3_labels, active=-1, width=60) if row3_labels else None
+
+            # Create a pseudo radio_button_group for compatibility with sort_callback
+            class UnifiedRadioGroup:
+                def __init__(self, state):
+                    self.state = state
+
+                @property
+                def active(self):
+                    return self.state.active
+
+            radio_button_group = UnifiedRadioGroup(sorting_state)
+
+            # Sync function to handle clicks
+            def make_sync_callback(group_idx):
+                def callback(attr, old, new):
+                    if new == -1:
+                        return
+
+                    # Calculate global active index
+                    if group_idx == 1:
+                        global_active = new
+                    elif group_idx == 2:
+                        global_active = n_per_row + new
+                    elif group_idx == 3:
+                        global_active = 2 * n_per_row + new
+
+                    sorting_state.active = global_active
+
+                    # Deactivate other groups
+                    if group_idx != 1:
+                        radio_group1.active = -1
+                    if group_idx != 2 and radio_group2:
+                        radio_group2.active = -1
+                    if group_idx != 3 and radio_group3:
+                        radio_group3.active = -1
+
+                    # Trigger sort
+                    sort_callback(None, storage=storage, rb=radio_button_group)
+                return callback
+
+            radio_group1.on_change('active', make_sync_callback(1))
+            if radio_group2:
+                radio_group2.on_change('active', make_sync_callback(2))
+            if radio_group3:
+                radio_group3.on_change('active', make_sync_callback(3))
+
+            # Build layout with 3 rows
+            rows_to_add = [radio_group1]
+            if radio_group2:
+                rows_to_add.append(radio_group2)
+            if radio_group3:
+                rows_to_add.append(radio_group3)
+
+            sorting_row = column(*[row(rg) for rg in rows_to_add])
+
+        else:
+            raise NotImplementedError()
 
         # Buttons
         button_del = Button(label="Delete sel.", button_type="warning", width=bwidth, width_policy='fit')
@@ -886,10 +1141,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_discard,
                     #button_seed,
                     button_save,
-                    button_save_final,
-                    radio_button_group
+                    button_save_final
                 ),
-                row(p1, p2)
+                sorting_row,
+                row(p1, metrics_div, p2)
             )
         )
 

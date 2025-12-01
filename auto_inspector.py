@@ -975,8 +975,13 @@ def save_processed_estimates(est, output_path, session_name=None):
     """
     Save processed estimates to pickle file.
 
+    IMPORTANT: This function preserves all attributes attached to the estimates object,
+    including est.metrics_df (if set by run_auto_inspection). The cached metrics enable
+    EstimatesToSrcFast and EstimatesToSrcFull to skip expensive recomputation on load.
+
     Args:
         est: CaImAn estimates object after implement_decision
+             Should have est.metrics_df attached (DataFrame with computed metrics + ML probabilities)
         output_path: Directory or full path to save the file
         session_name: Optional session name for filename (if output_path is directory)
 
@@ -990,10 +995,8 @@ def save_processed_estimates(est, output_path, session_name=None):
 
     # Determine full file path
     if output_path.suffix == '.pickle':
-        # Full path provided
         filepath = output_path
     else:
-        # Directory provided, create filename
         if session_name:
             filename = f"{session_name}_processed.pickle"
         else:
@@ -1001,7 +1004,14 @@ def save_processed_estimates(est, output_path, session_name=None):
         output_path.mkdir(parents=True, exist_ok=True)
         filepath = output_path / filename
 
-    # Save estimates
+    # Verify metrics_df is present before saving
+    has_metrics = hasattr(est, 'metrics_df') and est.metrics_df is not None
+    if has_metrics:
+        print(f"[save_processed_estimates] Saving estimates WITH cached metrics ({len(est.metrics_df)} rows)")
+    else:
+        print(f"[save_processed_estimates] WARNING: Saving estimates WITHOUT metrics_df (will recompute on load)")
+
+    # Save estimates with pickle (preserves all attributes including metrics_df)
     with open(filepath, 'wb') as f:
         pickle.dump(est, f)
 

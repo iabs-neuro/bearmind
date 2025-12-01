@@ -30,6 +30,7 @@ from auto_inspector import (
     implement_decision,
     save_processed_estimates
 )
+from ae_utils import visualize_corner_artifacts
 
 
 def _save_inspection_artifacts(
@@ -41,7 +42,8 @@ def _save_inspection_artifacts(
     edge_info: dict,
     est_processed=None,
     artifacts_path: str = None,
-    save_matrices: bool = True
+    save_matrices: bool = True,
+    save_corner_detection: bool = True
 ) -> Path:
     """
     Save all inspection artifacts to a folder.
@@ -56,6 +58,7 @@ def _save_inspection_artifacts(
         est_processed: Processed estimates object (None to skip saving)
         artifacts_path: Base path for artifacts folder
         save_matrices: Whether to save FCD, FBD, match_mtx as .npy files
+        save_corner_detection: Whether to save corner artifact visualization
 
     Returns:
         Path to the created artifacts folder
@@ -78,33 +81,13 @@ def _save_inspection_artifacts(
         np.save(folder / 'FBD.npy', FBD)
         np.save(folder / 'match_mtx.npy', match_mtx)
 
-    # Save corner artifact visualization if available
-    if edge_info and edge_info.get('is_corner_artifact') is not None:
+    # Save corner artifact visualization if requested and available
+    if save_corner_detection and edge_info is not None and 'is_corner_artifact' in decision_df.columns:
         try:
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-
-            fig, ax = plt.subplots(figsize=(8, 8))
-            centers = decision_df['center'].values
-            if len(centers) > 0 and isinstance(centers[0], str):
-                centers = [np.fromstring(c.strip('[]'), sep=' ') for c in centers]
-            centers = np.array([c for c in centers if len(c) == 2])
-
-            if len(centers) > 0:
-                is_corner = decision_df.get('is_corner_artifact', pd.Series([0]*len(decision_df))).values
-                colors = ['red' if c else 'blue' for c in is_corner]
-                ax.scatter(centers[:, 1], centers[:, 0], c=colors, s=20, alpha=0.7)
-                ax.set_xlabel('X')
-                ax.set_ylabel('Y')
-                ax.set_title(f'{session_name} - Corner Artifacts (red)')
-                ax.set_aspect('equal')
-                ax.invert_yaxis()
-                plt.tight_layout()
-                plt.savefig(folder / 'edge_artifacts.png', dpi=150)
-                plt.close(fig)
-        except Exception:
-            pass  # Visualization is optional
+            visualize_corner_artifacts(decision_df, edge_info, folder, session_name)
+        except Exception as e:
+            print(f"[WARNING] Failed to create corner artifact visualization: {e}")
+            # Visualization is optional, continue without it
 
     # Save processed estimates
     if est_processed is not None:
@@ -170,6 +153,7 @@ def run_auto_inspection(
     artifacts_path: str = None,
     save_estimates: bool = True,
     save_matrices: bool = True,
+    save_corner_detection: bool = True,
 
     # --- Verbosity ---
     verbose: bool = False
@@ -231,6 +215,7 @@ def run_auto_inspection(
         artifacts_path: Base path for artifacts (None = same dir as estimates)
         save_estimates: Save processed estimates pickle
         save_matrices: Save FCD, FBD, match_mtx as .npy files
+        save_corner_detection: Save corner artifact visualization (default True)
 
         verbose: Print progress messages
 
@@ -243,7 +228,13 @@ def run_auto_inspection(
             'FBD': Footprint boundary distance matrix
             'edge_info': Corner artifact detection info
             'artifacts_folder': Path to saved artifacts (None if not saved)
-            'summary': Dict with summary statistics
+            'summary': Dict with summary statistics:
+                - n_initial: Initial neuron count
+                - n_deleted: Neurons marked for deletion
+                - n_merged: Neurons involved in merge groups
+                - n_corner_artifacts: Corner artifacts detected
+                - n_kept_before_merge: Neurons kept after deletion, before merging
+                - n_final: Final neuron count after all operations
 
     Raises:
         FileNotFoundError: If estimates_path does not exist
@@ -356,11 +347,25 @@ def run_auto_inspection(
     # --- Step 6: Apply decisions to estimates ---
     if verbose:
         print("[run_auto_inspection] Applying decisions to estimates...")
+        print(f"  Before: {len(est.idx_components)} neurons in est.idx_components")
+        print(f"  Marked for deletion: {n_deleted} neurons")
+        print(f"  Neurons in merge groups: {n_merged}")
 
     est_processed = implement_decision(est, decision_df)
 
     if verbose:
         print(f"[run_auto_inspection] Final: {len(est_processed.idx_components)} components kept")
+        print(f"  Deleted: {len(est.idx_components_bad)} total bad components")
+        print(f"  Added by deletion: {len(est_processed.idx_components_bad) - len(est.idx_components_bad)} components")
+
+    est_processed.metrics_df = decision_df
+
+    # Verify metrics_df was attached
+    if verbose:
+        if hasattr(est_processed, 'metrics_df') and est_processed.metrics_df is not None:
+            print(f"[run_auto_inspection] Attached metrics_df with {len(est_processed.metrics_df)} rows to estimates")
+        else:
+            print("[run_auto_inspection] WARNING: Failed to attach metrics_df!")
 
     # --- Step 7: Save artifacts ---
     artifacts_folder = None
@@ -380,7 +385,8 @@ def run_auto_inspection(
             edge_info=edge_info,
             est_processed=est_processed if save_estimates else None,
             artifacts_path=str(artifacts_path),
-            save_matrices=save_matrices
+            save_matrices=save_matrices,
+            save_corner_detection=save_corner_detection
         )
 
         if verbose:
@@ -391,16 +397,30 @@ def run_auto_inspection(
     if 'is_corner_artifact' in decision_df.columns:
         n_corner_artifacts = int((decision_df['is_corner_artifact'] == 1).sum())
 
+    # Count initial neurons from original estimates (before any processing)
+    n_initial_est = len(est.idx_components)
+    n_initial_metrics = len(metrics_df)
+    n_kept = (decision_df['delete'] == 0).sum()
+    n_final = len(est_processed.idx_components)
+
     summary = {
-        'n_initial': len(metrics_df),
+        'n_initial': n_initial_est,
         'n_deleted': int(n_deleted),
         'n_merged': int(n_merged),
         'n_corner_artifacts': n_corner_artifacts,
-        'n_final': len(est_processed.idx_components)
+        'n_kept_before_merge': int(n_kept),
+        'n_final': n_final
     }
 
     if verbose:
         print(f"[run_auto_inspection] Summary: {summary}")
+
+        # Sanity check
+        expected_after_delete = n_initial_est - n_deleted
+        if n_kept != expected_after_delete:
+            print(f"[WARNING] Count mismatch: expected {expected_after_delete} after deletion, but decision_df shows {n_kept} kept")
+        if n_initial_est != n_initial_metrics:
+            print(f"[WARNING] Initial count mismatch: est.idx_components={n_initial_est}, metrics_df={n_initial_metrics}")
 
     # --- Return results ---
     return {
