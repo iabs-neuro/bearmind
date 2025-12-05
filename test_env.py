@@ -21,10 +21,6 @@ REQUIRED_PACKAGES = [
     ("bokeh", "Bokeh interactive"),
     ("matplotlib", "Matplotlib plots"),
     ("holoviews", "HoloViews viz"),
-    ("fastplotlib", "FastPlotLib GPU"),
-    ("pygfx", "PyGFX graphics"),
-    ("wgpu", "WebGPU"),
-    ("cmasher", "CMasher colormaps"),
     # Image/Video
     ("cv2", "OpenCV image"),
     ("tifffile", "TIFF files"),
@@ -33,15 +29,12 @@ REQUIRED_PACKAGES = [
     # Jupyter
     ("ipywidgets", "Jupyter widgets"),
     ("jupyter_bokeh", "Jupyter Bokeh"),
-    ("sidecar", "Jupyter sidecar"),
     # Utilities
     ("tqdm", "Progress bars"),
     ("natsort", "Natural sorting"),
     ("sortedcontainers", "Sorted containers"),
     ("pywt", "PyWavelets"),
     ("peakutils", "Peak detection"),
-    # Qt6
-    ("PySide6", "Qt6 GUI"),
 ]
 
 def test_imports():

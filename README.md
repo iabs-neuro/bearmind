@@ -8,13 +8,29 @@ The main idea of the project is to optimize user's efforts and time for batch mi
 NB!! This pipeline requires Jupyter Lab or Notebook 7 installed. If you don't want to update your Jupyter notebook, use old good CaDet pipeline, it moved to a separate folder CaDet, where you can run it as usual.
 
 ## Installation
+
+### Quick Install (Recommended for Windows)
+
+1. Clone this repo: `git clone https://github.com/iabs-neuro/bearmind`
+2. Open any command prompt and navigate to the bearmind folder
+3. Run `install1_conda.bat` - creates the conda environment (5-15 minutes)
+4. Run `install2_pip.bat` - installs pip packages and verifies installation
+
+To use: `conda activate bearmind`
+
+**Configuration:** Edit `ENV_NAME=bearmind` at the top of both scripts to change the environment name.
+
+**Requirements:** Windows 10+, Anaconda or Miniconda installed.
+
+### Manual Installation
+
 First, you need to install CaImAn environment: https://github.com/flatironinstitute/CaImAn</br>
 In brief, all you need for getting CaImAn installed is to type the following commands in your Anaconda (or miniconda) prompt:
 </br></br>
 install mamba in base environment: `conda install -n base -c conda-forge mamba` </br>
-install caiman (enter desired venv name instead of <NEW_ENV_NAME>): `mamba create -n <NEW_ENV_NAME> -c conda-forge caiman` </br>
-activate virtual environment: `conda activate caiman`  </br>
-Install dependencies: `pip install  moviepy PySide6 wgpu glfw fastplotlib jupyter_rfb sidecar sortedcontainers cmasher opencv-python ssqueezepy`
+create environment from yml: `mamba env create -f environment.yml` </br>
+activate virtual environment: `conda activate bearmind`  </br>
+Install pip dependencies: `pip install -r requirements-pip.txt`
 </br>
 
 Then, you need to clone this repo to your PC. You may do it by downloading .zip file (see the button above) and unpacking it, OR you may use your git client and type "git clone https://github.com/iabs-neuro/bearmind" in a command prompt.
