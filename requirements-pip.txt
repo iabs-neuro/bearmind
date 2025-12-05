@@ -1,0 +1,42 @@
+# BEARMiND pip dependencies
+# Install after conda environment: pip install -r requirements-pip.txt
+#
+# These packages are either:
+# - Not available on conda-forge
+# - More reliable via pip on Windows
+
+# === CORE NEUROSCIENCE ===
+driada>=0.6.0
+
+# === MACHINE LEARNING ===
+interpret>=0.5
+sortedcontainers>=2.4.0
+llvmlite>=0.43.0
+
+# === IMAGE/VIDEO ===
+opencv-python>=4.8
+moviepy>=1.0.3
+imageio-ffmpeg>=0.5.1
+proglog>=0.1.10
+decorator>=4.4.2
+
+# === VISUALIZATION ===
+cmasher>=1.6
+colorspacious>=1.1.2
+
+# === GPU VISUALIZATION (FastPlotLib stack) ===
+fastplotlib>=0.2.0
+pygfx>=0.2.0
+wgpu>=0.15.0
+jupyter-rfb>=0.4.4
+glfw>=2.7.0
+freetype-py>=2.4.0
+pylinalg>=0.4.1
+uharfbuzz>=0.39.0
+
+# === JUPYTER WIDGETS ===
+sidecar>=0.7.0
+
+# === Qt6 GUI ===
+PySide6>=6.7.0
+shiboken6>=6.7.0
