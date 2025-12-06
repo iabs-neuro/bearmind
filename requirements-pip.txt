@@ -3,9 +3,9 @@
 #
 # Only packages ACTUALLY USED in the codebase
 # Dependencies are auto-installed by pip
-
-# === VERSION LOCK (prevent pip from upgrading conda packages) ===
-numpy<2.0  # TensorFlow 2.10 and CaImAn require NumPy 1.x
+#
+# NOTE: numpy<2.0 is installed explicitly by install2_pip.bat
+# to prevent TensorFlow/CaImAn breakage
 
 # === CORE NEUROSCIENCE ===
 driada>=0.6.0

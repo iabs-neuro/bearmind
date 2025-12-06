@@ -39,9 +39,20 @@ set PIP=%CONDA_ENV%\Scripts\pip.exe
 set PYTHON=%CONDA_ENV%\python.exe
 
 echo.
-echo Installing pip packages...
+echo Upgrading pip...
 "%PIP%" install --upgrade pip
+
+echo.
+echo [CRITICAL] Locking NumPy to 1.x (required for TensorFlow/CaImAn)...
+"%PIP%" install "numpy>=1.24,<2.0"
+
+echo.
+echo Installing pip packages...
 "%PIP%" install -r requirements-pip.txt
+
+echo.
+echo [CRITICAL] Re-locking NumPy to 1.x (in case pip upgraded it)...
+"%PIP%" install "numpy>=1.24,<2.0"
 
 echo.
 echo ============================================
