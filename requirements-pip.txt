@@ -3,9 +3,11 @@
 #
 # Only packages ACTUALLY USED in the codebase
 # Dependencies are auto-installed by pip
-#
-# NOTE: numpy<2.0 is installed explicitly by install2_pip.bat
-# to prevent TensorFlow/CaImAn breakage
+
+# === CRITICAL: NumPy constraint ===
+# This prevents pip from upgrading conda's numpy (causes DLL conflicts on Windows)
+# We don't install numpy via pip - conda handles it - but we constrain it
+numpy<2.0
 
 # === CORE NEUROSCIENCE ===
 driada>=0.6.0

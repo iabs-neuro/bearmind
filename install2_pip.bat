@@ -39,20 +39,31 @@ set PIP=%CONDA_ENV%\Scripts\pip.exe
 set PYTHON=%CONDA_ENV%\python.exe
 
 echo.
+echo Checking numpy installation...
+"%PYTHON%" -c "import numpy; import numpy.core.multiarray; print('[OK] NumPy', numpy.__version__, 'is working')" 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [FAILED] NumPy is broken - DLL conflict detected
+    echo.
+    echo This happens when pip and conda numpy conflict.
+    echo The environment must be recreated:
+    echo.
+    echo   1. conda env remove -n %ENV_NAME% -y
+    echo   2. Run install1_conda.bat again
+    echo   3. Run install2_pip.bat again
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
 echo Upgrading pip...
 "%PIP%" install --upgrade pip
 
 echo.
-echo [CRITICAL] Locking NumPy to 1.x (required for TensorFlow/CaImAn)...
-"%PIP%" install "numpy>=1.24,<2.0"
-
-echo.
-echo Installing pip packages...
-"%PIP%" install -r requirements-pip.txt
-
-echo.
-echo [CRITICAL] Re-locking NumPy to 1.x (in case pip upgraded it)...
-"%PIP%" install "numpy>=1.24,<2.0"
+echo Installing pip packages (preserving conda packages)...
+echo Using --upgrade-strategy only-if-needed to prevent numpy conflicts
+"%PIP%" install --upgrade-strategy only-if-needed -r requirements-pip.txt
 
 echo.
 echo ============================================
