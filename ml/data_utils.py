@@ -9,12 +9,53 @@ import pandas as pd
 from pathlib import Path
 
 
+# Columns that are NOT features (IDs, labels, spatial info, group assignments)
+# Everything else in the metrics DataFrame is automatically a feature
+NON_FEATURE_COLS = {
+    'component_idx',      # Neuron ID
+    'center',             # Spatial position (not numeric)
+    'is_corner_artifact', # Label (artifact flag)
+    'corr_groups',        # Merge group ID (not quality metric)
+    'delete',             # Decision label
+    'merge',              # Decision label
+}
+
+
+def get_feature_cols(df):
+    """
+    Dynamically extract feature columns from a metrics DataFrame.
+
+    Returns all numeric columns except those in NON_FEATURE_COLS.
+    This allows new features to be automatically included without
+    updating a hardcoded list.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Metrics DataFrame from estimates_to_metrics()
+
+    Returns
+    -------
+    list of str
+        Feature column names in consistent order
+    """
+    feature_cols = [
+        col for col in df.columns
+        if col not in NON_FEATURE_COLS
+        and df[col].dtype in ['float64', 'float32', 'int64', 'int32', 'float', 'int']
+    ]
+    return sorted(feature_cols)  # Sorted for consistency
+
+
+# Static list for backward compatibility and when DataFrame not available
+# This should match what get_feature_cols() returns for a full metrics DataFrame
 FEATURE_COLS = [
-    'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
-    'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
-    'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
-    'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
-    'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
+    'area', 'aspect_ratio', 'baseline', 'caiman_r_score', 'caiman_snr',
+    'circularity', 'convexity', 'eccentricity', 'edge_distance', 'ellipse_r',
+    'event_r2_score', 'events_fraction', 'events_per_min', 'footprint_compactness',
+    'local_density', 'max_edge', 'nmae', 'nn_distance_center', 'noise_level',
+    'nrmse', 'peak_amplitude_cv', 'r2_score', 'snr_recon', 't_off', 't_rise',
+    'tau_decay', 'trace_kurtosis', 'trace_skewness', 'wavelet_snr'
 ]
 
 

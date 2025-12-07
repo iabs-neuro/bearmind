@@ -116,6 +116,7 @@ def run_auto_inspection(
     include_heavy: bool = False,
     detect_corner_artifacts: bool = True,
     corner_artifact_params: dict = None,
+    event_method: str = 'threshold',
 
     # --- Decision parameters (threshold brain) ---
     circ_thr: float = 4,
@@ -183,6 +184,7 @@ def run_auto_inspection(
         include_heavy: Compute reconstruction quality metrics (slow)
         detect_corner_artifacts: Enable corner artifact detection
         corner_artifact_params: Parameters for corner detection (None = defaults)
+        event_method: Event detection method ('threshold' or 'wavelet')
 
         circ_thr: Maximum circularity (elongation) threshold
         maxedge_thr: Maximum edge length threshold
@@ -248,8 +250,27 @@ def run_auto_inspection(
     if fps <= 0:
         raise ValueError(f"fps must be positive, got {fps}")
 
-    if brain == 'ml' and ml_model_path is None:
-        raise ValueError("brain='ml' requires ml_model_path to be specified")
+    if brain in ('ml', 'hybrid') and ml_model_path is None:
+        raise ValueError(f"brain='{brain}' requires ml_model_path to be specified")
+
+    # --- Validate ML model path early (before expensive metrics computation) ---
+    if brain in ('ml', 'hybrid'):
+        ml_model_path = Path(ml_model_path)
+        if not ml_model_path.exists():
+            raise FileNotFoundError(
+                f"ML model file not found: {ml_model_path}\n"
+                f"Please check the path before running inspection."
+            )
+        # Verify it's a valid model with predict_proba
+        try:
+            import pickle
+            with open(ml_model_path, 'rb') as f:
+                model = pickle.load(f)
+            if not hasattr(model, 'predict_proba'):
+                raise ValueError(f"Model at {ml_model_path} does not have predict_proba method")
+            del model  # Free memory
+        except (pickle.UnpicklingError, EOFError) as e:
+            raise ValueError(f"Invalid pickle file: {ml_model_path}\nError: {e}")
 
     # --- Derive session name from filename if not provided ---
     if session_name is None:
@@ -286,7 +307,8 @@ def run_auto_inspection(
         include_wavelet=include_wavelet,
         include_heavy=include_heavy,
         detect_corner_artifacts_flag=detect_corner_artifacts,
-        corner_artifact_params=corner_artifact_params
+        corner_artifact_params=corner_artifact_params,
+        event_method=event_method
     )
 
     if verbose:

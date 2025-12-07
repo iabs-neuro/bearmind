@@ -1,0 +1,40 @@
+feature,importance_raw,importance_pct,cumulative_pct,is_interaction
+trace_kurtosis,0.6578623718654156,10.64,10.6,False
+events_per_min,0.6216601643685035,10.05,20.7,False
+events_fraction,0.568833051789536,9.2,29.9,False
+trace_skewness,0.35360146365242906,5.72,35.6,False
+r2_score,0.28145499795495904,4.55,40.1,False
+snr_recon,0.27742913732513663,4.49,44.6,False
+event_r2_score,0.26269803651881746,4.25,48.9,False
+t_off,0.2443915296815996,3.95,52.8,False
+area,0.21900237831217637,3.54,56.4,False
+t_rise,0.20704353980114099,3.35,59.7,False
+caiman_snr,0.2043472163432525,3.3,63.0,False
+ellipse_r,0.18564180894965368,3.0,66.0,False
+nrmse,0.18155593161229272,2.94,69.0,False
+wavelet_snr,0.14444992804390638,2.34,71.3,False
+peak_amplitude_cv,0.13200946719448872,2.13,73.4,False
+circularity,0.12537139048313783,2.03,75.5,False
+baseline,0.1110860213141131,1.8,77.3,False
+t_off & trace_skewness,0.10727280075965485,1.73,79.0,True
+tau_decay,0.10351646606492557,1.67,80.7,False
+t_off & wavelet_snr,0.09892420563315431,1.6,82.3,True
+nn_distance_center,0.09086191198872305,1.47,83.7,False
+caiman_snr & trace_kurtosis,0.0895300966889643,1.45,85.2,True
+noise_level,0.08790725313240542,1.42,86.6,False
+nmae,0.0819587947364283,1.32,87.9,False
+caiman_r_score,0.0783631379594613,1.27,89.2,False
+edge_distance,0.07657787683715882,1.24,90.4,False
+local_density,0.060685129332559554,0.98,91.4,False
+local_density & peak_amplitude_cv,0.059911251310495406,0.97,92.4,True
+footprint_compactness,0.05913229516789084,0.96,93.3,False
+peak_amplitude_cv & tau_decay,0.05913082477290875,0.96,94.3,True
+eccentricity,0.05172057642824882,0.84,95.1,False
+max_edge,0.04955859440392899,0.8,95.9,False
+aspect_ratio,0.04495407923787735,0.73,96.7,False
+peak_amplitude_cv & t_off,0.04305915462954955,0.7,97.3,True
+r2_score & t_off,0.03942831692757224,0.64,98.0,True
+snr_recon & t_off,0.03756281512211511,0.61,98.6,True
+area & trace_kurtosis,0.035895486131391846,0.58,99.2,True
+area & trace_skewness,0.031051164508591002,0.5,99.7,True
+convexity,0.0201800889292742,0.33,100.0,False
