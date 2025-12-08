@@ -4,7 +4,7 @@ Comprehensive grid search for decision tree hyperparameters on capcan data.
 Goal: Maximize precision (minimize false positives) in neuron quality classification.
 
 This script:
-1. Loads validation data from capcan_artifacts (21 features)
+1. Loads validation data from capcan_artifacts
 2. Tests extensive parameter combinations
 3. Saves all trained models
 4. Records detailed results for each configuration
@@ -18,6 +18,7 @@ from pathlib import Path
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from itertools import product
+from data_utils import FEATURE_COLS
 from tqdm import tqdm
 from datetime import datetime
 
@@ -76,32 +77,8 @@ def create_dataset(session_dirs, max_distance=3):
             else:
                 labels[i] = 0
 
-        # Extract ALL 21 features
-        feature_cols = [
-            'area',
-            'circularity',
-            'max_edge',
-            'convexity',
-            'caiman_snr',
-            'caiman_r_score',
-            'events_per_min',
-            'events_fraction',
-            't_rise',
-            't_off',
-            'wavelet_snr',
-            'r2_score',
-            'event_r2_score',
-            'nmae',
-            'nrmse',
-            'snr_recon',
-            'noise_level',
-            'baseline',
-            'tau_decay',
-            'trace_skewness',
-            'footprint_compactness'
-        ]
-
-        features = df_raw_filtered[feature_cols].copy()
+        # Use centralized feature columns from data_utils
+        features = df_raw_filtered[FEATURE_COLS].copy()
         features = features.replace([np.inf, -np.inf], np.nan)
 
         all_features.append(features)

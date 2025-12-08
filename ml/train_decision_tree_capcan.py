@@ -19,6 +19,7 @@ from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
 from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
 import matplotlib.pyplot as plt
 import random
+from data_utils import FEATURE_COLS
 
 
 def load_session_data(session_dir):
@@ -101,34 +102,10 @@ def create_training_data(session_dirs, max_distance=3):
             else:
                 labels[i] = 0  # Delete (not in GT)
 
-        # Select features for training - USE ALL AVAILABLE NUMERICAL FEATURES
-        # Exclude: component_idx (ID), center (spatial position), is_corner_artifact (already filtered)
-        # Exclude: corr_groups (merge group ID, not a quality metric)
-        feature_cols = [
-            'area',
-            'circularity',
-            'max_edge',
-            'convexity',
-            'caiman_snr',
-            'caiman_r_score',
-            'events_per_min',
-            'events_fraction',
-            't_rise',
-            't_off',
-            'wavelet_snr',
-            'r2_score',
-            'event_r2_score',
-            'nmae',
-            'nrmse',
-            'snr_recon',
-            'noise_level',
-            'baseline',
-            'tau_decay',
-            'trace_skewness',
-            'footprint_compactness'
-        ]
-
-        features = df_raw_filtered[feature_cols].copy()
+        # Use centralized feature columns from data_utils
+        # Excludes: component_idx (ID), center (spatial position), is_corner_artifact (filtered)
+        # Excludes: corr_groups (merge group ID, not a quality metric)
+        features = df_raw_filtered[FEATURE_COLS].copy()
 
         # Replace infinities with NaN (keep NaN as is)
         features = features.replace([np.inf, -np.inf], np.nan)

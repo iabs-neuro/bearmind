@@ -11,9 +11,9 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-import random
 from pathlib import Path
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
+from data_utils import FEATURE_COLS, stratified_session_split, print_split_info
 
 
 def load_session_data(session_dir):
@@ -70,32 +70,8 @@ def create_dataset(session_dirs, max_distance=3):
             else:
                 labels[i] = 0
 
-        # Extract ALL 21 features
-        feature_cols = [
-            'area',
-            'circularity',
-            'max_edge',
-            'convexity',
-            'caiman_snr',
-            'caiman_r_score',
-            'events_per_min',
-            'events_fraction',
-            't_rise',
-            't_off',
-            'wavelet_snr',
-            'r2_score',
-            'event_r2_score',
-            'nmae',
-            'nrmse',
-            'snr_recon',
-            'noise_level',
-            'baseline',
-            'tau_decay',
-            'trace_skewness',
-            'footprint_compactness'
-        ]
-
-        features = df_raw_filtered[feature_cols].copy()
+        # Use centralized feature columns from data_utils
+        features = df_raw_filtered[FEATURE_COLS].copy()
         features = features.replace([np.inf, -np.inf], np.nan)
 
         all_features.append(features)
@@ -168,17 +144,15 @@ def train_ebm(
     if experiments is not None and len(experiments) > 0:
         exp_suffix = "_" + "_".join(experiments)
 
-    # Train/test split
-    n_train = int(len(session_dirs) * (1 - test_fraction))
-    random.seed(random_state)
-    shuffled_dirs = session_dirs.copy()
-    random.shuffle(shuffled_dirs)
+    # Stratified train/test split by experiment
+    train_sessions, test_sessions, split_info = stratified_session_split(
+        session_dirs,
+        test_fraction=test_fraction,
+        random_state=random_state
+    )
 
-    train_sessions = shuffled_dirs[:n_train]
-    test_sessions = shuffled_dirs[n_train:]
-
-    print(f"Train sessions: {len(train_sessions)}")
-    print(f"Test sessions: {len(test_sessions)}")
+    print()
+    print_split_info(split_info)
 
     # Create datasets
     X_train, y_train = create_dataset(train_sessions)
@@ -201,7 +175,7 @@ def train_ebm(
         feature_names=list(X_train.columns),
         max_bins=256,
         max_interaction_bins=32,
-        interactions=10,  # Detect top 10 interactions
+        interactions=20,  # Detect top 20 interactions
         outer_bags=8,
         inner_bags=0,
         learning_rate=0.01,

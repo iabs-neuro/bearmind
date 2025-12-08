@@ -7,14 +7,56 @@ This is the single source of truth for data loading - all ML scripts should use 
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from sklearn.model_selection import StratifiedShuffleSplit
 
 
+# Columns that are NOT features (IDs, labels, spatial info, group assignments)
+# Everything else in the metrics DataFrame is automatically a feature
+NON_FEATURE_COLS = {
+    'component_idx',      # Neuron ID
+    'center',             # Spatial position (not numeric)
+    'is_corner_artifact', # Label (artifact flag)
+    'corr_groups',        # Merge group ID (not quality metric)
+    'delete',             # Decision label
+    'merge',              # Decision label
+}
+
+
+def get_feature_cols(df):
+    """
+    Dynamically extract feature columns from a metrics DataFrame.
+
+    Returns all numeric columns except those in NON_FEATURE_COLS.
+    This allows new features to be automatically included without
+    updating a hardcoded list.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Metrics DataFrame from estimates_to_metrics()
+
+    Returns
+    -------
+    list of str
+        Feature column names in consistent order
+    """
+    feature_cols = [
+        col for col in df.columns
+        if col not in NON_FEATURE_COLS
+        and df[col].dtype in ['float64', 'float32', 'int64', 'int32', 'float', 'int']
+    ]
+    return sorted(feature_cols)  # Sorted for consistency
+
+
+# Static list for backward compatibility and when DataFrame not available
+# This should match what get_feature_cols() returns for a full metrics DataFrame
 FEATURE_COLS = [
-    'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
-    'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
-    'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
-    'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
-    'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
+    'area', 'aspect_ratio', 'baseline', 'caiman_r_score', 'caiman_snr',
+    'circularity', 'convexity', 'eccentricity', 'edge_distance', 'ellipse_r',
+    'event_r2_score', 'events_fraction', 'events_per_min', 'footprint_compactness',
+    'local_density', 'max_edge', 'nmae', 'nn_distance_center', 'noise_level',
+    'nrmse', 'peak_amplitude_cv', 'r2_score', 'snr_recon', 't_off', 't_rise',
+    'tau_decay', 'trace_kurtosis', 'trace_skewness', 'wavelet_snr'
 ]
 
 
@@ -194,3 +236,119 @@ def load_all_sessions(artifacts_dir, experiments=None):
         session_dirs = filtered
 
     return session_dirs
+
+
+def get_session_experiment(session_dir):
+    """
+    Extract experiment ID from session directory name.
+
+    Parameters
+    ----------
+    session_dir : Path or str
+        Session directory path (e.g., 'capcan_artifacts_NOF_M12_1D')
+
+    Returns
+    -------
+    str
+        Experiment ID (e.g., 'NOF')
+    """
+    session_dir = Path(session_dir)
+    session_name = session_dir.name.replace('capcan_artifacts_', '')
+    return session_name.split('_')[0]
+
+
+def stratified_session_split(session_dirs, test_fraction=0.25, random_state=42):
+    """
+    Split sessions into train/test with stratification by experiment.
+
+    This ensures each experiment (NOF, RFC, FOF, 3DM, etc.) is proportionally
+    represented in both train and test sets, avoiding biased evaluation.
+
+    IMPORTANT: Always use this function instead of random shuffling for
+    train/test splits to ensure proper experiment balance.
+
+    Parameters
+    ----------
+    session_dirs : list of Path
+        List of session directories
+    test_fraction : float, default 0.25
+        Fraction of sessions for test set
+    random_state : int, default 42
+        Random seed for reproducibility
+
+    Returns
+    -------
+    train_sessions : list of Path
+        Training session directories
+    test_sessions : list of Path
+        Test session directories
+    split_info : dict
+        Information about the split (experiment counts, etc.)
+    """
+    session_dirs = list(session_dirs)  # Ensure it's a list
+
+    # Get experiment labels for stratification
+    experiments = [get_session_experiment(d) for d in session_dirs]
+
+    # Check if stratification is possible (need at least 2 samples per class)
+    from collections import Counter
+    exp_counts = Counter(experiments)
+    min_count = min(exp_counts.values())
+
+    if min_count < 2:
+        # Fall back to random split if stratification not possible
+        import random
+        random.seed(random_state)
+        shuffled = session_dirs.copy()
+        random.shuffle(shuffled)
+        n_train = int(len(shuffled) * (1 - test_fraction))
+        train_sessions = shuffled[:n_train]
+        test_sessions = shuffled[n_train:]
+        split_info = {
+            'stratified': False,
+            'reason': f'Min experiment count ({min_count}) < 2',
+            'train_experiments': Counter([get_session_experiment(d) for d in train_sessions]),
+            'test_experiments': Counter([get_session_experiment(d) for d in test_sessions])
+        }
+        return train_sessions, test_sessions, split_info
+
+    # Stratified split
+    splitter = StratifiedShuffleSplit(
+        n_splits=1,
+        test_size=test_fraction,
+        random_state=random_state
+    )
+
+    train_idx, test_idx = next(splitter.split(session_dirs, experiments))
+
+    train_sessions = [session_dirs[i] for i in train_idx]
+    test_sessions = [session_dirs[i] for i in test_idx]
+
+    # Collect split info
+    train_exp_counts = Counter([get_session_experiment(d) for d in train_sessions])
+    test_exp_counts = Counter([get_session_experiment(d) for d in test_sessions])
+
+    split_info = {
+        'stratified': True,
+        'total_sessions': len(session_dirs),
+        'train_sessions': len(train_sessions),
+        'test_sessions': len(test_sessions),
+        'train_experiments': dict(train_exp_counts),
+        'test_experiments': dict(test_exp_counts),
+        'random_state': random_state
+    }
+
+    return train_sessions, test_sessions, split_info
+
+
+def print_split_info(split_info):
+    """Print formatted information about train/test split."""
+    print(f"Stratified split: {split_info['stratified']}")
+    if not split_info['stratified']:
+        print(f"  Reason: {split_info.get('reason', 'unknown')}")
+
+    print(f"Train sessions: {split_info.get('train_sessions', len(split_info['train_experiments']))}")
+    print(f"Test sessions: {split_info.get('test_sessions', len(split_info['test_experiments']))}")
+
+    print("Train experiments:", dict(split_info['train_experiments']))
+    print("Test experiments:", dict(split_info['test_experiments']))

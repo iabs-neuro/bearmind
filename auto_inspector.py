@@ -29,16 +29,13 @@ from polygon import (get_contours, get_circularities, convex_polygons_min_distan
                      calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities,
                      convex_hull, get_aspect_ratios)
 from corner_artifacts import detect_edge_artifacts
+from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON_FEATURE_COLS
 
-
-# Feature columns expected by ML models (must match ml/data_utils.py FEATURE_COLS)
-ML_FEATURE_COLS = [
-    'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
-    'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
-    'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
-    'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
-    'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
-]
+# NaN SEMANTICS for ML features:
+# - t_rise, t_off: -1 sentinel = no events detected (informative signal)
+# - caiman_snr: capped at max finite value if Inf
+# - Other NaNs: degenerate footprints or processing failures
+# - EBM handles NaN natively; no imputation required
 
 
 def get_hvals(traces):
@@ -53,7 +50,16 @@ def get_hvals(traces):
     return hvals
 
 
-def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
+def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold'):
+    """
+    Create a Neuron object and detect events using specified method.
+
+    Args:
+        trace: Calcium trace array
+        fps: Frames per second
+        lightweight: If True, skip expensive re-detection with optimized kinetics
+        event_method: Event detection method ('threshold' or 'wavelet')
+    """
     # Create Neuron object
     neuron = Neuron(
         cell_id="",
@@ -63,9 +69,8 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
     )
 
     # Stage 1: Initial single-pass detection with default kinetics (conservative)
-    # Using threshold method - simpler and faster than wavelet
     neuron.reconstruct_spikes(
-        method='threshold',
+        method=event_method,
         iterative=False,  # Single-pass to get initial events safely
         create_event_regions=True,  # Create event regions for quality metrics
         fps=fps  # Pass fps explicitly so DRIADA uses correct value (not DEFAULT_FPS)
@@ -90,7 +95,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True):
     # Stage 3: optionally re-run detection with optimized kinetics
     if not lightweight:
         neuron.reconstruct_spikes(
-            method='threshold',
+            method=event_method,
             n_mad=4.0,  # Balanced threshold for noisy data
             min_duration_frames=2,  # Allow shorter events
             create_event_regions=True,
@@ -125,12 +130,21 @@ def get_signal_metrics(neuron):
     except ValueError:
         wavelet_snr = -1
 
+    # Peak amplitude coefficient of variation (consistency of event amplitudes)
+    # Real neurons have consistent amplitudes; artifacts vary wildly
+    peak_amplitudes = neuron.asp.data[neuron.asp.data > 0]
+    if len(peak_amplitudes) > 1 and np.mean(peak_amplitudes) > 0:
+        peak_amplitude_cv = np.std(peak_amplitudes) / np.mean(peak_amplitudes)
+    else:
+        peak_amplitude_cv = np.nan  # not enough events to compute CV
+
     sig_metrics = {
         'events_per_min': epm,
         'events_fraction': events_fraction,
         't_rise': t_rise,
         't_off': t_off,
-        'wavelet_snr': wavelet_snr
+        'wavelet_snr': wavelet_snr,
+        'peak_amplitude_cv': peak_amplitude_cv
     }
 
     return sig_metrics
@@ -161,14 +175,20 @@ def get_reconstruction_quality_metrics(neuron,
     return rec_metrics
 
 
-def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False):
+def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
     """
     Extract metrics from a single neuron trace.
 
     Handles flat/zero traces by returning NaN for all metrics.
+
+    Args:
+        trace: Calcium trace array
+        fps: Frames per second
+        include_heavy: If True, compute reconstruction quality metrics
+        event_method: Event detection method ('threshold' or 'wavelet')
     """
     try:
-        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy)
+        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method)
         signal_metrics = get_signal_metrics(neuron)
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
@@ -184,7 +204,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False):
             'events_fraction': np.nan,
             't_rise': np.nan,
             't_off': np.nan,
-            'wavelet_snr': np.nan
+            'wavelet_snr': np.nan,
+            'peak_amplitude_cv': np.nan
         }
 
         if include_heavy:
@@ -200,12 +221,11 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False):
             return nan_signal_metrics
 
 
-def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False):
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
     all_metrics = {}
     n = traces.shape[0]
-    print('Computing wavelet-based events...')
     metrics_res = Parallel(n_jobs=-1)(
-        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy)
+        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method)
         for i in range(traces.shape[0])
     )
 
@@ -431,8 +451,9 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
 
 def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
-                         sf=None, ef=None, ds=1, include_wavelet=True, include_heavy=False,
-                         detect_corner_artifacts_flag=True, corner_artifact_params=None):
+                         sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
+                         detect_corner_artifacts_flag=True, corner_artifact_params=None,
+                         event_method='threshold'):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -440,9 +461,11 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         comps_to_select = est.idx_components
 
     n_cells = len(comps_to_select)
-    print(n_cells)
     if n_cells == 0:
         return {}
+
+    print(f'[1/4] Preparing traces for {n_cells} neurons...')
+    t_phase_start = time.time()
 
     if sf is None:
         sf = 0
@@ -466,12 +489,14 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     # times = [est.time[sf:ef][::ds] for _ in range(n_cells)]  # Note: time attribute not always present, variable unused
 
+    print(f'[2/4] Computing correlation matrix...')
     corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
                                                                   corr_thr,
                                                                   match_threshold,
                                                                   fps=fps,
                                                                   sessions_num=num_sessions)
 
+    print(f'[3/4] Extracting spatial metrics...')
     if contours is None:
         contours = get_contours(est, comps_to_select, cthr=cthr)
 
@@ -503,7 +528,16 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     edge_distances = get_edge_distances(centers, est.imax.shape)
     nn_distances_center = get_nn_distances(FCD)
 
+    # Local density: count of neurons within 50 pixels (excluding self)
+    LOCAL_DENSITY_RADIUS = 50  # pixels
+    local_densities = np.sum(FCD < LOCAL_DENSITY_RADIUS, axis=1) - 1
+
     caiman_snrs = est.SNR_comp[comps_to_select]
+    # Cap infinities at max valid (finite) value
+    finite_mask = np.isfinite(caiman_snrs)
+    if finite_mask.any() and (~finite_mask).any():
+        max_finite = caiman_snrs[finite_mask].max()
+        caiman_snrs = np.where(np.isinf(caiman_snrs), max_finite, caiman_snrs)
     caiman_r_scores = est.r_values[comps_to_select]
 
     # CaImAn estimates attributes
@@ -529,6 +563,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'center': centers,
         'edge_distance': edge_distances,
         'nn_distance_center': nn_distances_center,
+        'local_density': local_densities,
         'caiman_snr': caiman_snrs,
         'caiman_r_score': caiman_r_scores,
         'noise_level': noise_levels,
@@ -540,16 +575,19 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'corr_groups': corr_groups
     }
 
-    if include_wavelet:
-        print('computing wavelet event reconstruction...')
+    if include_event_based:
+        print(f'[4/4] Computing {event_method} event-based metrics (this may take a while)...')
         t1 = time.time()
         event_based_metrics = get_multineuron_metrics(np.array(traces),
                                                       fps=fps,
-                                                      include_heavy=include_heavy)
+                                                      include_heavy=include_heavy,
+                                                      event_method=event_method)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
-        #print(f'Elapsed time for metrics: {etime} s, {np.round(etime/n_cells, 2)} s per neuron')
+        print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
         metrics = {**metrics, **event_based_metrics}
+    else:
+        print(f'[4/4] Skipping event-based metrics (include_event_based=False)')
 
     metrics_df = pd.DataFrame(metrics)
 
@@ -572,6 +610,9 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
             print(f'Warning: Edge artifact detection failed: {e}')
             metrics_df['is_corner_artifact'] = 0
             edge_info = None
+
+    t_total = time.time() - t_phase_start
+    print(f'Metrics extraction completed: {n_cells} neurons in {t_total:.1f}s')
 
     return metrics_df, match_mtx, FCD, FBD, edge_info
 
@@ -700,11 +741,16 @@ def _apply_ml_brain(metrics_df, model_path, threshold=0.5, feature_cols=None):
     Uses a trained classifier (e.g., EBM) to predict P(KEEP) for each neuron.
     Neurons with P(KEEP) < threshold are marked for deletion.
 
+    Feature columns are determined in this priority:
+    1. model.feature_names_in_ (from sklearn/EBM - most reliable)
+    2. feature_cols parameter if provided
+    3. ML_FEATURE_COLS fallback
+
     Args:
         metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
         model_path: Path to pickled model file (required, raises ValueError if None)
         threshold: P(KEEP) below this value triggers deletion (default 0.5)
-        feature_cols: Feature columns for model (default: ML_FEATURE_COLS)
+        feature_cols: Feature columns for model (default: auto-detect from model)
 
     Returns:
         delete_mask: np.ndarray of bool, True = should delete
@@ -721,12 +767,15 @@ def _apply_ml_brain(metrics_df, model_path, threshold=0.5, feature_cols=None):
     if not model_path.exists():
         raise FileNotFoundError(f"ML model file not found: {model_path}")
 
-    if feature_cols is None:
-        feature_cols = ML_FEATURE_COLS
-
     # Load model
     with open(model_path, 'rb') as f:
         model = pickle.load(f)
+
+    # Determine feature columns (priority: model's own list > parameter > fallback)
+    if hasattr(model, 'feature_names_in_'):
+        feature_cols = list(model.feature_names_in_)
+    elif feature_cols is None:
+        feature_cols = ML_FEATURE_COLS
 
     # Extract features
     available_cols = [c for c in feature_cols if c in metrics_df.columns]
@@ -753,10 +802,65 @@ def _apply_ml_brain(metrics_df, model_path, threshold=0.5, feature_cols=None):
     return delete_mask, failure_info
 
 
+def _apply_hybrid_brain(metrics_df, thresholds, use_checks, model_path, ml_threshold=0.5,
+                        feature_cols=None, track_failures=True):
+    """
+    Apply hybrid brain: thresholds first, then ML on survivors.
+
+    Neurons that FAIL threshold checks are deleted immediately (ml_keep_probability=NaN).
+    Neurons that PASS threshold checks are evaluated by ML model for final decision.
+
+    Args:
+        metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
+        thresholds: dict with threshold values (same as _apply_threshold_brain)
+        use_checks: dict with boolean flags for which checks to apply
+        model_path: Path to pickled ML model file
+        ml_threshold: P(KEEP) below this value triggers deletion (default 0.5)
+        feature_cols: Feature columns for ML model (default: ML_FEATURE_COLS)
+        track_failures: If True, track which criteria failed for each neuron
+
+    Returns:
+        delete_mask: np.ndarray of bool, True = should delete
+        failure_info: dict with threshold failure columns + 'ml_keep_probability'
+    """
+    n = len(metrics_df)
+
+    # Step 1: Apply threshold checks
+    threshold_delete, threshold_failures = _apply_threshold_brain(
+        metrics_df, thresholds, use_checks, track_failures=track_failures
+    )
+
+    # Step 2: Initialize ML probabilities as NaN (threshold failures won't get ML evaluation)
+    ml_probabilities = np.full(n, np.nan)
+
+    # Step 3: Apply ML to survivors (neurons that passed all thresholds)
+    survivors_mask = ~threshold_delete
+
+    if survivors_mask.any():
+        survivor_df = metrics_df.iloc[survivors_mask.nonzero()[0]]
+        ml_delete, ml_info = _apply_ml_brain(
+            survivor_df, model_path, threshold=ml_threshold, feature_cols=feature_cols
+        )
+        # Map ML results back to full arrays
+        survivor_indices = survivors_mask.nonzero()[0]
+        ml_probabilities[survivor_indices] = ml_info['ml_keep_probability']
+
+        # Combine: deleted by threshold OR deleted by ML
+        for i, orig_idx in enumerate(survivor_indices):
+            if ml_delete[i]:
+                threshold_delete[orig_idx] = True
+
+    # Combine failure info
+    failure_info = threshold_failures.copy()
+    failure_info['ml_keep_probability'] = ml_probabilities
+
+    return threshold_delete, failure_info
+
+
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
                         pxlthr_distance_boundary=5,
-                        d_snr_thr=42,
+                        d_snr_thr=10,
                         t_rise_min=0.10, caiman_r_score_min=0.05,
                         caiman_snr_min=2.9, t_off_min=1.5,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
@@ -794,7 +898,7 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
         use_*_check: Boolean flags to enable/disable individual checks (threshold brain)
         use_corr_check: Enable correlation-based merge detection
         track_criteria_failures: Track which criteria failed for each neuron
-        brain: Decision brain type - 'thresholds' or 'ml'
+        brain: Decision brain type - 'thresholds', 'ml', or 'hybrid'
         ml_model_path: Path to ML model pickle (required if brain='ml')
         ml_threshold: P(KEEP) threshold for ML brain (default 0.5)
 
@@ -815,6 +919,13 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
             for col in failure_cols:
                 metrics_df[col] = 0
         elif brain == 'ml':
+            metrics_df['ml_keep_probability'] = np.nan
+        elif brain == 'hybrid':
+            # Hybrid needs both threshold failure columns AND ML probability
+            failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                           'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
+            for col in failure_cols:
+                metrics_df[col] = 0
             metrics_df['ml_keep_probability'] = np.nan
 
     # Step 1: Handle corner artifacts (always, regardless of brain)
@@ -879,8 +990,43 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
             if track_criteria_failures:
                 metrics_df.loc[non_corner_indices, 'ml_keep_probability'] = failure_info['ml_keep_probability']
 
+        elif brain == 'hybrid':
+            # Build threshold and use_checks dicts (same as threshold brain)
+            thresholds = {
+                'pxlthr_area': pxlthr_area,
+                'circ_thr': circ_thr,
+                'maxedge_thr': maxedge_thr,
+                'convex_thr': convex_thr,
+                't_rise_min': t_rise_min,
+                'caiman_r_score_min': caiman_r_score_min,
+                'caiman_snr_min': caiman_snr_min,
+                't_off_min': t_off_min
+            }
+            use_checks = {
+                'use_area_check': use_area_check,
+                'use_circularity_check': use_circularity_check,
+                'use_max_edge_check': use_max_edge_check,
+                'use_convexity_check': use_convexity_check,
+                'use_t_rise_check': use_t_rise_check,
+                'use_caiman_r_score_check': use_caiman_r_score_check,
+                'use_caiman_snr_check': use_caiman_snr_check,
+                'use_t_off_check': use_t_off_check
+            }
+
+            delete_mask, failure_info = _apply_hybrid_brain(
+                metrics_df.loc[non_corner_indices], thresholds, use_checks,
+                ml_model_path, ml_threshold, track_failures=track_criteria_failures)
+
+            # Update delete column
+            metrics_df.loc[non_corner_indices, 'delete'] = delete_mask.astype(int)
+
+            # Update all failure columns (thresholds + ML probability)
+            if track_criteria_failures:
+                for col, values in failure_info.items():
+                    metrics_df.loc[non_corner_indices, col] = values
+
         else:
-            raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml'")
+            raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml', 'hybrid'")
 
     # Step 3: Correlation-based merge logic (UNCHANGED)
     if use_corr_check:
@@ -971,7 +1117,7 @@ def implement_decision(est, df):
     return est
 
 
-def save_processed_estimates(est, output_path, session_name=None):
+def save_processed_estimates(est, output_path, session_name=None, compress=False):
     """
     Save processed estimates to pickle file.
 
@@ -984,12 +1130,20 @@ def save_processed_estimates(est, output_path, session_name=None):
              Should have est.metrics_df attached (DataFrame with computed metrics + ML probabilities)
         output_path: Directory or full path to save the file
         session_name: Optional session name for filename (if output_path is directory)
+        compress: If True, apply lightweight compression before saving (removes bad components,
+                  converts to float32, sparse S matrix). Default: False
 
     Returns:
         Path to saved file
     """
     import pickle
     from pathlib import Path
+
+    # Apply compression if requested (before saving)
+    if compress:
+        from estimates_compression import compress_estimates_ultra_lightweight
+        est, savings, total_saved = compress_estimates_ultra_lightweight(est)
+        print(f"[save_processed_estimates] Compressed estimates, saved {total_saved:.1f} MB")
 
     output_path = Path(output_path)
 
