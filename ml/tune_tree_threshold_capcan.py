@@ -13,6 +13,7 @@ import pandas as pd
 from pathlib import Path
 from sklearn.metrics import precision_recall_fscore_support, roc_curve, auc
 import matplotlib.pyplot as plt
+from data_utils import FEATURE_COLS
 import random
 
 
@@ -70,33 +71,8 @@ def create_test_data(session_dirs, max_distance=3):
             else:
                 labels[i] = 0
 
-        # Extract ALL features (same as training)
-        # Exclude: corr_groups (merge group ID, not a quality metric)
-        feature_cols = [
-            'area',
-            'circularity',
-            'max_edge',
-            'convexity',
-            'caiman_snr',
-            'caiman_r_score',
-            'events_per_min',
-            'events_fraction',
-            't_rise',
-            't_off',
-            'wavelet_snr',
-            'r2_score',
-            'event_r2_score',
-            'nmae',
-            'nrmse',
-            'snr_recon',
-            'noise_level',
-            'baseline',
-            'tau_decay',
-            'trace_skewness',
-            'footprint_compactness'
-        ]
-
-        features = df_raw_filtered[feature_cols].copy()
+        # Use centralized feature columns from data_utils
+        features = df_raw_filtered[FEATURE_COLS].copy()
         features = features.replace([np.inf, -np.inf], np.nan)
 
         all_features.append(features)

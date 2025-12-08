@@ -40,7 +40,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
-from auto_inspector import estimates_to_metrics
+from auto_inspector import estimates_to_metrics, save_processed_estimates
 from polygon import get_contours
 import matplotlib.colors as mcolors
 
@@ -260,7 +260,7 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
 def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1,
-                         include_wavelet=True, include_heavy=False,
+                         include_event_based=True, include_heavy=False,
                          color_by_ml_probability=False, ml_threshold=0.5):
 
     if len(comps_to_select) == 0:
@@ -302,7 +302,7 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
         # Compute metrics from scratch
         mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
                                             corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
-                                            sf=sf, ef=ef, ds=ds, include_wavelet=include_wavelet, include_heavy=include_heavy)
+                                            sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy)
 
     t2 = time.time()
     etime = np.round(t2 - t1, 2)
@@ -369,8 +369,94 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 - Grey: deleted neurons
                 - Red to Green: kept neurons (red=low confidence, green=high confidence)
             - ml_threshold: P(KEEP) threshold used for coloring (default: 0.5)
+            - ml_model_path: Path to ML model (EBM) for feature importance sorting and
+                per-neuron contribution highlighting. If provided, metrics will be sorted
+                by global importance and show local contributions when a neuron is selected.
+            - metrics_width: Width of the central metrics widget in pixels (default: 200)
+            - compress_estimates: If True, compress estimates before saving (removes bad
+                components, converts to float32, sparse S matrix). Default: False
             - Other options: size, cthr, downsampling, corr_thr, etc.
     """
+    if bkapp_kwargs is None:
+        bkapp_kwargs = {}
+    ml_model_path = bkapp_kwargs.get('ml_model_path', None)
+    compress_estimates = bkapp_kwargs.get('compress_estimates', False)
+
+    # ML model state (lazy-loaded)
+    _ml_model = [None]  # Use list to allow modification in nested function
+    _feature_importances = [None]
+
+    def _get_ml_model():
+        """Load model and extract global feature importances (lazy)."""
+        if _ml_model[0] is None and ml_model_path is not None:
+            import pickle
+            from pathlib import Path
+            model_path = Path(ml_model_path)
+            if model_path.exists():
+                with open(model_path, 'rb') as f:
+                    _ml_model[0] = pickle.load(f)
+                # Extract global importances (individual features only)
+                if hasattr(_ml_model[0], 'term_importances') and hasattr(_ml_model[0], 'term_names_'):
+                    importances = _ml_model[0].term_importances()
+                    names = _ml_model[0].term_names_
+                    _feature_importances[0] = {
+                        name: imp for name, imp in zip(names, importances)
+                        if ' & ' not in name  # Skip interaction terms
+                    }
+        return _ml_model[0]
+
+    def _get_neuron_contributions(neuron_data):
+        """Compute feature contributions for a single neuron using explain_local().
+
+        Returns:
+            tuple: (individual_contributions, total_abs_all, intercept)
+                - individual_contributions: dict of {feature: score} for individual features
+                - total_abs_all: sum of abs(score) for ALL terms (individual + interactions)
+                - intercept: the model's intercept value
+        """
+        model = _get_ml_model()
+        if model is None or not hasattr(model, 'explain_local'):
+            return {}, 0.0, 0.0
+
+        try:
+            import pandas as pd
+            # Get feature columns from model
+            feature_cols = list(model.feature_names_in_)
+
+            # Build feature dict from neuron_data
+            feature_values = {}
+            for col in feature_cols:
+                if col in neuron_data:
+                    value = neuron_data[col]
+                    if isinstance(value, (float, int, np.floating, np.integer)):
+                        feature_values[col] = value
+                    else:
+                        feature_values[col] = np.nan
+                else:
+                    feature_values[col] = np.nan
+
+            # Create DataFrame for model
+            X = pd.DataFrame([feature_values])
+            X = X.replace([np.inf, -np.inf], np.nan)
+
+            local_exp = model.explain_local(X)
+            exp_data = local_exp.data(0)
+
+            # Get intercept from model (not in explain_local output)
+            intercept = model.intercept_[0] if hasattr(model, 'intercept_') else 0.0
+
+            # Build contributions dict and compute totals
+            contributions = {}
+            total_abs_all = 0.0
+
+            for name, score in zip(exp_data['names'], exp_data['scores']):
+                total_abs_all += abs(score)
+                if ' & ' not in name:  # Store individual features only for display
+                    contributions[name] = score
+
+            return contributions, total_abs_all, intercept
+        except Exception:
+            return {}, 0.0, 0.0
     # This is the main plotting functions which plots all images and traces and contains all button callbacks
 
     def slice_cds(cds, comps_to_leave):
@@ -458,7 +544,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         corr_thr = bkapp_kwargs.get('corr_thr', 0.6)
         num_sessions = bkapp_kwargs.get('num_sessions', 1)
         match_threshold = bkapp_kwargs.get('match_threshold', 1)
-        include_wavelet = bkapp_kwargs.get('include_wavelet', True)
+        include_event_based = bkapp_kwargs.get('include_event_based', True)
         include_heavy = bkapp_kwargs.get('include_heavy', False)
         color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
         ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
@@ -500,7 +586,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            corr_thr=corr_thr, num_sessions=num_sessions,
                                            match_threshold=match_threshold,
                                            sf=start_frame, ef=end_frame, ds=ds,
-                                           include_wavelet=include_wavelet,
+                                           include_event_based=include_event_based,
                                            include_heavy=include_heavy,
                                            color_by_ml_probability=color_by_ml_probability,
                                            ml_threshold=ml_threshold)
@@ -608,9 +694,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p1.add_tools(draw_tool)
 
         # --- Metrics display on tap ---
+        metrics_width = bkapp_kwargs.get('metrics_width', 200)
         metrics_div = Div(
             text="<b>Neuron Metrics</b><br><i>Tap a neuron to see metrics</i>",
-            width=125,
+            width=metrics_width,
             height=height,
             styles={'overflow-y': 'scroll', 'border': '1px solid #ccc', 'padding': '5px',
                     'font-family': 'monospace', 'font-size': '9px'}
@@ -640,37 +727,113 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     value = src_partial.data[key][selected_idx]
                     metrics_data[key] = value
 
-            # Sort metrics alphabetically
-            for key in sorted(metrics_data.keys()):
-                value = metrics_data[key]
+            # Try to get feature importances and neuron contributions from ML model
+            _get_ml_model()  # Trigger lazy load
+            feature_importances = _feature_importances[0] or {}
+            contributions, total_abs_all, intercept = _get_neuron_contributions(metrics_data) if feature_importances else ({}, 0.0, 0.0)
 
-                # Format value
+            # Sort keys: important features first (if model), then alphabetically
+            if feature_importances:
+                # Separate ML features (in model) from other metrics
+                ml_features = [k for k in metrics_data.keys() if k in feature_importances]
+                other_keys = [k for k in metrics_data.keys() if k not in feature_importances]
+
+                # Sort ML features by importance (descending)
+                ml_features.sort(key=lambda k: feature_importances.get(k, 0), reverse=True)
+                other_keys.sort()
+
+                sorted_keys = ml_features + other_keys
+            else:
+                sorted_keys = sorted(metrics_data.keys())
+
+            # Helper to format value
+            def format_value(value, decimals=2):
                 if isinstance(value, (int, np.integer)):
-                    formatted_value = f"{value}"
+                    return f"{value}"
                 elif isinstance(value, (float, np.floating)):
                     if np.isnan(value):
-                        formatted_value = "NaN"
+                        return "NaN"
                     else:
-                        formatted_value = f"{value:.4f}"
-                else:
-                    formatted_value = str(value)
+                        return f"{value:.{decimals}f}"
+                return str(value)
 
-                # Color code special columns
-                if key == 'delete' and value == 1:
-                    html += f"<span style='color: red;'><b>{key}:</b> {formatted_value}</span><br>"
-                elif key == 'ml_keep_probability':
-                    if not np.isnan(value):
-                        if value > 0.75:
-                            color = 'green'
-                        elif value > 0.5:
-                            color = 'orange'
-                        else:
-                            color = 'red'
-                        html += f"<span style='color: {color};'><b>{key}:</b> {formatted_value}</span><br>"
+            # Check if we have EBM contributions (only EBM models support this)
+            has_ebm_contributions = bool(contributions) and total_abs_all > 0
+
+            if has_ebm_contributions:
+                # EBM model with local explanations
+                # Use total_abs_all which includes interactions (for proper percentage calculation)
+
+                # Color intensity levels (green for positive, red for negative)
+                GREEN_INTENSE = '#1B5E20'   # +++
+                GREEN_MEDIUM = '#4CAF50'    # ++
+                GREEN_LIGHT = '#81C784'     # +
+                RED_INTENSE = '#B71C1C'     # ---
+                RED_MEDIUM = '#F44336'      # --
+                RED_LIGHT = '#E57373'       # -
+                BLUE = '#1976D2'            # for delete/ml_keep_probability
+
+                def get_contrib_info(contrib):
+                    if contrib is None or total_abs_all == 0:
+                        return "", None, None
+                    pct = abs(contrib) / total_abs_all * 100
+                    is_positive = contrib > 0
+                    if pct > 15:
+                        sign = "[+++]" if is_positive else "[---]"
+                        color = GREEN_INTENSE if is_positive else RED_INTENSE
+                    elif pct > 8:
+                        sign = "[++]" if is_positive else "[--]"
+                        color = GREEN_MEDIUM if is_positive else RED_MEDIUM
+                    elif pct > 3:
+                        sign = "[+]" if is_positive else "[-]"
+                        color = GREEN_LIGHT if is_positive else RED_LIGHT
+                    else:
+                        return "", None, None  # No sign for <3%
+                    return sign, color, pct
+
+                # Show intercept influence (model's prior)
+                from scipy.special import expit
+                base_prob = expit(intercept) * 100
+                net_feature_effect = sum(contributions.values())
+                intercept_color = GREEN_INTENSE if intercept > 0 else RED_INTENSE
+                html += f"<b style='color: #666;'>ML Decision Drivers:</b><br>"
+                html += f"<span style='color: {intercept_color};'><b>Base prior:</b> {base_prob:.0f}% KEEP</span><br>"
+                html += f"<span style='color: #666;'><i>Features net: {net_feature_effect:+.2f}</i></span><br>"
+                html += "<hr style='margin: 3px 0;'>"
+
+                for key in sorted_keys:
+                    value = metrics_data[key]
+                    formatted_value = format_value(value)
+                    contrib = contributions.get(key)
+                    sign, color, pct = get_contrib_info(contrib)
+
+                    if key in ('delete', 'ml_keep_probability'):
+                        html += f"<span style='color: {BLUE};'><b>{key}:</b> {formatted_value}</span><br>"
+                    elif sign:
+                        html += f"<span style='color: {color};'><b>{key}:</b> {formatted_value} {sign} ({pct:.0f}%)</span><br>"
                     else:
                         html += f"<b>{key}:</b> {formatted_value}<br>"
-                else:
-                    html += f"<b>{key}:</b> {formatted_value}<br>"
+            else:
+                # No EBM model - simple display (alphabetically sorted)
+                for key in sorted_keys:
+                    value = metrics_data[key]
+                    formatted_value = format_value(value, decimals=4)
+
+                    if key == 'delete' and value == 1:
+                        html += f"<span style='color: red;'><b>{key}:</b> {formatted_value}</span><br>"
+                    elif key == 'ml_keep_probability':
+                        if isinstance(value, (float, np.floating)) and not np.isnan(value):
+                            if value > 0.75:
+                                color = 'green'
+                            elif value > 0.5:
+                                color = 'orange'
+                            else:
+                                color = 'red'
+                            html += f"<span style='color: {color};'><b>{key}:</b> {formatted_value}</span><br>"
+                        else:
+                            html += f"<b>{key}:</b> {formatted_value}<br>"
+                    else:
+                        html += f"<b>{key}:</b> {formatted_value}<br>"
 
             metrics_div.text = html
 
@@ -983,15 +1146,13 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             #if '-' in base_name:
             #    base_name = base_name[:2+1+2+1+4+1 + 2+1+2+1+2]
             out_name = base_name + dt.replace(':', '-') + '_estimates.pickle'
-            with open(out_name, "wb") as f:
-                pickle.dump(storage.estimates, f)
+            save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
         def final_save_callback(event, storage=None):
             base_name = extract_name_with_pattern(estimates.name)
             out_name = base_name + 'final_estimates.pickle'
-            with open(out_name, "wb") as f:
-                pickle.dump(storage.estimates, f)
+            save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
             print(f'Final results for {title} saved to {out_name}\n')
 
             # now save to .mat file

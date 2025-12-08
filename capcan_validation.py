@@ -134,7 +134,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
     metrics_df_init, match_mtx_init, FCD_init, FBD_init, _ = estimates_to_metrics(
         est_init,
         fps=fps,
-        include_wavelet=True,
+        include_event_based=True,
         include_heavy=False  # Skip reconstruction metrics for speed
     )
 
@@ -148,7 +148,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
     metrics_df_gt, _, _, _, _ = estimates_to_metrics(
         est_gt,
         fps=fps,
-        include_wavelet=False,
+        include_event_based=False,
         include_heavy=False
     )
 
@@ -171,7 +171,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         convex_thr=42,
         pxlthr_area=3,
         pxlthr_distance_boundary=5,
-        d_snr_thr=42,
+        d_snr_thr=10,
         use_circularity_check=True,
         use_area_check=True,
         use_max_edge_check=True,
@@ -226,7 +226,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
     metrics_df_auto_final, _, _, _, _ = estimates_to_metrics(
         est_auto,
         fps=fps,
-        include_wavelet=False,  # Only need positions for comparison
+        include_event_based=False,  # Only need positions for comparison
         include_heavy=False
     )
 
@@ -326,14 +326,14 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
             metrics_df_init, match_mtx_init, FCD_init, FBD_init, corner_info = estimates_to_metrics(
                 est_init,
                 fps=session_fps,
-                include_wavelet=True,
+                include_event_based=True,
                 include_heavy=include_heavy
             )
 
             metrics_df_gt, _, _, _, _ = estimates_to_metrics(
                 est_gt,
                 fps=session_fps,
-                include_wavelet=True,
+                include_event_based=True,
                 include_heavy=include_heavy
             )
 
@@ -348,7 +348,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 convex_thr=42,
                 pxlthr_area=3,
                 pxlthr_distance_boundary=5,
-                d_snr_thr=42,
+                d_snr_thr=10,
                 t_rise_min=0.10,
                 caiman_r_score_min=0.05,
                 caiman_snr_min=2.9,
@@ -398,7 +398,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
             metrics_df_auto_final, _, _, _, _ = estimates_to_metrics(
                 est_auto,
                 fps=session_fps,
-                include_wavelet=False,
+                include_event_based=False,
                 include_heavy=False
             )
 

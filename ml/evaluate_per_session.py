@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.metrics import precision_recall_fscore_support
+from data_utils import FEATURE_COLS
 
 
 def load_session_data(session_dir):
@@ -62,32 +63,8 @@ def create_session_dataset(session_dir, max_distance=3):
         else:
             labels[i] = 0
 
-    # Extract features (21 features)
-    feature_cols = [
-        'area',
-        'circularity',
-        'max_edge',
-        'convexity',
-        'caiman_snr',
-        'caiman_r_score',
-        'events_per_min',
-        'events_fraction',
-        't_rise',
-        't_off',
-        'wavelet_snr',
-        'r2_score',
-        'event_r2_score',
-        'nmae',
-        'nrmse',
-        'snr_recon',
-        'noise_level',
-        'baseline',
-        'tau_decay',
-        'trace_skewness',
-        'footprint_compactness'
-    ]
-
-    features = df_raw_filtered[feature_cols].copy()
+    # Use centralized feature columns from data_utils
+    features = df_raw_filtered[FEATURE_COLS].copy()
     features = features.replace([np.inf, -np.inf], np.nan)
 
     return features, labels, len(df_raw)

@@ -10,13 +10,13 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-import random
 from pathlib import Path
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import precision_recall_fscore_support
 from itertools import product
 from tqdm import tqdm
 from datetime import datetime
+from data_utils import FEATURE_COLS, stratified_session_split, print_split_info
 
 
 def load_session_data(session_dir):
@@ -73,32 +73,8 @@ def create_dataset(session_dirs, max_distance=3):
             else:
                 labels[i] = 0
 
-        # Extract ALL 21 features
-        feature_cols = [
-            'area',
-            'circularity',
-            'max_edge',
-            'convexity',
-            'caiman_snr',
-            'caiman_r_score',
-            'events_per_min',
-            'events_fraction',
-            't_rise',
-            't_off',
-            'wavelet_snr',
-            'r2_score',
-            'event_r2_score',
-            'nmae',
-            'nrmse',
-            'snr_recon',
-            'noise_level',
-            'baseline',
-            'tau_decay',
-            'trace_skewness',
-            'footprint_compactness'
-        ]
-
-        features = df_raw_filtered[feature_cols].copy()
+        # Use centralized feature columns from data_utils
+        features = df_raw_filtered[FEATURE_COLS].copy()
         features = features.replace([np.inf, -np.inf], np.nan)
 
         all_features.append(features)
@@ -251,17 +227,14 @@ def grid_search_focused(artifacts_dir="data/capcan_validation_127",
         print(f"SEED {seed}/{n_seeds-1}")
         print(f"{'='*80}")
 
-        # Train/test split with this seed
-        n_train = int(len(session_dirs) * (1 - test_fraction))
-        random.seed(seed)
-        shuffled_dirs = session_dirs.copy()
-        random.shuffle(shuffled_dirs)
+        # Stratified train/test split with this seed
+        train_sessions, test_sessions, split_info = stratified_session_split(
+            session_dirs,
+            test_fraction=test_fraction,
+            random_state=seed
+        )
 
-        train_sessions = shuffled_dirs[:n_train]
-        test_sessions = shuffled_dirs[n_train:]
-
-        print(f"Train sessions: {len(train_sessions)}")
-        print(f"Test sessions: {len(test_sessions)}")
+        print_split_info(split_info)
 
         # Create datasets
         X_train, y_train = create_dataset(train_sessions)

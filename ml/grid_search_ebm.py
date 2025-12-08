@@ -17,7 +17,6 @@ import sys
 import pickle
 import numpy as np
 import pandas as pd
-import random
 import warnings
 import time
 from pathlib import Path
@@ -32,7 +31,10 @@ import argparse
 
 # Import from ml/data_utils
 sys.path.insert(0, str(Path(__file__).parent))
-from data_utils import load_session_data, create_dataset, FEATURE_COLS, load_all_sessions
+from data_utils import (
+    load_session_data, create_dataset, FEATURE_COLS, load_all_sessions,
+    stratified_session_split, print_split_info
+)
 
 warnings.filterwarnings('ignore')
 
@@ -151,17 +153,15 @@ def run_grid_search(
     if experiments is not None and len(experiments) > 0:
         exp_suffix = "_" + "_".join(experiments)
 
-    # Train/test split by session
-    n_train = int(len(session_dirs) * (1 - test_fraction))
-    random.seed(random_state)
-    shuffled_dirs = session_dirs.copy()
-    random.shuffle(shuffled_dirs)
+    # Stratified train/test split by experiment
+    train_sessions, test_sessions, split_info = stratified_session_split(
+        session_dirs,
+        test_fraction=test_fraction,
+        random_state=random_state
+    )
 
-    train_sessions = shuffled_dirs[:n_train]
-    test_sessions = shuffled_dirs[n_train:]
-
-    print(f"Train sessions: {len(train_sessions)}")
-    print(f"Test sessions: {len(test_sessions)}")
+    print()
+    print_split_info(split_info)
 
     # Create datasets
     print("\nLoading data...")

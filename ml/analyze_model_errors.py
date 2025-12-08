@@ -4,15 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from scipy import stats
-
-# Feature columns
-feature_cols = [
-    'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
-    'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
-    'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
-    'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
-    'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
-]
+from data_utils import FEATURE_COLS
 
 
 def load_dataset(artifacts_dir, experiments=None):
@@ -56,7 +48,7 @@ def load_dataset(artifacts_dir, experiments=None):
                 if distances.min() <= 3:
                     labels[i] = 1
 
-            features = df_raw[feature_cols].copy()
+            features = df_raw[FEATURE_COLS].copy()
             features = features.replace([np.inf, -np.inf], np.nan)
 
             session_name = session_dir.name.replace('capcan_artifacts_', '')
@@ -129,7 +121,7 @@ def analyze_errors(model_path, artifacts_dir, experiments, threshold=0.5):
     print("-" * 80)
 
     problematic_features = []
-    for col in feature_cols:
+    for col in FEATURE_COLS:
         fp_vals = X_fp[col].dropna()
         tp_vals = X_tp[col].dropna()
         tn_vals = X_tn[col].dropna()

@@ -307,7 +307,8 @@ def detect_ellipse_artifacts_from_positions(positions, fov_width=None, fov_heigh
         'center': (center_x, center_y),
         'fov_width': fov_width,
         'fov_height': fov_height,
-        'max_radial': radial_dist.max()
+        'max_radial': radial_dist.max(),
+        'radial_dist': radial_dist  # per-neuron normalized radial distance
     }
 
     return labels, ellipse_info
@@ -390,5 +391,9 @@ def detect_edge_artifacts(metrics_df, ellipse_threshold=0.9, **gap_params):
     # Add column to dataframe (keep column name for backward compatibility)
     metrics_df = metrics_df.copy()
     metrics_df['is_corner_artifact'] = labels
+
+    # Add ellipse_r (normalized radial distance) for all neurons
+    if 'ellipse_info' in info and 'radial_dist' in info['ellipse_info']:
+        metrics_df['ellipse_r'] = info['ellipse_info']['radial_dist']
 
     return metrics_df, info, labels

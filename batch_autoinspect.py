@@ -47,7 +47,7 @@ def process_single_session(session_file, output_base='./'):
         metrics_df, match_mtx, FCD, FBD, corner_info = estimates_to_metrics(
             est,
             fps=20,
-            include_wavelet=True,
+            include_event_based=True,
             include_heavy=False,
             detect_corner_artifacts_flag=True
         )

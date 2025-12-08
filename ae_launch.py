@@ -43,7 +43,8 @@ def _save_inspection_artifacts(
     est_processed=None,
     artifacts_path: str = None,
     save_matrices: bool = True,
-    save_corner_detection: bool = True
+    save_corner_detection: bool = True,
+    compress_estimates: bool = False
 ) -> Path:
     """
     Save all inspection artifacts to a folder.
@@ -59,6 +60,7 @@ def _save_inspection_artifacts(
         artifacts_path: Base path for artifacts folder
         save_matrices: Whether to save FCD, FBD, match_mtx as .npy files
         save_corner_detection: Whether to save corner artifact visualization
+        compress_estimates: Whether to compress estimates before saving
 
     Returns:
         Path to the created artifacts folder
@@ -91,7 +93,7 @@ def _save_inspection_artifacts(
 
     # Save processed estimates
     if est_processed is not None:
-        save_processed_estimates(est_processed, folder, session_name)
+        save_processed_estimates(est_processed, folder, session_name, compress=compress_estimates)
 
     return folder
 
@@ -112,7 +114,7 @@ def run_auto_inspection(
     sf: int = None,
     ef: int = None,
     ds: int = 1,
-    include_wavelet: bool = True,
+    include_event_based: bool = True,
     include_heavy: bool = False,
     detect_corner_artifacts: bool = True,
     corner_artifact_params: dict = None,
@@ -124,7 +126,7 @@ def run_auto_inspection(
     convex_thr: float = 42,
     pxlthr_area: float = 6.9,
     pxlthr_distance_boundary: float = 5,
-    d_snr_thr: float = 42,
+    d_snr_thr: float = 10,
     t_rise_min: float = 0.10,
     caiman_r_score_min: float = 0.05,
     caiman_snr_min: float = 2.9,
@@ -155,6 +157,7 @@ def run_auto_inspection(
     save_estimates: bool = True,
     save_matrices: bool = True,
     save_corner_detection: bool = True,
+    compress_estimates: bool = False,
 
     # --- Verbosity ---
     verbose: bool = False
@@ -180,7 +183,7 @@ def run_auto_inspection(
         sf: Start frame for trace analysis (None = 0)
         ef: End frame for trace analysis (None = end of recording)
         ds: Downsample factor for traces
-        include_wavelet: Compute wavelet-based event metrics
+        include_event_based: Compute event-based temporal metrics
         include_heavy: Compute reconstruction quality metrics (slow)
         detect_corner_artifacts: Enable corner artifact detection
         corner_artifact_params: Parameters for corner detection (None = defaults)
@@ -218,6 +221,8 @@ def run_auto_inspection(
         save_estimates: Save processed estimates pickle
         save_matrices: Save FCD, FBD, match_mtx as .npy files
         save_corner_detection: Save corner artifact visualization (default True)
+        compress_estimates: Compress estimates before saving (removes bad components,
+            converts to float32, sparse S matrix). Default: False
 
         verbose: Print progress messages
 
@@ -304,7 +309,7 @@ def run_auto_inspection(
         sf=sf,
         ef=ef,
         ds=ds,
-        include_wavelet=include_wavelet,
+        include_event_based=include_event_based,
         include_heavy=include_heavy,
         detect_corner_artifacts_flag=detect_corner_artifacts,
         corner_artifact_params=corner_artifact_params,
@@ -408,7 +413,8 @@ def run_auto_inspection(
             est_processed=est_processed if save_estimates else None,
             artifacts_path=str(artifacts_path),
             save_matrices=save_matrices,
-            save_corner_detection=save_corner_detection
+            save_corner_detection=save_corner_detection,
+            compress_estimates=compress_estimates
         )
 
         if verbose:

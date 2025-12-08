@@ -1,10 +1,28 @@
-"""Plot precision-recall tradeoff curve for a given model by scanning thresholds."""
+"""Plot precision-recall tradeoff curve for one or more models by scanning thresholds.
+
+Supports multi-model comparison for benchmarking different configurations.
+"""
 import argparse
 import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
+from data_utils import FEATURE_COLS
+
+# Color palette for multiple models
+MODEL_COLORS = [
+    '#1f77b4',  # blue
+    '#ff7f0e',  # orange
+    '#2ca02c',  # green
+    '#d62728',  # red
+    '#9467bd',  # purple
+    '#8c564b',  # brown
+    '#e377c2',  # pink
+    '#7f7f7f',  # gray
+    '#bcbd22',  # olive
+    '#17becf',  # cyan
+]
 
 
 def load_dataset(artifacts_dir, experiments=None):
@@ -21,15 +39,6 @@ def load_dataset(artifacts_dir, experiments=None):
             if exp_id in experiments:
                 filtered_dirs.append(d)
         session_dirs = filtered_dirs
-
-    feature_cols = [
-        'area', 'circularity', 'max_edge', 'convexity', 'caiman_snr', 'caiman_r_score',
-        'events_per_min', 'events_fraction', 't_rise', 't_off', 'wavelet_snr',
-        'r2_score', 'event_r2_score', 'nmae', 'nrmse', 'snr_recon', 'noise_level',
-        'baseline', 'tau_decay', 'trace_skewness', 'footprint_compactness',
-        # New v3 metrics
-        'trace_kurtosis', 'aspect_ratio', 'eccentricity', 'edge_distance', 'nn_distance_center'
-    ]
 
     all_features = []
     all_labels = []
@@ -60,7 +69,7 @@ def load_dataset(artifacts_dir, experiments=None):
                 if distances.min() <= 3:
                     labels[i] = 1
 
-            features = df_raw[feature_cols].copy()
+            features = df_raw[FEATURE_COLS].copy()
             features = features.replace([np.inf, -np.inf], np.nan)
 
             all_features.append(features)
@@ -190,24 +199,248 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
     return thresholds, precisions, recalls, f1_scores
 
 
+def evaluate_model(model, X, y, n_points=100):
+    """Evaluate a model and return metrics at different thresholds."""
+    y_proba = model.predict_proba(X)[:, 1]
+
+    thresholds = np.linspace(0.3, 0.9, n_points)
+    precisions = []
+    recalls = []
+    f1_scores = []
+
+    for thresh in thresholds:
+        y_pred = (y_proba >= thresh).astype(int)
+
+        tp = ((y_pred == 1) & (y == 1)).sum()
+        fp = ((y_pred == 1) & (y == 0)).sum()
+        fn = ((y_pred == 0) & (y == 1)).sum()
+
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+        precisions.append(precision)
+        recalls.append(recall)
+        f1_scores.append(f1)
+
+    return {
+        'thresholds': thresholds,
+        'precisions': np.array(precisions),
+        'recalls': np.array(recalls),
+        'f1_scores': np.array(f1_scores),
+    }
+
+
+def plot_multi_model_comparison(
+    model_paths,
+    model_names=None,
+    artifacts_dir="data/capcan_validation_127_v5",
+    experiments=None,
+    output_path=None,
+    n_points=100
+):
+    """
+    Plot precision-recall curves for multiple models on same dataset.
+
+    Parameters
+    ----------
+    model_paths : list of str
+        Paths to model pickle files
+    model_names : list of str, optional
+        Names for each model in legend. If None, uses file stems.
+    artifacts_dir : str
+        Directory containing capcan_artifacts_* subdirectories
+    experiments : str, optional
+        Comma-separated experiment filter (e.g., "NOF,RFC,FOF")
+    output_path : str, optional
+        Output path for the plot
+    n_points : int
+        Number of threshold points to scan
+    """
+    # Load models
+    models = []
+    if model_names is None:
+        model_names = []
+    for i, path in enumerate(model_paths):
+        with open(path, 'rb') as f:
+            models.append(pickle.load(f))
+        if len(model_names) <= i:
+            model_names.append(Path(path).stem)
+
+    print(f"Loaded {len(models)} models:")
+    for name in model_names:
+        print(f"  - {name}")
+
+    # Load data
+    exp_list = experiments.split(',') if experiments else None
+    X, y = load_dataset(artifacts_dir, exp_list)
+    print(f"Loaded {len(X)} samples ({y.sum()} KEEP, {len(y) - y.sum()} DELETE)")
+
+    # Evaluate all models
+    results = []
+    for model, name in zip(models, model_names):
+        print(f"Evaluating {name}...")
+        res = evaluate_model(model, X, y, n_points)
+        res['name'] = name
+        results.append(res)
+
+    # Create figure with 2x2 layout
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+
+    # Plot 1: Precision-Recall curves (top-left)
+    ax1 = axes[0, 0]
+    for i, res in enumerate(results):
+        color = MODEL_COLORS[i % len(MODEL_COLORS)]
+        best_idx = np.argmax(res['f1_scores'])
+        best_f1 = res['f1_scores'][best_idx]
+
+        ax1.plot(res['recalls'], res['precisions'], color=color, linewidth=2,
+                 label=f"{res['name']} (F1={best_f1:.3f})")
+        ax1.scatter([res['recalls'][best_idx]], [res['precisions'][best_idx]],
+                   c=color, s=80, zorder=5, marker='*', edgecolors='black')
+
+    ax1.set_xlabel('Recall', fontsize=12)
+    ax1.set_ylabel('Precision', fontsize=12)
+    ax1.set_title('Precision-Recall Trade-off Comparison', fontsize=14)
+    ax1.legend(loc='lower left', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim([0.7, 1.01])
+    ax1.set_ylim([0.8, 1.01])
+
+    # Plot 2: F1 vs Threshold (top-right)
+    ax2 = axes[0, 1]
+    for i, res in enumerate(results):
+        color = MODEL_COLORS[i % len(MODEL_COLORS)]
+        ax2.plot(res['thresholds'], res['f1_scores'], color=color, linewidth=2,
+                 label=res['name'])
+
+    ax2.set_xlabel('Threshold', fontsize=12)
+    ax2.set_ylabel('F1 Score', fontsize=12)
+    ax2.set_title('F1 Score vs Threshold', fontsize=14)
+    ax2.legend(loc='lower left', fontsize=9)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xlim([0.3, 0.9])
+    ax2.set_ylim([0.85, 0.95])
+
+    # Plot 3: Precision vs Threshold (bottom-left)
+    ax3 = axes[1, 0]
+    for i, res in enumerate(results):
+        color = MODEL_COLORS[i % len(MODEL_COLORS)]
+        ax3.plot(res['thresholds'], res['precisions'], color=color, linewidth=2,
+                 label=res['name'])
+
+    ax3.set_xlabel('Threshold', fontsize=12)
+    ax3.set_ylabel('Precision', fontsize=12)
+    ax3.set_title('Precision vs Threshold', fontsize=14)
+    ax3.legend(loc='lower right', fontsize=9)
+    ax3.grid(True, alpha=0.3)
+    ax3.set_xlim([0.3, 0.9])
+    ax3.set_ylim([0.8, 1.01])
+
+    # Plot 4: Recall vs Threshold (bottom-right)
+    ax4 = axes[1, 1]
+    for i, res in enumerate(results):
+        color = MODEL_COLORS[i % len(MODEL_COLORS)]
+        ax4.plot(res['thresholds'], res['recalls'], color=color, linewidth=2,
+                 label=res['name'])
+
+    ax4.set_xlabel('Threshold', fontsize=12)
+    ax4.set_ylabel('Recall', fontsize=12)
+    ax4.set_title('Recall vs Threshold', fontsize=14)
+    ax4.legend(loc='lower left', fontsize=9)
+    ax4.grid(True, alpha=0.3)
+    ax4.set_xlim([0.3, 0.9])
+    ax4.set_ylim([0.7, 1.01])
+
+    plt.tight_layout()
+
+    # Save
+    if output_path is None:
+        output_path = Path(artifacts_dir).parent / "ml" / "results" / "model_comparison.png"
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"\nSaved comparison plot to: {output_path}")
+
+    # Print summary table
+    print("\n" + "=" * 80)
+    print("MODEL COMPARISON SUMMARY (threshold=0.5)")
+    print("=" * 80)
+    print(f"\n{'Model':<35} {'F1':>8} {'Prec':>8} {'Rec':>8} {'BestF1':>8} {'@Thresh':>8}")
+    print("-" * 80)
+
+    for res in results:
+        # Find threshold=0.5 metrics
+        idx_05 = np.argmin(np.abs(res['thresholds'] - 0.5))
+        best_idx = np.argmax(res['f1_scores'])
+
+        print(f"{res['name']:<35} "
+              f"{res['f1_scores'][idx_05]:>8.4f} "
+              f"{res['precisions'][idx_05]:>8.4f} "
+              f"{res['recalls'][idx_05]:>8.4f} "
+              f"{res['f1_scores'][best_idx]:>8.4f} "
+              f"{res['thresholds'][best_idx]:>8.2f}")
+
+    # Print detailed per-threshold table for all models
+    print("\n" + "=" * 80)
+    print("DETAILED THRESHOLD COMPARISON")
+    print("=" * 80)
+
+    for thresh in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
+        print(f"\n--- Threshold = {thresh} ---")
+        print(f"{'Model':<35} {'F1':>8} {'Prec':>8} {'Rec':>8}")
+        print("-" * 60)
+        for res in results:
+            idx = np.argmin(np.abs(res['thresholds'] - thresh))
+            print(f"{res['name']:<35} "
+                  f"{res['f1_scores'][idx]:>8.4f} "
+                  f"{res['precisions'][idx]:>8.4f} "
+                  f"{res['recalls'][idx]:>8.4f}")
+
+    plt.show()
+    return results
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot precision-recall tradeoff curve")
-    parser.add_argument("--model", required=True, help="Path to model pickle file")
-    parser.add_argument("--artifacts-dir", default="data/capcan_validation_127_v2",
+    parser = argparse.ArgumentParser(
+        description="Plot precision-recall tradeoff curve for one or more models"
+    )
+    parser.add_argument("--model", type=str, default=None,
+                       help="Path to single model pickle file (legacy mode)")
+    parser.add_argument("--models", type=str, nargs='+', default=None,
+                       help="Paths to multiple model pickle files for comparison")
+    parser.add_argument("--names", type=str, nargs='+', default=None,
+                       help="Names for each model in comparison (optional)")
+    parser.add_argument("--artifacts-dir", default="data/capcan_validation_127_v5",
                        help="Directory containing capcan_artifacts_* subdirectories")
     parser.add_argument("--experiments", type=str, default=None,
-                       help="Filter to specific experiments (comma-separated, e.g., NOF,RFC)")
+                       help="Filter to specific experiments (comma-separated, e.g., NOF,RFC,FOF)")
     parser.add_argument("--output", type=str, default=None,
-                       help="Output path for the plot (default: model_pr_tradeoff.png)")
+                       help="Output path for the plot")
     parser.add_argument("--n-points", type=int, default=100,
                        help="Number of threshold points to scan (default: 100)")
 
     args = parser.parse_args()
 
-    plot_pr_tradeoff(
-        model_path=args.model,
-        artifacts_dir=args.artifacts_dir,
-        experiments=args.experiments,
-        output_path=args.output,
-        n_points=args.n_points
-    )
+    if args.models:
+        # Multi-model comparison mode
+        plot_multi_model_comparison(
+            model_paths=args.models,
+            model_names=args.names,
+            artifacts_dir=args.artifacts_dir,
+            experiments=args.experiments,
+            output_path=args.output,
+            n_points=args.n_points
+        )
+    elif args.model:
+        # Single model mode (legacy)
+        plot_pr_tradeoff(
+            model_path=args.model,
+            artifacts_dir=args.artifacts_dir,
+            experiments=args.experiments,
+            output_path=args.output,
+            n_points=args.n_points
+        )
+    else:
+        parser.error("Either --model or --models must be specified")

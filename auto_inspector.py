@@ -451,7 +451,7 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
 
 def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
-                         sf=None, ef=None, ds=1, include_wavelet=True, include_heavy=False,
+                         sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
                          event_method='threshold'):
 
@@ -575,7 +575,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'corr_groups': corr_groups
     }
 
-    if include_wavelet:
+    if include_event_based:
         print(f'[4/4] Computing {event_method} event-based metrics (this may take a while)...')
         t1 = time.time()
         event_based_metrics = get_multineuron_metrics(np.array(traces),
@@ -587,7 +587,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
         metrics = {**metrics, **event_based_metrics}
     else:
-        print(f'[4/4] Skipping event-based metrics (include_wavelet=False)')
+        print(f'[4/4] Skipping event-based metrics (include_event_based=False)')
 
     metrics_df = pd.DataFrame(metrics)
 
@@ -860,7 +860,7 @@ def _apply_hybrid_brain(metrics_df, thresholds, use_checks, model_path, ml_thres
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
                         pxlthr_distance_boundary=5,
-                        d_snr_thr=42,
+                        d_snr_thr=10,
                         t_rise_min=0.10, caiman_r_score_min=0.05,
                         caiman_snr_min=2.9, t_off_min=1.5,
                         use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
@@ -1117,7 +1117,7 @@ def implement_decision(est, df):
     return est
 
 
-def save_processed_estimates(est, output_path, session_name=None):
+def save_processed_estimates(est, output_path, session_name=None, compress=False):
     """
     Save processed estimates to pickle file.
 
@@ -1130,12 +1130,20 @@ def save_processed_estimates(est, output_path, session_name=None):
              Should have est.metrics_df attached (DataFrame with computed metrics + ML probabilities)
         output_path: Directory or full path to save the file
         session_name: Optional session name for filename (if output_path is directory)
+        compress: If True, apply lightweight compression before saving (removes bad components,
+                  converts to float32, sparse S matrix). Default: False
 
     Returns:
         Path to saved file
     """
     import pickle
     from pathlib import Path
+
+    # Apply compression if requested (before saving)
+    if compress:
+        from estimates_compression import compress_estimates_ultra_lightweight
+        est, savings, total_saved = compress_estimates_ultra_lightweight(est)
+        print(f"[save_processed_estimates] Compressed estimates, saved {total_saved:.1f} MB")
 
     output_path = Path(output_path)
 
