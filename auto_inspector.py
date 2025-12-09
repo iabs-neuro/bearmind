@@ -1282,13 +1282,18 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
 
         # Map component to new index (deleted components are mapped too!)
         if old_idx in old_to_new:
-            new_row = row.copy()
+            # Use to_dict() for reliable DataFrame construction (avoids Series dtype issues)
+            new_row = row.to_dict()
             new_row['component_idx'] = old_to_new[old_idx]
             transformed_rows.append(new_row)
 
     # Create DataFrame from transformed components
     if transformed_rows:
         transformed_df = pd.DataFrame(transformed_rows)
+        # Ensure ml_keep_probability is float dtype (convert None to NaN)
+        if 'ml_keep_probability' in transformed_df.columns:
+            transformed_df['ml_keep_probability'] = pd.to_numeric(
+                transformed_df['ml_keep_probability'], errors='coerce')
     else:
         transformed_df = pd.DataFrame(columns=df.columns)
 
@@ -1314,6 +1319,13 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         merged_metrics_df['delete'] = 0
         merged_metrics_df['merge'] = 0
         merged_metrics_df['is_corner_artifact'] = 0
+
+        # Ensure failure tracking columns exist (set to 0 for merged components)
+        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                        'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off', 'failed_corner_artifact']
+        for col in failure_cols:
+            if col in transformed_df.columns and col not in merged_metrics_df.columns:
+                merged_metrics_df[col] = 0
 
         # Concatenate
         transformed_df = pd.concat([transformed_df, merged_metrics_df], ignore_index=True)

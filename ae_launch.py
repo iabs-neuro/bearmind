@@ -408,8 +408,15 @@ def run_auto_inspection(
     if verbose:
         if hasattr(est_processed, 'metrics_df') and est_processed.metrics_df is not None:
             n_rows = len(est_processed.metrics_df)
-            n_merged = (est_processed.metrics_df['decision'] == 'after_merge').sum()
+            n_merged = (est_processed.metrics_df['decision'] == 'from_merge').sum()
             print(f"[run_auto_inspection] Attached transformed metrics_df with {n_rows} rows ({n_merged} merged)")
+
+            # Validate ml_keep_probability values
+            if 'ml_keep_probability' in est_processed.metrics_df.columns:
+                prob_col = est_processed.metrics_df['ml_keep_probability']
+                n_valid = prob_col.notna().sum()
+                n_nan = prob_col.isna().sum()
+                print(f"[run_auto_inspection] ml_keep_probability: {n_valid}/{n_rows} valid, {n_nan} NaN/None")
 
             # Validate indices
             max_idx = est_processed.metrics_df['component_idx'].max()
