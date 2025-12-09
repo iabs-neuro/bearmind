@@ -4,13 +4,11 @@ Grid search for EBM (Explainable Boosting Machine) hyperparameters.
 v2: Updated with modern InterpretML v0.5.1+ parameters:
     - greedy_ratio: Greedy boosting for better feature selection
     - smoothing_rounds: Post-training smoothing for generalization
-    - Multiple random seeds for robustness
 
 Goals:
 - Find max performance configurations
 - Find simple interpretable models with high precision
 - Explore precision-recall trade-offs via threshold tuning
-- Robust evaluation with multiple seeds
 """
 import os
 import sys
@@ -191,8 +189,7 @@ def run_grid_search(
         # Fixed parameters
         'outer_bags': [8],                     # ensemble stability
         'learning_rate': [0.01],               # convergence speed
-        # Multiple seeds for robustness
-        'random_state': [42, 123, 456, 789, 1337],  # 5 seeds
+        'random_state': [42],                  # single seed
     }
 
     # Generate all combinations
@@ -200,11 +197,7 @@ def run_grid_search(
     param_values = list(param_grid.values())
     all_params = [dict(zip(param_names, v)) for v in product(*param_values)]
 
-    # Calculate unique configs (excluding seed variation)
-    unique_configs = len(all_params) // len(param_grid['random_state'])
     print(f"\nTotal model configurations: {len(all_params)}")
-    print(f"  Unique hyperparameter configs: {unique_configs}")
-    print(f"  Seeds per config: {len(param_grid['random_state'])}")
 
     # Thresholds to evaluate (for precision-recall trade-off)
     thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
@@ -277,8 +270,8 @@ def run_grid_search(
     }).reset_index()
     df_agg.columns = ['_'.join(col).strip('_') for col in df_agg.columns]
 
-    # Best by mean F1 (aggregated across seeds)
-    print("\n--- TOP 10 BY MEAN F1 (threshold=0.5, aggregated across 5 seeds) ---")
+    # Best by F1
+    print("\n--- TOP 10 BY F1 (threshold=0.5) ---")
     best_f1_agg = df_agg.nlargest(10, 'test_f1_mean')[
         ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
          'min_samples_leaf', 'max_leaves',
@@ -389,7 +382,7 @@ def run_grid_search(
     print(f"  Config: bins={best_params['max_bins']}, inter={best_params['interactions']}, "
           f"greedy={best_params.get('greedy_ratio', 0)}, smooth={best_params.get('smoothing_rounds', 0)}, "
           f"leaf={best_params['min_samples_leaf']}, leaves={best_params['max_leaves']}")
-    print(f"  Mean F1: {best_mean_f1:.4f} +/- {best_std_f1:.4f} (across 5 seeds)")
+    print(f"  Test F1: {best_mean_f1:.4f}")
 
     # Save simplest competitive model (no interactions)
     simple_configs = {k: v for k, v in config_models.items() if k[1] == 0}  # k[1] is interactions
@@ -414,7 +407,7 @@ def run_grid_search(
         print(f"  Config: bins={simple_params['max_bins']}, inter=0, "
               f"greedy={simple_params.get('greedy_ratio', 0)}, smooth={simple_params.get('smoothing_rounds', 0)}, "
               f"leaf={simple_params['min_samples_leaf']}, leaves={simple_params['max_leaves']}")
-        print(f"  Mean F1: {simple_mean_f1:.4f} +/- {simple_std_f1:.4f}")
+        print(f"  Test F1: {simple_mean_f1:.4f}")
 
     print("\n" + "=" * 80)
     print("GRID SEARCH COMPLETE")

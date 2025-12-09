@@ -28,7 +28,8 @@ from auto_inspector import (
     estimates_to_metrics,
     metrics_to_decision,
     implement_decision,
-    save_processed_estimates
+    save_processed_estimates,
+    transform_metrics_df_indices
 )
 from ae_utils import visualize_corner_artifacts
 
@@ -378,19 +379,44 @@ def run_auto_inspection(
         print(f"  Marked for deletion: {n_deleted} neurons")
         print(f"  Neurons in merge groups: {n_merged}")
 
-    est_processed = implement_decision(est, decision_df)
+    est_processed, mapping_info = implement_decision(est, decision_df, return_index_mapping=True)
 
     if verbose:
         print(f"[run_auto_inspection] Final: {len(est_processed.idx_components)} components kept")
-        print(f"  Deleted: {len(est.idx_components_bad)} total bad components")
-        print(f"  Added by deletion: {len(est_processed.idx_components_bad) - len(est.idx_components_bad)} components")
+        print(f"  Index mapping: {mapping_info['nr_before']} -> {mapping_info['nr_after']} components")
+        print(f"  Merged groups: {len(mapping_info['merged_groups'])}")
+        print(f"  Deleted: {len(mapping_info['deleted'])} components")
 
-    est_processed.metrics_df = decision_df
+    # Transform metrics_df indices using the mapping
+    # This fixes the critical index mismatch bug where manual_merge renumbers all indices
+    if verbose:
+        print("[run_auto_inspection] Transforming metrics_df indices to match post-merge estimates...")
 
-    # Verify metrics_df was attached
+    transformed_df = transform_metrics_df_indices(
+        decision_df,
+        mapping_info,
+        est_processed,
+        fps=fps,
+        cthr=cthr,
+        include_event_based=include_event_based,
+        event_method=event_method
+    )
+
+    est_processed.metrics_df = transformed_df
+
+    # Verify metrics_df was attached and indices are valid
     if verbose:
         if hasattr(est_processed, 'metrics_df') and est_processed.metrics_df is not None:
-            print(f"[run_auto_inspection] Attached metrics_df with {len(est_processed.metrics_df)} rows to estimates")
+            n_rows = len(est_processed.metrics_df)
+            n_merged = (est_processed.metrics_df['decision'] == 'after_merge').sum()
+            print(f"[run_auto_inspection] Attached transformed metrics_df with {n_rows} rows ({n_merged} merged)")
+
+            # Validate indices
+            max_idx = est_processed.metrics_df['component_idx'].max()
+            if max_idx < est_processed.C.shape[0]:
+                print(f"[run_auto_inspection] Index validation PASSED: max_idx={max_idx} < C.shape[0]={est_processed.C.shape[0]}")
+            else:
+                print(f"[run_auto_inspection] WARNING: Index validation FAILED: max_idx={max_idx} >= C.shape[0]={est_processed.C.shape[0]}")
         else:
             print("[run_auto_inspection] WARNING: Failed to attach metrics_df!")
 

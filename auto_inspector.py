@@ -1092,29 +1092,237 @@ def metrics_to_dummy_decision(df):
     return df
 
 
-def implement_decision(est, df):
-    # deletion
+def implement_decision(est, df, return_index_mapping=False):
+    """
+    Apply deletion and merge decisions to estimates.
+
+    Args:
+        est: CaImAn estimates object
+        df: Decision DataFrame with 'component_idx', 'decision', 'merge' columns
+        return_index_mapping: If True, return (est, mapping_info) where mapping_info
+            contains old->new index mapping and merge group info
+
+    Returns:
+        If return_index_mapping=False: Modified estimates object
+        If return_index_mapping=True: (estimates, mapping_info) where mapping_info is:
+            {
+                'old_to_new': {old_idx: new_idx, ...},  # For surviving components
+                'merged_groups': [  # For each merge group
+                    {
+                        'new_idx': int,  # New index of merged component
+                        'source_indices': [old_idx1, old_idx2, ...],  # Original sources
+                        'primary_source': old_idx  # First source component
+                    },
+                    ...
+                ],
+                'deleted': [old_idx, ...]  # Deleted component indices
+                'nr_before': int,  # C.shape[0] before merge
+                'nr_after': int    # C.shape[0] after merge
+            }
+    """
     est = copy.deepcopy(est)
-    components_to_del = df[df['decision'] == 'delete']['component_idx']
-    temp = est.idx_components_bad.tolist() + components_to_del.tolist()
+
+    # Track deleted components (using ORIGINAL indices)
+    # IMPORTANT: Corner artifacts are marked as delete but should stay VISIBLE in idx_components
+    # Only non-corner deleted components go to idx_components_bad
+    all_deleted = df[df['decision'] == 'delete']
+    corner_artifact_indices = set(all_deleted[all_deleted['is_corner_artifact'] == 1]['component_idx'].tolist())
+    non_corner_deleted = all_deleted[all_deleted['is_corner_artifact'] != 1]['component_idx'].tolist()
+
+    # deleted_indices includes ALL deleted (used for merge filtering)
+    # but only non-corner go to idx_components_bad
+    deleted_indices = set(all_deleted['component_idx'].tolist())
+
+    # CRITICAL: Capture original idx_components BEFORE any modifications
+    # This tells us which components were accepted in the original estimates
+    original_idx_components = set(est.idx_components.tolist())
+
+    # Update idx_components_bad with ONLY non-corner deleted components
+    # Corner artifacts stay visible in idx_components
+    temp = est.idx_components_bad.tolist() + non_corner_deleted
     est.idx_components_bad = np.sort(temp)
-    # print('all bad comps', len(temp))
-    est.idx_components = [_ for _ in est.idx_components if _ not in components_to_del]
+    # NOTE: Do NOT modify idx_components here - will be rebuilt after merge with NEW indices
+
+    # Collect ALL merge groups to apply in single batch
+    all_merge_groups = []
+    merge_group_info = []
+
     components_to_merge = df['merge'].values
     for group_id in np.unique(components_to_merge):
         if group_id != 0:  # 0 means no need to merge
             sel_comps = df[df['merge'] == group_id]['component_idx'].tolist()
 
-            # Filter out components that were already deleted
-            # This handles edge cases where merge groups lost members during deletion
-            sel_comps_valid = [c for c in sel_comps if c in est.idx_components]
+            # Filter to components that were originally accepted and not deleted
+            sel_comps_valid = [c for c in sel_comps
+                              if c in original_idx_components and c not in deleted_indices]
 
             # Only perform merge if 2 or more valid components remain
-            # Single-component groups don't need merging
             if len(sel_comps_valid) >= 2:
-                est.manual_merge([sel_comps_valid], params=params.CNMFParams(params_dict=est.cnmf_dict))
+                all_merge_groups.append(sel_comps_valid)
+                merge_group_info.append({
+                    'group_id': group_id,
+                    'source_indices': sel_comps_valid
+                })
 
-    return est
+    # Capture state BEFORE merge for mapping
+    nr_before = est.C.shape[0]
+
+    # Apply all merges in single call (if any)
+    if all_merge_groups:
+        est.manual_merge(all_merge_groups, params=params.CNMFParams(params_dict=est.cnmf_dict))
+
+    # Build mapping info following CaImAn's index transformation logic:
+    # - good_neurons = indices NOT in any merge group
+    # - mapping: good_neurons[i] -> i (sequential 0..N-1)
+    # - merged components get indices N, N+1, ... at the end
+
+    all_merged_sources = set()
+    for group in all_merge_groups:
+        all_merged_sources.update(group)
+
+    # Good neurons are those NOT involved in any merge (relative to pre-merge indices)
+    good_neurons = np.setdiff1d(list(range(nr_before)), list(all_merged_sources))
+
+    # Build old->new mapping for surviving (non-merged) components
+    old_to_new = {}
+    for new_idx, old_idx in enumerate(sorted(good_neurons)):
+        old_to_new[int(old_idx)] = int(new_idx)
+
+    # Add mapping for merged components (they're at the end)
+    for i, group_info in enumerate(merge_group_info):
+        new_merged_idx = len(good_neurons) + i
+
+        # Primary source is the first component in the merge group
+        primary = group_info['source_indices'][0]
+
+        group_info['new_idx'] = new_merged_idx
+        group_info['primary_source'] = primary
+
+    # CRITICAL FIX: Rebuild idx_components using NEW indices
+    # After manual_merge, the A/C matrices have new indices (0 to nr_after-1)
+    # idx_components must contain ONLY valid new indices for accepted components
+    # Corner artifacts are deleted but should stay VISIBLE (included in idx_components)
+    new_idx_components = []
+    for old_idx in range(nr_before):
+        # Include if: was originally accepted AND not merged source AND:
+        #   - not deleted, OR
+        #   - is a corner artifact (stays visible even though deleted)
+        is_corner = old_idx in corner_artifact_indices
+        is_non_corner_deleted = old_idx in deleted_indices and not is_corner
+
+        if (old_idx in original_idx_components and
+            not is_non_corner_deleted and
+            old_idx not in all_merged_sources and
+            old_idx in old_to_new):
+            new_idx_components.append(old_to_new[old_idx])
+
+    # Add merged result indices (merged components are accepted)
+    for group_info in merge_group_info:
+        new_idx_components.append(group_info['new_idx'])
+
+    # Update idx_components with properly remapped indices
+    est.idx_components = np.array(sorted(new_idx_components))
+
+    mapping_info = {
+        'old_to_new': old_to_new,
+        'merged_groups': merge_group_info,
+        'deleted': list(deleted_indices),
+        'nr_before': nr_before,
+        'nr_after': est.C.shape[0]
+    }
+
+    if not return_index_mapping:
+        return est
+
+    return est, mapping_info
+
+
+def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
+                                  include_event_based=True, event_method='threshold'):
+    """
+    Transform metrics_df indices to match post-merge estimates.
+
+    After manual_merge(), the A/C matrices have NEW indices. This function:
+    1. Updates component_idx for ALL components (including deleted) using old_to_new mapping
+    2. Removes merged SOURCE components from DataFrame (they no longer exist in A/C)
+    3. Adds new rows for merged RESULT components with freshly computed metrics
+
+    CRITICAL: Deleted components (including corner artifacts) are KEPT in the DataFrame
+    with their new indices. They still exist in A/C matrices, just moved to idx_components_bad.
+
+    Args:
+        df: Original decision DataFrame with 'component_idx', 'decision', 'merge' columns
+        mapping_info: Dict from implement_decision with index mapping info
+        est_processed: CaImAn estimates after implement_decision (with new indices)
+        fps: Frames per second for temporal metrics
+        cthr: Contour threshold for spatial metrics
+        include_event_based: Whether to compute event-based metrics
+        event_method: Method for event detection ('threshold' or 'cascade')
+
+    Returns:
+        Transformed DataFrame with updated component_idx values
+    """
+    old_to_new = mapping_info['old_to_new']
+    merged_groups = mapping_info['merged_groups']
+
+    # Collect all merged source indices (these no longer exist in A/C - removed by manual_merge)
+    all_merged_sources = set()
+    for group in merged_groups:
+        all_merged_sources.update(group['source_indices'])
+
+    # Build transformed rows for ALL components (including deleted, except merged sources)
+    transformed_rows = []
+
+    for _, row in df.iterrows():
+        old_idx = int(row['component_idx'])
+
+        # Skip merged source components - they no longer exist in A/C matrices
+        if old_idx in all_merged_sources:
+            continue
+
+        # Map component to new index (deleted components are mapped too!)
+        if old_idx in old_to_new:
+            new_row = row.copy()
+            new_row['component_idx'] = old_to_new[old_idx]
+            transformed_rows.append(new_row)
+
+    # Create DataFrame from transformed components
+    if transformed_rows:
+        transformed_df = pd.DataFrame(transformed_rows)
+    else:
+        transformed_df = pd.DataFrame(columns=df.columns)
+
+    # Add rows for merged result components with freshly computed metrics
+    if merged_groups:
+        # Get indices of merged components
+        merged_indices = [g['new_idx'] for g in merged_groups]
+
+        # Use estimates_to_metrics for proper metric computation
+        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info)
+        merged_metrics_df, _, _, _, _ = estimates_to_metrics(
+            est_processed,
+            fps=fps,
+            comps_to_select=merged_indices,
+            cthr=cthr,
+            include_event_based=include_event_based,
+            event_method=event_method
+        )
+
+        # Set proper columns for merged components
+        merged_metrics_df['decision'] = 'from_merge'
+        merged_metrics_df['ml_keep_probability'] = np.nan  # ML was not applied to merged
+        merged_metrics_df['delete'] = 0
+        merged_metrics_df['merge'] = 0
+        merged_metrics_df['is_corner_artifact'] = 0
+
+        # Concatenate
+        transformed_df = pd.concat([transformed_df, merged_metrics_df], ignore_index=True)
+
+    # Reset index and sort by component_idx
+    if len(transformed_df) > 0:
+        transformed_df = transformed_df.sort_values('component_idx').reset_index(drop=True)
+
+    return transformed_df
 
 
 def save_processed_estimates(est, output_path, session_name=None, compress=False):

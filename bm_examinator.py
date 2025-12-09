@@ -264,7 +264,8 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          color_by_ml_probability=False, ml_threshold=0.5):
 
     if len(comps_to_select) == 0:
-        comps_to_select = est.idx_components
+        comps_to_select = list(est.idx_components)
+
     if sf is None:
         sf = 0
     if ef is None:
