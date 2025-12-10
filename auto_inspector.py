@@ -250,7 +250,7 @@ def footprint_boundary_distmat(contours, mask=None, verbose=True):
     else:
         mask = mask.astype(bool)
 
-    cont_distmat = np.zeros((n,n))
+    cont_distmat = np.full((n,n), np.inf)  # Initialize with inf so uncomputed pairs aren't merged
     for i, c1 in tqdm.tqdm(enumerate(contours)):
         for j, c2 in enumerate(contours):
             if mask[i,j]:
