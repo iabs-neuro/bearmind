@@ -120,6 +120,7 @@ def run_auto_inspection(
     detect_corner_artifacts: bool = True,
     corner_artifact_params: dict = None,
     event_method: str = 'threshold',
+    correlation_method: str = 'pearson',
 
     # --- Decision parameters (threshold brain) ---
     circ_thr: float = 4,
@@ -314,7 +315,8 @@ def run_auto_inspection(
         include_heavy=include_heavy,
         detect_corner_artifacts_flag=detect_corner_artifacts,
         corner_artifact_params=corner_artifact_params,
-        event_method=event_method
+        event_method=event_method,
+        correlation_method=correlation_method
     )
 
     if verbose:

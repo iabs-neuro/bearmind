@@ -1,6 +1,6 @@
 # Stuff needed for plotting and widget callbacks
 import copy
-from scipy.stats import median_abs_deviation
+from scipy.stats import median_abs_deviation, spearmanr
 
 from functools import partial
 import tifffile as tfl
@@ -179,7 +179,8 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
 
 
 def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
-                       sf=None, ef=None, ds=1, fps=20):
+                       sf=None, ef=None, ds=1, fps=20,
+                       detect_corner_artifacts=True, correlation_method='pearson'):
 
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
@@ -225,7 +226,16 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
 
     # building correlation matrix and assigning corr scores to neurons
-    CM = np.corrcoef(estimates.C[comps_to_select, sf:ef])
+    trace_data = estimates.C[comps_to_select, sf:ef]
+    if correlation_method == 'pearson':
+        CM = np.corrcoef(trace_data)
+    elif correlation_method == 'spearman':
+        if len(comps_to_select) == 1:
+            CM = np.array([[1.0]])
+        else:
+            CM, _ = spearmanr(trace_data, axis=1)
+    else:
+        raise ValueError(f"Unknown correlation method: {correlation_method}. Use 'pearson' or 'spearman'")
     np.fill_diagonal(CM, 0)
     CM[np.isnan(CM)] = 0
 
@@ -262,7 +272,9 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1,
                          include_event_based=True, include_heavy=False,
-                         color_by_ml_probability=False, ml_threshold=0.5):
+                         color_by_ml_probability=False, ml_threshold=0.5,
+                         detect_corner_artifacts=True, corner_artifact_params=None,
+                         correlation_method='pearson'):
 
     if len(comps_to_select) == 0:
         comps_to_select = list(est.idx_components)
@@ -304,7 +316,9 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
         # Compute metrics from scratch
         mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
                                             corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
-                                            sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy)
+                                            sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy,
+                                            detect_corner_artifacts_flag=detect_corner_artifacts, corner_artifact_params=corner_artifact_params,
+                                            correlation_method=correlation_method)
 
     t2 = time.time()
     etime = np.round(t2 - t1, 2)
@@ -550,6 +564,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         include_heavy = bkapp_kwargs.get('include_heavy', False)
         color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
         ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
+        detect_corner_artifacts = bkapp_kwargs.get('detect_corner_artifacts', True)
+        corner_artifact_params = bkapp_kwargs.get('corner_artifact_params', None)
+        correlation_method = bkapp_kwargs.get('correlation_method', 'pearson')
 
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
@@ -580,7 +597,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            sf=start_frame,
                                            ef=end_frame,
                                            ds=ds,
-                                           corr_thr=corr_thr)
+                                           corr_thr=corr_thr,
+                                           detect_corner_artifacts=detect_corner_artifacts,
+                                           correlation_method=correlation_method)
 
         elif operation_mode == 'capcan':
             est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps,
@@ -591,7 +610,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            include_event_based=include_event_based,
                                            include_heavy=include_heavy,
                                            color_by_ml_probability=color_by_ml_probability,
-                                           ml_threshold=ml_threshold)
+                                           ml_threshold=ml_threshold,
+                                           detect_corner_artifacts=detect_corner_artifacts,
+                                           corner_artifact_params=corner_artifact_params,
+                                           correlation_method=correlation_method)
         else:
             raise ValueError('wrong operation mode!')
 

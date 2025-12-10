@@ -22,7 +22,7 @@ from caiman.components_evaluation import (
         compute_event_exceptionality)
 
 
-from scipy.stats import median_abs_deviation, skew, kurtosis
+from scipy.stats import median_abs_deviation, skew, kurtosis, spearmanr
 from scipy.spatial import distance_matrix
 from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
@@ -36,6 +36,30 @@ from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON
 # - caiman_snr: capped at max finite value if Inf
 # - Other NaNs: degenerate footprints or processing failures
 # - EBM handles NaN natively; no imputation required
+
+
+def compute_correlation_matrix(data, method='pearson'):
+    """
+    Compute correlation matrix using specified method.
+
+    Args:
+        data: 2D array of shape (n_samples, n_features)
+        method: 'pearson' or 'spearman'
+
+    Returns:
+        Correlation matrix of shape (n_samples, n_samples)
+    """
+    if method == 'pearson':
+        return np.corrcoef(data)
+    elif method == 'spearman':
+        # spearmanr returns (correlation, p-value) tuple
+        # For matrix input with axis=1, computes pairwise correlations between rows
+        if data.shape[0] == 1:
+            return np.array([[1.0]])
+        corr_matrix, _ = spearmanr(data, axis=1)
+        return corr_matrix
+    else:
+        raise ValueError(f"Unknown correlation method: {method}. Use 'pearson' or 'spearman'")
 
 
 def get_hvals(traces):
@@ -401,7 +425,7 @@ def get_compactnesses(contours, areas):
     return np.array(compactnesses)
 
 
-def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5):
+def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='pearson'):
     match_threshold /= sessions_num
     corr_num = len(neurons)
     corr_mtx_sessions = []
@@ -410,7 +434,7 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
     for session in range(sessions_num):
         ts_start = session * session_time
 
-        corr_mtx = np.corrcoef(neurons[:, ts_start:ts_start + session_time - 1])
+        corr_mtx = compute_correlation_matrix(neurons[:, ts_start:ts_start + session_time - 1], method=correlation_method)
         corr_mtx = np.where(corr_mtx >= corr_threshold, 1, 0)
         corr_mtx_sessions.append(corr_mtx)
 
@@ -453,7 +477,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
-                         event_method='threshold'):
+                         event_method='threshold', correlation_method='pearson'):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -489,12 +513,13 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     # times = [est.time[sf:ef][::ds] for _ in range(n_cells)]  # Note: time attribute not always present, variable unused
 
-    print(f'[2/4] Computing correlation matrix...')
+    print(f'[2/4] Computing correlation matrix ({correlation_method})...')
     corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
                                                                   corr_thr,
                                                                   match_threshold,
                                                                   fps=fps,
-                                                                  sessions_num=num_sessions)
+                                                                  sessions_num=num_sessions,
+                                                                  correlation_method=correlation_method)
 
     print(f'[3/4] Extracting spatial metrics...')
     if contours is None:
@@ -1096,6 +1121,16 @@ def implement_decision(est, df, return_index_mapping=False):
     """
     Apply deletion and merge decisions to estimates.
 
+    BEHAVIOR:
+    - DELETIONS: ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts)
+      remain VISIBLE in idx_components. Their deletion status is tracked in
+      metrics_df['delete'] column for visualization purposes.
+    - MERGES: Only merges affect idx_components structure. Merged source components
+      are removed and replaced by the merged result.
+
+    This design allows ExamineCells GUI to display all neurons with their
+    ML probabilities and deletion reasons while still applying the merge logic.
+
     Args:
         est: CaImAn estimates object
         df: Decision DataFrame with 'component_idx', 'decision', 'merge' columns
@@ -1123,25 +1158,17 @@ def implement_decision(est, df, return_index_mapping=False):
     est = copy.deepcopy(est)
 
     # Track deleted components (using ORIGINAL indices)
-    # IMPORTANT: Corner artifacts are marked as delete but should stay VISIBLE in idx_components
-    # Only non-corner deleted components go to idx_components_bad
+    # ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts) stay VISIBLE
+    # in idx_components - their deletion status is tracked in metrics_df['delete']
     all_deleted = df[df['decision'] == 'delete']
-    corner_artifact_indices = set(all_deleted[all_deleted['is_corner_artifact'] == 1]['component_idx'].tolist())
-    non_corner_deleted = all_deleted[all_deleted['is_corner_artifact'] != 1]['component_idx'].tolist()
-
-    # deleted_indices includes ALL deleted (used for merge filtering)
-    # but only non-corner go to idx_components_bad
     deleted_indices = set(all_deleted['component_idx'].tolist())
 
     # CRITICAL: Capture original idx_components BEFORE any modifications
     # This tells us which components were accepted in the original estimates
     original_idx_components = set(est.idx_components.tolist())
 
-    # Update idx_components_bad with ONLY non-corner deleted components
-    # Corner artifacts stay visible in idx_components
-    temp = est.idx_components_bad.tolist() + non_corner_deleted
-    est.idx_components_bad = np.sort(temp)
-    # NOTE: Do NOT modify idx_components here - will be rebuilt after merge with NEW indices
+    # NOTE: We do NOT update idx_components_bad - all deleted neurons stay visible
+    # Their deletion status is tracked in metrics_df for visualization purposes
 
     # Collect ALL merge groups to apply in single batch
     all_merge_groups = []
@@ -1200,18 +1227,13 @@ def implement_decision(est, df, return_index_mapping=False):
 
     # CRITICAL FIX: Rebuild idx_components using NEW indices
     # After manual_merge, the A/C matrices have new indices (0 to nr_after-1)
-    # idx_components must contain ONLY valid new indices for accepted components
-    # Corner artifacts are deleted but should stay VISIBLE (included in idx_components)
+    # ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts) stay VISIBLE
+    # Only merge source components are excluded (they're replaced by merged result)
     new_idx_components = []
     for old_idx in range(nr_before):
-        # Include if: was originally accepted AND not merged source AND:
-        #   - not deleted, OR
-        #   - is a corner artifact (stays visible even though deleted)
-        is_corner = old_idx in corner_artifact_indices
-        is_non_corner_deleted = old_idx in deleted_indices and not is_corner
-
+        # Include ALL originally accepted components EXCEPT merged sources
+        # Deleted neurons stay visible (marked in metrics_df['delete'])
         if (old_idx in original_idx_components and
-            not is_non_corner_deleted and
             old_idx not in all_merged_sources and
             old_idx in old_to_new):
             new_idx_components.append(old_to_new[old_idx])
