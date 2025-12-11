@@ -527,12 +527,18 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     # times = [est.time[sf:ef][::ds] for _ in range(n_cells)]  # Note: time attribute not always present, variable unused
 
     print(f'[2/4] Computing correlation matrix ({correlation_method})...')
-    corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
-                                                                  corr_thr,
-                                                                  match_threshold,
-                                                                  fps=fps,
-                                                                  sessions_num=num_sessions,
-                                                                  correlation_method=correlation_method)
+    if len(traces) > 1:
+        corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
+                                                                      corr_thr,
+                                                                      match_threshold,
+                                                                      fps=fps,
+                                                                      sessions_num=num_sessions,
+                                                                      correlation_method=correlation_method)
+    else:
+        corr_groups = None
+        match_mtx = None
+        match_mtx_crop = None
+
 
     print(f'[3/4] Extracting spatial metrics...')
     if contours is None:

@@ -74,8 +74,8 @@ def get_ml_probability_color(prob, threshold=0.5, is_deleted=False):
     Returns:
         str: Hex color code
     """
-    # Handle None, NaN, and deleted neurons
-    if is_deleted or prob is None or (isinstance(prob, (float, np.floating)) and np.isnan(prob)):
+    # Handle None, NaN
+    if prob is None or (isinstance(prob, (float, np.floating)) and np.isnan(prob)):
         return '#808080'  # Grey for deleted or missing probability
 
     # Map probability to 0-1 range for colormap
