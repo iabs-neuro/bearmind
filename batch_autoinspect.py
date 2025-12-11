@@ -44,7 +44,7 @@ def process_single_session(session_file, output_base='./'):
         # Extract metrics with corner detection
         print(f'[2/4] Extracting metrics with corner artifact detection...')
         t1 = time.time()
-        metrics_df, match_mtx, FCD, FBD, corner_info = estimates_to_metrics(
+        metrics_df, match_mtx, FCD, FBD, corner_info, _ = estimates_to_metrics(
             est,
             fps=20,
             include_event_based=True,

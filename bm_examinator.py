@@ -1,6 +1,6 @@
 # Stuff needed for plotting and widget callbacks
 import copy
-from scipy.stats import median_abs_deviation
+from scipy.stats import median_abs_deviation, spearmanr
 
 from functools import partial
 import tifffile as tfl
@@ -17,7 +17,7 @@ from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
-                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText)
+                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup)
 
 from bokeh.layouts import column, row
 from bokeh.events import Tap
@@ -74,7 +74,8 @@ def get_ml_probability_color(prob, threshold=0.5, is_deleted=False):
     Returns:
         str: Hex color code
     """
-    if is_deleted or np.isnan(prob):
+    # Handle None, NaN
+    if prob is None or (isinstance(prob, (float, np.floating)) and np.isnan(prob)):
         return '#808080'  # Grey for deleted or missing probability
 
     # Map probability to 0-1 range for colormap
@@ -178,7 +179,8 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
 
 
 def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
-                       sf=None, ef=None, ds=1, fps=20):
+                       sf=None, ef=None, ds=1, fps=20,
+                       detect_corner_artifacts=True, correlation_method='pearson'):
 
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
@@ -224,7 +226,16 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
 
     # building correlation matrix and assigning corr scores to neurons
-    CM = np.corrcoef(estimates.C[comps_to_select, sf:ef])
+    trace_data = estimates.C[comps_to_select, sf:ef]
+    if correlation_method == 'pearson':
+        CM = np.corrcoef(trace_data)
+    elif correlation_method == 'spearman':
+        if len(comps_to_select) == 1:
+            CM = np.array([[1.0]])
+        else:
+            CM, _ = spearmanr(trace_data, axis=1)
+    else:
+        raise ValueError(f"Unknown correlation method: {correlation_method}. Use 'pearson' or 'spearman'")
     np.fill_diagonal(CM, 0)
     CM[np.isnan(CM)] = 0
 
@@ -261,7 +272,9 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1,
                          include_event_based=True, include_heavy=False,
-                         color_by_ml_probability=False, ml_threshold=0.5):
+                         color_by_ml_probability=False, ml_threshold=0.5,
+                         detect_corner_artifacts=True, corner_artifact_params=None,
+                         correlation_method='pearson'):
 
     if len(comps_to_select) == 0:
         comps_to_select = list(est.idx_components)
@@ -273,6 +286,25 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
 
     traces = [(tr - min(tr)) / (np.max(tr) - np.min(tr)) + i for i, tr in
               enumerate(est.C[comps_to_select, sf:ef][:, ::ds])]
+
+    # Build reconstruction traces from cached reconstructions (if available)
+    traces_recon = None
+    if hasattr(est, 'reconstructions') and est.reconstructions:
+        traces_recon = []
+        for i, comp_idx in enumerate(comps_to_select):
+            if comp_idx in est.reconstructions:
+                rec = est.reconstructions[comp_idx][sf:ef:ds]
+                rec_min, rec_max = np.min(rec), np.max(rec)
+                rec_range = rec_max - rec_min
+                if rec_range == 0 or np.isclose(rec_range, 0):
+                    rec_norm = np.zeros_like(rec) + i
+                else:
+                    rec_norm = (rec - rec_min) / rec_range + i
+                traces_recon.append(rec_norm)
+            else:
+                # Fallback: use original trace if no reconstruction
+                traces_recon.append(traces[i])
+        print(f'Loaded cached reconstructions for {len(est.reconstructions)} neurons')
 
     n_cells = len(comps_to_select)
     times = [est.time[sf:ef][::ds] for _ in range(n_cells)]
@@ -301,9 +333,11 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
         print(f'Using pre-computed metrics from estimates.metrics_df ({len(mdf)} neurons)')
     else:
         # Compute metrics from scratch
-        mdf, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
+        mdf, _, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
                                             corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
-                                            sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy)
+                                            sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy,
+                                            detect_corner_artifacts_flag=detect_corner_artifacts, corner_artifact_params=corner_artifact_params,
+                                            correlation_method=correlation_method)
 
     t2 = time.time()
     etime = np.round(t2 - t1, 2)
@@ -329,7 +363,8 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
             print(f'WARNING: Cannot apply ML coloring - missing columns: {missing_cols}')
             print(f'         Using default Metro colors instead')
 
-    technical = dict(idx=comps_to_select, xs=xs, ys=ys, times=times, traces=traces, colors=colors)
+    technical = dict(idx=comps_to_select, xs=xs, ys=ys, times=times, traces=traces, colors=colors,
+                     traces_recon=traces_recon)
     metrics = {k: v for k, v in mdf.to_dict(orient='list').items() if k not in ['component_idx', 'center']}
     return {**technical, **metrics}, {i: mname for i, mname in enumerate(list(metrics.keys()))}
 
@@ -468,11 +503,14 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         index_mapping = dict(zip(indices_to_leave, range(len(indices_to_leave))))
 
         for key in overall_data.keys():
-            if key == 'traces':
+            if key in ('traces', 'traces_recon'):
                 # subtract id vals from trace vals and add new ids
-                new_traces = [val - i + index_mapping[i] for i, val in enumerate(overall_data[key]) if
-                              i in indices_to_leave]
-                show_data.update({'traces': new_traces})
+                if overall_data[key] is not None:
+                    new_traces = [val - i + index_mapping[i] for i, val in enumerate(overall_data[key]) if
+                                  i in indices_to_leave]
+                    show_data.update({key: new_traces})
+                else:
+                    show_data.update({key: None})
             else:
                 data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
                 show_data.update({key: data_part})
@@ -493,6 +531,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         #print('indies:',indices)
         new_traces = [None for _ in range(len(metric))]
+        new_traces_recon = [None for _ in range(len(metric))] if overall_data.get('traces_recon') is not None else None
         new_ids = np.zeros(len(metric))
         for i, ind in enumerate(indices):  # we iterate over rows of CDS in the order given by sorted metric
             # ind = row number in cds
@@ -505,11 +544,18 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             new_traces[ind] = new_trace  # write new trace data to the current row in CDS
             new_ids[ind] = new_id  # write new height to the current row in CDS
 
+            # Handle reconstruction traces with same offset adjustment
+            if new_traces_recon is not None:
+                current_recon = np.array(overall_data['traces_recon'][ind])
+                new_traces_recon[ind] = current_recon - current_id + i
+
         # actually update our copy of CDS
         show_data.update({'traces': new_traces,
                           'dummy_id': new_ids,
                           'metric': [np.round(x, 2) for x in metric]
                           })
+        if new_traces_recon is not None:
+            show_data['traces_recon'] = new_traces_recon
 
         return show_data, indices
 
@@ -549,6 +595,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         include_heavy = bkapp_kwargs.get('include_heavy', False)
         color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
         ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
+        detect_corner_artifacts = bkapp_kwargs.get('detect_corner_artifacts', True)
+        corner_artifact_params = bkapp_kwargs.get('corner_artifact_params', None)
+        correlation_method = bkapp_kwargs.get('correlation_method', 'pearson')
 
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
@@ -579,7 +628,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            sf=start_frame,
                                            ef=end_frame,
                                            ds=ds,
-                                           corr_thr=corr_thr)
+                                           corr_thr=corr_thr,
+                                           detect_corner_artifacts=detect_corner_artifacts,
+                                           correlation_method=correlation_method)
 
         elif operation_mode == 'capcan':
             est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps,
@@ -590,7 +641,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            include_event_based=include_event_based,
                                            include_heavy=include_heavy,
                                            color_by_ml_probability=color_by_ml_probability,
-                                           ml_threshold=ml_threshold)
+                                           ml_threshold=ml_threshold,
+                                           detect_corner_artifacts=detect_corner_artifacts,
+                                           corner_artifact_params=corner_artifact_params,
+                                           correlation_method=correlation_method)
         else:
             raise ValueError('wrong operation mode!')
 
@@ -671,6 +725,15 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           line_alpha=trace_alpha,
                           selection_line_width=trace_line_width,
                           source=src_partial)
+
+            # Reconstruction overlay (dark grey, hidden by default)
+            recon_renderer = p2.multi_line('times',
+                          'traces_recon',
+                          line_color='#404040',  # Dark grey
+                          line_alpha=0.9,
+                          line_width=1.5,
+                          source=src_partial,
+                          visible=False)
 
             # add dummy height property to ColumnDataSource to make traces selectable
             # (since multi_line does not support box selection, we have to plot additional scatter)
@@ -1292,6 +1355,21 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_save_final = Button(label="Save results", button_type="success", width=bwidth, width_policy='fit')
         button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
+        # Reconstruction toggle checkbox (only visible if reconstructions available)
+        has_reconstructions = est_data0.get('traces_recon') is not None
+        checkbox_recon = CheckboxGroup(
+            labels=["Show reconstruction"],
+            active=[],
+            styles={'color': '#00AA00', 'font-weight': 'bold'},  # Green text
+            visible=has_reconstructions
+        )
+
+        def recon_callback(attr, old, new):
+            # Toggle reconstruction overlay visibility
+            recon_renderer.visible = (0 in new)
+
+        checkbox_recon.on_change('active', recon_callback)
+
         doc.add_root(
             column(
                 row(
@@ -1303,7 +1381,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_discard,
                     #button_seed,
                     button_save,
-                    button_save_final
+                    button_save_final,
+                    checkbox_recon
                 ),
                 sorting_row,
                 row(p1, metrics_div, p2)

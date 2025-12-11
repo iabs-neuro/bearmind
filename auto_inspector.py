@@ -22,7 +22,7 @@ from caiman.components_evaluation import (
         compute_event_exceptionality)
 
 
-from scipy.stats import median_abs_deviation, skew, kurtosis
+from scipy.stats import median_abs_deviation, skew, kurtosis, spearmanr
 from scipy.spatial import distance_matrix
 from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
@@ -36,6 +36,30 @@ from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON
 # - caiman_snr: capped at max finite value if Inf
 # - Other NaNs: degenerate footprints or processing failures
 # - EBM handles NaN natively; no imputation required
+
+
+def compute_correlation_matrix(data, method='pearson'):
+    """
+    Compute correlation matrix using specified method.
+
+    Args:
+        data: 2D array of shape (n_samples, n_features)
+        method: 'pearson' or 'spearman'
+
+    Returns:
+        Correlation matrix of shape (n_samples, n_samples)
+    """
+    if method == 'pearson':
+        return np.corrcoef(data)
+    elif method == 'spearman':
+        # spearmanr returns (correlation, p-value) tuple
+        # For matrix input with axis=1, computes pairwise correlations between rows
+        if data.shape[0] == 1:
+            return np.array([[1.0]])
+        corr_matrix, _ = spearmanr(data, axis=1)
+        return corr_matrix
+    else:
+        raise ValueError(f"Unknown correlation method: {method}. Use 'pearson' or 'spearman'")
 
 
 def get_hvals(traces):
@@ -150,9 +174,12 @@ def get_signal_metrics(neuron):
     return sig_metrics
 
 
-def get_reconstruction_quality_metrics(neuron,
-                                       return_reconstructed=False):
+def get_reconstruction_quality_metrics(neuron):
+    """
+    Get reconstruction quality metrics from a DRIADA neuron.
 
+    Always returns the reconstruction array alongside metrics.
+    """
     # Get quality metrics
     r2_score = neuron.get_reconstruction_r2()
     event_r2_score = neuron.get_reconstruction_r2(event_only=True)
@@ -160,17 +187,18 @@ def get_reconstruction_quality_metrics(neuron,
     nrmse = neuron.get_nrmse()
     snr_recon = neuron.get_snr_reconstruction()
     rec = neuron.reconstructed
+    # Extract scaled data (0-1) from TimeSeries object
+    if hasattr(rec, 'scdata'):
+        rec = rec.scdata
 
     rec_metrics = {
             'r2_score': r2_score,
             'event_r2_score': event_r2_score,
             'nmae': nmae,
             'nrmse': nrmse,
-            'snr_recon': snr_recon
+            'snr_recon': snr_recon,
+            'reconstruction': rec  # Always include reconstruction (as numpy array, scaled 0-1)
         }
-
-    if return_reconstructed:
-        rec_metrics['reconstruction'] = rec
 
     return rec_metrics
 
@@ -214,7 +242,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
                 'event_r2_score': np.nan,
                 'nmae': np.nan,
                 'nrmse': np.nan,
-                'snr_recon': np.nan
+                'snr_recon': np.nan,
+                'reconstruction': None  # Placeholder for failed traces
             }
             return {**nan_signal_metrics, **nan_rec_metrics}
         else:
@@ -223,6 +252,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
 
 def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
     all_metrics = {}
+    reconstructions = {}
     n = traces.shape[0]
     metrics_res = Parallel(n_jobs=-1)(
         delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method)
@@ -230,9 +260,16 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
     )
 
     for metric in metrics_res[0].keys():
-        all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
+        if metric == 'reconstruction':
+            # Extract reconstructions into separate dict (index → array)
+            for i in range(n):
+                rec = metrics_res[i].get('reconstruction')
+                if rec is not None:
+                    reconstructions[i] = rec
+        else:
+            all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
 
-    return all_metrics
+    return all_metrics, reconstructions
 
 
 def footprint_center_distmat(centers):
@@ -250,7 +287,7 @@ def footprint_boundary_distmat(contours, mask=None, verbose=True):
     else:
         mask = mask.astype(bool)
 
-    cont_distmat = np.zeros((n,n))
+    cont_distmat = np.full((n,n), np.inf)  # Initialize with inf so uncomputed pairs aren't merged
     for i, c1 in tqdm.tqdm(enumerate(contours)):
         for j, c2 in enumerate(contours):
             if mask[i,j]:
@@ -401,7 +438,7 @@ def get_compactnesses(contours, areas):
     return np.array(compactnesses)
 
 
-def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5):
+def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='pearson'):
     match_threshold /= sessions_num
     corr_num = len(neurons)
     corr_mtx_sessions = []
@@ -410,7 +447,7 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
     for session in range(sessions_num):
         ts_start = session * session_time
 
-        corr_mtx = np.corrcoef(neurons[:, ts_start:ts_start + session_time - 1])
+        corr_mtx = compute_correlation_matrix(neurons[:, ts_start:ts_start + session_time - 1], method=correlation_method)
         corr_mtx = np.where(corr_mtx >= corr_threshold, 1, 0)
         corr_mtx_sessions.append(corr_mtx)
 
@@ -453,7 +490,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
-                         event_method='threshold'):
+                         event_method='threshold', correlation_method='pearson'):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -462,7 +499,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     n_cells = len(comps_to_select)
     if n_cells == 0:
-        return {}
+        return pd.DataFrame(), None, np.array([]), np.array([]), None, {}
 
     print(f'[1/4] Preparing traces for {n_cells} neurons...')
     t_phase_start = time.time()
@@ -489,12 +526,19 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     # times = [est.time[sf:ef][::ds] for _ in range(n_cells)]  # Note: time attribute not always present, variable unused
 
-    print(f'[2/4] Computing correlation matrix...')
-    corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
-                                                                  corr_thr,
-                                                                  match_threshold,
-                                                                  fps=fps,
-                                                                  sessions_num=num_sessions)
+    print(f'[2/4] Computing correlation matrix ({correlation_method})...')
+    if len(traces) > 1:
+        corr_groups, match_mtx, match_mtx_crop = multisession_corrmat(np.array(traces),
+                                                                      corr_thr,
+                                                                      match_threshold,
+                                                                      fps=fps,
+                                                                      sessions_num=num_sessions,
+                                                                      correlation_method=correlation_method)
+    else:
+        corr_groups = None
+        match_mtx = None
+        match_mtx_crop = None
+
 
     print(f'[3/4] Extracting spatial metrics...')
     if contours is None:
@@ -575,10 +619,11 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'corr_groups': corr_groups
     }
 
+    reconstructions = {}
     if include_event_based:
         print(f'[4/4] Computing {event_method} event-based metrics (this may take a while)...')
         t1 = time.time()
-        event_based_metrics = get_multineuron_metrics(np.array(traces),
+        event_based_metrics, local_reconstructions = get_multineuron_metrics(np.array(traces),
                                                       fps=fps,
                                                       include_heavy=include_heavy,
                                                       event_method=event_method)
@@ -586,6 +631,13 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
         metrics = {**metrics, **event_based_metrics}
+
+        # Map local indices to component indices for reconstructions
+        if include_heavy and local_reconstructions:
+            for local_idx, rec in local_reconstructions.items():
+                comp_idx = comps_to_select[local_idx]
+                reconstructions[comp_idx] = rec
+            print(f'      Cached {len(reconstructions)} reconstructions')
     else:
         print(f'[4/4] Skipping event-based metrics (include_event_based=False)')
 
@@ -614,7 +666,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     t_total = time.time() - t_phase_start
     print(f'Metrics extraction completed: {n_cells} neurons in {t_total:.1f}s')
 
-    return metrics_df, match_mtx, FCD, FBD, edge_info
+    return metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions
 
 
 def area_check(series, pxlthr_area):
@@ -1096,6 +1148,16 @@ def implement_decision(est, df, return_index_mapping=False):
     """
     Apply deletion and merge decisions to estimates.
 
+    BEHAVIOR:
+    - DELETIONS: ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts)
+      remain VISIBLE in idx_components. Their deletion status is tracked in
+      metrics_df['delete'] column for visualization purposes.
+    - MERGES: Only merges affect idx_components structure. Merged source components
+      are removed and replaced by the merged result.
+
+    This design allows ExamineCells GUI to display all neurons with their
+    ML probabilities and deletion reasons while still applying the merge logic.
+
     Args:
         est: CaImAn estimates object
         df: Decision DataFrame with 'component_idx', 'decision', 'merge' columns
@@ -1123,25 +1185,17 @@ def implement_decision(est, df, return_index_mapping=False):
     est = copy.deepcopy(est)
 
     # Track deleted components (using ORIGINAL indices)
-    # IMPORTANT: Corner artifacts are marked as delete but should stay VISIBLE in idx_components
-    # Only non-corner deleted components go to idx_components_bad
+    # ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts) stay VISIBLE
+    # in idx_components - their deletion status is tracked in metrics_df['delete']
     all_deleted = df[df['decision'] == 'delete']
-    corner_artifact_indices = set(all_deleted[all_deleted['is_corner_artifact'] == 1]['component_idx'].tolist())
-    non_corner_deleted = all_deleted[all_deleted['is_corner_artifact'] != 1]['component_idx'].tolist()
-
-    # deleted_indices includes ALL deleted (used for merge filtering)
-    # but only non-corner go to idx_components_bad
     deleted_indices = set(all_deleted['component_idx'].tolist())
 
     # CRITICAL: Capture original idx_components BEFORE any modifications
     # This tells us which components were accepted in the original estimates
     original_idx_components = set(est.idx_components.tolist())
 
-    # Update idx_components_bad with ONLY non-corner deleted components
-    # Corner artifacts stay visible in idx_components
-    temp = est.idx_components_bad.tolist() + non_corner_deleted
-    est.idx_components_bad = np.sort(temp)
-    # NOTE: Do NOT modify idx_components here - will be rebuilt after merge with NEW indices
+    # NOTE: We do NOT update idx_components_bad - all deleted neurons stay visible
+    # Their deletion status is tracked in metrics_df for visualization purposes
 
     # Collect ALL merge groups to apply in single batch
     all_merge_groups = []
@@ -1200,18 +1254,13 @@ def implement_decision(est, df, return_index_mapping=False):
 
     # CRITICAL FIX: Rebuild idx_components using NEW indices
     # After manual_merge, the A/C matrices have new indices (0 to nr_after-1)
-    # idx_components must contain ONLY valid new indices for accepted components
-    # Corner artifacts are deleted but should stay VISIBLE (included in idx_components)
+    # ALL deleted neurons (ML-rejected, threshold-rejected, corner artifacts) stay VISIBLE
+    # Only merge source components are excluded (they're replaced by merged result)
     new_idx_components = []
     for old_idx in range(nr_before):
-        # Include if: was originally accepted AND not merged source AND:
-        #   - not deleted, OR
-        #   - is a corner artifact (stays visible even though deleted)
-        is_corner = old_idx in corner_artifact_indices
-        is_non_corner_deleted = old_idx in deleted_indices and not is_corner
-
+        # Include ALL originally accepted components EXCEPT merged sources
+        # Deleted neurons stay visible (marked in metrics_df['delete'])
         if (old_idx in original_idx_components and
-            not is_non_corner_deleted and
             old_idx not in all_merged_sources and
             old_idx in old_to_new):
             new_idx_components.append(old_to_new[old_idx])
@@ -1282,13 +1331,18 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
 
         # Map component to new index (deleted components are mapped too!)
         if old_idx in old_to_new:
-            new_row = row.copy()
+            # Use to_dict() for reliable DataFrame construction (avoids Series dtype issues)
+            new_row = row.to_dict()
             new_row['component_idx'] = old_to_new[old_idx]
             transformed_rows.append(new_row)
 
     # Create DataFrame from transformed components
     if transformed_rows:
         transformed_df = pd.DataFrame(transformed_rows)
+        # Ensure ml_keep_probability is float dtype (convert None to NaN)
+        if 'ml_keep_probability' in transformed_df.columns:
+            transformed_df['ml_keep_probability'] = pd.to_numeric(
+                transformed_df['ml_keep_probability'], errors='coerce')
     else:
         transformed_df = pd.DataFrame(columns=df.columns)
 
@@ -1298,8 +1352,8 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         merged_indices = [g['new_idx'] for g in merged_groups]
 
         # Use estimates_to_metrics for proper metric computation
-        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info)
-        merged_metrics_df, _, _, _, _ = estimates_to_metrics(
+        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions)
+        merged_metrics_df, _, _, _, _, _ = estimates_to_metrics(
             est_processed,
             fps=fps,
             comps_to_select=merged_indices,
@@ -1314,6 +1368,13 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         merged_metrics_df['delete'] = 0
         merged_metrics_df['merge'] = 0
         merged_metrics_df['is_corner_artifact'] = 0
+
+        # Ensure failure tracking columns exist (set to 0 for merged components)
+        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
+                        'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off', 'failed_corner_artifact']
+        for col in failure_cols:
+            if col in transformed_df.columns and col not in merged_metrics_df.columns:
+                merged_metrics_df[col] = 0
 
         # Concatenate
         transformed_df = pd.concat([transformed_df, merged_metrics_df], ignore_index=True)
@@ -1381,9 +1442,9 @@ def save_processed_estimates(est, output_path, session_name=None, compress=False
 
 
 def validate_decision(est_init, est_gt, est, fps=20):
-    df_init = estimates_to_metrics(est_init, fps=fps, include_reconstruction=False)
-    df_gt = estimates_to_metrics(est_gt, fps=fps, include_reconstruction=False)
-    df = estimates_to_metrics(est, fps=fps, include_reconstruction=False)
+    df_init, _, _, _, _, _ = estimates_to_metrics(est_init, fps=fps, include_heavy=False)
+    df_gt, _, _, _, _, _ = estimates_to_metrics(est_gt, fps=fps, include_heavy=False)
+    df, _, _, _, _, _ = estimates_to_metrics(est, fps=fps, include_heavy=False)
 
 
 import pandas as pd

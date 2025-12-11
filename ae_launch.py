@@ -120,6 +120,7 @@ def run_auto_inspection(
     detect_corner_artifacts: bool = True,
     corner_artifact_params: dict = None,
     event_method: str = 'threshold',
+    correlation_method: str = 'pearson',
 
     # --- Decision parameters (threshold brain) ---
     circ_thr: float = 4,
@@ -300,7 +301,7 @@ def run_auto_inspection(
     if verbose:
         print("[run_auto_inspection] Extracting metrics...")
 
-    metrics_df, match_mtx, FCD, FBD, edge_info = estimates_to_metrics(
+    metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions = estimates_to_metrics(
         est, fps,
         comps_to_select=comps_to_select if comps_to_select else [],
         cthr=cthr,
@@ -314,7 +315,8 @@ def run_auto_inspection(
         include_heavy=include_heavy,
         detect_corner_artifacts_flag=detect_corner_artifacts,
         corner_artifact_params=corner_artifact_params,
-        event_method=event_method
+        event_method=event_method,
+        correlation_method=correlation_method
     )
 
     if verbose:
@@ -404,12 +406,34 @@ def run_auto_inspection(
 
     est_processed.metrics_df = transformed_df
 
+    # Attach reconstructions with transformed indices
+    if include_heavy and reconstructions:
+        # Transform reconstruction indices using the mapping
+        transformed_recons = {}
+        old_to_new = mapping_info.get('old_to_new', {})
+        for old_idx, rec in reconstructions.items():
+            if old_idx in old_to_new:
+                new_idx = old_to_new[old_idx]
+                transformed_recons[new_idx] = rec
+        est_processed.reconstructions = transformed_recons
+        if verbose:
+            print(f"[run_auto_inspection] Attached {len(transformed_recons)} reconstructions")
+    else:
+        est_processed.reconstructions = {}
+
     # Verify metrics_df was attached and indices are valid
     if verbose:
         if hasattr(est_processed, 'metrics_df') and est_processed.metrics_df is not None:
             n_rows = len(est_processed.metrics_df)
-            n_merged = (est_processed.metrics_df['decision'] == 'after_merge').sum()
+            n_merged = (est_processed.metrics_df['decision'] == 'from_merge').sum()
             print(f"[run_auto_inspection] Attached transformed metrics_df with {n_rows} rows ({n_merged} merged)")
+
+            # Validate ml_keep_probability values
+            if 'ml_keep_probability' in est_processed.metrics_df.columns:
+                prob_col = est_processed.metrics_df['ml_keep_probability']
+                n_valid = prob_col.notna().sum()
+                n_nan = prob_col.isna().sum()
+                print(f"[run_auto_inspection] ml_keep_probability: {n_valid}/{n_rows} valid, {n_nan} NaN/None")
 
             # Validate indices
             max_idx = est_processed.metrics_df['component_idx'].max()
