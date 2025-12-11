@@ -503,7 +503,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         index_mapping = dict(zip(indices_to_leave, range(len(indices_to_leave))))
 
         for key in overall_data.keys():
-            if key in ('traces', 'traces_recon', 'traces_original'):
+            if key in ('traces', 'traces_recon'):
                 # subtract id vals from trace vals and add new ids
                 if overall_data[key] is not None:
                     new_traces = [val - i + index_mapping[i] for i, val in enumerate(overall_data[key]) if
@@ -532,7 +532,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         #print('indies:',indices)
         new_traces = [None for _ in range(len(metric))]
         new_traces_recon = [None for _ in range(len(metric))] if overall_data.get('traces_recon') is not None else None
-        new_traces_original = [None for _ in range(len(metric))] if overall_data.get('traces_original') is not None else None
         new_ids = np.zeros(len(metric))
         for i, ind in enumerate(indices):  # we iterate over rows of CDS in the order given by sorted metric
             # ind = row number in cds
@@ -549,9 +548,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             if new_traces_recon is not None:
                 current_recon = np.array(overall_data['traces_recon'][ind])
                 new_traces_recon[ind] = current_recon - current_id + i
-            if new_traces_original is not None:
-                current_original = np.array(overall_data['traces_original'][ind])
-                new_traces_original[ind] = current_original - current_id + i
 
         # actually update our copy of CDS
         show_data.update({'traces': new_traces,
@@ -560,8 +556,6 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           })
         if new_traces_recon is not None:
             show_data['traces_recon'] = new_traces_recon
-        if new_traces_original is not None:
-            show_data['traces_original'] = new_traces_original
 
         return show_data, indices
 
@@ -731,6 +725,15 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                           line_alpha=trace_alpha,
                           selection_line_width=trace_line_width,
                           source=src_partial)
+
+            # Reconstruction overlay (dark grey, hidden by default)
+            recon_renderer = p2.multi_line('times',
+                          'traces_recon',
+                          line_color='#404040',  # Dark grey
+                          line_alpha=0.9,
+                          line_width=1.5,
+                          source=src_partial,
+                          visible=False)
 
             # add dummy height property to ColumnDataSource to make traces selectable
             # (since multi_line does not support box selection, we have to plot additional scatter)
@@ -1353,28 +1356,19 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
         # Reconstruction toggle checkbox (only visible if reconstructions available)
-        checkbox_recon = CheckboxGroup(labels=["Plot reconstruction"], active=[])
+        has_reconstructions = est_data0.get('traces_recon') is not None
+        checkbox_recon = CheckboxGroup(
+            labels=["Show reconstruction"],
+            active=[],
+            styles={'color': '#00AA00', 'font-weight': 'bold'},  # Green text
+            visible=has_reconstructions
+        )
 
         def recon_callback(attr, old, new):
-            data = dict(src_partial.data)
-            if data.get('traces_recon') is None:
-                return  # No reconstructions available
-
-            if 0 in new:  # Checkbox checked - show reconstructions
-                if 'traces_original' not in data:
-                    data['traces_original'] = data['traces']
-                data['traces'] = data['traces_recon']
-            else:  # Checkbox unchecked - show original
-                if 'traces_original' in data:
-                    data['traces'] = data['traces_original']
-            src_partial.data = data
+            # Toggle reconstruction overlay visibility
+            recon_renderer.visible = (0 in new)
 
         checkbox_recon.on_change('active', recon_callback)
-
-        # Hide checkbox if no reconstructions available
-        has_reconstructions = est_data0.get('traces_recon') is not None
-        if not has_reconstructions:
-            checkbox_recon.visible = False
 
         doc.add_root(
             column(
@@ -1387,9 +1381,10 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_discard,
                     #button_seed,
                     button_save,
-                    button_save_final
+                    button_save_final,
+                    checkbox_recon
                 ),
-                row(sorting_row, checkbox_recon),
+                sorting_row,
                 row(p1, metrics_div, p2)
             )
         )
