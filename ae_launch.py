@@ -301,7 +301,7 @@ def run_auto_inspection(
     if verbose:
         print("[run_auto_inspection] Extracting metrics...")
 
-    metrics_df, match_mtx, FCD, FBD, edge_info = estimates_to_metrics(
+    metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions = estimates_to_metrics(
         est, fps,
         comps_to_select=comps_to_select if comps_to_select else [],
         cthr=cthr,
@@ -405,6 +405,21 @@ def run_auto_inspection(
     )
 
     est_processed.metrics_df = transformed_df
+
+    # Attach reconstructions with transformed indices
+    if include_heavy and reconstructions:
+        # Transform reconstruction indices using the mapping
+        transformed_recons = {}
+        old_to_new = mapping_info.get('old_to_new', {})
+        for old_idx, rec in reconstructions.items():
+            if old_idx in old_to_new:
+                new_idx = old_to_new[old_idx]
+                transformed_recons[new_idx] = rec
+        est_processed.reconstructions = transformed_recons
+        if verbose:
+            print(f"[run_auto_inspection] Attached {len(transformed_recons)} reconstructions")
+    else:
+        est_processed.reconstructions = {}
 
     # Verify metrics_df was attached and indices are valid
     if verbose:

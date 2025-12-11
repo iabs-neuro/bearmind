@@ -174,9 +174,12 @@ def get_signal_metrics(neuron):
     return sig_metrics
 
 
-def get_reconstruction_quality_metrics(neuron,
-                                       return_reconstructed=False):
+def get_reconstruction_quality_metrics(neuron):
+    """
+    Get reconstruction quality metrics from a DRIADA neuron.
 
+    Always returns the reconstruction array alongside metrics.
+    """
     # Get quality metrics
     r2_score = neuron.get_reconstruction_r2()
     event_r2_score = neuron.get_reconstruction_r2(event_only=True)
@@ -184,17 +187,18 @@ def get_reconstruction_quality_metrics(neuron,
     nrmse = neuron.get_nrmse()
     snr_recon = neuron.get_snr_reconstruction()
     rec = neuron.reconstructed
+    # Extract scaled data (0-1) from TimeSeries object
+    if hasattr(rec, 'scdata'):
+        rec = rec.scdata
 
     rec_metrics = {
             'r2_score': r2_score,
             'event_r2_score': event_r2_score,
             'nmae': nmae,
             'nrmse': nrmse,
-            'snr_recon': snr_recon
+            'snr_recon': snr_recon,
+            'reconstruction': rec  # Always include reconstruction (as numpy array, scaled 0-1)
         }
-
-    if return_reconstructed:
-        rec_metrics['reconstruction'] = rec
 
     return rec_metrics
 
@@ -238,7 +242,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
                 'event_r2_score': np.nan,
                 'nmae': np.nan,
                 'nrmse': np.nan,
-                'snr_recon': np.nan
+                'snr_recon': np.nan,
+                'reconstruction': None  # Placeholder for failed traces
             }
             return {**nan_signal_metrics, **nan_rec_metrics}
         else:
@@ -247,6 +252,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
 
 def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
     all_metrics = {}
+    reconstructions = {}
     n = traces.shape[0]
     metrics_res = Parallel(n_jobs=-1)(
         delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method)
@@ -254,9 +260,16 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
     )
 
     for metric in metrics_res[0].keys():
-        all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
+        if metric == 'reconstruction':
+            # Extract reconstructions into separate dict (index → array)
+            for i in range(n):
+                rec = metrics_res[i].get('reconstruction')
+                if rec is not None:
+                    reconstructions[i] = rec
+        else:
+            all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
 
-    return all_metrics
+    return all_metrics, reconstructions
 
 
 def footprint_center_distmat(centers):
@@ -486,7 +499,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     n_cells = len(comps_to_select)
     if n_cells == 0:
-        return {}
+        return pd.DataFrame(), None, np.array([]), np.array([]), None, {}
 
     print(f'[1/4] Preparing traces for {n_cells} neurons...')
     t_phase_start = time.time()
@@ -600,10 +613,11 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'corr_groups': corr_groups
     }
 
+    reconstructions = {}
     if include_event_based:
         print(f'[4/4] Computing {event_method} event-based metrics (this may take a while)...')
         t1 = time.time()
-        event_based_metrics = get_multineuron_metrics(np.array(traces),
+        event_based_metrics, local_reconstructions = get_multineuron_metrics(np.array(traces),
                                                       fps=fps,
                                                       include_heavy=include_heavy,
                                                       event_method=event_method)
@@ -611,6 +625,13 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
         metrics = {**metrics, **event_based_metrics}
+
+        # Map local indices to component indices for reconstructions
+        if include_heavy and local_reconstructions:
+            for local_idx, rec in local_reconstructions.items():
+                comp_idx = comps_to_select[local_idx]
+                reconstructions[comp_idx] = rec
+            print(f'      Cached {len(reconstructions)} reconstructions')
     else:
         print(f'[4/4] Skipping event-based metrics (include_event_based=False)')
 
@@ -639,7 +660,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     t_total = time.time() - t_phase_start
     print(f'Metrics extraction completed: {n_cells} neurons in {t_total:.1f}s')
 
-    return metrics_df, match_mtx, FCD, FBD, edge_info
+    return metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions
 
 
 def area_check(series, pxlthr_area):
@@ -1325,8 +1346,8 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         merged_indices = [g['new_idx'] for g in merged_groups]
 
         # Use estimates_to_metrics for proper metric computation
-        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info)
-        merged_metrics_df, _, _, _, _ = estimates_to_metrics(
+        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions)
+        merged_metrics_df, _, _, _, _, _ = estimates_to_metrics(
             est_processed,
             fps=fps,
             comps_to_select=merged_indices,
@@ -1415,9 +1436,9 @@ def save_processed_estimates(est, output_path, session_name=None, compress=False
 
 
 def validate_decision(est_init, est_gt, est, fps=20):
-    df_init = estimates_to_metrics(est_init, fps=fps, include_reconstruction=False)
-    df_gt = estimates_to_metrics(est_gt, fps=fps, include_reconstruction=False)
-    df = estimates_to_metrics(est, fps=fps, include_reconstruction=False)
+    df_init, _, _, _, _, _ = estimates_to_metrics(est_init, fps=fps, include_heavy=False)
+    df_gt, _, _, _, _, _ = estimates_to_metrics(est_gt, fps=fps, include_heavy=False)
+    df, _, _, _, _, _ = estimates_to_metrics(est, fps=fps, include_heavy=False)
 
 
 import pandas as pd
