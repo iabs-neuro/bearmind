@@ -60,6 +60,42 @@ FEATURE_COLS = [
 ]
 
 
+# =============================================================================
+# SCORING CONFIGURATION
+# =============================================================================
+# Precision/recall importance ratio for model selection
+# Higher values prioritize precision (fewer false positives)
+# Default 3.0 means precision is 3x more important than recall
+PRECISION_RECALL_RATIO = 3.0
+
+# Derived beta for F-beta score: beta = sqrt(1/ratio)
+# beta < 1 weights precision more, beta > 1 weights recall more
+FBETA_BETA = np.sqrt(1 / PRECISION_RECALL_RATIO)
+
+
+def compute_fbeta(precision, recall, beta=None):
+    """
+    Compute F-beta score from precision and recall.
+
+    Parameters
+    ----------
+    precision : float
+    recall : float
+    beta : float, optional
+        If None, uses global FBETA_BETA
+
+    Returns
+    -------
+    float : F-beta score
+    """
+    if beta is None:
+        beta = FBETA_BETA
+    if (precision + recall) == 0:
+        return 0.0
+    beta_sq = beta ** 2
+    return (1 + beta_sq) * precision * recall / (beta_sq * precision + recall)
+
+
 def parse_center(x):
     """Parse center from string format '[y x]' to numpy array."""
     if isinstance(x, str):

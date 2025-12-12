@@ -12,11 +12,11 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, fbeta_score
 from itertools import product
 from tqdm import tqdm
 from datetime import datetime
-from data_utils import FEATURE_COLS, stratified_session_split, print_split_info
+from data_utils import FEATURE_COLS, stratified_session_split, print_split_info, FBETA_BETA
 
 
 def load_session_data(session_dir):
@@ -106,15 +106,19 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params):
 
     # Evaluate on train set
     y_train_pred = model.predict(X_train)
-    train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+    train_prec, train_rec, _, _ = precision_recall_fscore_support(
         y_train, y_train_pred, average='binary', zero_division=0
     )
+    train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA,
+                              average='binary', zero_division=0)
 
     # Evaluate on test set
     y_test_pred = model.predict(X_test)
-    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+    test_prec, test_rec, _, _ = precision_recall_fscore_support(
         y_test, y_test_pred, average='binary', zero_division=0
     )
+    test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA,
+                             average='binary', zero_division=0)
 
     # Count tree size
     n_nodes = model.tree_.node_count
@@ -123,10 +127,10 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params):
     return model, {
         'train_precision': train_prec,
         'train_recall': train_rec,
-        'train_f1': train_f1,
+        'train_fbeta': train_fbeta,
         'test_precision': test_prec,
         'test_recall': test_rec,
-        'test_f1': test_f1,
+        'test_fbeta': test_fbeta,
         'n_nodes': n_nodes,
         'n_leaves': n_leaves
     }
@@ -307,7 +311,7 @@ def grid_search_focused(artifacts_dir="data/capcan_validation_127",
     agg_results = grouped.agg({
         'test_precision': ['mean', 'std'],
         'test_recall': ['mean', 'std'],
-        'test_f1': ['mean', 'std'],
+        'test_fbeta': ['mean', 'std'],
         'n_leaves': ['mean', 'std']
     }).reset_index()
 
@@ -319,31 +323,31 @@ def grid_search_focused(artifacts_dir="data/capcan_validation_127",
     agg_path = Path(f"ml/grid_search_focused_aggregated{exp_suffix}.csv")
     agg_results.to_csv(agg_path, index=False)
 
-    # Best by F1 (mean)
-    print("\nTOP 10 CONFIGURATIONS BY MEAN TEST F1 SCORE")
+    # Best by F-beta (mean)
+    print(f"\nTOP 10 CONFIGURATIONS BY MEAN TEST F-BETA (β={FBETA_BETA:.3f})")
     print("="*80)
 
-    top_f1 = agg_results.nlargest(10, 'test_f1_mean')
-    print("\n" + top_f1[['max_depth', 'min_samples_split', 'min_samples_leaf',
+    top_fbeta = agg_results.nlargest(10, 'test_fbeta_mean')
+    print("\n" + top_fbeta[['max_depth', 'min_samples_split', 'min_samples_leaf',
                           'class_weight_factor', 'test_precision_mean', 'test_precision_std',
                           'test_recall_mean', 'test_recall_std',
-                          'test_f1_mean', 'test_f1_std',
+                          'test_fbeta_mean', 'test_fbeta_std',
                           'n_leaves_mean']].to_string(index=False))
 
     # Most interpretable (fewest leaves) with good performance
     print("\n" + "="*80)
-    print("MOST INTERPRETABLE MODELS (fewest leaves, F1 >= 90%)")
+    print(f"MOST INTERPRETABLE MODELS (fewest leaves, F-beta >= 90%)")
     print("="*80)
 
-    interpretable = agg_results[agg_results['test_f1_mean'] >= 0.90]
+    interpretable = agg_results[agg_results['test_fbeta_mean'] >= 0.90]
     if not interpretable.empty:
         interpretable_sorted = interpretable.nsmallest(10, 'n_leaves_mean')
         print("\n" + interpretable_sorted[['max_depth', 'min_samples_split', 'min_samples_leaf',
                                             'class_weight_factor', 'test_precision_mean',
-                                            'test_recall_mean', 'test_f1_mean',
+                                            'test_recall_mean', 'test_fbeta_mean',
                                             'n_leaves_mean']].to_string(index=False))
     else:
-        print("\nNo configurations achieved F1 >= 90%")
+        print(f"\nNo configurations achieved F-beta >= 90%")
 
     # Best by precision
     print("\n" + "="*80)
@@ -353,7 +357,7 @@ def grid_search_focused(artifacts_dir="data/capcan_validation_127",
     top_prec = agg_results.nlargest(10, 'test_precision_mean')
     print("\n" + top_prec[['max_depth', 'min_samples_split', 'min_samples_leaf',
                             'class_weight_factor', 'test_precision_mean', 'test_precision_std',
-                            'test_recall_mean', 'test_f1_mean',
+                            'test_recall_mean', 'test_fbeta_mean',
                             'n_leaves_mean']].to_string(index=False))
 
     print(f"\n\nAggregated results saved to: {agg_path}")

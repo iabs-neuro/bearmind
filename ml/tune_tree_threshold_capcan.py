@@ -11,9 +11,9 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.metrics import precision_recall_fscore_support, roc_curve, auc
+from sklearn.metrics import precision_recall_fscore_support, roc_curve, auc, fbeta_score
 import matplotlib.pyplot as plt
-from data_utils import FEATURE_COLS
+from data_utils import FEATURE_COLS, FBETA_BETA, compute_fbeta
 import random
 
 
@@ -161,16 +161,17 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
             for threshold in thresholds:
                 y_pred = (y_proba >= threshold).astype(int)
 
-                prec, rec, f1, _ = precision_recall_fscore_support(
+                prec, rec, _, _ = precision_recall_fscore_support(
                     y_test, y_pred, average='binary', zero_division=0
                 )
+                fb = compute_fbeta(prec, rec)
 
                 model_results.append({
                     'seed': seed_idx,
                     'threshold': threshold,
                     'precision': prec,
                     'recall': rec,
-                    'f1': f1
+                    'fbeta': fb
                 })
 
             all_model_results.extend(model_results)
@@ -179,9 +180,9 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
         all_results_df = pd.DataFrame(all_model_results)
 
         print("\n" + "="*60)
-        print("AGGREGATED THRESHOLD TUNING RESULTS")
+        print(f"AGGREGATED THRESHOLD TUNING RESULTS (F-beta β={FBETA_BETA:.3f})")
         print("="*60)
-        print(f"\n{'Threshold':<12} {'Precision':<18} {'Recall':<18} {'F1 Score':<18}")
+        print(f"\n{'Threshold':<12} {'Precision':<18} {'Recall':<18} {'F-beta':<18}")
         print("-"*80)
 
         results = []
@@ -192,8 +193,8 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
             prec_std = thresh_data['precision'].std()
             rec_mean = thresh_data['recall'].mean()
             rec_std = thresh_data['recall'].std()
-            f1_mean = thresh_data['f1'].mean()
-            f1_std = thresh_data['f1'].std()
+            fbeta_mean = thresh_data['fbeta'].mean()
+            fbeta_std = thresh_data['fbeta'].std()
 
             results.append({
                 'threshold': threshold,
@@ -201,11 +202,11 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
                 'precision_std': prec_std,
                 'recall': rec_mean,
                 'recall_std': rec_std,
-                'f1': f1_mean,
-                'f1_std': f1_std
+                'fbeta': fbeta_mean,
+                'fbeta_std': fbeta_std
             })
 
-            print(f"{threshold:<12.2f} {prec_mean:.2%} +/- {prec_std:.2%}   {rec_mean:.2%} +/- {rec_std:.2%}   {f1_mean:.2%} +/- {f1_std:.2%}")
+            print(f"{threshold:<12.2f} {prec_mean:.2%} +/- {prec_std:.2%}   {rec_mean:.2%} +/- {rec_std:.2%}   {fbeta_mean:.2%} +/- {fbeta_std:.2%}")
 
     else:
         # Single model evaluation (original code)
@@ -236,27 +237,28 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
         thresholds = np.arange(0.1, 0.95, 0.05)
 
         print("\n" + "="*60)
-        print("THRESHOLD TUNING RESULTS")
+        print(f"THRESHOLD TUNING RESULTS (F-beta β={FBETA_BETA:.3f})")
         print("="*60)
-        print(f"\n{'Threshold':<12} {'Precision':<12} {'Recall':<12} {'F1 Score':<12}")
+        print(f"\n{'Threshold':<12} {'Precision':<12} {'Recall':<12} {'F-beta':<12}")
         print("-"*60)
 
         results = []
         for threshold in thresholds:
             y_pred = (y_proba >= threshold).astype(int)
 
-            prec, rec, f1, _ = precision_recall_fscore_support(
+            prec, rec, _, _ = precision_recall_fscore_support(
                 y_test, y_pred, average='binary', zero_division=0
             )
+            fb = compute_fbeta(prec, rec)
 
             results.append({
                 'threshold': threshold,
                 'precision': prec,
                 'recall': rec,
-                'f1': f1
+                'fbeta': fb
             })
 
-            print(f"{threshold:<12.2f} {prec:<12.2%} {rec:<12.2%} {f1:<12.2%}")
+            print(f"{threshold:<12.2f} {prec:<12.2%} {rec:<12.2%} {fb:<12.2%}")
 
     results_df = pd.DataFrame(results)
 
@@ -265,23 +267,23 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
     print("RECOMMENDED THRESHOLDS")
     print("="*60)
 
-    # Best F1
-    best_f1_idx = results_df['f1'].idxmax()
-    best_f1_row = results_df.iloc[best_f1_idx]
-    print(f"\nBest F1 Score (balanced): threshold = {best_f1_row['threshold']:.2f}")
-    print(f"  Precision: {best_f1_row['precision']:.2%}")
-    print(f"  Recall:    {best_f1_row['recall']:.2%}")
-    print(f"  F1 Score:  {best_f1_row['f1']:.2%}")
+    # Best F-beta
+    best_fbeta_idx = results_df['fbeta'].idxmax()
+    best_fbeta_row = results_df.iloc[best_fbeta_idx]
+    print(f"\nBest F-beta (β={FBETA_BETA:.3f}): threshold = {best_fbeta_row['threshold']:.2f}")
+    print(f"  Precision: {best_fbeta_row['precision']:.2%}")
+    print(f"  Recall:    {best_fbeta_row['recall']:.2%}")
+    print(f"  F-beta:    {best_fbeta_row['fbeta']:.2%}")
 
     # Best recall (>= 90%)
     high_recall_df = results_df[results_df['recall'] >= 0.90]
     if not high_recall_df.empty:
-        best_high_recall_idx = high_recall_df['f1'].idxmax()
+        best_high_recall_idx = high_recall_df['fbeta'].idxmax()
         best_high_recall_row = results_df.iloc[best_high_recall_idx]
-        print(f"\nBest F1 with recall >= 90%: threshold = {best_high_recall_row['threshold']:.2f}")
+        print(f"\nBest F-beta with recall >= 90%: threshold = {best_high_recall_row['threshold']:.2f}")
         print(f"  Precision: {best_high_recall_row['precision']:.2%}")
         print(f"  Recall:    {best_high_recall_row['recall']:.2%}")
-        print(f"  F1 Score:  {best_high_recall_row['f1']:.2%}")
+        print(f"  F-beta:    {best_high_recall_row['fbeta']:.2%}")
 
     # Current default (0.5)
     default_rows = results_df[results_df['threshold'] == 0.5]
@@ -290,7 +292,7 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
         print(f"\nCurrent default (0.5):")
         print(f"  Precision: {default_row['precision']:.2%}")
         print(f"  Recall:    {default_row['recall']:.2%}")
-        print(f"  F1 Score:  {default_row['f1']:.2%}")
+        print(f"  F-beta:    {default_row['fbeta']:.2%}")
 
     # Save results
     suffix = "_aggregated" if aggregate_seeds else ""
@@ -319,8 +321,8 @@ def tune_threshold(model_path="ml/models/decision_tree_capcan_model.pkl",
     plt.grid(True, alpha=0.3)
 
     # Mark special points
-    plt.plot(best_f1_row['recall'], best_f1_row['precision'], 'go', markersize=12,
-             label=f'Best F1 (thr={best_f1_row["threshold"]:.2f})')
+    plt.plot(best_fbeta_row['recall'], best_fbeta_row['precision'], 'go', markersize=12,
+             label=f'Best F-beta (thr={best_fbeta_row["threshold"]:.2f})')
 
     if not default_rows.empty:
         plt.plot(default_row['recall'], default_row['precision'], 'ro', markersize=12,

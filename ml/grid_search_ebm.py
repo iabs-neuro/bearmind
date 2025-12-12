@@ -22,7 +22,8 @@ from itertools import product
 from sklearn.metrics import (
     precision_recall_fscore_support,
     precision_recall_curve,
-    roc_auc_score
+    roc_auc_score,
+    fbeta_score
 )
 from joblib import Parallel, delayed
 import argparse
@@ -31,7 +32,7 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent))
 from data_utils import (
     load_session_data, create_dataset, FEATURE_COLS, load_all_sessions,
-    stratified_session_split, print_split_info
+    stratified_session_split, print_split_info, FBETA_BETA
 )
 
 warnings.filterwarnings('ignore')
@@ -81,23 +82,27 @@ def train_and_evaluate_ebm(params, X_train, y_train, X_test, y_test, thresholds)
             y_train_pred = (y_train_proba >= thresh).astype(int)
             y_test_pred = (y_test_proba >= thresh).astype(int)
 
-            train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+            train_prec, train_rec, _, _ = precision_recall_fscore_support(
                 y_train, y_train_pred, average='binary', zero_division=0
             )
-            test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+            test_prec, test_rec, _, _ = precision_recall_fscore_support(
                 y_test, y_test_pred, average='binary', zero_division=0
             )
+            train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA,
+                                      average='binary', zero_division=0)
+            test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA,
+                                     average='binary', zero_division=0)
 
             result = {
                 **params,
                 'threshold': thresh,
                 'train_precision': train_prec,
                 'train_recall': train_rec,
-                'train_f1': train_f1,
+                'train_fbeta': train_fbeta,
                 'train_auc': train_auc,
                 'test_precision': test_prec,
                 'test_recall': test_rec,
-                'test_f1': test_f1,
+                'test_fbeta': test_fbeta,
                 'test_auc': test_auc,
                 'train_time_sec': train_time,
             }
@@ -232,12 +237,12 @@ def run_grid_search(
         if results is not None:
             all_results.extend(results)
 
-            # Track best model by F1 at threshold 0.5
+            # Track best model by F-beta at threshold 0.5
             for r in results:
                 if r['threshold'] == 0.5:
                     key = f"bins{params['max_bins']}_inter{params['interactions']}"
-                    if key not in best_models or r['test_f1'] > best_models[key]['f1']:
-                        best_models[key] = {'f1': r['test_f1'], 'model': model, 'params': params}
+                    if key not in best_models or r['test_fbeta'] > best_models[key]['fbeta']:
+                        best_models[key] = {'fbeta': r['test_fbeta'], 'model': model, 'params': params}
 
     # Create results DataFrame
     results_df = pd.DataFrame(all_results)
@@ -258,44 +263,44 @@ def run_grid_search(
     # Group by hyperparameters (exclude random_state)
     group_cols = ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
                   'min_samples_leaf', 'max_leaves', 'threshold']
-    agg_cols = ['test_f1', 'test_precision', 'test_recall', 'test_auc']
+    agg_cols = ['test_fbeta', 'test_precision', 'test_recall', 'test_auc']
 
     df_agg = df_t05.groupby(
         [c for c in group_cols if c in df_t05.columns]
     ).agg({
-        'test_f1': ['mean', 'std'],
+        'test_fbeta': ['mean', 'std'],
         'test_precision': ['mean', 'std'],
         'test_recall': ['mean', 'std'],
         'test_auc': ['mean', 'std'],
     }).reset_index()
     df_agg.columns = ['_'.join(col).strip('_') for col in df_agg.columns]
 
-    # Best by F1
-    print("\n--- TOP 10 BY F1 (threshold=0.5) ---")
-    best_f1_agg = df_agg.nlargest(10, 'test_f1_mean')[
+    # Best by F-beta
+    print(f"\n--- TOP 10 BY F-BETA (β={FBETA_BETA:.3f}, threshold=0.5) ---")
+    best_fbeta_agg = df_agg.nlargest(10, 'test_fbeta_mean')[
         ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
          'min_samples_leaf', 'max_leaves',
-         'test_precision_mean', 'test_recall_mean', 'test_f1_mean', 'test_f1_std']
+         'test_precision_mean', 'test_recall_mean', 'test_fbeta_mean', 'test_fbeta_std']
     ]
-    print(best_f1_agg.to_string(index=False))
+    print(best_fbeta_agg.to_string(index=False))
 
     # Effect of greedy_ratio
-    print("\n--- EFFECT OF GREEDY_RATIO (mean F1 across all configs) ---")
-    greedy_effect = df_agg.groupby('greedy_ratio')['test_f1_mean'].agg(['mean', 'std', 'max'])
+    print(f"\n--- EFFECT OF GREEDY_RATIO (mean F-beta across all configs) ---")
+    greedy_effect = df_agg.groupby('greedy_ratio')['test_fbeta_mean'].agg(['mean', 'std', 'max'])
     print(greedy_effect.to_string())
 
     # Effect of smoothing_rounds
-    print("\n--- EFFECT OF SMOOTHING_ROUNDS (mean F1 across all configs) ---")
-    smooth_effect = df_agg.groupby('smoothing_rounds')['test_f1_mean'].agg(['mean', 'std', 'max'])
+    print(f"\n--- EFFECT OF SMOOTHING_ROUNDS (mean F-beta across all configs) ---")
+    smooth_effect = df_agg.groupby('smoothing_rounds')['test_fbeta_mean'].agg(['mean', 'std', 'max'])
     print(smooth_effect.to_string())
 
     # Best with greedy+smoothing enabled
     print("\n--- BEST CONFIGS WITH GREEDY+SMOOTHING ENABLED ---")
     modern = df_agg[(df_agg['greedy_ratio'] > 0) & (df_agg['smoothing_rounds'] > 0)]
     if len(modern) > 0:
-        best_modern = modern.nlargest(5, 'test_f1_mean')[
+        best_modern = modern.nlargest(5, 'test_fbeta_mean')[
             ['max_bins', 'interactions', 'min_samples_leaf', 'max_leaves',
-             'test_f1_mean', 'test_f1_std']
+             'test_fbeta_mean', 'test_fbeta_std']
         ]
         print(best_modern.to_string(index=False))
 
@@ -303,15 +308,15 @@ def run_grid_search(
     print("\n--- BEST SIMPLE MODELS (interactions=0) ---")
     simple = df_agg[df_agg['interactions'] == 0]
     if len(simple) > 0:
-        best_simple = simple.nlargest(5, 'test_f1_mean')[
+        best_simple = simple.nlargest(5, 'test_fbeta_mean')[
             ['max_bins', 'greedy_ratio', 'smoothing_rounds',
-             'min_samples_leaf', 'max_leaves', 'test_f1_mean', 'test_f1_std']
+             'min_samples_leaf', 'max_leaves', 'test_fbeta_mean', 'test_fbeta_std']
         ]
         print(best_simple.to_string(index=False))
 
     # Precision-recall trade-off for best config
-    print("\n--- PRECISION-RECALL TRADE-OFF (best mean F1 config, all thresholds) ---")
-    best_config = df_agg.loc[df_agg['test_f1_mean'].idxmax()]
+    print(f"\n--- PRECISION-RECALL TRADE-OFF (best mean F-beta config, all thresholds) ---")
+    best_config = df_agg.loc[df_agg['test_fbeta_mean'].idxmax()]
     mask = (
         (results_df['max_bins'] == best_config['max_bins']) &
         (results_df['interactions'] == best_config['interactions']) &
@@ -323,7 +328,7 @@ def run_grid_search(
     tradeoff = results_df[mask].groupby('threshold').agg({
         'test_precision': 'mean',
         'test_recall': 'mean',
-        'test_f1': 'mean'
+        'test_fbeta': 'mean'
     }).reset_index()
     print(tradeoff.to_string(index=False))
 
@@ -337,7 +342,7 @@ def run_grid_search(
     print("SAVING BEST MODELS")
     print("=" * 80)
 
-    # Find best model based on mean F1 across seeds
+    # Find best model based on mean F-beta across seeds
     # Group models by config (excluding seed)
     config_models = {}
     for results, model, params in parallel_results:
@@ -352,25 +357,25 @@ def run_grid_search(
                 params['max_leaves']
             )
             if config_key not in config_models:
-                config_models[config_key] = {'models': [], 'f1_scores': [], 'params': params}
+                config_models[config_key] = {'models': [], 'fbeta_scores': [], 'params': params}
 
-            # Get F1 at threshold 0.5
+            # Get F-beta at threshold 0.5
             for r in results:
                 if r['threshold'] == 0.5:
                     config_models[config_key]['models'].append(model)
-                    config_models[config_key]['f1_scores'].append(r['test_f1'])
+                    config_models[config_key]['fbeta_scores'].append(r['test_fbeta'])
                     break
 
-    # Find config with best mean F1
+    # Find config with best mean F-beta
     best_config_key = max(config_models.keys(),
-                          key=lambda k: np.mean(config_models[k]['f1_scores']))
+                          key=lambda k: np.mean(config_models[k]['fbeta_scores']))
     best_config_data = config_models[best_config_key]
-    best_mean_f1 = np.mean(best_config_data['f1_scores'])
-    best_std_f1 = np.std(best_config_data['f1_scores'])
+    best_mean_fbeta = np.mean(best_config_data['fbeta_scores'])
+    best_std_fbeta = np.std(best_config_data['fbeta_scores'])
 
-    # Save the model with median F1 for this config (most representative)
-    f1_scores = best_config_data['f1_scores']
-    median_idx = np.argsort(f1_scores)[len(f1_scores) // 2]
+    # Save the model with median F-beta for this config (most representative)
+    fbeta_scores = best_config_data['fbeta_scores']
+    median_idx = np.argsort(fbeta_scores)[len(fbeta_scores) // 2]
     best_model = best_config_data['models'][median_idx]
     best_params = best_config_data['params']
 
@@ -382,20 +387,20 @@ def run_grid_search(
     print(f"  Config: bins={best_params['max_bins']}, inter={best_params['interactions']}, "
           f"greedy={best_params.get('greedy_ratio', 0)}, smooth={best_params.get('smoothing_rounds', 0)}, "
           f"leaf={best_params['min_samples_leaf']}, leaves={best_params['max_leaves']}")
-    print(f"  Test F1: {best_mean_f1:.4f}")
+    print(f"  Test F-beta (β={FBETA_BETA:.3f}): {best_mean_fbeta:.4f}")
 
     # Save simplest competitive model (no interactions)
     simple_configs = {k: v for k, v in config_models.items() if k[1] == 0}  # k[1] is interactions
     if simple_configs:
         best_simple_key = max(simple_configs.keys(),
-                              key=lambda k: np.mean(simple_configs[k]['f1_scores']))
+                              key=lambda k: np.mean(simple_configs[k]['fbeta_scores']))
         best_simple_data = simple_configs[best_simple_key]
-        simple_mean_f1 = np.mean(best_simple_data['f1_scores'])
-        simple_std_f1 = np.std(best_simple_data['f1_scores'])
+        simple_mean_fbeta = np.mean(best_simple_data['fbeta_scores'])
+        simple_std_fbeta = np.std(best_simple_data['fbeta_scores'])
 
         # Get median model
-        f1_scores = best_simple_data['f1_scores']
-        median_idx = np.argsort(f1_scores)[len(f1_scores) // 2]
+        fbeta_scores = best_simple_data['fbeta_scores']
+        median_idx = np.argsort(fbeta_scores)[len(fbeta_scores) // 2]
         simple_model = best_simple_data['models'][median_idx]
         simple_params = best_simple_data['params']
 
@@ -407,7 +412,7 @@ def run_grid_search(
         print(f"  Config: bins={simple_params['max_bins']}, inter=0, "
               f"greedy={simple_params.get('greedy_ratio', 0)}, smooth={simple_params.get('smoothing_rounds', 0)}, "
               f"leaf={simple_params['min_samples_leaf']}, leaves={simple_params['max_leaves']}")
-        print(f"  Test F1: {simple_mean_f1:.4f}")
+        print(f"  Test F-beta (β={FBETA_BETA:.3f}): {simple_mean_fbeta:.4f}")
 
     print("\n" + "=" * 80)
     print("GRID SEARCH COMPLETE")

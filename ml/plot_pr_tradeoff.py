@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from data_utils import FEATURE_COLS
+from data_utils import FEATURE_COLS, compute_fbeta, FBETA_BETA
 
 # Color palette for multiple models
 MODEL_COLORS = [
@@ -103,7 +103,7 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
     thresholds = np.linspace(0.3, 0.9, n_points)
     precisions = []
     recalls = []
-    f1_scores = []
+    fbeta_scores = []
 
     for thresh in thresholds:
         y_pred = (y_proba >= thresh).astype(int)
@@ -114,20 +114,20 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        fbeta = compute_fbeta(precision, recall)
 
         precisions.append(precision)
         recalls.append(recall)
-        f1_scores.append(f1)
+        fbeta_scores.append(fbeta)
 
     precisions = np.array(precisions)
     recalls = np.array(recalls)
-    f1_scores = np.array(f1_scores)
+    fbeta_scores = np.array(fbeta_scores)
 
-    # Find best F1 threshold
-    best_idx = np.argmax(f1_scores)
+    # Find best F-beta threshold
+    best_idx = np.argmax(fbeta_scores)
     best_thresh = thresholds[best_idx]
-    best_f1 = f1_scores[best_idx]
+    best_fbeta = fbeta_scores[best_idx]
     best_prec = precisions[best_idx]
     best_rec = recalls[best_idx]
 
@@ -138,7 +138,7 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
     ax1 = axes[0]
     ax1.plot(recalls, precisions, 'b-', linewidth=2, label='P-R Curve')
     ax1.scatter([best_rec], [best_prec], c='red', s=100, zorder=5,
-                label=f'Best F1={best_f1:.3f} @ t={best_thresh:.2f}')
+                label=f'Best F-beta={best_fbeta:.3f} @ t={best_thresh:.2f}')
 
     # Add threshold annotations
     for t in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
@@ -158,7 +158,7 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
     ax2 = axes[1]
     ax2.plot(thresholds, precisions, 'b-', linewidth=2, label='Precision')
     ax2.plot(thresholds, recalls, 'g-', linewidth=2, label='Recall')
-    ax2.plot(thresholds, f1_scores, 'r--', linewidth=2, label='F1 Score')
+    ax2.plot(thresholds, fbeta_scores, 'r--', linewidth=2, label=f'F-beta (β={FBETA_BETA:.3f})')
     ax2.axvline(x=best_thresh, color='gray', linestyle=':', alpha=0.7,
                 label=f'Best threshold={best_thresh:.2f}')
 
@@ -182,21 +182,21 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
 
     # Print summary
     print("\n" + "=" * 60)
-    print("PRECISION-RECALL TRADE-OFF SUMMARY")
+    print(f"PRECISION-RECALL TRADE-OFF SUMMARY (F-beta β={FBETA_BETA:.3f})")
     print("=" * 60)
-    print(f"\nBest F1: {best_f1:.4f} at threshold {best_thresh:.2f}")
+    print(f"\nBest F-beta: {best_fbeta:.4f} at threshold {best_thresh:.2f}")
     print(f"  Precision: {best_prec:.4f}")
     print(f"  Recall: {best_rec:.4f}")
 
     print("\nKey threshold points:")
-    print(f"{'Threshold':>10} {'Precision':>10} {'Recall':>10} {'F1':>10}")
+    print(f"{'Threshold':>10} {'Precision':>10} {'Recall':>10} {'F-beta':>10}")
     print("-" * 45)
     for t in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
         idx = np.argmin(np.abs(thresholds - t))
-        print(f"{t:>10.1f} {precisions[idx]:>10.4f} {recalls[idx]:>10.4f} {f1_scores[idx]:>10.4f}")
+        print(f"{t:>10.1f} {precisions[idx]:>10.4f} {recalls[idx]:>10.4f} {fbeta_scores[idx]:>10.4f}")
 
     plt.show()
-    return thresholds, precisions, recalls, f1_scores
+    return thresholds, precisions, recalls, fbeta_scores
 
 
 def evaluate_model(model, X, y, n_points=100):
@@ -206,7 +206,7 @@ def evaluate_model(model, X, y, n_points=100):
     thresholds = np.linspace(0.3, 0.9, n_points)
     precisions = []
     recalls = []
-    f1_scores = []
+    fbeta_scores = []
 
     for thresh in thresholds:
         y_pred = (y_proba >= thresh).astype(int)
@@ -217,17 +217,17 @@ def evaluate_model(model, X, y, n_points=100):
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        fbeta = compute_fbeta(precision, recall)
 
         precisions.append(precision)
         recalls.append(recall)
-        f1_scores.append(f1)
+        fbeta_scores.append(fbeta)
 
     return {
         'thresholds': thresholds,
         'precisions': np.array(precisions),
         'recalls': np.array(recalls),
-        'f1_scores': np.array(f1_scores),
+        'fbeta_scores': np.array(fbeta_scores),
     }
 
 
@@ -291,11 +291,11 @@ def plot_multi_model_comparison(
     ax1 = axes[0, 0]
     for i, res in enumerate(results):
         color = MODEL_COLORS[i % len(MODEL_COLORS)]
-        best_idx = np.argmax(res['f1_scores'])
-        best_f1 = res['f1_scores'][best_idx]
+        best_idx = np.argmax(res['fbeta_scores'])
+        best_fbeta = res['fbeta_scores'][best_idx]
 
         ax1.plot(res['recalls'], res['precisions'], color=color, linewidth=2,
-                 label=f"{res['name']} (F1={best_f1:.3f})")
+                 label=f"{res['name']} (F-beta={best_fbeta:.3f})")
         ax1.scatter([res['recalls'][best_idx]], [res['precisions'][best_idx]],
                    c=color, s=80, zorder=5, marker='*', edgecolors='black')
 
@@ -307,16 +307,16 @@ def plot_multi_model_comparison(
     ax1.set_xlim([0.7, 1.01])
     ax1.set_ylim([0.8, 1.01])
 
-    # Plot 2: F1 vs Threshold (top-right)
+    # Plot 2: F-beta vs Threshold (top-right)
     ax2 = axes[0, 1]
     for i, res in enumerate(results):
         color = MODEL_COLORS[i % len(MODEL_COLORS)]
-        ax2.plot(res['thresholds'], res['f1_scores'], color=color, linewidth=2,
+        ax2.plot(res['thresholds'], res['fbeta_scores'], color=color, linewidth=2,
                  label=res['name'])
 
     ax2.set_xlabel('Threshold', fontsize=12)
-    ax2.set_ylabel('F1 Score', fontsize=12)
-    ax2.set_title('F1 Score vs Threshold', fontsize=14)
+    ax2.set_ylabel(f'F-beta (β={FBETA_BETA:.3f})', fontsize=12)
+    ax2.set_title(f'F-beta Score vs Threshold', fontsize=14)
     ax2.legend(loc='lower left', fontsize=9)
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim([0.3, 0.9])
@@ -365,21 +365,21 @@ def plot_multi_model_comparison(
 
     # Print summary table
     print("\n" + "=" * 80)
-    print("MODEL COMPARISON SUMMARY (threshold=0.5)")
+    print(f"MODEL COMPARISON SUMMARY (threshold=0.5, F-beta β={FBETA_BETA:.3f})")
     print("=" * 80)
-    print(f"\n{'Model':<35} {'F1':>8} {'Prec':>8} {'Rec':>8} {'BestF1':>8} {'@Thresh':>8}")
+    print(f"\n{'Model':<35} {'F-beta':>8} {'Prec':>8} {'Rec':>8} {'Best':>8} {'@Thresh':>8}")
     print("-" * 80)
 
     for res in results:
         # Find threshold=0.5 metrics
         idx_05 = np.argmin(np.abs(res['thresholds'] - 0.5))
-        best_idx = np.argmax(res['f1_scores'])
+        best_idx = np.argmax(res['fbeta_scores'])
 
         print(f"{res['name']:<35} "
-              f"{res['f1_scores'][idx_05]:>8.4f} "
+              f"{res['fbeta_scores'][idx_05]:>8.4f} "
               f"{res['precisions'][idx_05]:>8.4f} "
               f"{res['recalls'][idx_05]:>8.4f} "
-              f"{res['f1_scores'][best_idx]:>8.4f} "
+              f"{res['fbeta_scores'][best_idx]:>8.4f} "
               f"{res['thresholds'][best_idx]:>8.2f}")
 
     # Print detailed per-threshold table for all models
@@ -389,12 +389,12 @@ def plot_multi_model_comparison(
 
     for thresh in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
         print(f"\n--- Threshold = {thresh} ---")
-        print(f"{'Model':<35} {'F1':>8} {'Prec':>8} {'Rec':>8}")
+        print(f"{'Model':<35} {'F-beta':>8} {'Prec':>8} {'Rec':>8}")
         print("-" * 60)
         for res in results:
             idx = np.argmin(np.abs(res['thresholds'] - thresh))
             print(f"{res['name']:<35} "
-                  f"{res['f1_scores'][idx]:>8.4f} "
+                  f"{res['fbeta_scores'][idx]:>8.4f} "
                   f"{res['precisions'][idx]:>8.4f} "
                   f"{res['recalls'][idx]:>8.4f}")
 

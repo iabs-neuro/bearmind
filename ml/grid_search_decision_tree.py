@@ -16,9 +16,9 @@ import pandas as pd
 import random
 from pathlib import Path
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, fbeta_score
 from itertools import product
-from data_utils import FEATURE_COLS
+from data_utils import FEATURE_COLS, FBETA_BETA
 from tqdm import tqdm
 from datetime import datetime
 
@@ -110,23 +110,27 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params):
 
     # Evaluate on train set
     y_train_pred = model.predict(X_train)
-    train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+    train_prec, train_rec, _, _ = precision_recall_fscore_support(
         y_train, y_train_pred, average='binary', zero_division=0
     )
+    train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA,
+                              average='binary', zero_division=0)
 
     # Evaluate on test set
     y_test_pred = model.predict(X_test)
-    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+    test_prec, test_rec, _, _ = precision_recall_fscore_support(
         y_test, y_test_pred, average='binary', zero_division=0
     )
+    test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA,
+                             average='binary', zero_division=0)
 
     return model, {
         'train_precision': train_prec,
         'train_recall': train_rec,
-        'train_f1': train_f1,
+        'train_fbeta': train_fbeta,
         'test_precision': test_prec,
         'test_recall': test_rec,
-        'test_f1': test_f1
+        'test_fbeta': test_fbeta
     }
 
 
@@ -297,17 +301,17 @@ def grid_search(artifacts_dir="data/capcan_validation_127",
     top_precision = results_df.nlargest(10, 'test_precision')
     print("\n" + top_precision[['max_depth', 'min_samples_split', 'min_samples_leaf',
                                  'class_weight_factor', 'test_precision', 'test_recall',
-                                 'test_f1']].to_string(index=False))
+                                 'test_fbeta']].to_string(index=False))
 
-    # Best results by F1
+    # Best results by F-beta
     print("\n" + "="*80)
-    print("TOP 10 CONFIGURATIONS BY TEST F1 SCORE")
+    print(f"TOP 10 CONFIGURATIONS BY TEST F-BETA (β={FBETA_BETA:.3f})")
     print("="*80)
 
-    top_f1 = results_df.nlargest(10, 'test_f1')
-    print("\n" + top_f1[['max_depth', 'min_samples_split', 'min_samples_leaf',
+    top_fbeta = results_df.nlargest(10, 'test_fbeta')
+    print("\n" + top_fbeta[['max_depth', 'min_samples_split', 'min_samples_leaf',
                           'class_weight_factor', 'test_precision', 'test_recall',
-                          'test_f1']].to_string(index=False))
+                          'test_fbeta']].to_string(index=False))
 
     # Best balanced (precision >= 90%)
     print("\n" + "="*80)
@@ -316,10 +320,10 @@ def grid_search(artifacts_dir="data/capcan_validation_127",
 
     high_precision = results_df[results_df['test_precision'] >= 0.90]
     if not high_precision.empty:
-        top_high_prec = high_precision.nlargest(10, 'test_f1')
+        top_high_prec = high_precision.nlargest(10, 'test_fbeta')
         print("\n" + top_high_prec[['max_depth', 'min_samples_split', 'min_samples_leaf',
                                      'class_weight_factor', 'test_precision', 'test_recall',
-                                     'test_f1']].to_string(index=False))
+                                     'test_fbeta']].to_string(index=False))
     else:
         print("\nNo configurations achieved precision >= 90%")
 

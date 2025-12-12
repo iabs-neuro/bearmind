@@ -5,9 +5,10 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, fbeta_score
 from sklearn.impute import SimpleImputer
 from pathlib import Path
+from data_utils import FBETA_BETA
 import pickle
 from itertools import product
 import warnings
@@ -91,28 +92,26 @@ def find_best_lasso_params(data_path,
         y_test_proba = model.predict_proba(X_test_scaled)[:, 1]
         y_test_pred = (y_test_proba > threshold).astype(int)
 
-        # Calculate F1 score
-        _, _, f1, _ = precision_recall_fscore_support(
+        # Calculate F-beta score
+        prec, rec, _, _ = precision_recall_fscore_support(
             y_test, y_test_pred, average='binary', zero_division=0
         )
+        fb = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA,
+                         average='binary', zero_division=0)
 
-        print(f"  Test F1: {f1:.3f}")
+        print(f"  Test F-beta: {fb:.3f}")
 
-        if f1 > best_score:
-            best_score = f1
+        if fb > best_score:
+            best_score = fb
             best_params = {
                 'C': C,
                 'class_threshold': threshold,
                 'max_iter': max_iter
             }
             best_metrics = {
-                'test_f1': f1,
-                'test_precision': precision_recall_fscore_support(
-                    y_test, y_test_pred, average='binary', zero_division=0
-                )[0],
-                'test_recall': precision_recall_fscore_support(
-                    y_test, y_test_pred, average='binary', zero_division=0
-                )[1]
+                'test_fbeta': fb,
+                'test_precision': prec,
+                'test_recall': rec
             }
 
     print(f"\n{'=' * 60}")
@@ -120,7 +119,7 @@ def find_best_lasso_params(data_path,
     print(f"C: {best_params['C']}")
     print(f"Threshold: {best_params['class_threshold']}")
     print(f"Max iter: {best_params['max_iter']}")
-    print(f"Test F1: {best_score:.3f}")
+    print(f"Test F-beta (β={FBETA_BETA:.3f}): {best_score:.3f}")
     print(f"{'=' * 60}")
 
     return best_params, best_metrics
@@ -202,7 +201,7 @@ def run_multi_seed_lasso(data_path,
             'seed': seed
         })
 
-        print(f"  Train F1: {metrics['train_f1']:.3f}, Test F1: {metrics['test_f1']:.3f}")
+        print(f"  Train F-beta: {metrics['train_fbeta']:.3f}, Test F-beta: {metrics['test_fbeta']:.3f}")
 
     # Convert to DataFrame
     results_df = pd.DataFrame(results)
@@ -212,10 +211,10 @@ def run_multi_seed_lasso(data_path,
     results_df.to_csv(results_path, index=False)
     print(f"\nResults saved to: {results_path}")
 
-    # Find best model by test F1
-    best_idx = results_df['test_f1'].idxmax()
+    # Find best model by test F-beta
+    best_idx = results_df['test_fbeta'].idxmax()
     best_seed = results_df.loc[best_idx, 'seed']
-    best_test_f1 = results_df.loc[best_idx, 'test_f1']
+    best_test_fbeta = results_df.loc[best_idx, 'test_fbeta']
 
     # Save all models or just the best one
     for model_info in models_data:
@@ -244,17 +243,17 @@ def run_multi_seed_lasso(data_path,
             best_model_path = output_path / "best_lasso_model.pkl"
             with open(best_model_path, 'wb') as f:
                 pickle.dump(model_data, f)
-            print(f"✓ BEST MODEL: seed {seed} (F1={best_test_f1:.3f}) saved as: {best_model_path}")
+            print(f"✓ BEST MODEL: seed {seed} (F-beta={best_test_fbeta:.3f}) saved as: {best_model_path}")
 
     # Print summary
     print(f"\n{'=' * 60}")
     print("TRAINING SUMMARY")
     print("=" * 60)
     print(f"Best seed: {best_seed}")
-    print(f"Best test F1: {best_test_f1:.3f}")
+    print(f"Best test F-beta (β={FBETA_BETA:.3f}): {best_test_fbeta:.3f}")
     print(f"\nPerformance across all seeds:")
-    print(f"Test F1 - Mean: {results_df['test_f1'].mean():.3f} ± {results_df['test_f1'].std():.3f}")
-    print(f"Test F1 - Min: {results_df['test_f1'].min():.3f}, Max: {results_df['test_f1'].max():.3f}")
+    print(f"Test F-beta - Mean: {results_df['test_fbeta'].mean():.3f} ± {results_df['test_fbeta'].std():.3f}")
+    print(f"Test F-beta - Min: {results_df['test_fbeta'].min():.3f}, Max: {results_df['test_fbeta'].max():.3f}")
     print(f"Test Precision - Mean: {results_df['test_precision'].mean():.3f}")
     print(f"Test Recall - Mean: {results_df['test_recall'].mean():.3f}")
     print(f"\nAll models saved to: {output_path}")
@@ -322,7 +321,7 @@ def train_best_lasso_pipeline(data_path,
     print(f"\nBest parameters:")
     for param, value in best_params.items():
         print(f"  {param}: {value}")
-    print(f"Best test F1: {best_model_data['metrics']['test_f1']:.3f}")
+    print(f"Best test F-beta: {best_model_data['metrics']['test_fbeta']:.3f}")
     print("=" * 80)
 
     return best_model_data, results_df

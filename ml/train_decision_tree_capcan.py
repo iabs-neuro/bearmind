@@ -16,10 +16,10 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
-from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support, fbeta_score
 import matplotlib.pyplot as plt
 import random
-from data_utils import FEATURE_COLS
+from data_utils import FEATURE_COLS, FBETA_BETA
 
 
 def load_session_data(session_dir):
@@ -166,25 +166,27 @@ def train_decision_tree(X_train, y_train, X_test, y_test,
 
     # Evaluate on training set
     y_train_pred = clf.predict(X_train)
-    train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+    train_prec, train_rec, _, _ = precision_recall_fscore_support(
         y_train, y_train_pred, average='binary'
     )
+    train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA, average='binary')
 
     print(f"\nTraining performance:")
-    print(f"  Precision: {train_prec:.2%}")
-    print(f"  Recall:    {train_rec:.2%}")
-    print(f"  F1 Score:  {train_f1:.2%}")
+    print(f"  Precision:  {train_prec:.2%}")
+    print(f"  Recall:     {train_rec:.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {train_fbeta:.2%}")
 
     # Evaluate on test set
     y_test_pred = clf.predict(X_test)
-    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+    test_prec, test_rec, _, _ = precision_recall_fscore_support(
         y_test, y_test_pred, average='binary'
     )
+    test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA, average='binary')
 
     print(f"\nTest performance:")
-    print(f"  Precision: {test_prec:.2%}")
-    print(f"  Recall:    {test_rec:.2%}")
-    print(f"  F1 Score:  {test_f1:.2%}")
+    print(f"  Precision:  {test_prec:.2%}")
+    print(f"  Recall:     {test_rec:.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {test_fbeta:.2%}")
 
     # Feature importance
     print(f"\nFeature importance:")
@@ -392,21 +394,23 @@ def run_multiple_seeds(n_seeds=10, train_fraction=0.75, max_depth=5,
         y_train_pred = clf.predict(X_train)
         y_test_pred = clf.predict(X_test)
 
-        train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+        train_prec, train_rec, _, _ = precision_recall_fscore_support(
             y_train, y_train_pred, average='binary'
         )
-        test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+        train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA, average='binary')
+        test_prec, test_rec, _, _ = precision_recall_fscore_support(
             y_test, y_test_pred, average='binary'
         )
+        test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA, average='binary')
 
         results.append({
             'seed': seed,
             'train_precision': train_prec,
             'train_recall': train_rec,
-            'train_f1': train_f1,
+            'train_fbeta': train_fbeta,
             'test_precision': test_prec,
             'test_recall': test_rec,
-            'test_f1': test_f1,
+            'test_fbeta': test_fbeta,
             'n_train': len(X_train),
             'n_test': len(X_test)
         })
@@ -417,7 +421,7 @@ def run_multiple_seeds(n_seeds=10, train_fraction=0.75, max_depth=5,
             import pickle as pkl
             pkl.dump(clf, f)
 
-        print(f"Test Performance: Precision={test_prec:.2%}, Recall={test_rec:.2%}, F1={test_f1:.2%}")
+        print(f"Test Performance: Precision={test_prec:.2%}, Recall={test_rec:.2%}, F-beta={test_fbeta:.2%}")
         print(f"Model saved: {model_path}")
 
     # Convert to DataFrame
@@ -432,14 +436,14 @@ def run_multiple_seeds(n_seeds=10, train_fraction=0.75, max_depth=5,
     print("SUMMARY ACROSS ALL SEEDS")
     print("="*60)
     print(f"\nTest Performance (mean +/- std):")
-    print(f"  Precision: {results_df['test_precision'].mean():.2%} +/- {results_df['test_precision'].std():.2%}")
-    print(f"  Recall:    {results_df['test_recall'].mean():.2%} +/- {results_df['test_recall'].std():.2%}")
-    print(f"  F1 Score:  {results_df['test_f1'].mean():.2%} +/- {results_df['test_f1'].std():.2%}")
+    print(f"  Precision:  {results_df['test_precision'].mean():.2%} +/- {results_df['test_precision'].std():.2%}")
+    print(f"  Recall:     {results_df['test_recall'].mean():.2%} +/- {results_df['test_recall'].std():.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {results_df['test_fbeta'].mean():.2%} +/- {results_df['test_fbeta'].std():.2%}")
 
     print(f"\nTrain Performance (mean +/- std):")
-    print(f"  Precision: {results_df['train_precision'].mean():.2%} +/- {results_df['train_precision'].std():.2%}")
-    print(f"  Recall:    {results_df['train_recall'].mean():.2%} +/- {results_df['train_recall'].std():.2%}")
-    print(f"  F1 Score:  {results_df['train_f1'].mean():.2%} +/- {results_df['train_f1'].std():.2%}")
+    print(f"  Precision:  {results_df['train_precision'].mean():.2%} +/- {results_df['train_precision'].std():.2%}")
+    print(f"  Recall:     {results_df['train_recall'].mean():.2%} +/- {results_df['train_recall'].std():.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {results_df['train_fbeta'].mean():.2%} +/- {results_df['train_fbeta'].std():.2%}")
 
     print(f"\nResults saved to: {results_path}")
     print("="*60)

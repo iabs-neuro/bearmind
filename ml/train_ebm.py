@@ -12,8 +12,8 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
-from data_utils import FEATURE_COLS, stratified_session_split, print_split_info
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score, fbeta_score
+from data_utils import FEATURE_COLS, stratified_session_split, print_split_info, FBETA_BETA
 
 
 def load_session_data(session_dir):
@@ -200,31 +200,35 @@ def train_ebm(
     y_train_pred = ebm.predict(X_train)
     y_train_proba = ebm.predict_proba(X_train)[:, 1]
 
-    train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+    train_prec, train_rec, _, _ = precision_recall_fscore_support(
         y_train, y_train_pred, average='binary', zero_division=0
     )
+    train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA,
+                              average='binary', zero_division=0)
     train_auc = roc_auc_score(y_train, y_train_proba)
 
     print("\nTrain Set Performance:")
-    print(f"  Precision: {train_prec*100:.2f}%")
-    print(f"  Recall:    {train_rec*100:.2f}%")
-    print(f"  F1 Score:  {train_f1*100:.2f}%")
-    print(f"  ROC AUC:   {train_auc*100:.2f}%")
+    print(f"  Precision:  {train_prec*100:.2f}%")
+    print(f"  Recall:     {train_rec*100:.2f}%")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {train_fbeta*100:.2f}%")
+    print(f"  ROC AUC:    {train_auc*100:.2f}%")
 
     # Evaluate on test set
     y_test_pred = ebm.predict(X_test)
     y_test_proba = ebm.predict_proba(X_test)[:, 1]
 
-    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+    test_prec, test_rec, _, _ = precision_recall_fscore_support(
         y_test, y_test_pred, average='binary', zero_division=0
     )
+    test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA,
+                             average='binary', zero_division=0)
     test_auc = roc_auc_score(y_test, y_test_proba)
 
     print("\nTest Set Performance:")
-    print(f"  Precision: {test_prec*100:.2f}%")
-    print(f"  Recall:    {test_rec*100:.2f}%")
-    print(f"  F1 Score:  {test_f1*100:.2f}%")
-    print(f"  ROC AUC:   {test_auc*100:.2f}%")
+    print(f"  Precision:  {test_prec*100:.2f}%")
+    print(f"  Recall:     {test_rec*100:.2f}%")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {test_fbeta*100:.2f}%")
+    print(f"  ROC AUC:    {test_auc*100:.2f}%")
 
     # Confusion matrix
     cm = confusion_matrix(y_test, y_test_pred)
@@ -308,11 +312,11 @@ def train_ebm(
     results = {
         'train_precision': train_prec,
         'train_recall': train_rec,
-        'train_f1': train_f1,
+        'train_fbeta': train_fbeta,
         'train_auc': train_auc,
         'test_precision': test_prec,
         'test_recall': test_rec,
-        'test_f1': test_f1,
+        'test_fbeta': test_fbeta,
         'test_auc': test_auc,
         'n_train': len(X_train),
         'n_test': len(X_test),

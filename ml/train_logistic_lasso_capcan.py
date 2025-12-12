@@ -3,8 +3,9 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, fbeta_score
 from sklearn.impute import SimpleImputer
+from data_utils import FBETA_BETA
 import joblib
 import json
 import os
@@ -166,27 +167,29 @@ def train_logistic_lasso(X_train, y_train, X_test, y_test, C=1.0, random_state=4
     y_test_pred = predict_class(clf, imputer, scaler, X_test, threshold=class_threshold)[0]
 
     # Performance evaluation
-    train_prec, train_rec, train_f1, _ = precision_recall_fscore_support(
+    train_prec, train_rec, _, _ = precision_recall_fscore_support(
         y_train, y_train_pred, average='binary'
     )
-    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+    train_fbeta = fbeta_score(y_train, y_train_pred, beta=FBETA_BETA, average='binary')
+    test_prec, test_rec, _, _ = precision_recall_fscore_support(
         y_test, y_test_pred, average='binary'
     )
+    test_fbeta = fbeta_score(y_test, y_test_pred, beta=FBETA_BETA, average='binary')
 
     # Confusion matrices
     cm_train = confusion_matrix(y_train, y_train_pred)
     cm_test = confusion_matrix(y_test, y_test_pred)
 
     print(f"\nTraining performance:")
-    print(f"  Precision: {train_prec:.2%}")
-    print(f"  Recall:    {train_rec:.2%}")
-    print(f"  F1 Score:  {train_f1:.2%}")
+    print(f"  Precision:  {train_prec:.2%}")
+    print(f"  Recall:     {train_rec:.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {train_fbeta:.2%}")
     print(f"  Confusion Matrix:\n{cm_train}")
 
     print(f"\nTest performance:")
-    print(f"  Precision: {test_prec:.2%}")
-    print(f"  Recall:    {test_rec:.2%}")
-    print(f"  F1 Score:  {test_f1:.2%}")
+    print(f"  Precision:  {test_prec:.2%}")
+    print(f"  Recall:     {test_rec:.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {test_fbeta:.2%}")
     print(f"  Confusion Matrix:\n{cm_test}")
 
     # Feature importance analysis
@@ -199,10 +202,10 @@ def train_logistic_lasso(X_train, y_train, X_test, y_test, C=1.0, random_state=4
     metrics = {
         'train_precision': train_prec,
         'train_recall': train_rec,
-        'train_f1': train_f1,
+        'train_fbeta': train_fbeta,
         'test_precision': test_prec,
         'test_recall': test_rec,
-        'test_f1': test_f1,
+        'test_fbeta': test_fbeta,
         'n_train': len(X_train),
         'n_test': len(X_test)
     }
@@ -233,7 +236,7 @@ def main(path, train_fraction=0.75, C=1, max_iter=1000,
     print(f"\n{'#' * 60}")
     print(f"Test Precision: {dict['test_precision']:.2%}")
     print(f"Test Recall: {dict['test_recall']:.2%}")
-    print(f"Test F1: {dict['test_f1']:.2%}")
+    print(f"Test F-beta (β={FBETA_BETA:.3f}): {dict['test_fbeta']:.2%}")
     print(f"{'#' * 60}")
 
     # Save model and config

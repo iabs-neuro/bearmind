@@ -9,8 +9,8 @@ import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.metrics import precision_recall_fscore_support
-from data_utils import FEATURE_COLS
+from sklearn.metrics import precision_recall_fscore_support, fbeta_score
+from data_utils import FEATURE_COLS, FBETA_BETA
 
 
 def load_session_data(session_dir):
@@ -120,9 +120,11 @@ def evaluate_per_session(model_path="ml/models/decision_tree_capcan_model.pkl",
             y_pred = model.predict(X)
 
             # Calculate metrics
-            prec, rec, f1, _ = precision_recall_fscore_support(
+            prec, rec, _, _ = precision_recall_fscore_support(
                 y, y_pred, average='binary', zero_division=0
             )
+            fb = fbeta_score(y, y_pred, beta=FBETA_BETA,
+                             average='binary', zero_division=0)
 
             # Count neurons
             n_neurons_filtered = len(X)
@@ -144,10 +146,10 @@ def evaluate_per_session(model_path="ml/models/decision_tree_capcan_model.pkl",
                 'n_delete_pred': n_delete_pred,
                 'precision': prec,
                 'recall': rec,
-                'f1': f1
+                'fbeta': fb
             })
 
-            print(f"[OK] {session_name:30s} | P={prec:.2%} R={rec:.2%} F1={f1:.2%} | {n_neurons_filtered} neurons")
+            print(f"[OK] {session_name:30s} | P={prec:.2%} R={rec:.2%} Fb={fb:.2%} | {n_neurons_filtered} neurons")
 
         except Exception as e:
             print(f"[ERROR] {session_name} - {e}")
@@ -169,9 +171,9 @@ def evaluate_per_session(model_path="ml/models/decision_tree_capcan_model.pkl",
     print("="*80)
 
     print(f"\nOverall (all {len(results_df)} sessions):")
-    print(f"  Precision: {results_df['precision'].mean():.2%} +/- {results_df['precision'].std():.2%}")
-    print(f"  Recall:    {results_df['recall'].mean():.2%} +/- {results_df['recall'].std():.2%}")
-    print(f"  F1 Score:  {results_df['f1'].mean():.2%} +/- {results_df['f1'].std():.2%}")
+    print(f"  Precision:  {results_df['precision'].mean():.2%} +/- {results_df['precision'].std():.2%}")
+    print(f"  Recall:     {results_df['recall'].mean():.2%} +/- {results_df['recall'].std():.2%}")
+    print(f"  F-beta (β={FBETA_BETA:.3f}): {results_df['fbeta'].mean():.2%} +/- {results_df['fbeta'].std():.2%}")
 
     # Group by experiment
     print("\n" + "-"*80)
@@ -181,9 +183,9 @@ def evaluate_per_session(model_path="ml/models/decision_tree_capcan_model.pkl",
     for exp in sorted(results_df['experiment'].unique()):
         exp_data = results_df[results_df['experiment'] == exp]
         print(f"\n{exp} ({len(exp_data)} sessions):")
-        print(f"  Precision: {exp_data['precision'].mean():.2%} +/- {exp_data['precision'].std():.2%}")
-        print(f"  Recall:    {exp_data['recall'].mean():.2%} +/- {exp_data['recall'].std():.2%}")
-        print(f"  F1 Score:  {exp_data['f1'].mean():.2%} +/- {exp_data['f1'].std():.2%}")
+        print(f"  Precision:  {exp_data['precision'].mean():.2%} +/- {exp_data['precision'].std():.2%}")
+        print(f"  Recall:     {exp_data['recall'].mean():.2%} +/- {exp_data['recall'].std():.2%}")
+        print(f"  F-beta:     {exp_data['fbeta'].mean():.2%} +/- {exp_data['fbeta'].std():.2%}")
 
     # Identify worst sessions
     print("\n" + "-"*80)
@@ -191,24 +193,24 @@ def evaluate_per_session(model_path="ml/models/decision_tree_capcan_model.pkl",
     print("-"*80)
 
     worst_prec = results_df.nsmallest(10, 'precision')
-    print(worst_prec[['session', 'experiment', 'precision', 'recall', 'f1',
+    print(worst_prec[['session', 'experiment', 'precision', 'recall', 'fbeta',
                       'n_neurons_filtered']].to_string(index=False))
 
     print("\n" + "-"*80)
-    print("WORST 10 SESSIONS BY F1 SCORE:")
+    print(f"WORST 10 SESSIONS BY F-BETA (β={FBETA_BETA:.3f}):")
     print("-"*80)
 
-    worst_f1 = results_df.nsmallest(10, 'f1')
-    print(worst_f1[['session', 'experiment', 'precision', 'recall', 'f1',
+    worst_fbeta = results_df.nsmallest(10, 'fbeta')
+    print(worst_fbeta[['session', 'experiment', 'precision', 'recall', 'fbeta',
                     'n_neurons_filtered']].to_string(index=False))
 
     # Identify best sessions
     print("\n" + "-"*80)
-    print("BEST 10 SESSIONS BY F1 SCORE:")
+    print(f"BEST 10 SESSIONS BY F-BETA (β={FBETA_BETA:.3f}):")
     print("-"*80)
 
-    best_f1 = results_df.nlargest(10, 'f1')
-    print(best_f1[['session', 'experiment', 'precision', 'recall', 'f1',
+    best_fbeta = results_df.nlargest(10, 'fbeta')
+    print(best_fbeta[['session', 'experiment', 'precision', 'recall', 'fbeta',
                    'n_neurons_filtered']].to_string(index=False))
 
     print("\n" + "="*80)
