@@ -302,8 +302,9 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                     rec_norm = (rec - rec_min) / rec_range + i
                 traces_recon.append(rec_norm)
             else:
-                # Fallback: use original trace if no reconstruction
-                traces_recon.append(traces[i])
+                # Fallback: use zeros if no reconstruction (don't copy signal)
+                num_points = len(traces[i])
+                traces_recon.append(np.zeros(num_points) + i)
         print(f'Loaded cached reconstructions for {len(est.reconstructions)} neurons')
 
     n_cells = len(comps_to_select)

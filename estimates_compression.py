@@ -104,8 +104,22 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
 
             # Update idx_components to be 0-indexed after removal
             # After removal, all remaining components are "good"
+            # CRITICAL: Build mapping from old (sparse) indices to new (contiguous) indices
+            old_to_new = {int(old_idx): int(new_idx)
+                         for new_idx, old_idx in enumerate(good_indices)}
+
             est.idx_components = np.arange(len(good_indices), dtype=int)
             est.idx_components_bad = np.array([], dtype=int)  # All bad data removed
+
+            # Transform reconstructions to use new contiguous indices
+            if hasattr(est, 'reconstructions') and est.reconstructions:
+                transformed_recons = {}
+                for old_idx, rec in est.reconstructions.items():
+                    if old_idx in old_to_new:
+                        new_idx = old_to_new[old_idx]
+                        transformed_recons[new_idx] = rec
+                est.reconstructions = transformed_recons
+                print(f'  Transformed {len(transformed_recons)} reconstructions to new indices')
 
             print(f'  Removed {n_bad} bad components')
 
