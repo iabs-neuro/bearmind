@@ -348,18 +348,20 @@ def get_nn_distances(distance_matrix):
     return np.array(nn_distances)
 
 
-def get_tau_decays(est, comps_to_select):
+def get_tau_decays(est, comps_to_select, fps):
     """
     Compute tau_decay from CaImAn autoregressive parameter g.
 
-    tau = -1/log(g) in frames. Represents calcium indicator decay time.
+    tau = -1/log(g) converted from frames to seconds.
+    Represents calcium indicator decay time.
 
     Args:
         est: CaImAn estimates object
         comps_to_select: List of component indices
+        fps: Frames per second for unit conversion
 
     Returns:
-        np.array of tau_decay values
+        np.array of tau_decay values in seconds
     """
     n_cells = len(comps_to_select)
     if not hasattr(est, 'g'):
@@ -371,9 +373,10 @@ def get_tau_decays(est, comps_to_select):
         # Handle both list and array cases, extract first AR parameter
         if isinstance(g_val, (list, np.ndarray)):
             g_val = g_val[0] if len(g_val) > 0 else np.nan
-        # Convert g to tau: tau = -1/log(g) in frames
+        # Convert g to tau: tau = -1/log(g) in frames, then convert to seconds
         if not np.isnan(g_val) and 0 < g_val < 1:
-            tau_decays.append(-1.0 / np.log(g_val))
+            tau_frames = -1.0 / np.log(g_val)
+            tau_decays.append(tau_frames / fps)
         else:
             tau_decays.append(np.nan)
     return np.array(tau_decays)
@@ -587,7 +590,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     # CaImAn estimates attributes
     noise_levels = est.neurons_sn[comps_to_select] if hasattr(est, 'neurons_sn') else np.full(n_cells, np.nan)
     baselines = est.bl[comps_to_select] if hasattr(est, 'bl') else np.full(n_cells, np.nan)
-    tau_decays = get_tau_decays(est, comps_to_select)
+    tau_decays = get_tau_decays(est, comps_to_select, fps)
 
     # Trace statistics (skewness and kurtosis)
     raw_traces = est.C[comps_to_select, sf:ef]
