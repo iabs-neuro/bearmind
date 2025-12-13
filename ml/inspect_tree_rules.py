@@ -22,7 +22,7 @@ def get_feature_names():
         'events_fraction',
         't_rise',
         't_off',
-        'wavelet_snr',
+        'event_snr',
         'r2_score',
         'event_r2_score',
         'nmae',

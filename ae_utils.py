@@ -264,7 +264,7 @@ def create_inspection_summary(metrics_df, decision_df, corner_info, output_folde
         summary_lines.append('KEPT NEURONS - QUALITY METRICS:')
 
         metric_cols = ['area', 'circularity', 'max_edge', 'convexity',
-                      'caiman_snr', 'caiman_r_score', 't_rise', 't_off', 'wavelet_snr']
+                      'caiman_snr', 'caiman_r_score', 't_rise', 't_off', 'event_snr']
 
         for col in metric_cols:
             if col in kept_df.columns:

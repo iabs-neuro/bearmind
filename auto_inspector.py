@@ -144,15 +144,15 @@ def get_signal_metrics(neuron):
     t_off = neuron.t_off/neuron.fps if not pd.isna(neuron.t_off) else -1
 
     try:
-        wavelet_snr = neuron.get_wavelet_snr()
+        event_snr = neuron.get_wavelet_snr()
         # Log transform to handle extreme outliers (corrupted values can reach millions)
         # log1p handles 0 values gracefully: log1p(x) = log(1+x)
-        if wavelet_snr > 0:
-            wavelet_snr = np.log1p(wavelet_snr)
+        if event_snr > 0:
+            event_snr = np.log1p(event_snr)
         else:
-            wavelet_snr = 0.0
+            event_snr = 0.0
     except ValueError:
-        wavelet_snr = -1
+        event_snr = -1
 
     # Peak amplitude coefficient of variation (consistency of event amplitudes)
     # Real neurons have consistent amplitudes; artifacts vary wildly
@@ -167,7 +167,7 @@ def get_signal_metrics(neuron):
         'events_fraction': events_fraction,
         't_rise': t_rise,
         't_off': t_off,
-        'wavelet_snr': wavelet_snr,
+        'event_snr': event_snr,
         'peak_amplitude_cv': peak_amplitude_cv
     }
 
@@ -232,7 +232,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             'events_fraction': np.nan,
             't_rise': np.nan,
             't_off': np.nan,
-            'wavelet_snr': np.nan,
+            'event_snr': np.nan,
             'peak_amplitude_cv': np.nan
         }
 
