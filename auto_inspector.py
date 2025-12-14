@@ -112,7 +112,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         )
 
     # Stage 2: Measure kinetics from initial events
-    kinetics = neuron.get_kinetics(
+    kinetics_result = neuron.get_kinetics(
         method='direct',  # Direct measurement from detected events
         use_cached=False,  # Force recomputation
         #update_reconstruction=not lightweight  # Re-run detection with optimized kinetics
@@ -131,10 +131,18 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
             adaptive_thresholds=True
         )
 
-    return neuron
+    return neuron, kinetics_result
 
 
-def get_signal_metrics(neuron):
+def get_signal_metrics(neuron, kinetics_optimized=None):
+    """
+    Extract signal-based metrics from a neuron.
+
+    Args:
+        neuron: DRIADA Neuron object
+        kinetics_optimized: bool or None - whether kinetics optimization succeeded
+                           (from get_kinetics()['optimized'])
+    """
     # metrics that don't require precise reconstruction
 
     n_events = int(np.sum(neuron.asp.data > 0))
@@ -165,13 +173,28 @@ def get_signal_metrics(neuron):
     else:
         peak_amplitude_cv = np.nan  # not enough events to compute CV
 
+    # Determine if kinetics optimization was successful
+    # Use the 'optimized' flag from get_kinetics() if available
+    if kinetics_optimized is not None:
+        kinetics_opt = 1 if kinetics_optimized else 0
+    elif t_rise == -1 or t_off == -1:
+        # Fallback: -1 indicates explicit no-events case
+        kinetics_opt = 0
+    elif t_rise > 0 and t_off > 0:
+        # Fallback: assume success if positive values present
+        kinetics_opt = 1
+    else:
+        # Unexpected state
+        kinetics_opt = -1
+
     sig_metrics = {
         'events_per_min': epm,
         'events_fraction': events_fraction,
         't_rise': t_rise,
         't_off': t_off,
         'event_snr': event_snr,
-        'peak_amplitude_cv': peak_amplitude_cv
+        'peak_amplitude_cv': peak_amplitude_cv,
+        'kinetics_opt': kinetics_opt
     }
 
     return sig_metrics
@@ -220,8 +243,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
         n_iter: Number of iterations for iterative reconstruction (default: 2)
     """
     try:
-        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter)
-        signal_metrics = get_signal_metrics(neuron)
+        neuron, kinetics_result = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter)
+        signal_metrics = get_signal_metrics(neuron, kinetics_optimized=kinetics_result.get('optimized', None))
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
             return {**signal_metrics, **rec_metrics}
@@ -237,7 +260,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             't_rise': np.nan,
             't_off': np.nan,
             'event_snr': np.nan,
-            'peak_amplitude_cv': np.nan
+            'peak_amplitude_cv': np.nan,
+            'kinetics_opt': np.nan
         }
 
         if include_heavy:
@@ -847,12 +871,6 @@ def t_off_check(series, t_off_min):
 DEFAULT_DELETION_RULES = [
     'area<1',          # DELETE if area < 1 pixel (reject tiny footprints)
     'circularity>4',   # DELETE if circularity > 4 (reject non-circular)
-    'max_edge>42',     # DELETE if max_edge > 42 (reject elongated)
-    'convexity>42',    # DELETE if convexity > 42 (reject non-convex)
-    't_rise<0.10',     # DELETE if t_rise < 0.10s (reject fast rises)
-    'caiman_r_score<0.05',  # DELETE if r_score < 0.05 (reject poor correlation)
-    'caiman_snr<2.9',       # DELETE if snr < 2.9 (reject low SNR)
-    't_off<1.5'        # DELETE if t_off < 1.5s (reject fast decays)
 ]
 
 

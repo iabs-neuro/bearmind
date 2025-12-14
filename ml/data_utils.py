@@ -54,7 +54,7 @@ FEATURE_COLS = [
     'area', 'aspect_ratio', 'baseline', 'bimodality', 'caiman_r_score', 'caiman_snr',
     'circularity', 'convexity', 'eccentricity', 'edge_distance', 'ellipse_r',
     'event_r2_score', 'event_snr', 'events_fraction', 'events_per_min', 'footprint_compactness',
-    'local_density', 'max_edge', 'mean_time_at_peak', 'nmae', 'nn_distance_center', 'noise_level',
+    'kinetics_opt', 'local_density', 'max_edge', 'mean_time_at_peak', 'nmae', 'nn_distance_center', 'noise_level',
     'nrmse', 'peak_amplitude_cv', 'r2_score', 'snr_recon', 't_off', 't_rise',
     'tau_decay', 'trace_kurtosis', 'trace_skewness'
 ]
