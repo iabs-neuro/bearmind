@@ -24,6 +24,8 @@ from caiman.components_evaluation import (
 
 from scipy.stats import median_abs_deviation, skew, kurtosis, spearmanr
 from scipy.spatial import distance_matrix
+from scipy.signal import find_peaks
+from scipy.ndimage import gaussian_filter1d
 from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
                      calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities,
@@ -74,7 +76,7 @@ def get_hvals(traces):
     return hvals
 
 
-def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold'):
+def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2):
     """
     Create a Neuron object and detect events using specified method.
 
@@ -83,6 +85,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         fps: Frames per second
         lightweight: If True, skip expensive re-detection with optimized kinetics
         event_method: Event detection method ('threshold' or 'wavelet')
+        n_iter: Number of iterations for iterative reconstruction (default: 2)
     """
     # Create Neuron object
     neuron = Neuron(
@@ -124,7 +127,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
             min_duration_frames=2,  # Allow shorter events
             create_event_regions=True,
             iterative=True,
-            n_iter=3,
+            n_iter=n_iter,
             adaptive_thresholds=True
         )
 
@@ -203,7 +206,7 @@ def get_reconstruction_quality_metrics(neuron):
     return rec_metrics
 
 
-def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
+def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2):
     """
     Extract metrics from a single neuron trace.
 
@@ -214,9 +217,10 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
         fps: Frames per second
         include_heavy: If True, compute reconstruction quality metrics
         event_method: Event detection method ('threshold' or 'wavelet')
+        n_iter: Number of iterations for iterative reconstruction (default: 2)
     """
     try:
-        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method)
+        neuron = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter)
         signal_metrics = get_signal_metrics(neuron)
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
@@ -250,12 +254,12 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             return nan_signal_metrics
 
 
-def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold'):
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2):
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
     metrics_res = Parallel(n_jobs=-1)(
-        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method)
+        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method, n_iter=n_iter)
         for i in range(traces.shape[0])
     )
 
@@ -384,31 +388,48 @@ def get_tau_decays(est, comps_to_select, fps):
 
 def get_trace_stats(traces):
     """
-    Compute trace statistics (skewness and kurtosis) for multiple traces.
+    Compute trace statistics (skewness, kurtosis, bimodality) for multiple traces.
 
     Real neurons have high positive skewness (baseline + rare spikes)
     and high kurtosis (heavy tails from spike events).
+
+    Bimodality coefficient: BC = (skewness^2 + 1) / (kurtosis + 3)
+    BC > 0.555 suggests bimodality (uniform distribution = 0.555).
+    High bimodality in traces indicates values clustering at two levels
+    (e.g., baseline and saturated peaks).
 
     Args:
         traces: 2D array of shape (n_cells, n_timepoints)
 
     Returns:
-        Tuple of (skewnesses, kurtoses) as np.arrays
+        Tuple of (skewnesses, kurtoses, bimodalities) as np.arrays
     """
     n_cells = traces.shape[0]
     skewnesses = []
     kurtoses = []
+    bimodalities = []
 
     for i in range(n_cells):
         trace = traces[i]
         if len(trace) > 3:  # stats need at least 3 points
-            skewnesses.append(skew(trace))
-            kurtoses.append(kurtosis(trace))
+            s = skew(trace)
+            k = kurtosis(trace)  # excess kurtosis (Fisher)
+            skewnesses.append(s)
+            kurtoses.append(k)
+
+            # Bimodality coefficient: (skew^2 + 1) / (kurtosis + 3)
+            # kurtosis from scipy is excess kurtosis, add 3 for regular kurtosis
+            if not np.isnan(s) and not np.isnan(k) and (k + 3) != 0:
+                bc = (s**2 + 1) / (k + 3)
+                bimodalities.append(bc)
+            else:
+                bimodalities.append(np.nan)
         else:
             skewnesses.append(np.nan)
             kurtoses.append(np.nan)
+            bimodalities.append(np.nan)
 
-    return np.array(skewnesses), np.array(kurtoses)
+    return np.array(skewnesses), np.array(kurtoses), np.array(bimodalities)
 
 
 def get_compactnesses(contours, areas):
@@ -439,6 +460,97 @@ def get_compactnesses(contours, areas):
         except Exception:
             compactnesses.append(np.nan)
     return np.array(compactnesses)
+
+
+def get_saturation_metrics(traces, fps):
+    """
+    Compute saturation metrics for multiple traces.
+
+    Saturation occurs when peaks stay at maximum instead of decaying.
+    Normal double-exponential peaks: ~0.03-0.17 seconds at peak
+    Saturated peaks: >0.5 seconds at peak plateau
+
+    Measures time spent within 95% of each peak's value, averaged across peaks.
+
+    Args:
+        traces: 2D array of shape (n_cells, n_timepoints)
+        fps: Frames per second (for conversion to seconds)
+
+    Returns:
+        mean_time_at_peak: np.array of seconds (FPS-independent)
+    """
+    n_cells = traces.shape[0]
+    mean_times_at_peak = np.full(n_cells, np.nan)
+
+    for i in range(n_cells):
+        trace = traces[i]
+        n_frames = len(trace)
+
+        if n_frames < 100:
+            continue
+
+        # Light smoothing for robust peak detection
+        trace_smooth = gaussian_filter1d(trace, sigma=1)
+
+        # Normalize to 0-1
+        trace_min, trace_max = trace_smooth.min(), trace_smooth.max()
+        trace_range = trace_max - trace_min
+        if trace_range < 1e-10:
+            continue
+
+        trace_norm = (trace_smooth - trace_min) / trace_range
+
+        # Find peaks (at least 30% of range, min distance 0.3s)
+        min_distance = max(1, int(fps * 0.3))
+        peaks, _ = find_peaks(trace_norm, height=0.3, distance=min_distance)
+
+        if len(peaks) == 0:
+            continue
+
+        # Limit to first 100 peaks
+        peaks = peaks[:100]
+        n_peaks = len(peaks)
+
+        # Vectorized: get all peak values and thresholds at once
+        peak_values = trace_norm[peaks]
+        thresholds = peak_values * 0.95
+
+        # Compute extent for each peak using numpy (much faster than Python loops)
+        extents = np.zeros(n_peaks, dtype=np.int32)
+
+        for j in range(n_peaks):
+            peak_idx = peaks[j]
+            threshold = thresholds[j]
+
+            # Create boolean mask: True where trace >= threshold
+            above = trace_norm >= threshold
+
+            # Left extent: find last index below threshold, left of peak
+            if peak_idx > 0:
+                below_left = np.where(~above[:peak_idx])[0]
+                if len(below_left) > 0:
+                    left_count = peak_idx - below_left[-1] - 1
+                else:
+                    left_count = peak_idx
+            else:
+                left_count = 0
+
+            # Right extent: find first index below threshold, right of peak
+            if peak_idx < n_frames - 1:
+                below_right = np.where(~above[peak_idx + 1:])[0]
+                if len(below_right) > 0:
+                    right_count = below_right[0]
+                else:
+                    right_count = n_frames - peak_idx - 1
+            else:
+                right_count = 0
+
+            extents[j] = 1 + left_count + right_count
+
+        # Convert mean frames to seconds (FPS-independent)
+        mean_times_at_peak[i] = np.mean(extents) / fps
+
+    return mean_times_at_peak
 
 
 def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='pearson'):
@@ -493,7 +605,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
-                         event_method='threshold', correlation_method='pearson'):
+                         event_method='threshold', correlation_method='pearson', n_iter=2):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -592,9 +704,12 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     baselines = est.bl[comps_to_select] if hasattr(est, 'bl') else np.full(n_cells, np.nan)
     tau_decays = get_tau_decays(est, comps_to_select, fps)
 
-    # Trace statistics (skewness and kurtosis)
+    # Trace statistics (skewness, kurtosis, bimodality)
     raw_traces = est.C[comps_to_select, sf:ef]
-    trace_skewnesses, trace_kurtoses = get_trace_stats(raw_traces)
+    trace_skewnesses, trace_kurtoses, trace_bimodalities = get_trace_stats(raw_traces)
+
+    # Saturation metrics (FPS-independent, in seconds)
+    mean_times_at_peak = get_saturation_metrics(raw_traces, fps)
 
     # Footprint compactness
     compactnesses = get_compactnesses(contours, areas)
@@ -618,6 +733,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'tau_decay': tau_decays,
         'trace_skewness': trace_skewnesses,
         'trace_kurtosis': trace_kurtoses,
+        'bimodality': trace_bimodalities,
+        'mean_time_at_peak': mean_times_at_peak,
         'footprint_compactness': compactnesses,
         'corr_groups': corr_groups
     }
@@ -629,7 +746,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         event_based_metrics, local_reconstructions = get_multineuron_metrics(np.array(traces),
                                                       fps=fps,
                                                       include_heavy=include_heavy,
-                                                      event_method=event_method)
+                                                      event_method=event_method,
+                                                      n_iter=n_iter)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
