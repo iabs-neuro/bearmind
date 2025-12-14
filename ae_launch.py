@@ -162,28 +162,11 @@ def run_auto_inspection(
     correlation_method: str = 'spearman',
     n_iter: int = 2,
 
-    # --- Decision parameters (threshold brain) ---
-    circ_thr: float = 4,
-    maxedge_thr: float = 42,
-    convex_thr: float = 42,
-    pxlthr_area: float = 6.9,
-    pxlthr_distance_boundary: float = 5,
-    d_snr_thr: float = 10,
-    t_rise_min: float = 0.10,
-    caiman_r_score_min: float = 0.05,
-    caiman_snr_min: float = 2.9,
-    t_off_min: float = 1.5,
-
-    # --- Enable/disable checks ---
-    use_circularity_check: bool = True,
-    use_area_check: bool = True,
-    use_max_edge_check: bool = True,
-    use_convexity_check: bool = True,
-    use_t_rise_check: bool = True,
-    use_caiman_r_score_check: bool = True,
-    use_caiman_snr_check: bool = True,
-    use_t_off_check: bool = True,
-    use_corr_check: bool = True,
+    # --- Decision parameters ---
+    deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
+    pxlthr_distance_boundary: float = 5,  # For merge detection
+    d_snr_thr: float = 10,  # For merge detection
+    enable_merge: bool = True,  # Renamed from use_corr_check
 
     # --- Brain selection ---
     brain: str = 'ml',
@@ -380,30 +363,24 @@ def run_auto_inspection(
         match_mtx,
         FCD,
         FBD,
-        circ_thr=circ_thr,
-        maxedge_thr=maxedge_thr,
-        convex_thr=convex_thr,
-        pxlthr_area=pxlthr_area,
+        deletion_rules=deletion_rules,
         pxlthr_distance_boundary=pxlthr_distance_boundary,
         d_snr_thr=d_snr_thr,
-        t_rise_min=t_rise_min,
-        caiman_r_score_min=caiman_r_score_min,
-        caiman_snr_min=caiman_snr_min,
-        t_off_min=t_off_min,
-        use_circularity_check=use_circularity_check,
-        use_area_check=use_area_check,
-        use_max_edge_check=use_max_edge_check,
-        use_convexity_check=use_convexity_check,
-        use_t_rise_check=use_t_rise_check,
-        use_caiman_r_score_check=use_caiman_r_score_check,
-        use_caiman_snr_check=use_caiman_snr_check,
-        use_t_off_check=use_t_off_check,
-        use_corr_check=use_corr_check,
+        enable_merge=enable_merge,
         brain=brain,
         ml_model_path=ml_model_path,
         ml_threshold=ml_threshold,
         track_criteria_failures=track_criteria_failures
     )
+
+    # Extract active metrics for GUI filtering (only for threshold/hybrid brains)
+    if brain in ['thresholds', 'hybrid']:
+        from auto_inspector import get_active_metrics_from_rules, DEFAULT_DELETION_RULES
+        active_deletion_metrics = get_active_metrics_from_rules(
+            deletion_rules if deletion_rules else DEFAULT_DELETION_RULES
+        )
+    else:
+        active_deletion_metrics = []
 
     # --- Step 4: Add 'decision' column for implement_decision ---
     decision_df['decision'] = decision_df['delete'].apply(
@@ -451,6 +428,9 @@ def run_auto_inspection(
     )
 
     est_processed.metrics_df = transformed_df
+
+    # Attach active deletion metrics for GUI filtering
+    est_processed.active_deletion_metrics = active_deletion_metrics
 
     # Attach reconstructions with transformed indices
     if include_heavy and reconstructions:
@@ -574,6 +554,12 @@ if __name__ == '__main__':
                         help='ML classification threshold (default: 0.71)')
     parser.add_argument('--n-iter', type=int, default=2,
                         help='Number of iterations for event reconstruction (default: 2)')
+    parser.add_argument('--deletion-rules', type=str, nargs='+', default=None,
+                        help='Deletion rules (e.g., "area<1" "circularity>4"). Default: use DEFAULT_DELETION_RULES')
+    parser.add_argument('--enable-merge', dest='enable_merge', action='store_true', default=True,
+                        help='Enable correlation-based merge detection (default: True)')
+    parser.add_argument('--no-merge', dest='enable_merge', action='store_false',
+                        help='Disable merge detection')
     parser.add_argument('--output', type=str, default='./output',
                         help='Output directory for artifacts (default: ./output)')
     parser.add_argument('--no-save', action='store_true', help='Disable artifact saving')
@@ -584,6 +570,8 @@ if __name__ == '__main__':
     result = run_auto_inspection(
         args.estimates_path,
         fps=args.fps,
+        deletion_rules=args.deletion_rules,
+        enable_merge=args.enable_merge,
         brain=args.brain,
         ml_model_path=args.ml_model,
         ml_threshold=args.ml_threshold,
