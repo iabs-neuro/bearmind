@@ -1,6 +1,7 @@
 """Plot precision-recall tradeoff curve for one or more models by scanning thresholds.
 
 Supports multi-model comparison for benchmarking different configurations.
+Uses CSV datasets from ml/results/ instead of artifacts directories.
 """
 import argparse
 import pickle
@@ -25,65 +26,50 @@ MODEL_COLORS = [
 ]
 
 
-def load_dataset(artifacts_dir, experiments=None):
-    """Load dataset from capcan_artifacts directories."""
-    artifacts_path = Path(artifacts_dir)
-    session_dirs = sorted([d for d in artifacts_path.iterdir()
-                          if d.is_dir() and d.name.startswith('capcan_artifacts_')])
+def load_dataset_from_csv(dataset_path, experiments=None):
+    """
+    Load dataset from CSV file.
 
+    Parameters
+    ----------
+    dataset_path : str or Path
+        Path to CSV dataset (e.g., ml/results/training_dataset_v5.csv)
+    experiments : list of str, optional
+        Filter to specific experiments (e.g., ['NOF', 'RFC', 'FOF'])
+
+    Returns
+    -------
+    X : pd.DataFrame
+        Feature matrix
+    y : np.ndarray
+        Labels (1=KEEP, 0=DELETE)
+    """
+    df = pd.read_csv(dataset_path)
+
+    # Filter by experiments if specified
     if experiments:
-        filtered_dirs = []
-        for d in session_dirs:
-            session_name = d.name.replace('capcan_artifacts_', '')
-            exp_id = session_name.split('_')[0]
-            if exp_id in experiments:
-                filtered_dirs.append(d)
-        session_dirs = filtered_dirs
+        df = df[df['session'].str.split('_').str[0].isin(experiments)].copy()
 
-    all_features = []
-    all_labels = []
+    # Extract all numeric columns as potential features
+    # Each model will select its own features via model.feature_names_in_
+    label_col = 'label' if 'label' in df.columns else 'ground_truth'
+    exclude_cols = {label_col, 'session', 'experiment', 'component_idx', 'center',
+                    'distance_to_gt', 'is_corner_artifact', 'corr_groups'}
+    feature_cols = [c for c in df.columns if c not in exclude_cols
+                    and df[c].dtype in ['float64', 'float32', 'int64', 'int32']]
+    X = df[feature_cols].copy()
+    X = X.replace([np.inf, -np.inf], np.nan)
 
-    for session_dir in session_dirs:
-        try:
-            raw_metrics = session_dir / "metrics_init.csv"
-            gt_metrics = session_dir / "metrics_gt.csv"
+    # Also add wavelet_snr as alias for event_snr (for v4 compatibility)
+    if 'event_snr' in X.columns and 'wavelet_snr' not in X.columns:
+        X['wavelet_snr'] = X['event_snr']
 
-            df_raw = pd.read_csv(raw_metrics)
-            df_gt = pd.read_csv(gt_metrics)
+    y = df[label_col].values
 
-            if df_raw['center'].dtype == 'object':
-                df_raw['center'] = df_raw['center'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
-            if df_gt['center'].dtype == 'object':
-                df_gt['center'] = df_gt['center'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
-
-            # Filter corner artifacts
-            if 'is_corner_artifact' in df_raw.columns:
-                df_raw = df_raw[df_raw['is_corner_artifact'] == 0].copy()
-
-            raw_centers = np.array(df_raw['center'].tolist())
-            gt_centers = np.array(df_gt['center'].tolist())
-
-            labels = np.zeros(len(df_raw), dtype=int)
-            for i, raw_center in enumerate(raw_centers):
-                distances = np.linalg.norm(gt_centers - raw_center, axis=1)
-                if distances.min() <= 3:
-                    labels[i] = 1
-
-            features = df_raw[FEATURE_COLS].copy()
-            features = features.replace([np.inf, -np.inf], np.nan)
-
-            all_features.append(features)
-            all_labels.append(labels)
-        except Exception:
-            continue
-
-    features_df = pd.concat(all_features, ignore_index=True)
-    labels = np.concatenate(all_labels)
-
-    return features_df, labels
+    return X, y
 
 
-def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=None, n_points=100):
+def plot_pr_tradeoff(model_path, dataset_path, experiments=None, output_path=None, n_points=100):
     """Plot precision-recall tradeoff curve."""
     # Load model
     with open(model_path, 'rb') as f:
@@ -93,7 +79,7 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
 
     # Load data
     exp_list = experiments.split(',') if experiments else None
-    X, y = load_dataset(artifacts_dir, exp_list)
+    X, y = load_dataset_from_csv(dataset_path, exp_list)
     print(f"Loaded {len(X)} samples ({y.sum()} KEEP, {len(y) - y.sum()} DELETE)")
 
     # Get probabilities
@@ -158,7 +144,7 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
     ax2 = axes[1]
     ax2.plot(thresholds, precisions, 'b-', linewidth=2, label='Precision')
     ax2.plot(thresholds, recalls, 'g-', linewidth=2, label='Recall')
-    ax2.plot(thresholds, fbeta_scores, 'r--', linewidth=2, label=f'F-beta (β={FBETA_BETA:.3f})')
+    ax2.plot(thresholds, fbeta_scores, 'r--', linewidth=2, label=f'F-beta (b={FBETA_BETA:.3f})')
     ax2.axvline(x=best_thresh, color='gray', linestyle=':', alpha=0.7,
                 label=f'Best threshold={best_thresh:.2f}')
 
@@ -178,11 +164,12 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
         output_path = Path(model_path).parent / f"{model_name}_pr_tradeoff.png"
 
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)  # Close to free memory
     print(f"Saved plot to: {output_path}")
 
     # Print summary
     print("\n" + "=" * 60)
-    print(f"PRECISION-RECALL TRADE-OFF SUMMARY (F-beta β={FBETA_BETA:.3f})")
+    print(f"PRECISION-RECALL TRADE-OFF SUMMARY (F-beta b={FBETA_BETA:.3f})")
     print("=" * 60)
     print(f"\nBest F-beta: {best_fbeta:.4f} at threshold {best_thresh:.2f}")
     print(f"  Precision: {best_prec:.4f}")
@@ -195,13 +182,15 @@ def plot_pr_tradeoff(model_path, artifacts_dir, experiments=None, output_path=No
         idx = np.argmin(np.abs(thresholds - t))
         print(f"{t:>10.1f} {precisions[idx]:>10.4f} {recalls[idx]:>10.4f} {fbeta_scores[idx]:>10.4f}")
 
-    plt.show()
     return thresholds, precisions, recalls, fbeta_scores
 
 
 def evaluate_model(model, X, y, n_points=100):
     """Evaluate a model and return metrics at different thresholds."""
-    y_proba = model.predict_proba(X)[:, 1]
+    # Use only features the model was trained on
+    model_features = list(model.feature_names_in_)
+    X_model = X[model_features].copy()
+    y_proba = model.predict_proba(X_model)[:, 1]
 
     thresholds = np.linspace(0.3, 0.9, n_points)
     precisions = []
@@ -234,7 +223,7 @@ def evaluate_model(model, X, y, n_points=100):
 def plot_multi_model_comparison(
     model_paths,
     model_names=None,
-    artifacts_dir="data/capcan_validation_127_v5",
+    dataset_path="ml/results/training_dataset_v5.csv",
     experiments=None,
     output_path=None,
     n_points=100
@@ -248,8 +237,8 @@ def plot_multi_model_comparison(
         Paths to model pickle files
     model_names : list of str, optional
         Names for each model in legend. If None, uses file stems.
-    artifacts_dir : str
-        Directory containing capcan_artifacts_* subdirectories
+    dataset_path : str
+        Path to CSV dataset file
     experiments : str, optional
         Comma-separated experiment filter (e.g., "NOF,RFC,FOF")
     output_path : str, optional
@@ -273,7 +262,7 @@ def plot_multi_model_comparison(
 
     # Load data
     exp_list = experiments.split(',') if experiments else None
-    X, y = load_dataset(artifacts_dir, exp_list)
+    X, y = load_dataset_from_csv(dataset_path, exp_list)
     print(f"Loaded {len(X)} samples ({y.sum()} KEEP, {len(y) - y.sum()} DELETE)")
 
     # Evaluate all models
@@ -315,7 +304,7 @@ def plot_multi_model_comparison(
                  label=res['name'])
 
     ax2.set_xlabel('Threshold', fontsize=12)
-    ax2.set_ylabel(f'F-beta (β={FBETA_BETA:.3f})', fontsize=12)
+    ax2.set_ylabel(f'F-beta (b={FBETA_BETA:.3f})', fontsize=12)
     ax2.set_title(f'F-beta Score vs Threshold', fontsize=14)
     ax2.legend(loc='lower left', fontsize=9)
     ax2.grid(True, alpha=0.3)
@@ -356,16 +345,17 @@ def plot_multi_model_comparison(
 
     # Save
     if output_path is None:
-        output_path = Path(artifacts_dir).parent / "ml" / "results" / "model_comparison.png"
+        output_path = Path(dataset_path).parent / "model_comparison.png"
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)  # Close to free memory and avoid display issues
     print(f"\nSaved comparison plot to: {output_path}")
 
     # Print summary table
     print("\n" + "=" * 80)
-    print(f"MODEL COMPARISON SUMMARY (threshold=0.5, F-beta β={FBETA_BETA:.3f})")
+    print(f"MODEL COMPARISON SUMMARY (threshold=0.5, F-beta b={FBETA_BETA:.3f})")
     print("=" * 80)
     print(f"\n{'Model':<35} {'F-beta':>8} {'Prec':>8} {'Rec':>8} {'Best':>8} {'@Thresh':>8}")
     print("-" * 80)
@@ -398,7 +388,6 @@ def plot_multi_model_comparison(
                   f"{res['precisions'][idx]:>8.4f} "
                   f"{res['recalls'][idx]:>8.4f}")
 
-    plt.show()
     return results
 
 
@@ -407,13 +396,13 @@ if __name__ == "__main__":
         description="Plot precision-recall tradeoff curve for one or more models"
     )
     parser.add_argument("--model", type=str, default=None,
-                       help="Path to single model pickle file (legacy mode)")
+                       help="Path to single model pickle file")
     parser.add_argument("--models", type=str, nargs='+', default=None,
                        help="Paths to multiple model pickle files for comparison")
     parser.add_argument("--names", type=str, nargs='+', default=None,
                        help="Names for each model in comparison (optional)")
-    parser.add_argument("--artifacts-dir", default="data/capcan_validation_127_v5",
-                       help="Directory containing capcan_artifacts_* subdirectories")
+    parser.add_argument("--dataset", default="ml/results/training_dataset_v5.csv",
+                       help="Path to CSV dataset file (default: ml/results/training_dataset_v5.csv)")
     parser.add_argument("--experiments", type=str, default=None,
                        help="Filter to specific experiments (comma-separated, e.g., NOF,RFC,FOF)")
     parser.add_argument("--output", type=str, default=None,
@@ -428,16 +417,16 @@ if __name__ == "__main__":
         plot_multi_model_comparison(
             model_paths=args.models,
             model_names=args.names,
-            artifacts_dir=args.artifacts_dir,
+            dataset_path=args.dataset,
             experiments=args.experiments,
             output_path=args.output,
             n_points=args.n_points
         )
     elif args.model:
-        # Single model mode (legacy)
+        # Single model mode
         plot_pr_tradeoff(
             model_path=args.model,
-            artifacts_dir=args.artifacts_dir,
+            dataset_path=args.dataset,
             experiments=args.experiments,
             output_path=args.output,
             n_points=args.n_points

@@ -276,7 +276,7 @@ def run_grid_search(
     df_agg.columns = ['_'.join(col).strip('_') for col in df_agg.columns]
 
     # Best by F-beta
-    print(f"\n--- TOP 10 BY F-BETA (β={FBETA_BETA:.3f}, threshold=0.5) ---")
+    print(f"\n--- TOP 10 BY F-BETA (beta={FBETA_BETA:.3f}, threshold=0.5) ---")
     best_fbeta_agg = df_agg.nlargest(10, 'test_fbeta_mean')[
         ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
          'min_samples_leaf', 'max_leaves',
@@ -387,7 +387,7 @@ def run_grid_search(
     print(f"  Config: bins={best_params['max_bins']}, inter={best_params['interactions']}, "
           f"greedy={best_params.get('greedy_ratio', 0)}, smooth={best_params.get('smoothing_rounds', 0)}, "
           f"leaf={best_params['min_samples_leaf']}, leaves={best_params['max_leaves']}")
-    print(f"  Test F-beta (β={FBETA_BETA:.3f}): {best_mean_fbeta:.4f}")
+    print(f"  Test F-beta (beta={FBETA_BETA:.3f}): {best_mean_fbeta:.4f}")
 
     # Save simplest competitive model (no interactions)
     simple_configs = {k: v for k, v in config_models.items() if k[1] == 0}  # k[1] is interactions
@@ -412,7 +412,205 @@ def run_grid_search(
         print(f"  Config: bins={simple_params['max_bins']}, inter=0, "
               f"greedy={simple_params.get('greedy_ratio', 0)}, smooth={simple_params.get('smoothing_rounds', 0)}, "
               f"leaf={simple_params['min_samples_leaf']}, leaves={simple_params['max_leaves']}")
-        print(f"  Test F-beta (β={FBETA_BETA:.3f}): {simple_mean_fbeta:.4f}")
+        print(f"  Test F-beta (beta={FBETA_BETA:.3f}): {simple_mean_fbeta:.4f}")
+
+    print("\n" + "=" * 80)
+    print("GRID SEARCH COMPLETE")
+    print("=" * 80)
+
+    return results_df
+
+
+def run_grid_search_from_csv(
+    dataset_path,
+    output_dir="ml/ebm_grid_search_v5",
+    test_fraction=0.25,
+    n_jobs=4,
+    random_state=42
+):
+    """Run EBM grid search from pre-built CSV dataset."""
+    print("=" * 80, flush=True)
+    print("EBM GRID SEARCH (from CSV dataset)", flush=True)
+    print("=" * 80, flush=True)
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    print(f"Loading dataset: {dataset_path}")
+    df = pd.read_csv(dataset_path)
+    print(f"Total samples: {len(df)}")
+    print(f"Sessions: {df['session'].nunique()}")
+
+    # Handle both 'label' and 'ground_truth' column names
+    label_col = 'label' if 'label' in df.columns else 'ground_truth'
+    print(f"Label column: {label_col}")
+
+    # Exclude non-feature columns
+    exclude_cols = {'label', 'ground_truth', 'session', 'experiment', 'component_idx',
+                    'center', 'distance_to_gt', 'is_corner_artifact', 'corr_groups'}
+    feature_cols = [c for c in df.columns if c not in exclude_cols
+                    and df[c].dtype in ['float64', 'float32', 'int64', 'int32']]
+    print(f"Features: {len(feature_cols)}")
+
+    sessions = df['session'].unique()
+    session_experiments = {s: s.split('_')[0] for s in sessions}
+
+    from sklearn.model_selection import StratifiedShuffleSplit
+    experiments = [session_experiments[s] for s in sessions]
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=test_fraction, random_state=random_state)
+    train_idx, test_idx = next(splitter.split(sessions, experiments))
+    train_sessions = set(sessions[train_idx])
+    test_sessions = set(sessions[test_idx])
+
+    print(f"\nTrain sessions: {len(train_sessions)}")
+    print(f"Test sessions: {len(test_sessions)}")
+
+    train_mask = df['session'].isin(train_sessions)
+    test_mask = df['session'].isin(test_sessions)
+
+    X_train = df.loc[train_mask, feature_cols].copy()
+    y_train = df.loc[train_mask, label_col].values
+    X_test = df.loc[test_mask, feature_cols].copy()
+    y_test = df.loc[test_mask, label_col].values
+
+    print(f"Train samples: {len(X_train)} (KEEP: {y_train.sum()}, {100*y_train.mean():.1f}%)")
+    print(f"Test samples: {len(X_test)} (KEEP: {y_test.sum()}, {100*y_test.mean():.1f}%)")
+
+    param_grid = {
+        'max_bins': [256, 1024],
+        'interactions': [0, 20],
+        'greedy_ratio': [0.0, 10.0],
+        'smoothing_rounds': [0],
+        'min_samples_leaf': [2],
+        'max_leaves': [3, 4, 5],
+        'outer_bags': [8],
+        'learning_rate': [0.01],
+        'random_state': [42],
+    }
+
+    param_names = list(param_grid.keys())
+    param_values = list(param_grid.values())
+    all_params = [dict(zip(param_names, v)) for v in product(*param_values)]
+
+    print(f"\nTotal model configurations: {len(all_params)}")
+
+    thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    print(f"Thresholds to evaluate: {thresholds}")
+
+    print(f"\nRunning grid search with {n_jobs} parallel jobs...")
+
+    def train_single(params, idx):
+        print(f"  [{idx+1}/{len(all_params)}] bins={params['max_bins']}, "
+              f"inter={params['interactions']}, greedy={params.get('greedy_ratio', 0)}, "
+              f"smooth={params.get('smoothing_rounds', 0)}, leaf={params['min_samples_leaf']}, "
+              f"leaves={params['max_leaves']}")
+        results, model = train_and_evaluate_ebm(
+            params, X_train, y_train, X_test, y_test, thresholds
+        )
+        return results, model, params
+
+    parallel_results = Parallel(n_jobs=n_jobs, verbose=0)(
+        delayed(train_single)(params, idx) for idx, params in enumerate(all_params)
+    )
+
+    all_results = []
+    for results, model, params in parallel_results:
+        if results is not None:
+            all_results.extend(results)
+
+    results_df = pd.DataFrame(all_results)
+    results_path = output_path / "ebm_grid_search_results.csv"
+    results_df.to_csv(results_path, index=False)
+    print(f"\nFull results saved to: {results_path}")
+
+    print("\n" + "=" * 80)
+    print("GRID SEARCH RESULTS ANALYSIS")
+    print("=" * 80)
+
+    df_t05 = results_df[results_df['threshold'] == 0.5].copy()
+    group_cols = ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
+                  'min_samples_leaf', 'max_leaves', 'threshold']
+    df_agg = df_t05.groupby([c for c in group_cols if c in df_t05.columns]).agg({
+        'test_fbeta': ['mean', 'std'],
+        'test_precision': ['mean', 'std'],
+        'test_recall': ['mean', 'std'],
+        'test_auc': ['mean', 'std'],
+    }).reset_index()
+    df_agg.columns = ['_'.join(col).strip('_') for col in df_agg.columns]
+
+    print(f"\n--- TOP 10 BY F-BETA (beta={FBETA_BETA:.3f}, threshold=0.5) ---")
+    best_fbeta_agg = df_agg.nlargest(10, 'test_fbeta_mean')[
+        ['max_bins', 'interactions', 'greedy_ratio', 'smoothing_rounds',
+         'min_samples_leaf', 'max_leaves',
+         'test_precision_mean', 'test_recall_mean', 'test_fbeta_mean', 'test_fbeta_std']
+    ]
+    print(best_fbeta_agg.to_string(index=False))
+
+    print(f"\n--- EFFECT OF GREEDY_RATIO ---")
+    greedy_effect = df_agg.groupby('greedy_ratio')['test_fbeta_mean'].agg(['mean', 'std', 'max'])
+    print(greedy_effect.to_string())
+
+    print(f"\n--- EFFECT OF SMOOTHING_ROUNDS ---")
+    smooth_effect = df_agg.groupby('smoothing_rounds')['test_fbeta_mean'].agg(['mean', 'std', 'max'])
+    print(smooth_effect.to_string())
+
+    print("\n" + "=" * 80)
+    print("SAVING BEST MODELS")
+    print("=" * 80)
+
+    config_models = {}
+    for results, model, params in parallel_results:
+        if results is not None and model is not None:
+            config_key = (
+                params['max_bins'], params['interactions'],
+                params.get('greedy_ratio', 0), params.get('smoothing_rounds', 0),
+                params['min_samples_leaf'], params['max_leaves']
+            )
+            if config_key not in config_models:
+                config_models[config_key] = {'models': [], 'fbeta_scores': [], 'params': params}
+            for r in results:
+                if r['threshold'] == 0.5:
+                    config_models[config_key]['models'].append(model)
+                    config_models[config_key]['fbeta_scores'].append(r['test_fbeta'])
+                    break
+
+    best_config_key = max(config_models.keys(), key=lambda k: np.mean(config_models[k]['fbeta_scores']))
+    best_config_data = config_models[best_config_key]
+    best_mean_fbeta = np.mean(best_config_data['fbeta_scores'])
+
+    fbeta_scores = best_config_data['fbeta_scores']
+    median_idx = np.argsort(fbeta_scores)[len(fbeta_scores) // 2]
+    best_model = best_config_data['models'][median_idx]
+    best_params = best_config_data['params']
+
+    best_model_path = output_path / "ebm_best.pkl"
+    with open(best_model_path, 'wb') as f:
+        pickle.dump(best_model, f)
+
+    print(f"Best overall model saved: {best_model_path}")
+    print(f"  Config: bins={best_params['max_bins']}, inter={best_params['interactions']}, "
+          f"greedy={best_params.get('greedy_ratio', 0)}, smooth={best_params.get('smoothing_rounds', 0)}, "
+          f"leaf={best_params['min_samples_leaf']}, leaves={best_params['max_leaves']}")
+    print(f"  Test F-beta (beta={FBETA_BETA:.3f}): {best_mean_fbeta:.4f}")
+
+    simple_configs = {k: v for k, v in config_models.items() if k[1] == 0}
+    if simple_configs:
+        best_simple_key = max(simple_configs.keys(), key=lambda k: np.mean(simple_configs[k]['fbeta_scores']))
+        best_simple_data = simple_configs[best_simple_key]
+        simple_mean_fbeta = np.mean(best_simple_data['fbeta_scores'])
+        fbeta_scores = best_simple_data['fbeta_scores']
+        median_idx = np.argsort(fbeta_scores)[len(fbeta_scores) // 2]
+        simple_model = best_simple_data['models'][median_idx]
+        simple_params = best_simple_data['params']
+
+        simple_model_path = output_path / "ebm_simple.pkl"
+        with open(simple_model_path, 'wb') as f:
+            pickle.dump(simple_model, f)
+
+        print(f"\nSimplest good model saved: {simple_model_path}")
+        print(f"  Config: bins={simple_params['max_bins']}, inter=0, "
+              f"greedy={simple_params.get('greedy_ratio', 0)}, smooth={simple_params.get('smoothing_rounds', 0)}")
+        print(f"  Test F-beta (beta={FBETA_BETA:.3f}): {simple_mean_fbeta:.4f}")
 
     print("\n" + "=" * 80)
     print("GRID SEARCH COMPLETE")
@@ -423,6 +621,8 @@ def run_grid_search(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EBM Grid Search")
+    parser.add_argument("--dataset", type=str, default=None,
+                       help="Path to CSV dataset (e.g., ml/results/training_dataset_v5.csv)")
     parser.add_argument("--artifacts-dir", default="data/capcan_validation_127_v2",
                        help="Directory containing capcan_artifacts_* subdirectories")
     parser.add_argument("--output-dir", default="ml/ebm_grid_search",
@@ -436,10 +636,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    results = run_grid_search(
-        artifacts_dir=args.artifacts_dir,
-        output_dir=args.output_dir,
-        experiments=args.experiments,
-        n_jobs=args.n_jobs,
-        test_fraction=args.test_fraction
-    )
+    if args.dataset:
+        results = run_grid_search_from_csv(
+            dataset_path=args.dataset,
+            output_dir=args.output_dir,
+            n_jobs=args.n_jobs,
+            test_fraction=args.test_fraction
+        )
+    else:
+        results = run_grid_search(
+            artifacts_dir=args.artifacts_dir,
+            output_dir=args.output_dir,
+            experiments=args.experiments,
+            n_jobs=args.n_jobs,
+            test_fraction=args.test_fraction
+        )
