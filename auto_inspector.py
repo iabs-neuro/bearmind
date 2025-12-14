@@ -838,71 +838,262 @@ def t_off_check(series, t_off_min):
     return series.t_off >= t_off_min
 
 
-def _apply_threshold_brain(metrics_df, thresholds, use_checks, track_failures=True):
-    """
-    Apply threshold-based deletion logic to determine which neurons to delete.
+# =============================================================================
+# RULE-BASED THRESHOLD SYSTEM
+# =============================================================================
 
-    This is the original threshold-based decision logic, refactored into a standalone
-    function to support pluggable 'brains' for deletion decisions.
+# Default deletion rules (BREAKING CHANGE: inverted area/circularity logic)
+# Rules express DELETION conditions (e.g., "area<1" means "DELETE if area < 1")
+DEFAULT_DELETION_RULES = [
+    'area<1',          # DELETE if area < 1 pixel (reject tiny footprints)
+    'circularity>4',   # DELETE if circularity > 4 (reject non-circular)
+    'max_edge>42',     # DELETE if max_edge > 42 (reject elongated)
+    'convexity>42',    # DELETE if convexity > 42 (reject non-convex)
+    't_rise<0.10',     # DELETE if t_rise < 0.10s (reject fast rises)
+    'caiman_r_score<0.05',  # DELETE if r_score < 0.05 (reject poor correlation)
+    'caiman_snr<2.9',       # DELETE if snr < 2.9 (reject low SNR)
+    't_off<1.5'        # DELETE if t_off < 1.5s (reject fast decays)
+]
+
+
+def parse_rule(rule_str):
+    """
+    Parse a threshold rule string into components.
+
+    Args:
+        rule_str: Rule string like "area>6.9" or "circularity<=4"
+
+    Returns:
+        tuple: (metric_name, operator, threshold_value)
+
+    Raises:
+        ValueError: If rule format invalid or metric not in ML_FEATURE_COLS
+
+    Examples:
+        >>> parse_rule("area>6.9")
+        ('area', '>', 6.9)
+        >>> parse_rule(" circularity <= 4 ")
+        ('circularity', '<=', 4.0)
+    """
+    if not rule_str or not isinstance(rule_str, str):
+        raise ValueError(f"Invalid rule: expected non-empty string, got {type(rule_str)}")
+
+    # Strip whitespace
+    rule_str = rule_str.strip()
+
+    if not rule_str:
+        raise ValueError("Empty rule string after stripping whitespace")
+
+    # Try operators in order (longer first to avoid greedy matching)
+    operators = ['>=', '<=', '>', '<']
+
+    for op in operators:
+        if op in rule_str:
+            parts = rule_str.split(op, 1)
+            if len(parts) != 2:
+                raise ValueError(f"Invalid rule format: '{rule_str}'. Expected 'metric{op}threshold'")
+
+            metric_name = parts[0].strip()
+            threshold_str = parts[1].strip()
+
+            # Validate metric name
+            if metric_name not in ML_FEATURE_COLS:
+                raise ValueError(
+                    f"Unknown metric '{metric_name}' in rule '{rule_str}'. "
+                    f"Must be one of: {', '.join(sorted(ML_FEATURE_COLS))}"
+                )
+
+            # Parse threshold as float
+            try:
+                threshold_value = float(threshold_str)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid threshold '{threshold_str}' in rule '{rule_str}'. "
+                    f"Threshold must be numeric."
+                )
+
+            return (metric_name, op, threshold_value)
+
+    # No operator found
+    raise ValueError(
+        f"Invalid rule '{rule_str}': no operator found. "
+        f"Supported operators: >, <, >=, <="
+    )
+
+
+def evaluate_rule(series, metric_name, operator, threshold):
+    """
+    Evaluate a single threshold rule on a neuron's metrics.
+
+    CRITICAL SEMANTIC: Rules express DELETION conditions, but this function
+    returns PASS/FAIL status for KEEPING the neuron.
+
+    - Return True if neuron PASSES (should be KEPT)
+    - Return False if neuron FAILS (should be DELETED)
+
+    Example: Rule "area<1" means "DELETE if area < 1"
+    - If area=0.5: meets deletion condition → return False (FAIL - delete)
+    - If area=2.0: doesn't meet deletion condition → return True (PASS - keep)
+
+    Implementation uses INVERTED logic:
+    - "area<1" → return value >= 1 (neuron passes if area NOT less than 1)
+    - "circularity>4" → return value <= 4 (neuron passes if circularity NOT greater than 4)
+
+    Args:
+        series: pandas Series with neuron metrics
+        metric_name: Name of metric column (e.g., 'area')
+        operator: Comparison operator ('>', '<', '>=', '<=')
+        threshold: Numeric threshold value
+
+    Returns:
+        bool: True if neuron passes (keep), False if fails (delete)
+    """
+    # Handle missing column
+    if metric_name not in series.index:
+        # Missing metric → fail (conservative)
+        return False
+
+    value = series[metric_name]
+
+    # NaN/sentinel handling (matching current behavior)
+    # Event-based metrics: -1 sentinel means "no events detected" (fail)
+    if metric_name in ['t_rise', 't_off']:
+        if pd.isna(value) or value < 0:
+            return False
+
+    # CaImAn metrics: NaN means computation failed (fail)
+    elif metric_name in ['caiman_r_score', 'caiman_snr']:
+        if pd.isna(value):
+            return False
+
+    # Other metrics: NaN handled by pandas comparison (returns False)
+    # Infinity: let comparison handle it (may need future refinement)
+
+    # INVERTED operator logic: rules express deletion conditions,
+    # but we return True if neuron PASSES (i.e., doesn't meet deletion condition)
+    if operator == '<':
+        # Rule: "DELETE if value < threshold"
+        # Pass if value >= threshold (NOT less than)
+        return value >= threshold
+    elif operator == '>':
+        # Rule: "DELETE if value > threshold"
+        # Pass if value <= threshold (NOT greater than)
+        return value <= threshold
+    elif operator == '<=':
+        # Rule: "DELETE if value <= threshold"
+        # Pass if value > threshold (NOT less-or-equal)
+        return value > threshold
+    elif operator == '>=':
+        # Rule: "DELETE if value >= threshold"
+        # Pass if value < threshold (NOT greater-or-equal)
+        return value < threshold
+    else:
+        raise ValueError(f"Unsupported operator: '{operator}'")
+
+
+def validate_rules(rules):
+    """
+    Validate a list of rule strings and parse them.
+
+    Args:
+        rules: List of rule strings
+
+    Returns:
+        list: List of parsed rules [(metric, op, threshold), ...]
+
+    Raises:
+        ValueError: If any rule is invalid (with all errors listed)
+    """
+    if not isinstance(rules, (list, tuple)):
+        raise ValueError(f"Rules must be a list or tuple, got {type(rules)}")
+
+    if len(rules) == 0:
+        raise ValueError("Rules list is empty. Provide at least one rule.")
+
+    parsed_rules = []
+    errors = []
+
+    for i, rule_str in enumerate(rules):
+        try:
+            parsed = parse_rule(rule_str)
+            parsed_rules.append(parsed)
+        except ValueError as e:
+            errors.append(f"  Rule {i}: {e}")
+
+    if errors:
+        error_msg = "Invalid rules found:\n" + "\n".join(errors)
+        raise ValueError(error_msg)
+
+    return parsed_rules
+
+
+def get_active_metrics_from_rules(rules):
+    """
+    Extract unique metric names from a list of rules.
+
+    Args:
+        rules: List of rule strings (e.g., ['area>6.9', 'circularity<=4'])
+
+    Returns:
+        list: Unique metric names (e.g., ['area', 'circularity'])
+    """
+    parsed_rules = validate_rules(rules)
+    metric_names = [metric for metric, op, threshold in parsed_rules]
+    return list(dict.fromkeys(metric_names))  # Preserve order, remove duplicates
+
+
+def _apply_threshold_brain(metrics_df, rules, track_failures=True):
+    """
+    Apply rule-based deletion logic to determine which neurons to delete.
+
+    Uses string-based rules (e.g., 'area<1', 'circularity>4') to evaluate
+    whether neurons should be kept or deleted. All rules must pass (AND logic)
+    for a neuron to be kept.
 
     Args:
         metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
-        thresholds: dict with threshold values:
-            - pxlthr_area, circ_thr, maxedge_thr, convex_thr
-            - t_rise_min, caiman_r_score_min, caiman_snr_min, t_off_min
-        use_checks: dict with boolean flags:
-            - use_area_check, use_circularity_check, use_max_edge_check, use_convexity_check
-            - use_t_rise_check, use_caiman_r_score_check, use_caiman_snr_check, use_t_off_check
-        track_failures: If True, track which criteria failed for each neuron
+        rules: List of rule strings (e.g., ['area<1', 'circularity>4'])
+               Rules express DELETION conditions (e.g., "area<1" = DELETE if area < 1)
+        track_failures: If True, track which rules failed for each neuron
 
     Returns:
         delete_mask: np.ndarray of bool, True = should delete
-        failure_info: dict mapping failure column names to arrays (if track_failures)
+        failure_info: dict mapping 'failed_<metric>' to arrays (if track_failures)
+
+    Examples:
+        >>> rules = ['area<1', 'circularity>4', 't_rise<0.1']
+        >>> delete_mask, failures = _apply_threshold_brain(df, rules)
+        >>> # Neurons with area < 1 OR circularity > 4 OR t_rise < 0.1 are deleted
     """
     n = len(metrics_df)
     delete_mask = np.zeros(n, dtype=bool)
 
-    # Initialize failure tracking arrays
+    # Parse and validate rules
+    parsed_rules = validate_rules(rules)
+
+    # Initialize failure tracking (dynamic based on active metrics)
     failure_info = {}
     if track_failures:
-        failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
-                        'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
-        for col in failure_cols:
-            failure_info[col] = np.zeros(n, dtype=int)
+        active_metrics = get_active_metrics_from_rules(rules)
+        for metric in active_metrics:
+            failure_info[f'failed_{metric}'] = np.zeros(n, dtype=int)
 
-    # Apply checks to each row
+    # Evaluate rules for each neuron
     for i, (idx, row) in enumerate(metrics_df.iterrows()):
-        area_ok = area_check(row, thresholds['pxlthr_area']) if use_checks['use_area_check'] else True
-        circle_ok = circularity_check(row, thresholds['circ_thr']) if use_checks['use_circularity_check'] else True
-        max_edge_ok = max_edge_check(row, thresholds['maxedge_thr']) if use_checks['use_max_edge_check'] else True
-        convex_ok = convexity_check(row, thresholds['convex_thr']) if use_checks['use_convexity_check'] else True
-        t_rise_ok = t_rise_check(row, thresholds['t_rise_min']) if use_checks['use_t_rise_check'] else True
-        r_score_ok = caiman_r_score_check(row, thresholds['caiman_r_score_min']) if use_checks['use_caiman_r_score_check'] else True
-        snr_ok = caiman_snr_check(row, thresholds['caiman_snr_min']) if use_checks['use_caiman_snr_check'] else True
-        t_off_ok = t_off_check(row, thresholds['t_off_min']) if use_checks['use_t_off_check'] else True
+        all_pass = True
 
-        should_delete = not (area_ok and circle_ok and max_edge_ok and convex_ok and
-                             t_rise_ok and r_score_ok and snr_ok and t_off_ok)
-        delete_mask[i] = should_delete
+        # Evaluate each rule
+        for metric_name, operator, threshold in parsed_rules:
+            rule_passes = evaluate_rule(row, metric_name, operator, threshold)
 
-        # Track failures
-        if track_failures and should_delete:
-            if use_checks['use_area_check'] and not area_ok:
-                failure_info['failed_area'][i] = 1
-            if use_checks['use_circularity_check'] and not circle_ok:
-                failure_info['failed_circularity'][i] = 1
-            if use_checks['use_max_edge_check'] and not max_edge_ok:
-                failure_info['failed_max_edge'][i] = 1
-            if use_checks['use_convexity_check'] and not convex_ok:
-                failure_info['failed_convexity'][i] = 1
-            if use_checks['use_t_rise_check'] and not t_rise_ok:
-                failure_info['failed_t_rise'][i] = 1
-            if use_checks['use_caiman_r_score_check'] and not r_score_ok:
-                failure_info['failed_r_score'][i] = 1
-            if use_checks['use_caiman_snr_check'] and not snr_ok:
-                failure_info['failed_snr'][i] = 1
-            if use_checks['use_t_off_check'] and not t_off_ok:
-                failure_info['failed_t_off'][i] = 1
+            if not rule_passes:
+                all_pass = False
+                # Track which rule failed
+                if track_failures:
+                    failure_info[f'failed_{metric_name}'][i] = 1
+
+        # Delete if ANY rule fails (AND logic - all must pass to keep)
+        delete_mask[i] = not all_pass
 
     return delete_mask, failure_info
 
@@ -975,18 +1166,17 @@ def _apply_ml_brain(metrics_df, model_path, threshold=0.5, feature_cols=None):
     return delete_mask, failure_info
 
 
-def _apply_hybrid_brain(metrics_df, thresholds, use_checks, model_path, ml_threshold=0.5,
+def _apply_hybrid_brain(metrics_df, rules, model_path, ml_threshold=0.5,
                         feature_cols=None, track_failures=True):
     """
-    Apply hybrid brain: thresholds first, then ML on survivors.
+    Apply hybrid brain: rule-based thresholds first, then ML on survivors.
 
-    Neurons that FAIL threshold checks are deleted immediately (ml_keep_probability=NaN).
-    Neurons that PASS threshold checks are evaluated by ML model for final decision.
+    Neurons that FAIL threshold rules are deleted immediately (ml_keep_probability=NaN).
+    Neurons that PASS threshold rules are evaluated by ML model for final decision.
 
     Args:
         metrics_df: DataFrame with neuron metrics (subset without corner artifacts)
-        thresholds: dict with threshold values (same as _apply_threshold_brain)
-        use_checks: dict with boolean flags for which checks to apply
+        rules: List of rule strings (e.g., ['area<1', 'circularity>4'])
         model_path: Path to pickled ML model file
         ml_threshold: P(KEEP) below this value triggers deletion (default 0.5)
         feature_cols: Feature columns for ML model (default: ML_FEATURE_COLS)
@@ -998,9 +1188,9 @@ def _apply_hybrid_brain(metrics_df, thresholds, use_checks, model_path, ml_thres
     """
     n = len(metrics_df)
 
-    # Step 1: Apply threshold checks
+    # Step 1: Apply threshold rules
     threshold_delete, threshold_failures = _apply_threshold_brain(
-        metrics_df, thresholds, use_checks, track_failures=track_failures
+        metrics_df, rules, track_failures=track_failures
     )
 
     # Step 2: Initialize ML probabilities as NaN (threshold failures won't get ML evaluation)
@@ -1031,74 +1221,81 @@ def _apply_hybrid_brain(metrics_df, thresholds, use_checks, model_path, ml_thres
 
 
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
-                        circ_thr=4, maxedge_thr=42, convex_thr=42, pxlthr_area=6.9,
+                        deletion_rules=None,
                         pxlthr_distance_boundary=5,
                         d_snr_thr=10,
-                        t_rise_min=0.10, caiman_r_score_min=0.05,
-                        caiman_snr_min=2.9, t_off_min=1.5,
-                        use_circularity_check=True, use_area_check=True, use_max_edge_check=True,
-                        use_convexity_check=True, use_corr_check=True,
-                        use_t_rise_check=True, use_caiman_r_score_check=True,
-                        use_caiman_snr_check=True, use_t_off_check=True,
+                        enable_merge=True,
                         track_criteria_failures=True,
                         brain='thresholds',
                         ml_model_path=None,
                         ml_threshold=0.5) -> pd.DataFrame:
     """
-    Classify neurons for merge/delete/keep annotating.
+    Classify neurons for merge/delete/keep decisions using rule-based or ML brains.
 
-    Supports two 'brain' types for deletion decisions:
-    - 'thresholds': Original threshold-based logic (default)
+    Supports three 'brain' types for deletion decisions:
+    - 'thresholds': Rule-based threshold logic (default)
     - 'ml': Machine learning model-based decisions
+    - 'hybrid': Thresholds first, then ML on survivors
 
-    Merge logic remains unchanged regardless of brain type.
+    Merge logic (enable_merge) is independent of deletion decisions.
 
     Args:
         metrics_df: DataFrame with neuron metrics
         match_mtx: Correlation match matrix
         FCD: Footprint Center Distance matrix
         FBD: Footprint Boundary Distance matrix
-        circ_thr: Circularity threshold (for threshold brain)
-        maxedge_thr: Max edge threshold (for threshold brain)
-        convex_thr: Convexity threshold (for threshold brain)
-        pxlthr_area: Area threshold in pixels (for threshold brain)
-        pxlthr_distance_boundary: Distance threshold for merge detection
+        deletion_rules: List of rule strings for threshold/hybrid brain
+                        (e.g., ['area<1', 'circularity>4'])
+                        If None, uses DEFAULT_DELETION_RULES
+        pxlthr_distance_boundary: Distance threshold for merge detection (pixels)
         d_snr_thr: SNR difference threshold for merge detection
-        t_rise_min: Minimum rise time (for threshold brain)
-        caiman_r_score_min: Minimum CaImAn r-score (for threshold brain)
-        caiman_snr_min: Minimum CaImAn SNR (for threshold brain)
-        t_off_min: Minimum decay time (for threshold brain)
-        use_*_check: Boolean flags to enable/disable individual checks (threshold brain)
-        use_corr_check: Enable correlation-based merge detection
+        enable_merge: Enable correlation-based merge detection (default: True)
         track_criteria_failures: Track which criteria failed for each neuron
         brain: Decision brain type - 'thresholds', 'ml', or 'hybrid'
-        ml_model_path: Path to ML model pickle (required if brain='ml')
+        ml_model_path: Path to ML model pickle (required if brain='ml' or 'hybrid')
         ml_threshold: P(KEEP) threshold for ML brain (default 0.5)
 
     Returns:
         metrics_df with 'delete' and 'merge' columns added
+
+    Examples:
+        >>> # Use default rules
+        >>> df = metrics_to_decision(metrics_df, match_mtx, FCD, FBD)
+
+        >>> # Custom rules
+        >>> custom_rules = ['area<2', 'circularity>3', 't_rise<0.15']
+        >>> df = metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
+        ...                           deletion_rules=custom_rules)
+
+        >>> # ML brain
+        >>> df = metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
+        ...                           brain='ml', ml_model_path='model.pkl')
     """
+    # Use default rules if none provided
+    if deletion_rules is None:
+        deletion_rules = DEFAULT_DELETION_RULES
     series_num = metrics_df.shape[0]
     metrics_df[['delete', 'merge']] = 0
 
-    # Initialize failure tracking columns
+    # Initialize failure tracking columns (dynamic based on rules)
     if track_criteria_failures:
         # Common column
         metrics_df['failed_corner_artifact'] = 0
 
         if brain == 'thresholds':
-            failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
-                           'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
-            for col in failure_cols:
-                metrics_df[col] = 0
+            # Initialize columns for active metrics in rules
+            active_metrics = get_active_metrics_from_rules(deletion_rules)
+            for metric in active_metrics:
+                metrics_df[f'failed_{metric}'] = 0
+
         elif brain == 'ml':
             metrics_df['ml_keep_probability'] = np.nan
+
         elif brain == 'hybrid':
             # Hybrid needs both threshold failure columns AND ML probability
-            failure_cols = ['failed_area', 'failed_circularity', 'failed_max_edge', 'failed_convexity',
-                           'failed_t_rise', 'failed_r_score', 'failed_snr', 'failed_t_off']
-            for col in failure_cols:
-                metrics_df[col] = 0
+            active_metrics = get_active_metrics_from_rules(deletion_rules)
+            for metric in active_metrics:
+                metrics_df[f'failed_{metric}'] = 0
             metrics_df['ml_keep_probability'] = np.nan
 
     # Step 1: Handle corner artifacts (always, regardless of brain)
@@ -1119,30 +1316,9 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
 
     if len(non_corner_indices) > 0:
         if brain == 'thresholds':
-            # Build threshold and use_checks dicts for the brain function
-            thresholds = {
-                'pxlthr_area': pxlthr_area,
-                'circ_thr': circ_thr,
-                'maxedge_thr': maxedge_thr,
-                'convex_thr': convex_thr,
-                't_rise_min': t_rise_min,
-                'caiman_r_score_min': caiman_r_score_min,
-                'caiman_snr_min': caiman_snr_min,
-                't_off_min': t_off_min
-            }
-            use_checks = {
-                'use_area_check': use_area_check,
-                'use_circularity_check': use_circularity_check,
-                'use_max_edge_check': use_max_edge_check,
-                'use_convexity_check': use_convexity_check,
-                'use_t_rise_check': use_t_rise_check,
-                'use_caiman_r_score_check': use_caiman_r_score_check,
-                'use_caiman_snr_check': use_caiman_snr_check,
-                'use_t_off_check': use_t_off_check
-            }
-
+            # Apply rule-based threshold brain
             delete_mask, failure_info = _apply_threshold_brain(
-                metrics_df.loc[non_corner_indices], thresholds, use_checks, track_criteria_failures)
+                metrics_df.loc[non_corner_indices], deletion_rules, track_criteria_failures)
 
             # Update delete column
             metrics_df.loc[non_corner_indices, 'delete'] = delete_mask.astype(int)
@@ -1164,30 +1340,9 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                 metrics_df.loc[non_corner_indices, 'ml_keep_probability'] = failure_info['ml_keep_probability']
 
         elif brain == 'hybrid':
-            # Build threshold and use_checks dicts (same as threshold brain)
-            thresholds = {
-                'pxlthr_area': pxlthr_area,
-                'circ_thr': circ_thr,
-                'maxedge_thr': maxedge_thr,
-                'convex_thr': convex_thr,
-                't_rise_min': t_rise_min,
-                'caiman_r_score_min': caiman_r_score_min,
-                'caiman_snr_min': caiman_snr_min,
-                't_off_min': t_off_min
-            }
-            use_checks = {
-                'use_area_check': use_area_check,
-                'use_circularity_check': use_circularity_check,
-                'use_max_edge_check': use_max_edge_check,
-                'use_convexity_check': use_convexity_check,
-                'use_t_rise_check': use_t_rise_check,
-                'use_caiman_r_score_check': use_caiman_r_score_check,
-                'use_caiman_snr_check': use_caiman_snr_check,
-                'use_t_off_check': use_t_off_check
-            }
-
+            # Apply hybrid brain (rules + ML)
             delete_mask, failure_info = _apply_hybrid_brain(
-                metrics_df.loc[non_corner_indices], thresholds, use_checks,
+                metrics_df.loc[non_corner_indices], deletion_rules,
                 ml_model_path, ml_threshold, track_failures=track_criteria_failures)
 
             # Update delete column
@@ -1202,7 +1357,7 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
             raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml', 'hybrid'")
 
     # Step 3: Correlation-based merge logic (UNCHANGED)
-    if use_corr_check:
+    if enable_merge:
         # unique number of clusters
         unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
         unique_clusters = sorted(unique_clusters, reverse=True)
