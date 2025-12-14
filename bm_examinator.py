@@ -274,7 +274,7 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                          include_event_based=True, include_heavy=False,
                          color_by_ml_probability=False, ml_threshold=0.5,
                          detect_corner_artifacts=True, corner_artifact_params=None,
-                         correlation_method='pearson'):
+                         correlation_method='pearson', n_iter=2):
 
     if len(comps_to_select) == 0:
         comps_to_select = list(est.idx_components)
@@ -338,7 +338,7 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
                                             corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
                                             sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy,
                                             detect_corner_artifacts_flag=detect_corner_artifacts, corner_artifact_params=corner_artifact_params,
-                                            correlation_method=correlation_method)
+                                            correlation_method=correlation_method, n_iter=n_iter)
 
     t2 = time.time()
     etime = np.round(t2 - t1, 2)
@@ -594,6 +594,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         match_threshold = bkapp_kwargs.get('match_threshold', 1)
         include_event_based = bkapp_kwargs.get('include_event_based', True)
         include_heavy = bkapp_kwargs.get('include_heavy', False)
+        n_iter = bkapp_kwargs.get('n_iter', 2)
         color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
         ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
         detect_corner_artifacts = bkapp_kwargs.get('detect_corner_artifacts', True)
@@ -645,7 +646,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                                            ml_threshold=ml_threshold,
                                            detect_corner_artifacts=detect_corner_artifacts,
                                            corner_artifact_params=corner_artifact_params,
-                                           correlation_method=correlation_method)
+                                           correlation_method=correlation_method,
+                                           n_iter=n_iter)
         else:
             raise ValueError('wrong operation mode!')
 

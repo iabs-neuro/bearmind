@@ -17,9 +17,9 @@ from ae_utils import save_validation_outputs
 project_root = os.path.dirname(os.path.abspath(__file__))
 val_path = os.path.join(project_root, 'data')
 
-# Default paths (use ultra-lightweight compressed data)
-init_path = os.path.join(val_path, 'raw_ultra_lightweight')
-gt_path = os.path.join(val_path, 'final_ultra_lightweight')
+# Default paths (use compressed data)
+init_path = os.path.join(val_path, 'raw_compressed')
+gt_path = os.path.join(val_path, 'final_compressed')
 
 
 def load_fps_data(fps_file='fps_data.csv'):
@@ -268,7 +268,8 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
 
 def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save_artifacts=True,
                    artifacts_base_path='.', verbose=False, session_list=None,
-                   save_estimates=False, estimates_output_path=None):
+                   save_estimates=False, estimates_output_path=None,
+                   event_method='threshold', n_iter=2):
     """
     Run validation on all sessions or specific sessions.
 
@@ -283,6 +284,8 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
         session_list: Optional list of specific session IDs to validate
         save_estimates: Save processed estimates pickle files
         estimates_output_path: Directory to save processed estimates
+        event_method: Event detection method ('threshold' or 'oasis')
+        n_iter: Number of iterations for event reconstruction
 
     Returns:
         pd.DataFrame: Validation results
@@ -327,14 +330,18 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 est_init,
                 fps=session_fps,
                 include_event_based=True,
-                include_heavy=include_heavy
+                include_heavy=include_heavy,
+                event_method=event_method,
+                n_iter=n_iter
             )
 
             metrics_df_gt, _, _, _, _, _ = estimates_to_metrics(
                 est_gt,
                 fps=session_fps,
                 include_event_based=True,
-                include_heavy=include_heavy
+                include_heavy=include_heavy,
+                event_method=event_method,
+                n_iter=n_iter
             )
 
             # Run automated decision pipeline
@@ -499,8 +506,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch", action="store_true", help="Run on all sessions (default: single test session)")
     parser.add_argument("--session", type=str, help="Specific session to validate (default: first)")
     parser.add_argument("--sessions", type=str, help="Comma-separated list of specific sessions to validate in batch mode")
-    parser.add_argument("--raw-path", type=str, help="Path to raw estimates folder (default: data/raw_ultra_lightweight)")
-    parser.add_argument("--final-path", type=str, help="Path to final estimates folder (default: data/final_ultra_lightweight)")
+    parser.add_argument("--raw-path", type=str, help="Path to raw estimates folder (default: data/raw_compressed)")
+    parser.add_argument("--final-path", type=str, help="Path to final estimates folder (default: data/final_compressed)")
     parser.add_argument("--fps", type=float, help="Override FPS for all sessions (default: use fps_data.csv lookup)")
     parser.add_argument("--include-heavy", action="store_true", help="Include heavy reconstruction metrics")
     parser.add_argument("--output", "-o", help="Output CSV file for batch mode")
@@ -509,6 +516,8 @@ if __name__ == "__main__":
     parser.add_argument("--artifacts-path", default=".", help="Base path for artifact folders (default: current directory)")
     parser.add_argument("--save-estimates", action="store_true", help="Save processed estimates pickle files")
     parser.add_argument("--estimates-path", default="data/processed_estimates", help="Directory to save processed estimates (default: data/processed_estimates)")
+    parser.add_argument("--event-method", default="threshold", choices=["threshold", "oasis"], help="Event detection method (default: threshold)")
+    parser.add_argument("--n-iter", type=int, default=2, help="Number of iterations for event reconstruction (default: 2)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
@@ -547,7 +556,9 @@ if __name__ == "__main__":
             verbose=args.verbose,
             session_list=session_list,
             save_estimates=args.save_estimates,
-            estimates_output_path=args.estimates_path
+            estimates_output_path=args.estimates_path,
+            event_method=args.event_method,
+            n_iter=args.n_iter
         )
     else:
         # Single session mode

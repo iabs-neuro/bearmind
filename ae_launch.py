@@ -19,11 +19,50 @@ Example usage:
 """
 
 from pathlib import Path
+import re
 import numpy as np
 import pandas as pd
 from scipy import sparse
 
 from bm_examinator import LoadEstimates
+
+# Path to FPS lookup table
+FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
+
+
+def get_fps_from_table(session_name: str, default_fps: int = 30) -> int:
+    """
+    Look up FPS for a session from fps_data.csv.
+
+    Args:
+        session_name: Session name (e.g., 'NOF_H32_4D' or full filename)
+        default_fps: Default FPS if session not found
+
+    Returns:
+        FPS value from table rounded to integer (20 or 30), or default_fps if not found
+    """
+    if not FPS_TABLE_PATH.exists():
+        return default_fps
+
+    # Extract session pattern (e.g., 'NOF_H32_4D' from filename)
+    # Pattern: EXP_MOUSE_DAY where EXP is 3 chars, MOUSE is letter+digits, DAY is digit+letter
+    match = re.search(r'([A-Z0-9]{3}_[A-Z]\d+_\d[A-Z])', session_name)
+    if match:
+        session_key = match.group(1)
+    else:
+        session_key = session_name
+
+    try:
+        fps_df = pd.read_csv(FPS_TABLE_PATH)
+        row = fps_df[fps_df['Filename'] == session_key]
+        if len(row) > 0:
+            return round(row['FPS'].values[0])
+    except Exception:
+        pass
+
+    return default_fps
+
+
 from auto_inspector import (
     estimates_to_metrics,
     metrics_to_decision,
@@ -101,14 +140,14 @@ def _save_inspection_artifacts(
 
 def run_auto_inspection(
     estimates_path: str,
-    fps: float,
+    fps: int = None,
     *,
     # --- Session naming ---
     session_name: str = None,
 
     # --- Metrics extraction parameters ---
     comps_to_select: list = None,
-    cthr: float = 0.3,
+    cthr: float = 0.35,
     corr_thr: float = 0.6,
     num_sessions: int = 1,
     match_threshold: int = 3,
@@ -116,11 +155,12 @@ def run_auto_inspection(
     ef: int = None,
     ds: int = 1,
     include_event_based: bool = True,
-    include_heavy: bool = False,
+    include_heavy: bool = True,
     detect_corner_artifacts: bool = True,
     corner_artifact_params: dict = None,
-    event_method: str = 'threshold',
-    correlation_method: str = 'pearson',
+    event_method: str = 'wavelet',
+    correlation_method: str = 'spearman',
+    n_iter: int = 2,
 
     # --- Decision parameters (threshold brain) ---
     circ_thr: float = 4,
@@ -146,20 +186,20 @@ def run_auto_inspection(
     use_corr_check: bool = True,
 
     # --- Brain selection ---
-    brain: str = 'thresholds',
-    ml_model_path: str = None,
-    ml_threshold: float = 0.5,
+    brain: str = 'ml',
+    ml_model_path: str = 'ml/production_models/ebm_v6_no3dm.pkl',
+    ml_threshold: float = 0.71,
 
     # --- Tracking ---
     track_criteria_failures: bool = True,
 
     # --- Artifact saving ---
     save_artifacts: bool = True,
-    artifacts_path: str = None,
+    artifacts_path: str = './output',
     save_estimates: bool = True,
     save_matrices: bool = True,
     save_corner_detection: bool = True,
-    compress_estimates: bool = False,
+    compress_estimates: bool = True,
 
     # --- Verbosity ---
     verbose: bool = False
@@ -254,6 +294,10 @@ def run_auto_inspection(
     if not estimates_path.exists():
         raise FileNotFoundError(f"Estimates file not found: {estimates_path}")
 
+    # Auto-lookup fps from table if not provided
+    if fps is None:
+        fps = get_fps_from_table(estimates_path.stem)
+
     if fps <= 0:
         raise ValueError(f"fps must be positive, got {fps}")
 
@@ -289,6 +333,7 @@ def run_auto_inspection(
 
     if verbose:
         print(f"[run_auto_inspection] Session: {session_name}")
+        print(f"[run_auto_inspection] FPS: {fps}")
         print(f"[run_auto_inspection] Loading estimates from: {estimates_path}")
 
     # --- Step 1: Load estimates ---
@@ -316,7 +361,8 @@ def run_auto_inspection(
         detect_corner_artifacts_flag=detect_corner_artifacts,
         corner_artifact_params=corner_artifact_params,
         event_method=event_method,
-        correlation_method=correlation_method
+        correlation_method=correlation_method,
+        n_iter=n_iter
     )
 
     if verbose:
@@ -519,11 +565,17 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Run auto-inspection on estimates file')
     parser.add_argument('estimates_path', help='Path to estimates pickle file')
-    parser.add_argument('--fps', type=float, required=True, help='Imaging frame rate')
-    parser.add_argument('--brain', choices=['thresholds', 'ml'], default='thresholds',
-                        help='Decision brain type')
-    parser.add_argument('--ml-model', type=str, help='Path to ML model (required if brain=ml)')
-    parser.add_argument('--output', type=str, help='Output directory for artifacts')
+    parser.add_argument('--fps', type=int, default=None, help='Imaging frame rate (auto from fps_data.csv if not provided)')
+    parser.add_argument('--brain', choices=['thresholds', 'ml', 'hybrid'], default='ml',
+                        help='Decision brain type (default: ml)')
+    parser.add_argument('--ml-model', type=str, default='ml/production_models/ebm_v6_no3dm.pkl',
+                        help='Path to ML model')
+    parser.add_argument('--ml-threshold', type=float, default=0.71,
+                        help='ML classification threshold (default: 0.71)')
+    parser.add_argument('--n-iter', type=int, default=2,
+                        help='Number of iterations for event reconstruction (default: 2)')
+    parser.add_argument('--output', type=str, default='./output',
+                        help='Output directory for artifacts (default: ./output)')
     parser.add_argument('--no-save', action='store_true', help='Disable artifact saving')
     parser.add_argument('--verbose', '-v', action='store_true', help='Print progress')
 
@@ -534,6 +586,8 @@ if __name__ == '__main__':
         fps=args.fps,
         brain=args.brain,
         ml_model_path=args.ml_model,
+        ml_threshold=args.ml_threshold,
+        n_iter=args.n_iter,
         artifacts_path=args.output,
         save_artifacts=not args.no_save,
         verbose=args.verbose
