@@ -612,7 +612,8 @@ def get_saturation_metrics(traces, fps):
     Normal double-exponential peaks: ~0.03-0.17 seconds at peak
     Saturated peaks: >0.5 seconds at peak plateau
 
-    Measures time spent within 95% of each peak's value, averaged across peaks.
+    Measures time spent within 80% of each peak's value, averaged across peaks.
+    Uses Gaussian smoothing (σ=3) to reduce noise and better capture plateau regions.
 
     Args:
         traces: 2D array of shape (n_cells, n_timepoints)
@@ -631,8 +632,8 @@ def get_saturation_metrics(traces, fps):
         if n_frames < 100:
             continue
 
-        # Light smoothing for robust peak detection
-        trace_smooth = gaussian_filter1d(trace, sigma=1)
+        # Smoothing for robust peak detection and noise reduction
+        trace_smooth = gaussian_filter1d(trace, sigma=3)
 
         # Normalize to 0-1
         trace_min, trace_max = trace_smooth.min(), trace_smooth.max()
@@ -655,7 +656,7 @@ def get_saturation_metrics(traces, fps):
 
         # Vectorized: get all peak values and thresholds at once
         peak_values = trace_norm[peaks]
-        thresholds = peak_values * 0.95
+        thresholds = peak_values * 0.80
 
         # Compute extent for each peak using numpy (much faster than Python loops)
         extents = np.zeros(n_peaks, dtype=np.int32)
