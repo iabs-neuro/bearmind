@@ -21,6 +21,19 @@ val_path = os.path.join(project_root, 'data')
 init_path = os.path.join(val_path, 'raw_compressed')
 gt_path = os.path.join(val_path, 'final_compressed')
 
+# Validation deletion rules (stricter than defaults for validation)
+# These match the old validation thresholds:
+# - area > 3 (old) → area<=3 (delete if <=3, keep if >3)
+# - circularity <= 1.7 (old) → circularity>1.7 (delete if >1.7, keep if <=1.7)
+# - max_edge <= 1.45 (old) → max_edge>1.45 (delete if >1.45, keep if <=1.45)
+# - convexity <= 42 (old) → convexity>42 (delete if >42, keep if <=42)
+VALIDATION_DELETION_RULES = [
+    'area<=3',           # Stricter: larger area required
+    'circularity>1.7',   # Stricter: more circular required
+    'max_edge>1.45',     # Stricter: shorter edges required
+    'convexity>42'       # Same as default
+]
+
 
 def load_fps_data(fps_file='fps_data.csv'):
     """
@@ -165,18 +178,10 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         match_mtx_init,
         FCD_init,
         FBD_init,
-        # Default thresholds from function signature
-        circ_thr=1.7,
-        maxedge_thr=1.45,
-        convex_thr=42,
-        pxlthr_area=3,
+        deletion_rules=VALIDATION_DELETION_RULES,
         pxlthr_distance_boundary=5,
         d_snr_thr=10,
-        use_circularity_check=True,
-        use_area_check=True,
-        use_max_edge_check=True,
-        use_convexity_check=True,
-        use_corr_check=True
+        enable_merge=True
     )
 
     # Convert decisions to 'decision' column format expected by implement_decision
@@ -350,21 +355,10 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 match_mtx_init,
                 FCD_init,
                 FBD_init,
-                circ_thr=1.7,
-                maxedge_thr=1.45,
-                convex_thr=42,
-                pxlthr_area=3,
+                deletion_rules=VALIDATION_DELETION_RULES,
                 pxlthr_distance_boundary=5,
                 d_snr_thr=10,
-                t_rise_min=0.10,
-                caiman_r_score_min=0.05,
-                caiman_snr_min=2.9,
-                t_off_min=1.5,
-                use_circularity_check=True,
-                use_area_check=True,
-                use_max_edge_check=True,
-                use_convexity_check=True,
-                use_corr_check=True
+                enable_merge=True
             )
 
             n_corner = (metrics_df_auto.get('is_corner_artifact', 0) == 1).sum()

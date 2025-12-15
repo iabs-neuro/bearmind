@@ -624,6 +624,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         # for future resetting
         estimates0 = LoadEstimates(fname, default_fps=default_fps)
 
+        # Extract active deletion metrics for GUI filtering
+        active_deletion_metrics = getattr(estimates0, 'active_deletion_metrics', None)
+
         if operation_mode == 'legacy':
             est_data0 = EstimatesToSrcFast(estimates0,
                                            cthr=cthr,
@@ -667,6 +670,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         if operation_mode == 'capcan':
             storage.metric_mapping = metric_mapping
+            storage.active_deletion_metrics = active_deletion_metrics
 
         n_traces0 = len(est_data0['traces'])
         #storage.ordering = np.arange(n_traces0)
@@ -1241,6 +1245,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             sorting_row = row(radio_button_group)
 
         elif storage.mode == 'capcan':
+            # Show ALL metrics for sorting (not just active deletion metrics)
             auto_metric_names = [storage.metric_mapping[i] for i in range(len(storage.metric_mapping))]
             all_labels = ["XY"] + auto_metric_names
 
