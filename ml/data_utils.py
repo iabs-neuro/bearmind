@@ -51,10 +51,10 @@ def get_feature_cols(df):
 # Static list for backward compatibility and when DataFrame not available
 # This should match what get_feature_cols() returns for a full metrics DataFrame
 FEATURE_COLS = [
-    'area', 'aspect_ratio', 'baseline', 'bimodality', 'caiman_r_score', 'caiman_snr',
+    'area', 'aspect_ratio', 'baseline', 'baseline_drift', 'bimodality', 'caiman_r_score', 'caiman_snr',
     'circularity', 'convexity', 'eccentricity', 'edge_distance', 'ellipse_r',
     'event_r2_score', 'event_snr', 'events_fraction', 'events_per_min', 'footprint_compactness',
-    'kinetics_opt', 'local_density', 'max_edge', 'mean_time_at_peak', 'nmae', 'nn_distance_center', 'noise_level',
+    'hurst_exponent', 'kinetics_opt', 'local_density', 'max_edge', 'mean_time_at_peak', 'nmae', 'nn_distance_center', 'noise_level',
     'nrmse', 'peak_amplitude_cv', 'r2_score', 'snr_recon', 't_off', 't_rise',
     'tau_decay', 'trace_kurtosis', 'trace_skewness'
 ]

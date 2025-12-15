@@ -456,6 +456,114 @@ def get_trace_stats(traces):
     return np.array(skewnesses), np.array(kurtoses), np.array(bimodalities)
 
 
+def get_hurst_exponents(traces, min_window=10, max_windows=20):
+    """
+    Compute Hurst exponent for multiple traces using R/S analysis.
+
+    The Hurst exponent (H) measures long-range dependence:
+    - H = 0.5: Random walk (no memory)
+    - H > 0.5: Persistent (trending, positive autocorrelation)
+    - H < 0.5: Anti-persistent (mean-reverting)
+
+    Real neurons typically show H ≈ 0.6-0.8 due to calcium kinetics.
+    Drift artifacts show H → 1.0 (very persistent).
+    Noise-dominated signals show H → 0.5.
+
+    Args:
+        traces: 2D array of shape (n_cells, n_timepoints)
+        min_window: Minimum window size for R/S analysis
+        max_windows: Maximum number of window sizes to use
+
+    Returns:
+        np.array of Hurst exponent values
+    """
+    n_cells = traces.shape[0]
+    hurst_values = np.full(n_cells, np.nan)
+
+    for i in range(n_cells):
+        trace = np.asarray(traces[i]).flatten()
+        n = len(trace)
+
+        if n < 100:
+            continue
+
+        max_k = n // 2
+        if max_k < min_window:
+            continue
+
+        step = max(1, max_k // max_windows)
+        rs_values = []
+        ns = []
+
+        for k in range(min_window, max_k, step):
+            rs = []
+            for start in range(0, n - k, k):
+                segment = trace[start:start + k]
+                mean = np.mean(segment)
+                cumdev = np.cumsum(segment - mean)
+                R = np.max(cumdev) - np.min(cumdev)
+                S = np.std(segment, ddof=1)
+                if S > 0:
+                    rs.append(R / S)
+            if rs:
+                rs_values.append(np.mean(rs))
+                ns.append(k)
+
+        if len(ns) < 2:
+            continue
+
+        try:
+            H = np.polyfit(np.log(ns), np.log(rs_values), 1)[0]
+            hurst_values[i] = H
+        except Exception:
+            pass
+
+    return hurst_values
+
+
+def get_baseline_drifts(traces):
+    """
+    Compute normalized baseline drift for multiple traces.
+
+    Measures linear trend magnitude normalized by signal range.
+    High values indicate slow drift artifacts.
+
+    drift = |slope * n_frames| / trace_range
+
+    Interpretation:
+    - drift < 0.1: Stable baseline
+    - drift > 0.5: Significant linear trend (potential artifact)
+
+    Args:
+        traces: 2D array of shape (n_cells, n_timepoints)
+
+    Returns:
+        np.array of baseline drift values
+    """
+    n_cells = traces.shape[0]
+    drift_values = np.full(n_cells, np.nan)
+
+    for i in range(n_cells):
+        trace = np.asarray(traces[i]).flatten()
+        n = len(trace)
+
+        if n < 10:
+            continue
+
+        trace_range = np.max(trace) - np.min(trace)
+        if trace_range == 0 or np.isclose(trace_range, 0, atol=1e-10):
+            continue
+
+        x = np.arange(n)
+        try:
+            slope = np.polyfit(x, trace, 1)[0]
+            drift_values[i] = abs(slope * n) / trace_range
+        except Exception:
+            pass
+
+    return drift_values
+
+
 def get_compactnesses(contours, areas):
     """
     Compute footprint compactness for each contour.
@@ -735,6 +843,12 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     # Saturation metrics (FPS-independent, in seconds)
     mean_times_at_peak = get_saturation_metrics(raw_traces, fps)
 
+    # Long-range dependence (Hurst exponent via R/S analysis)
+    hurst_exponents = get_hurst_exponents(raw_traces)
+
+    # Baseline stability (normalized linear trend)
+    baseline_drifts = get_baseline_drifts(raw_traces)
+
     # Footprint compactness
     compactnesses = get_compactnesses(contours, areas)
 
@@ -759,6 +873,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'trace_kurtosis': trace_kurtoses,
         'bimodality': trace_bimodalities,
         'mean_time_at_peak': mean_times_at_peak,
+        'hurst_exponent': hurst_exponents,
+        'baseline_drift': baseline_drifts,
         'footprint_compactness': compactnesses,
         'corr_groups': corr_groups
     }
