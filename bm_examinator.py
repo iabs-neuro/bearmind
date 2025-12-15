@@ -929,7 +929,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 if mode == 0:
                     metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
                 else:
-                    mname = storage.metric_mapping[mode-1]
+                    # Use GUI metric mapping (filtered/reordered metrics)
+                    mname = storage.gui_metric_mapping[mode-1]
                     metric = np.array(src_partial.data[mname])
 
             elif regime == 'legacy':
@@ -1247,15 +1248,37 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         elif storage.mode == 'capcan':
             # Show ALL metrics for sorting (not just active deletion metrics)
             auto_metric_names = [storage.metric_mapping[i] for i in range(len(storage.metric_mapping))]
-            all_labels = ["XY"] + auto_metric_names
 
-            # Split buttons into 3 rows
-            n_labels = len(all_labels)
-            n_per_row = (n_labels + 2) // 3  # Ceiling division
+            # Filter out non-numeric and duplicate metrics, separate special metrics
+            exclude_metrics = {'decision', 'failed_corner_artefact'}
+            special_metrics = []  # failed_* and ml_keep_probability go in last row
+            regular_metrics = []
 
-            row1_labels = all_labels[:n_per_row]
-            row2_labels = all_labels[n_per_row:2*n_per_row]
-            row3_labels = all_labels[2*n_per_row:]
+            for name in auto_metric_names:
+                if name in exclude_metrics:
+                    continue
+                elif name.startswith('failed_') or name == 'ml_keep_probability':
+                    special_metrics.append(name)
+                else:
+                    regular_metrics.append(name)
+
+            # Build 4 rows: 3 for regular metrics + 1 for special metrics
+            all_regular_labels = ["XY"] + regular_metrics
+            n_regular = len(all_regular_labels)
+            n_per_row = (n_regular + 2) // 3  # For 3 rows
+
+            row1_labels = all_regular_labels[:n_per_row]
+            row2_labels = all_regular_labels[n_per_row:2*n_per_row]
+            row3_labels = all_regular_labels[2*n_per_row:]
+            row4_labels = special_metrics  # failed_* + ml_keep_probability
+
+            # Build mapping from display label to original metric index
+            all_labels = all_regular_labels + special_metrics
+
+            # Create GUI metric mapping: maps GUI index (excluding XY) to metric name
+            # This is needed because we filter/reorder metrics for display
+            gui_metric_mapping = {i: name for i, name in enumerate(regular_metrics + special_metrics)}
+            storage.gui_metric_mapping = gui_metric_mapping
 
             # Create a virtual radio button group that tracks which is selected
             class SortingState:
@@ -1264,10 +1287,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             sorting_state = SortingState()
 
-            # Create three button groups
+            # Create four button groups (3 regular + 1 special)
             radio_group1 = RadioButtonGroup(labels=row1_labels, active=0, width=60)
             radio_group2 = RadioButtonGroup(labels=row2_labels, active=-1, width=60) if row2_labels else None
             radio_group3 = RadioButtonGroup(labels=row3_labels, active=-1, width=60) if row3_labels else None
+            radio_group4 = RadioButtonGroup(labels=row4_labels, active=-1, width=60) if row4_labels else None
 
             # Create a pseudo radio_button_group for compatibility with sort_callback
             class UnifiedRadioGroup:
@@ -1286,14 +1310,18 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     if new == -1:
                         return
 
-                    # Calculate global active index
+                    # Calculate global active index based on label position in all_labels
                     if group_idx == 1:
-                        global_active = new
+                        label = row1_labels[new]
                     elif group_idx == 2:
-                        global_active = n_per_row + new
+                        label = row2_labels[new]
                     elif group_idx == 3:
-                        global_active = 2 * n_per_row + new
+                        label = row3_labels[new]
+                    elif group_idx == 4:
+                        label = row4_labels[new]
 
+                    # Find the label in all_labels to get proper index
+                    global_active = all_labels.index(label)
                     sorting_state.active = global_active
 
                     # Deactivate other groups
@@ -1303,6 +1331,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                         radio_group2.active = -1
                     if group_idx != 3 and radio_group3:
                         radio_group3.active = -1
+                    if group_idx != 4 and radio_group4:
+                        radio_group4.active = -1
 
                     # Trigger sort
                     sort_callback(None, storage=storage, rb=radio_button_group)
@@ -1313,13 +1343,17 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 radio_group2.on_change('active', make_sync_callback(2))
             if radio_group3:
                 radio_group3.on_change('active', make_sync_callback(3))
+            if radio_group4:
+                radio_group4.on_change('active', make_sync_callback(4))
 
-            # Build layout with 3 rows
+            # Build layout with 4 rows
             rows_to_add = [radio_group1]
             if radio_group2:
                 rows_to_add.append(radio_group2)
             if radio_group3:
                 rows_to_add.append(radio_group3)
+            if radio_group4:
+                rows_to_add.append(radio_group4)
 
             sorting_row = column(*[row(rg) for rg in rows_to_add])
 
