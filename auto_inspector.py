@@ -134,14 +134,16 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
     return neuron, kinetics_result
 
 
-def get_signal_metrics(neuron, kinetics_optimized=None):
+def get_signal_metrics(neuron, kinetics_result=None):
     """
     Extract signal-based metrics from a neuron.
 
     Args:
         neuron: DRIADA Neuron object
-        kinetics_optimized: bool or None - whether kinetics optimization succeeded
-                           (from get_kinetics()['optimized'])
+        kinetics_result: dict from get_kinetics() with keys:
+            - 'optimized': bool (True only if BOTH params measured)
+            - 'partially_optimized': bool (True if exactly one measured)
+            - 'used_defaults': {'t_rise': bool, 't_off': bool}
     """
     # metrics that don't require precise reconstruction
 
@@ -173,10 +175,18 @@ def get_signal_metrics(neuron, kinetics_optimized=None):
     else:
         peak_amplitude_cv = np.nan  # not enough events to compute CV
 
-    # Determine if kinetics optimization was successful
-    # Use the 'optimized' flag from get_kinetics() if available
-    if kinetics_optimized is not None:
-        kinetics_opt = 1 if kinetics_optimized else 0
+    # Determine kinetics optimization status
+    # Uses DRIADA 0.6.4+ fields: optimized, partially_optimized, used_defaults
+    if kinetics_result is not None:
+        kinetics_optimized = kinetics_result.get('optimized', False)
+        partially_optimized = kinetics_result.get('partially_optimized', False)
+
+        if kinetics_optimized:
+            kinetics_opt = 1  # Full success - both t_rise and t_off measured
+        elif partially_optimized:
+            kinetics_opt = 0.5  # Partial - one measured, one defaulted
+        else:
+            kinetics_opt = 0  # Full failure - both defaulted or no events
     elif t_rise == -1 or t_off == -1:
         # Fallback: -1 indicates explicit no-events case
         kinetics_opt = 0
@@ -184,8 +194,8 @@ def get_signal_metrics(neuron, kinetics_optimized=None):
         # Fallback: assume success if positive values present
         kinetics_opt = 1
     else:
-        # Unexpected state
-        kinetics_opt = -1
+        # Unknown state
+        kinetics_opt = 0
 
     sig_metrics = {
         'events_per_min': epm,
@@ -244,7 +254,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
     """
     try:
         neuron, kinetics_result = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter)
-        signal_metrics = get_signal_metrics(neuron, kinetics_optimized=kinetics_result.get('optimized', None))
+        signal_metrics = get_signal_metrics(neuron, kinetics_result=kinetics_result)
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
             return {**signal_metrics, **rec_metrics}
