@@ -2,7 +2,7 @@
 Create merged training dataset with all neuronal metrics and ground truth labels.
 
 Combines all sessions from capcan_validation_127 into a single dataframe with:
-- All 21 features used for ML
+- All features used for ML
 - Ground truth labels (matched to GT by distance)
 - Session and experiment identifiers
 """

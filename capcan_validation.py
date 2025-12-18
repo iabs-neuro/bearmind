@@ -99,7 +99,7 @@ def load_estimates(filepath):
     return estimates
 
 
-def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=True):
+def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=True, event_method='threshold', n_iter=2, hybrid_kinetics=False):
     """
     Validate automated pipeline on a single session.
 
@@ -109,6 +109,9 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         gt_file: Filename for final (ground truth) estimates
         fps: Frames per second (if None, will lookup from fps_map)
         verbose: Print detailed progress
+        event_method: Event detection method ('threshold' or 'wavelet')
+        n_iter: Number of iterations for event reconstruction
+        hybrid_kinetics: Use hybrid kinetics optimization (cascading)
 
     Returns:
         dict: Validation metrics
@@ -148,7 +151,10 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         est_init,
         fps=fps,
         include_event_based=True,
-        include_heavy=False  # Skip reconstruction metrics for speed
+        include_heavy=False,  # Skip reconstruction metrics for speed
+        event_method=event_method,
+        n_iter=n_iter,
+        hybrid_kinetics=hybrid_kinetics
     )
 
     if verbose:
@@ -162,7 +168,10 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         est_gt,
         fps=fps,
         include_event_based=False,
-        include_heavy=False
+        include_heavy=False,
+        event_method=event_method,
+        n_iter=n_iter,
+        hybrid_kinetics=hybrid_kinetics
     )
 
     if verbose:
@@ -274,7 +283,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
 def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save_artifacts=True,
                    artifacts_base_path='.', verbose=False, session_list=None,
                    save_estimates=False, estimates_output_path=None,
-                   event_method='threshold', n_iter=2):
+                   event_method='threshold', n_iter=2, hybrid_kinetics=False):
     """
     Run validation on all sessions or specific sessions.
 
@@ -291,6 +300,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
         estimates_output_path: Directory to save processed estimates
         event_method: Event detection method ('threshold' or 'oasis')
         n_iter: Number of iterations for event reconstruction
+        hybrid_kinetics: Use hybrid kinetics optimization (cascading)
 
     Returns:
         pd.DataFrame: Validation results
@@ -337,7 +347,8 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 include_event_based=True,
                 include_heavy=include_heavy,
                 event_method=event_method,
-                n_iter=n_iter
+                n_iter=n_iter,
+                hybrid_kinetics=hybrid_kinetics
             )
 
             metrics_df_gt, _, _, _, _, _ = estimates_to_metrics(
@@ -346,7 +357,8 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 include_event_based=True,
                 include_heavy=include_heavy,
                 event_method=event_method,
-                n_iter=n_iter
+                n_iter=n_iter,
+                hybrid_kinetics=hybrid_kinetics
             )
 
             # Run automated decision pipeline
@@ -510,8 +522,9 @@ if __name__ == "__main__":
     parser.add_argument("--artifacts-path", default=".", help="Base path for artifact folders (default: current directory)")
     parser.add_argument("--save-estimates", action="store_true", help="Save processed estimates pickle files")
     parser.add_argument("--estimates-path", default="data/processed_estimates", help="Directory to save processed estimates (default: data/processed_estimates)")
-    parser.add_argument("--event-method", default="threshold", choices=["threshold", "oasis"], help="Event detection method (default: threshold)")
+    parser.add_argument("--event-method", default="threshold", choices=["threshold", "wavelet"], help="Event detection method (default: threshold)")
     parser.add_argument("--n-iter", type=int, default=2, help="Number of iterations for event reconstruction (default: 2)")
+    parser.add_argument("--hybrid-kinetics", action="store_true", help="Use hybrid kinetics optimization (cascading: wavelet_std -> wavelet_relaxed -> threshold_std -> threshold_relaxed -> defaults)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
@@ -552,7 +565,8 @@ if __name__ == "__main__":
             save_estimates=args.save_estimates,
             estimates_output_path=args.estimates_path,
             event_method=args.event_method,
-            n_iter=args.n_iter
+            n_iter=args.n_iter,
+            hybrid_kinetics=args.hybrid_kinetics
         )
     else:
         # Single session mode
@@ -574,7 +588,10 @@ if __name__ == "__main__":
             init_file=init_file,
             gt_file=gt_file,
             fps=args.fps,  # None by default, will use fps_map lookup
-            verbose=True
+            verbose=True,
+            event_method=args.event_method,
+            n_iter=args.n_iter,
+            hybrid_kinetics=args.hybrid_kinetics
         )
 
         # Print comprehensive report

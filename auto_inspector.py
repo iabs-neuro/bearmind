@@ -76,7 +76,7 @@ def get_hvals(traces):
     return hvals
 
 
-def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2):
+def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2, hybrid_kinetics=True):
     """
     Create a Neuron object and detect events using specified method.
 
@@ -86,6 +86,8 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         lightweight: If True, skip expensive re-detection with optimized kinetics
         event_method: Event detection method ('threshold' or 'wavelet')
         n_iter: Number of iterations for iterative reconstruction (default: 2)
+        hybrid_kinetics: If True, use cascading kinetics optimization (default: True):
+            1. wavelet standard -> 2. wavelet relaxed -> 3. threshold standard -> 4. threshold relaxed -> 5. defaults
     """
     # Create Neuron object
     neuron = Neuron(
@@ -112,12 +114,16 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         )
 
     # Stage 2: Measure kinetics from initial events
-    kinetics_result = neuron.get_kinetics(
-        method='direct',  # Direct measurement from detected events
-        use_cached=False,  # Force recomputation
-        #update_reconstruction=not lightweight  # Re-run detection with optimized kinetics
-        update_reconstruction=False  # Re-run detection with optimized kinetics
-    )
+    if hybrid_kinetics:
+        # Cascading kinetics optimization
+        kinetics_result = _optimize_kinetics_hybrid(neuron, trace, fps)
+    else:
+        # Standard kinetics optimization
+        kinetics_result = neuron.get_kinetics(
+            method='direct',
+            use_cached=False,
+            update_reconstruction=False
+        )
 
     # Stage 3: optionally re-run detection with optimized kinetics
     if not lightweight:
@@ -132,6 +138,91 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         )
 
     return neuron, kinetics_result
+
+
+def _optimize_kinetics_hybrid(neuron, trace, fps):
+    """
+    Cascading kinetics optimization:
+    1. Wavelet standard
+    2. Wavelet relaxed (min_events=3, min_r2=0.6)
+    3. Threshold standard
+    4. Threshold relaxed
+    5. Defaults
+
+    Updates neuron.t_rise and neuron.t_off with best available kinetics.
+    Returns kinetics_result dict with 'kinetics_source' field.
+    """
+    kinetics_result = {'optimized': False, 'kinetics_source': 'defaults'}
+
+    # 1. Wavelet standard
+    try:
+        result = neuron.get_kinetics(
+            method='direct', fps=fps,
+            use_cached=False, update_reconstruction=False
+        )
+        if result.get('optimized'):
+            result['kinetics_source'] = 'wavelet_standard'
+            return result
+    except Exception:
+        pass
+
+    # 2. Wavelet relaxed
+    try:
+        result = neuron.get_kinetics(
+            method='direct', fps=fps,
+            use_cached=False, update_reconstruction=False,
+            min_events=3, min_r2=0.6
+        )
+        if result.get('optimized'):
+            result['kinetics_source'] = 'wavelet_relaxed'
+            return result
+    except Exception:
+        pass
+
+    # 3. Threshold standard - need threshold events
+    neuron_thr = None
+    try:
+        neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps)
+        neuron_thr.reconstruct_spikes(
+            method='threshold', n_mad=4.0, min_duration_frames=2,
+            iterative=False, create_event_regions=True, fps=fps
+        )
+        result = neuron_thr.get_kinetics(
+            method='direct', fps=fps,
+            use_cached=False, update_reconstruction=False
+        )
+        if result.get('optimized'):
+            neuron.t_rise = neuron_thr.t_rise
+            neuron.t_off = neuron_thr.t_off
+            result['kinetics_source'] = 'threshold_standard'
+            return result
+    except Exception:
+        pass
+
+    # 4. Threshold relaxed
+    try:
+        if neuron_thr is None:
+            neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps)
+            neuron_thr.reconstruct_spikes(
+                method='threshold', n_mad=4.0, min_duration_frames=2,
+                iterative=False, create_event_regions=True, fps=fps
+            )
+        result = neuron_thr.get_kinetics(
+            method='direct', fps=fps,
+            use_cached=False, update_reconstruction=False,
+            min_events=3, min_r2=0.6
+        )
+        if result.get('optimized'):
+            neuron.t_rise = neuron_thr.t_rise
+            neuron.t_off = neuron_thr.t_off
+            result['kinetics_source'] = 'threshold_relaxed'
+            return result
+    except Exception:
+        pass
+
+    # 5. All failed - use defaults
+    kinetics_result['kinetics_source'] = 'defaults'
+    return kinetics_result
 
 
 def get_signal_metrics(neuron, kinetics_result=None):
@@ -177,9 +268,11 @@ def get_signal_metrics(neuron, kinetics_result=None):
 
     # Determine kinetics optimization status
     # Uses DRIADA 0.6.4+ fields: optimized, partially_optimized, used_defaults
+    kinetics_source = 'unknown'
     if kinetics_result is not None:
         kinetics_optimized = kinetics_result.get('optimized', False)
         partially_optimized = kinetics_result.get('partially_optimized', False)
+        kinetics_source = kinetics_result.get('kinetics_source', 'unknown')
 
         if kinetics_optimized:
             kinetics_opt = 1  # Full success - both t_rise and t_off measured
@@ -204,7 +297,8 @@ def get_signal_metrics(neuron, kinetics_result=None):
         't_off': t_off,
         'event_snr': event_snr,
         'peak_amplitude_cv': peak_amplitude_cv,
-        'kinetics_opt': kinetics_opt
+        'kinetics_opt': kinetics_opt,
+        'kinetics_source': kinetics_source
     }
 
     return sig_metrics
@@ -239,7 +333,7 @@ def get_reconstruction_quality_metrics(neuron):
     return rec_metrics
 
 
-def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2):
+def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True):
     """
     Extract metrics from a single neuron trace.
 
@@ -251,9 +345,10 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
         include_heavy: If True, compute reconstruction quality metrics
         event_method: Event detection method ('threshold' or 'wavelet')
         n_iter: Number of iterations for iterative reconstruction (default: 2)
+        hybrid_kinetics: If True, use cascading kinetics optimization (default: True)
     """
     try:
-        neuron, kinetics_result = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter)
+        neuron, kinetics_result = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics)
         signal_metrics = get_signal_metrics(neuron, kinetics_result=kinetics_result)
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
@@ -271,7 +366,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             't_off': np.nan,
             'event_snr': np.nan,
             'peak_amplitude_cv': np.nan,
-            'kinetics_opt': np.nan
+            'kinetics_opt': np.nan,
+            'kinetics_source': 'error'
         }
 
         if include_heavy:
@@ -288,12 +384,12 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             return nan_signal_metrics
 
 
-def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2):
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True):
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
     metrics_res = Parallel(n_jobs=-1)(
-        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method, n_iter=n_iter)
+        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics)
         for i in range(traces.shape[0])
     )
 
@@ -748,7 +844,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          corr_thr=0.6, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
-                         event_method='threshold', correlation_method='pearson', n_iter=2):
+                         event_method='threshold', correlation_method='pearson', n_iter=2,
+                         hybrid_kinetics=True):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -898,7 +995,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                                                       fps=fps,
                                                       include_heavy=include_heavy,
                                                       event_method=event_method,
-                                                      n_iter=n_iter)
+                                                      n_iter=n_iter,
+                                                      hybrid_kinetics=hybrid_kinetics)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
