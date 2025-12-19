@@ -670,6 +670,57 @@ def get_baseline_drifts(traces):
     return drift_values
 
 
+def get_half_crossing_rates(traces, fps):
+    """
+    Compute half-crossing rate for each trace (crossings per minute).
+
+    Counts how many times the normalized trace crosses the 0.5 threshold,
+    normalized to rate per minute.
+
+    High HCR indicates noisy/continuous activity (artifacts).
+    Low HCR indicates sparse calcium events (real neurons).
+
+    Args:
+        traces: 2D array of shape (n_cells, n_timepoints)
+        fps: Frames per second (required for time normalization)
+
+    Returns:
+        np.array of half-crossing rates (crossings per minute)
+    """
+    n_cells = traces.shape[0]
+    n_timepoints = traces.shape[1]
+    hcr_values = np.full(n_cells, np.nan)
+
+    # Calculate recording duration in minutes
+    if fps is None or fps <= 0:
+        raise ValueError("fps must be provided and positive for rate calculation")
+
+    duration_seconds = n_timepoints / fps
+    duration_minutes = duration_seconds / 60.0
+
+    for i in range(n_cells):
+        trace = np.asarray(traces[i]).flatten()
+
+        # Skip flat traces
+        if np.ptp(trace) < 1e-10:
+            hcr_values[i] = 0.0
+            continue
+
+        # Ensure normalized [0, 1]
+        trace_min = np.min(trace)
+        trace_max = np.max(trace)
+        trace_norm = (trace - trace_min) / (trace_max - trace_min)
+
+        # Count crossings of 0.5 threshold
+        above_half = trace_norm > 0.5
+        crossings = np.sum(np.abs(np.diff(above_half.astype(int))))
+
+        # Normalize to rate per minute
+        hcr_values[i] = crossings / duration_minutes
+
+    return hcr_values
+
+
 def get_compactnesses(contours, areas):
     """
     Compute footprint compactness for each contour.
