@@ -416,7 +416,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
     """
     if bkapp_kwargs is None:
         bkapp_kwargs = {}
-    ml_model_path = bkapp_kwargs.get('ml_model_path', None)
+    operation_mode = bkapp_kwargs.get('mode', 'legacy')
+    ml_model_path = bkapp_kwargs.get('ml_model_path', None) if operation_mode == 'capcan' else None
     compress_estimates = bkapp_kwargs.get('compress_estimates', False)
 
     # ML model state (lazy-loaded)
@@ -595,7 +596,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         include_event_based = bkapp_kwargs.get('include_event_based', True)
         include_heavy = bkapp_kwargs.get('include_heavy', False)
         n_iter = bkapp_kwargs.get('n_iter', 2)
-        color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False)
+        color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False) if operation_mode == 'capcan' else False
         ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
         detect_corner_artifacts = bkapp_kwargs.get('detect_corner_artifacts', True)
         corner_artifact_params = bkapp_kwargs.get('corner_artifact_params', None)
@@ -799,9 +800,17 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     metrics_data[key] = value
 
             # Try to get feature importances and neuron contributions from ML model
-            _get_ml_model()  # Trigger lazy load
-            feature_importances = _feature_importances[0] or {}
-            contributions, total_abs_all, intercept = _get_neuron_contributions(metrics_data) if feature_importances else ({}, 0.0, 0.0)
+            # GUARD: Only compute ML contributions in capcan mode with ML model
+            if operation_mode == 'capcan' and ml_model_path is not None:
+                _get_ml_model()  # Trigger lazy load
+                feature_importances = _feature_importances[0] or {}
+                contributions, total_abs_all, intercept = _get_neuron_contributions(metrics_data) if feature_importances else ({}, 0.0, 0.0)
+            else:
+                # Legacy mode: no ML features
+                feature_importances = {}
+                contributions = {}
+                total_abs_all = 0.0
+                intercept = 0.0
 
             # Sort keys: important features first (if model), then alphabetically
             if feature_importances:
@@ -1257,8 +1266,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             for name in auto_metric_names:
                 if name in exclude_metrics:
                     continue
-                elif name.startswith('failed_') or name == 'ml_keep_probability':
+                elif name.startswith('failed_'):
                     special_metrics.append(name)
+                elif name == 'ml_keep_probability':
+                    # Only show ML metric if ML model was loaded
+                    if ml_model_path is not None:
+                        special_metrics.append(name)
                 else:
                     regular_metrics.append(name)
 
