@@ -17,7 +17,7 @@ from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
-                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup)
+                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup, Spacer)
 
 from bokeh.layouts import column, row
 from bokeh.events import Tap
@@ -585,6 +585,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 self.prev_estimates_partial = None
                 self.prev_data = None
                 self.prev_data_partial = None
+                self.feedback_dict = {}  # User feedback: {neuron_idx: {feedback_type, ml_prob, ...}}
 
         operation_mode = bkapp_kwargs.get('mode', 'legacy')
         size = bkapp_kwargs.get('size', 500)
@@ -766,7 +767,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         p1.add_tools(draw_tool)
 
         # --- Metrics display on tap ---
-        metrics_width = bkapp_kwargs.get('metrics_width', 200)
+        # Narrower in legacy mode (100px), wider in capcan mode (default 200px)
+        if operation_mode == 'legacy':
+            metrics_width = 100
+        else:
+            metrics_width = bkapp_kwargs.get('metrics_width', 200)
+
         metrics_div = Div(
             text="<b>Neuron Metrics</b><br><i>Tap a neuron to see metrics</i>",
             width=metrics_width,
@@ -786,8 +792,15 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             # Get neuron data from source
             neuron_idx = src_partial.data['idx'][selected_idx]
 
+            # Check if neuron has feedback
+            feedback_badge = ''
+            if neuron_idx in storage.feedback_dict:
+                feedback_type = storage.feedback_dict[neuron_idx]['feedback_type']
+                badge_color = '#ff8c00' if feedback_type == 'FP' else '#1e90ff'
+                feedback_badge = f" <span style='background-color: {badge_color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;'>{feedback_type}</span>"
+
             # Build metrics HTML
-            html = f"<b>Neuron #{neuron_idx}</b><br>"
+            html = f"<b>Neuron #{neuron_idx}</b>{feedback_badge}<br>"
             html += "<hr style='margin: 3px 0;'>"
 
             # Get all metrics from the source
@@ -1241,6 +1254,77 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
 
+        def mark_feedback_callback(feedback_type, event, storage=None):
+            """Mark current neuron with FP or FN feedback (toggle behavior)"""
+            if len(src_partial.selected.indices) == 0:
+                print("No neuron selected. Please select a neuron first.")
+                return
+
+            selected_idx = src_partial.selected.indices[0]
+            neuron_idx = src_partial.data['idx'][selected_idx]
+
+            # Toggle behavior: if already marked with same type, remove it
+            if neuron_idx in storage.feedback_dict:
+                if storage.feedback_dict[neuron_idx]['feedback_type'] == feedback_type:
+                    del storage.feedback_dict[neuron_idx]
+                    print(f"Removed {feedback_type} feedback for neuron #{neuron_idx}")
+                    # Trigger metrics refresh to remove badge
+                    on_selection_change('indices', [], src_partial.selected.indices)
+                    return
+
+            # Collect context
+            ml_prob = src_partial.data.get('ml_keep_probability', [None])[selected_idx]
+            delete_status = src_partial.data.get('delete', [0])[selected_idx]
+
+            # Store feedback (overwrites if different type)
+            storage.feedback_dict[neuron_idx] = {
+                'feedback_type': feedback_type,
+                'ml_keep_probability': ml_prob,
+                'delete_status': delete_status,
+                'session_name': estimates.name if hasattr(estimates, 'name') else 'unknown',
+                'timestamp': get_datetime()
+            }
+
+            print(f"Marked neuron #{neuron_idx} as {feedback_type}")
+
+            # Trigger metrics refresh to show badge
+            on_selection_change('indices', [], src_partial.selected.indices)
+
+
+        def save_feedback_callback(event, storage=None):
+            """Export all feedback to CSV"""
+            if not storage.feedback_dict:
+                print("No feedback recorded yet. Mark some neurons first.")
+                return
+
+            # Convert to DataFrame
+            feedback_data = []
+            for neuron_idx, feedback in storage.feedback_dict.items():
+                feedback_data.append({
+                    'neuron_idx': neuron_idx,
+                    'session_name': feedback['session_name'],
+                    'feedback_type': feedback['feedback_type'],
+                    'ml_keep_probability': feedback['ml_keep_probability'],
+                    'delete_status': feedback['delete_status'],
+                    'timestamp': feedback['timestamp']
+                })
+
+            df = pd.DataFrame(feedback_data)
+            df = df.sort_values('neuron_idx')
+
+            # Generate filename
+            dt = get_datetime().replace(':', '-')
+            base_name = extract_name_with_pattern(estimates.name) if hasattr(estimates, 'name') else 'session'
+            feedback_csv = f'{base_name}_feedback_{dt}.csv'
+
+            # Save
+            df.to_csv(feedback_csv, index=False)
+
+            print(f"Saved {len(feedback_data)} feedback entries to {feedback_csv}")
+            print(f"  FP count: {sum(1 for f in feedback_data if f['feedback_type'] == 'FP')}")
+            print(f"  FN count: {sum(1 for f in feedback_data if f['feedback_type'] == 'FN')}")
+
+
         # Sorting radiobutton
         if storage.mode == 'legacy':
             radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
@@ -1410,6 +1494,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         button_save_final = Button(label="Save results", button_type="success", width=bwidth, width_policy='fit')
         button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
 
+        # Feedback buttons (toggle behavior)
+        button_mark_fp = Button(label="FP", button_type="warning", width=60, width_policy='fit')
+        button_mark_fn = Button(label="FN", button_type="primary", width=60, width_policy='fit')
+        button_save_feedback = Button(label="Save Feedback", button_type="success", width=110, width_policy='fit')
+
         # Reconstruction toggle checkbox (only visible if reconstructions available)
         has_reconstructions = est_data0.get('traces_recon') is not None
         checkbox_recon = CheckboxGroup(
@@ -1425,6 +1514,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         checkbox_recon.on_change('active', recon_callback)
 
+        # Wire feedback button callbacks
+        button_mark_fp.on_event('button_click', partial(mark_feedback_callback, 'FP', storage=storage))
+        button_mark_fn.on_event('button_click', partial(mark_feedback_callback, 'FN', storage=storage))
+        button_save_feedback.on_event('button_click', partial(save_feedback_callback, storage=storage))
+
         doc.add_root(
             column(
                 row(
@@ -1434,8 +1528,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     button_restore,
                     button_revert,
                     button_discard,
-                    #button_seed,
+                    Spacer(width=20),  # Visual separator
+                    button_mark_fp,
+                    button_mark_fn,
+                    Spacer(width=20),  # Visual separator
                     button_save,
+                    button_save_feedback,
                     button_save_final,
                     checkbox_recon
                 ),
