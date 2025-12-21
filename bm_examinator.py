@@ -1272,18 +1272,35 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     on_selection_change('indices', [], src_partial.selected.indices)
                     return
 
-            # Collect context
-            ml_prob = src_partial.data.get('ml_keep_probability', [None])[selected_idx]
-            delete_status = src_partial.data.get('delete', [0])[selected_idx]
+            # Capture ALL relevant metrics for this neuron
+            # Exclude: display fields, dummy columns, decision logic, artifact flags, merge info
+            exclude_keys = {'xs', 'ys', 'times', 'traces', 'colors', 'traces_recon',
+                          'decision', 'is_corner_artifact', 'merge'}
+            neuron_metrics = {}
 
-            # Store feedback (overwrites if different type)
-            storage.feedback_dict[neuron_idx] = {
-                'feedback_type': feedback_type,
-                'ml_keep_probability': ml_prob,
-                'delete_status': delete_status,
-                'session_name': estimates.name if hasattr(estimates, 'name') else 'unknown',
-                'timestamp': get_datetime()
-            }
+            for key in src_partial.data.keys():
+                # Skip excluded keys and any failed_* or dummy_* columns
+                if (key in exclude_keys or
+                    key.startswith('failed_') or
+                    key.startswith('dummy_')):
+                    continue
+
+                try:
+                    value = src_partial.data[key][selected_idx]
+                    # Convert numpy types to native Python types for JSON serialization
+                    if hasattr(value, 'item'):
+                        value = value.item()
+                    neuron_metrics[key] = value
+                except (IndexError, KeyError):
+                    neuron_metrics[key] = None
+
+            # Add feedback metadata
+            neuron_metrics['feedback_type'] = feedback_type
+            neuron_metrics['session_name'] = estimates.name if hasattr(estimates, 'name') else 'unknown'
+            neuron_metrics['timestamp'] = get_datetime()
+
+            # Store complete record (overwrites if different type)
+            storage.feedback_dict[neuron_idx] = neuron_metrics
 
             print(f"Marked neuron #{neuron_idx} as {feedback_type}")
 
@@ -1292,25 +1309,33 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
 
         def save_feedback_callback(event, storage=None):
-            """Export all feedback to CSV"""
+            """Export all feedback to CSV with complete metrics"""
             if not storage.feedback_dict:
                 print("No feedback recorded yet. Mark some neurons first.")
                 return
 
-            # Convert to DataFrame
+            # Convert to DataFrame (all metrics already in feedback_dict)
             feedback_data = []
-            for neuron_idx, feedback in storage.feedback_dict.items():
-                feedback_data.append({
-                    'neuron_idx': neuron_idx,
-                    'session_name': feedback['session_name'],
-                    'feedback_type': feedback['feedback_type'],
-                    'ml_keep_probability': feedback['ml_keep_probability'],
-                    'delete_status': feedback['delete_status'],
-                    'timestamp': feedback['timestamp']
-                })
+            for neuron_idx, metrics in storage.feedback_dict.items():
+                # Add neuron_idx to the record (it's the dict key, not in values)
+                record = {'neuron_idx': neuron_idx}
+                record.update(metrics)
+                feedback_data.append(record)
 
             df = pd.DataFrame(feedback_data)
-            df = df.sort_values('neuron_idx')
+
+            # Sort by neuron_idx for easier reading
+            if 'idx' in df.columns:
+                df = df.sort_values('idx')
+            else:
+                df = df.sort_values('neuron_idx')
+
+            # Reorder columns: put key identifiers first, then all metrics
+            priority_cols = ['neuron_idx', 'feedback_type', 'session_name', 'timestamp',
+                           'ml_keep_probability', 'delete']
+            other_cols = [c for c in df.columns if c not in priority_cols]
+            ordered_cols = [c for c in priority_cols if c in df.columns] + sorted(other_cols)
+            df = df[ordered_cols]
 
             # Generate filename
             dt = get_datetime().replace(':', '-')
@@ -1320,9 +1345,15 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             # Save
             df.to_csv(feedback_csv, index=False)
 
+            # Summary statistics
+            fp_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FP')
+            fn_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FN')
+            num_metrics = len(df.columns) - 4  # exclude neuron_idx, feedback_type, session_name, timestamp
+
             print(f"Saved {len(feedback_data)} feedback entries to {feedback_csv}")
-            print(f"  FP count: {sum(1 for f in feedback_data if f['feedback_type'] == 'FP')}")
-            print(f"  FN count: {sum(1 for f in feedback_data if f['feedback_type'] == 'FN')}")
+            print(f"  FP count: {fp_count}")
+            print(f"  FN count: {fn_count}")
+            print(f"  Metrics per neuron: {num_metrics}")
 
 
         # Sorting radiobutton
