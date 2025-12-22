@@ -388,7 +388,9 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
-    metrics_res = Parallel(n_jobs=-1)(
+    # Explicitly specify backend='loky' for reliable parallelization on Windows
+    # (default detection can fail in some contexts, causing severe slowdown)
+    metrics_res = Parallel(n_jobs=-1, backend='loky')(
         delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics)
         for i in range(traces.shape[0])
     )
@@ -516,9 +518,27 @@ def get_tau_decays(est, comps_to_select, fps):
     return np.array(tau_decays)
 
 
+def _compute_single_trace_stats(trace):
+    """Compute trace statistics for a single trace."""
+    if len(trace) > 3:  # stats need at least 3 points
+        s = skew(trace)
+        k = kurtosis(trace)  # excess kurtosis (Fisher)
+
+        # Bimodality coefficient: (skew^2 + 1) / (kurtosis + 3)
+        # kurtosis from scipy is excess kurtosis, add 3 for regular kurtosis
+        if not np.isnan(s) and not np.isnan(k) and (k + 3) != 0:
+            bc = (s**2 + 1) / (k + 3)
+        else:
+            bc = np.nan
+
+        return (s, k, bc)
+    else:
+        return (np.nan, np.nan, np.nan)
+
+
 def get_trace_stats(traces):
     """
-    Compute trace statistics (skewness, kurtosis, bimodality) for multiple traces.
+    Compute trace statistics (skewness, kurtosis, bimodality) for multiple traces (PARALLELIZED).
 
     Real neurons have high positive skewness (baseline + rare spikes)
     and high kurtosis (heavy tails from spike events).
@@ -535,36 +555,64 @@ def get_trace_stats(traces):
         Tuple of (skewnesses, kurtoses, bimodalities) as np.arrays
     """
     n_cells = traces.shape[0]
-    skewnesses = []
-    kurtoses = []
-    bimodalities = []
 
-    for i in range(n_cells):
-        trace = traces[i]
-        if len(trace) > 3:  # stats need at least 3 points
-            s = skew(trace)
-            k = kurtosis(trace)  # excess kurtosis (Fisher)
-            skewnesses.append(s)
-            kurtoses.append(k)
+    # Parallel computation
+    results = Parallel(n_jobs=-1, backend='loky')(
+        delayed(_compute_single_trace_stats)(traces[i])
+        for i in range(n_cells)
+    )
 
-            # Bimodality coefficient: (skew^2 + 1) / (kurtosis + 3)
-            # kurtosis from scipy is excess kurtosis, add 3 for regular kurtosis
-            if not np.isnan(s) and not np.isnan(k) and (k + 3) != 0:
-                bc = (s**2 + 1) / (k + 3)
-                bimodalities.append(bc)
-            else:
-                bimodalities.append(np.nan)
-        else:
-            skewnesses.append(np.nan)
-            kurtoses.append(np.nan)
-            bimodalities.append(np.nan)
+    # Unpack results
+    skewnesses = np.array([r[0] for r in results])
+    kurtoses = np.array([r[1] for r in results])
+    bimodalities = np.array([r[2] for r in results])
 
-    return np.array(skewnesses), np.array(kurtoses), np.array(bimodalities)
+    return skewnesses, kurtoses, bimodalities
+
+
+def _compute_single_hurst(trace, min_window=10, max_windows=20):
+    """Compute Hurst exponent for a single trace."""
+    trace = np.asarray(trace).flatten()
+    n = len(trace)
+
+    if n < 100:
+        return np.nan
+
+    max_k = n // 2
+    if max_k < min_window:
+        return np.nan
+
+    step = max(1, max_k // max_windows)
+    rs_values = []
+    ns = []
+
+    for k in range(min_window, max_k, step):
+        rs = []
+        for start in range(0, n - k, k):
+            segment = trace[start:start + k]
+            mean = np.mean(segment)
+            cumdev = np.cumsum(segment - mean)
+            R = np.max(cumdev) - np.min(cumdev)
+            S = np.std(segment, ddof=1)
+            if S > 0:
+                rs.append(R / S)
+        if rs:
+            rs_values.append(np.mean(rs))
+            ns.append(k)
+
+    if len(ns) < 2:
+        return np.nan
+
+    try:
+        H = np.polyfit(np.log(ns), np.log(rs_values), 1)[0]
+        return H
+    except Exception:
+        return np.nan
 
 
 def get_hurst_exponents(traces, min_window=10, max_windows=20):
     """
-    Compute Hurst exponent for multiple traces using R/S analysis.
+    Compute Hurst exponent for multiple traces using R/S analysis (PARALLELIZED).
 
     The Hurst exponent (H) measures long-range dependence:
     - H = 0.5: Random walk (no memory)
@@ -584,47 +632,14 @@ def get_hurst_exponents(traces, min_window=10, max_windows=20):
         np.array of Hurst exponent values
     """
     n_cells = traces.shape[0]
-    hurst_values = np.full(n_cells, np.nan)
 
-    for i in range(n_cells):
-        trace = np.asarray(traces[i]).flatten()
-        n = len(trace)
+    # Parallel computation
+    hurst_values = Parallel(n_jobs=-1, backend='loky')(
+        delayed(_compute_single_hurst)(traces[i], min_window, max_windows)
+        for i in range(n_cells)
+    )
 
-        if n < 100:
-            continue
-
-        max_k = n // 2
-        if max_k < min_window:
-            continue
-
-        step = max(1, max_k // max_windows)
-        rs_values = []
-        ns = []
-
-        for k in range(min_window, max_k, step):
-            rs = []
-            for start in range(0, n - k, k):
-                segment = trace[start:start + k]
-                mean = np.mean(segment)
-                cumdev = np.cumsum(segment - mean)
-                R = np.max(cumdev) - np.min(cumdev)
-                S = np.std(segment, ddof=1)
-                if S > 0:
-                    rs.append(R / S)
-            if rs:
-                rs_values.append(np.mean(rs))
-                ns.append(k)
-
-        if len(ns) < 2:
-            continue
-
-        try:
-            H = np.polyfit(np.log(ns), np.log(rs_values), 1)[0]
-            hurst_values[i] = H
-        except Exception:
-            pass
-
-    return hurst_values
+    return np.array(hurst_values)
 
 
 def get_baseline_drifts(traces):
@@ -751,9 +766,78 @@ def get_compactnesses(contours, areas):
     return np.array(compactnesses)
 
 
+def _compute_single_saturation(trace, fps):
+    """Compute saturation metric for a single trace."""
+    n_frames = len(trace)
+
+    if n_frames < 100:
+        return np.nan
+
+    # Smoothing for robust peak detection and noise reduction
+    trace_smooth = gaussian_filter1d(trace, sigma=3)
+
+    # Normalize to 0-1
+    trace_min, trace_max = trace_smooth.min(), trace_smooth.max()
+    trace_range = trace_max - trace_min
+    if trace_range < 1e-10:
+        return np.nan
+
+    trace_norm = (trace_smooth - trace_min) / trace_range
+
+    # Find peaks (at least 30% of range, min distance 0.3s)
+    min_distance = max(1, int(fps * 0.3))
+    peaks, _ = find_peaks(trace_norm, height=0.3, distance=min_distance)
+
+    if len(peaks) == 0:
+        return np.nan
+
+    # Limit to first 100 peaks
+    peaks = peaks[:100]
+    n_peaks = len(peaks)
+
+    # Vectorized: get all peak values and thresholds at once
+    peak_values = trace_norm[peaks]
+    thresholds = peak_values * 0.80
+
+    # Compute extent for each peak using numpy (much faster than Python loops)
+    extents = np.zeros(n_peaks, dtype=np.int32)
+
+    for j in range(n_peaks):
+        peak_idx = peaks[j]
+        threshold = thresholds[j]
+
+        # Create boolean mask: True where trace >= threshold
+        above = trace_norm >= threshold
+
+        # Left extent: find last index below threshold, left of peak
+        if peak_idx > 0:
+            below_left = np.where(~above[:peak_idx])[0]
+            if len(below_left) > 0:
+                left_count = peak_idx - below_left[-1] - 1
+            else:
+                left_count = peak_idx
+        else:
+            left_count = 0
+
+        # Right extent: find first index below threshold, right of peak
+        if peak_idx < n_frames - 1:
+            below_right = np.where(~above[peak_idx + 1:])[0]
+            if len(below_right) > 0:
+                right_count = below_right[0]
+            else:
+                right_count = n_frames - peak_idx - 1
+        else:
+            right_count = 0
+
+        extents[j] = 1 + left_count + right_count
+
+    # Convert mean frames to seconds (FPS-independent)
+    return np.mean(extents) / fps
+
+
 def get_saturation_metrics(traces, fps):
     """
-    Compute saturation metrics for multiple traces.
+    Compute saturation metrics for multiple traces (PARALLELIZED).
 
     Saturation occurs when peaks stay at maximum instead of decaying.
     Normal double-exponential peaks: ~0.03-0.17 seconds at peak
@@ -770,77 +854,14 @@ def get_saturation_metrics(traces, fps):
         mean_time_at_peak: np.array of seconds (FPS-independent)
     """
     n_cells = traces.shape[0]
-    mean_times_at_peak = np.full(n_cells, np.nan)
 
-    for i in range(n_cells):
-        trace = traces[i]
-        n_frames = len(trace)
+    # Parallel computation
+    mean_times_at_peak = Parallel(n_jobs=-1, backend='loky')(
+        delayed(_compute_single_saturation)(traces[i], fps)
+        for i in range(n_cells)
+    )
 
-        if n_frames < 100:
-            continue
-
-        # Smoothing for robust peak detection and noise reduction
-        trace_smooth = gaussian_filter1d(trace, sigma=3)
-
-        # Normalize to 0-1
-        trace_min, trace_max = trace_smooth.min(), trace_smooth.max()
-        trace_range = trace_max - trace_min
-        if trace_range < 1e-10:
-            continue
-
-        trace_norm = (trace_smooth - trace_min) / trace_range
-
-        # Find peaks (at least 30% of range, min distance 0.3s)
-        min_distance = max(1, int(fps * 0.3))
-        peaks, _ = find_peaks(trace_norm, height=0.3, distance=min_distance)
-
-        if len(peaks) == 0:
-            continue
-
-        # Limit to first 100 peaks
-        peaks = peaks[:100]
-        n_peaks = len(peaks)
-
-        # Vectorized: get all peak values and thresholds at once
-        peak_values = trace_norm[peaks]
-        thresholds = peak_values * 0.80
-
-        # Compute extent for each peak using numpy (much faster than Python loops)
-        extents = np.zeros(n_peaks, dtype=np.int32)
-
-        for j in range(n_peaks):
-            peak_idx = peaks[j]
-            threshold = thresholds[j]
-
-            # Create boolean mask: True where trace >= threshold
-            above = trace_norm >= threshold
-
-            # Left extent: find last index below threshold, left of peak
-            if peak_idx > 0:
-                below_left = np.where(~above[:peak_idx])[0]
-                if len(below_left) > 0:
-                    left_count = peak_idx - below_left[-1] - 1
-                else:
-                    left_count = peak_idx
-            else:
-                left_count = 0
-
-            # Right extent: find first index below threshold, right of peak
-            if peak_idx < n_frames - 1:
-                below_right = np.where(~above[peak_idx + 1:])[0]
-                if len(below_right) > 0:
-                    right_count = below_right[0]
-                else:
-                    right_count = n_frames - peak_idx - 1
-            else:
-                right_count = 0
-
-            extents[j] = 1 + left_count + right_count
-
-        # Convert mean frames to seconds (FPS-independent)
-        mean_times_at_peak[i] = np.mean(extents) / fps
-
-    return mean_times_at_peak
+    return np.array(mean_times_at_peak)
 
 
 def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='pearson'):
@@ -995,14 +1016,16 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     baselines = est.bl[comps_to_select] if hasattr(est, 'bl') else np.full(n_cells, np.nan)
     tau_decays = get_tau_decays(est, comps_to_select, fps)
 
-    # Trace statistics (skewness, kurtosis, bimodality)
+    # Trace-based metrics (parallelized for speed)
     raw_traces = est.C[comps_to_select, sf:ef]
+
+    print(f'      Computing trace statistics (parallelized)...')
     trace_skewnesses, trace_kurtoses, trace_bimodalities = get_trace_stats(raw_traces)
 
-    # Saturation metrics (FPS-independent, in seconds)
+    print(f'      Computing saturation metrics (parallelized)...')
     mean_times_at_peak = get_saturation_metrics(raw_traces, fps)
 
-    # Long-range dependence (Hurst exponent via R/S analysis)
+    print(f'      Computing Hurst exponents (parallelized R/S analysis)...')
     hurst_exponents = get_hurst_exponents(raw_traces)
 
     # Baseline stability (normalized linear trend)
