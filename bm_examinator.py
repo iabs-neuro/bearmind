@@ -364,8 +364,11 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
             print(f'WARNING: Cannot apply ML coloring - missing columns: {missing_cols}')
             print(f'         Using default Metro colors instead')
 
-    technical = dict(idx=comps_to_select, xs=xs, ys=ys, times=times, traces=traces, colors=colors,
-                     traces_recon=traces_recon)
+    # Build technical dict - only include traces_recon if it exists
+    technical = dict(idx=comps_to_select, xs=xs, ys=ys, times=times, traces=traces, colors=colors)
+    if traces_recon is not None:
+        technical['traces_recon'] = traces_recon
+
     metrics = {k: v for k, v in mdf.to_dict(orient='list').items() if k not in ['component_idx', 'center']}
     return {**technical, **metrics}, {i: mname for i, mname in enumerate(list(metrics.keys()))}
 
@@ -974,17 +977,33 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                     # correlation with other components from corr matrix (belonging to the same connected component)
                     metric = np.array(src_partial.data['corr_groups'])
                 elif mode == 6:
-                    # reconstruction: r2
-                    metric = np.array(src_partial.data['r2'])
+                    # reconstruction: r2 (only in capcan mode with reconstructions)
+                    if 'r2_score' in src_partial.data:
+                        metric = np.array(src_partial.data['r2_score'])
+                    else:
+                        print("WARNING: r2_score not available, sorting by SNR instead")
+                        metric = np.array(src_partial.data['snrs'])
                 elif mode == 7:
-                    # reconstruction: mae
-                    metric = np.array(src_partial.data['mae'])
+                    # reconstruction: mae (only in capcan mode with reconstructions)
+                    if 'nmae' in src_partial.data:
+                        metric = np.array(src_partial.data['nmae'])
+                    else:
+                        print("WARNING: nmae not available, sorting by SNR instead")
+                        metric = np.array(src_partial.data['snrs'])
                 elif mode == 8:
-                    # reconstruction: rmse
-                    metric = np.array(src_partial.data['rmse'])
+                    # reconstruction: rmse (only in capcan mode with reconstructions)
+                    if 'nrmse' in src_partial.data:
+                        metric = np.array(src_partial.data['nrmse'])
+                    else:
+                        print("WARNING: nrmse not available, sorting by SNR instead")
+                        metric = np.array(src_partial.data['snrs'])
                 elif mode == 9:
-                    # reconstruction: snr
-                    metric = np.array(src_partial.data['snr_rec'])
+                    # reconstruction: snr (only in capcan mode with reconstructions)
+                    if 'snr_recon' in src_partial.data:
+                        metric = np.array(src_partial.data['snr_recon'])
+                    else:
+                        print("WARNING: snr_recon not available, sorting by SNR instead")
+                        metric = np.array(src_partial.data['snrs'])
                 else:
                     raise ValueError('wrong RadioButton value')
 
@@ -1358,8 +1377,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
         # Sorting radiobutton
         if storage.mode == 'legacy':
-            radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr",
-                                                          'R2', 'MAE', 'RMSE', 'SNR+'], active=0, width=60)
+            # Legacy mode: only basic metrics (no reconstruction metrics like R2, MAE, RMSE, SNR+)
+            radio_button_group = RadioButtonGroup(labels=["XY", "SNR", "R-val", "H-val", "Area", "Corr"],
+                                                  active=0, width=60)
 
             rb_js_callback = CustomJS(
                 code="console.log('radio_button_group: active=' + this.origin.active, this.toString())")
