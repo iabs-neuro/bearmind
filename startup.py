@@ -12,6 +12,7 @@ from tkinter.filedialog import askopenfilename, askopenfilenames, Tk
 
 # This is needed for the proper work of further manual file selection:
 wnd = Tk()
+wnd.withdraw()
 wnd.wm_attributes('-topmost', 1)
 response = wnd.withdraw()
 
