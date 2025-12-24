@@ -32,33 +32,64 @@ FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
 
 def get_fps_from_table(session_name: str, default_fps: int = 30) -> int:
     """
-    Look up FPS for a session from fps_data.csv.
+    Look up FPS for a session from fps_data.csv with robust pattern matching.
+
+    Supports any experiment identifier format:
+    - 3-char codes: NOF_H01_1D, FOF_F05_1D, RFC_F01_1D
+    - 4-char codes: LNOF_J53_3D
+    - Numeric codes: 3DM_D17_1D
+    - With trial suffix: 3DM_D17_1D_1T
+    - Future formats with any alphanumeric code length
 
     Args:
-        session_name: Session name (e.g., 'NOF_H32_4D' or full filename)
+        session_name: Session name or filename containing session identifier
         default_fps: Default FPS if session not found
 
     Returns:
         FPS value from table rounded to integer (20 or 30), or default_fps if not found
+
+    Pattern Structure:
+        CODE_MOUSEID_DAY[_TRIAL]
+        - CODE: Alphanumeric code (any length): NOF, LNOF, FOF, RFC, 3DM, etc.
+        - MOUSEID: Letter + digits: H01, J53, F05, D17, etc.
+        - DAY: Digit + letter: 1D, 2D, 3D, 4D, etc.
+        - TRIAL: (optional) Digit + letter: 1T, 2T, etc.
+
+    Examples:
+        >>> get_fps_from_table('NOF_H01_1D')
+        20
+        >>> get_fps_from_table('LNOF_J53_3D')
+        20
+        >>> get_fps_from_table('3DM_D17_1D_1T')
+        30
+        >>> get_fps_from_table('path/NOF_H01_1D.pickle')
+        20
     """
     if not FPS_TABLE_PATH.exists():
         return default_fps
 
-    # Extract session pattern (e.g., 'NOF_H32_4D' from filename)
-    # Pattern: EXP_MOUSE_DAY where EXP is 3 chars, MOUSE is letter+digits, DAY is digit+letter
-    match = re.search(r'([A-Z0-9]{3}_[A-Z]\d+_\d[A-Z])', session_name)
+    try:
+        fps_df = pd.read_csv(FPS_TABLE_PATH, sep=';')
+    except Exception:
+        return default_fps
+
+    # Strategy 1: Try exact match first (fastest, most reliable)
+    if session_name in fps_df['Filename'].values:
+        return round(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
+
+    # Strategy 2: Extract session identifier using flexible pattern
+    # Pattern: ([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)
+    #   [A-Z0-9]+         - Experiment code (any length: NOF, LNOF, FOF, RFC, 3DM, future codes)
+    #   _[A-Z]\d+         - Mouse ID (letter + digits: H01, J53, F05, D17)
+    #   _\d[A-Z]          - Day (digit + letter: 1D, 2D, 3D, 4D)
+    #   (?:_\d[A-Z])?     - Optional trial suffix (_1T, _2T, etc.)
+    pattern = r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)'
+    match = re.search(pattern, session_name)
+
     if match:
         session_key = match.group(1)
-    else:
-        session_key = session_name
-
-    try:
-        fps_df = pd.read_csv(FPS_TABLE_PATH)
-        row = fps_df[fps_df['Filename'] == session_key]
-        if len(row) > 0:
-            return round(row['FPS'].values[0])
-    except Exception:
-        pass
+        if session_key in fps_df['Filename'].values:
+            return round(fps_df[fps_df['Filename'] == session_key]['FPS'].values[0])
 
     return default_fps
 

@@ -76,7 +76,8 @@ def get_hvals(traces):
     return hvals
 
 
-def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2, hybrid_kinetics=True):
+def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2, hybrid_kinetics=True,
+                          wavelet_shared=None, rel_wvt_times_shared=None):
     """
     Create a Neuron object and detect events using specified method.
 
@@ -88,6 +89,8 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         n_iter: Number of iterations for iterative reconstruction (default: 2)
         hybrid_kinetics: If True, use cascading kinetics optimization (default: True):
             1. wavelet standard -> 2. wavelet relaxed -> 3. threshold standard -> 4. threshold relaxed -> 5. defaults
+        wavelet_shared: Pre-computed wavelet object (for batch optimization)
+        rel_wvt_times_shared: Pre-computed time resolutions (for batch optimization)
     """
     # Create Neuron object
     neuron = Neuron(
@@ -102,7 +105,9 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
         method=event_method,
         iterative=False,  # Single-pass to get initial events safely
         create_event_regions=True,  # Create event regions for quality metrics
-        fps=fps  # Pass fps explicitly so DRIADA uses correct value (not DEFAULT_FPS)
+        fps=fps,  # Pass fps explicitly so DRIADA uses correct value (not DEFAULT_FPS)
+        wavelet=wavelet_shared,  # Pass pre-computed wavelet (DRIADA 0.6.5+)
+        rel_wvt_times=rel_wvt_times_shared  # Pass pre-computed time resolutions
     )
 
     # Validation: check fps propagation (defense against future regressions)
@@ -134,7 +139,9 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
             create_event_regions=True,
             iterative=True,
             n_iter=n_iter,
-            adaptive_thresholds=True
+            adaptive_thresholds=True,
+            wavelet=wavelet_shared,  # Pass pre-computed wavelet
+            rel_wvt_times=rel_wvt_times_shared  # Pass pre-computed time resolutions
         )
 
     return neuron, kinetics_result
@@ -333,7 +340,8 @@ def get_reconstruction_quality_metrics(neuron):
     return rec_metrics
 
 
-def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True):
+def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True,
+                             wavelet_shared=None, rel_wvt_times_shared=None):
     """
     Extract metrics from a single neuron trace.
 
@@ -346,9 +354,14 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
         event_method: Event detection method ('threshold' or 'wavelet')
         n_iter: Number of iterations for iterative reconstruction (default: 2)
         hybrid_kinetics: If True, use cascading kinetics optimization (default: True)
+        wavelet_shared: Pre-computed wavelet object (for batch optimization)
+        rel_wvt_times_shared: Pre-computed time resolutions (for batch optimization)
     """
     try:
-        neuron, kinetics_result = get_neuron_with_spikes(trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics)
+        neuron, kinetics_result = get_neuron_with_spikes(
+            trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics,
+            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared
+        )
         signal_metrics = get_signal_metrics(neuron, kinetics_result=kinetics_result)
         if include_heavy:
             rec_metrics = get_reconstruction_quality_metrics(neuron)
@@ -388,10 +401,39 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
+
+    # OPTIMIZATION: Pre-compute wavelet objects ONCE for batch speedup (DRIADA 0.6.5+)
+    wavelet_shared = None
+    rel_wvt_times_shared = None
+
+    if event_method == 'wavelet':
+        from ssqueezepy.wavelets import Wavelet, time_resolution
+        from driada.experiment.wavelet_event_detection import WVT_EVENT_DETECTION_PARAMS, get_adaptive_wavelet_scales
+
+        # Create wavelet ONCE (0.09s total, not per neuron!)
+        beta = WVT_EVENT_DETECTION_PARAMS.get('beta', 2)
+        gamma = WVT_EVENT_DETECTION_PARAMS.get('gamma', 3)
+        wavelet_shared = Wavelet(
+            ("gmw", {"gamma": gamma, "beta": beta, "centered_scale": True}), N=8196
+        )
+
+        # Compute time resolutions ONCE (0.18s total, not per neuron!)
+        manual_scales = get_adaptive_wavelet_scales(fps)
+        rel_wvt_times_shared = [
+            time_resolution(wavelet_shared, scale=sc, nondim=False, min_decay=200)
+            for sc in manual_scales
+        ]
+
+        print(f'[OPTIMIZATION] Pre-computed wavelet objects for {n} neurons (saves ~{n*0.27:.1f}s)')
+
     # Explicitly specify backend='loky' for reliable parallelization on Windows
     # (default detection can fail in some contexts, causing severe slowdown)
     metrics_res = Parallel(n_jobs=-1, backend='loky')(
-        delayed(get_single_neuron_metrics)(traces[i], fps=fps, include_heavy=include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics)
+        delayed(get_single_neuron_metrics)(
+            traces[i], fps=fps, include_heavy=include_heavy,
+            event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics,
+            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared
+        )
         for i in range(traces.shape[0])
     )
 
