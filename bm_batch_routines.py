@@ -46,7 +46,7 @@ def find_identifiers(text):
     return identifier
 
 def extract_name_with_pattern(text):
-    pattern = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)_(_?\dT_)?'
+    pattern = r'[A-z0-9]{3,5}_[A-Z]\d{2}_(\dD|\dT)_(_?\dT_)?'
     match = re.search(pattern, text)
 
     if match:
