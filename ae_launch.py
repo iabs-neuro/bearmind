@@ -140,19 +140,25 @@ def _save_inspection_artifacts(
     folder = base / f'inspection_artifacts_{session_name}'
     folder.mkdir(parents=True, exist_ok=True)
 
+    # Extract base session name (without timestamp) for filenames
+    # E.g., "LNOF_J01_1D_22-12-2025 14-20-16" -> "LNOF_J01_1D"
+    import re
+    base_session = re.search(r'([A-Z0-9]+_[A-Z]\d+_\dD)', session_name)
+    session_prefix = base_session.group(1) if base_session else session_name
+
     # Save full metrics with decisions
-    decision_df.to_csv(folder / 'metrics_with_decisions.csv', index=False)
+    decision_df.to_csv(folder / f'{session_prefix}_metrics_with_decisions.csv', index=False)
 
     # Save rejected neurons summary
     rejected = decision_df[decision_df['delete'] == 1]
     if len(rejected) > 0:
-        rejected.to_csv(folder / 'rejected_neurons.csv', index=False)
+        rejected.to_csv(folder / f'{session_prefix}_rejected_neurons.csv', index=False)
 
     # Save distance/correlation matrices
     if save_matrices:
-        np.save(folder / 'FCD.npy', FCD)
-        np.save(folder / 'FBD.npy', FBD)
-        np.save(folder / 'match_mtx.npy', match_mtx)
+        np.save(folder / f'{session_prefix}_FCD.npy', FCD)
+        np.save(folder / f'{session_prefix}_FBD.npy', FBD)
+        np.save(folder / f'{session_prefix}_match_mtx.npy', match_mtx)
 
     # Save corner artifact visualization if requested and available
     if save_corner_detection and edge_info is not None and 'is_corner_artifact' in decision_df.columns:

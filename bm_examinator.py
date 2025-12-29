@@ -228,10 +228,17 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     # building correlation matrix and assigning corr scores to neurons
     trace_data = estimates.C[comps_to_select, sf:ef]
     if correlation_method == 'pearson':
-        CM = np.corrcoef(trace_data)
+        if len(comps_to_select) == 1:
+            CM = np.array([[1.0]])
+        else:
+            CM = np.corrcoef(trace_data)
     elif correlation_method == 'spearman':
         if len(comps_to_select) == 1:
             CM = np.array([[1.0]])
+        elif len(comps_to_select) == 2:
+            # spearmanr returns scalar for 2 variables, wrap in 2x2 matrix
+            corr_val, _ = spearmanr(trace_data, axis=1)
+            CM = np.array([[1.0, corr_val], [corr_val, 1.0]])
         else:
             CM, _ = spearmanr(trace_data, axis=1)
     else:
@@ -1356,10 +1363,30 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             ordered_cols = [c for c in priority_cols if c in df.columns] + sorted(other_cols)
             df = df[ordered_cols]
 
-            # Generate filename
+            # Generate filename and find/create artifacts folder
             dt = get_datetime().replace(':', '-')
             base_name = extract_name_with_pattern(estimates.name) if hasattr(estimates, 'name') else 'session'
-            feedback_csv = f'{base_name}_feedback_{dt}.csv'
+
+            # Extract session name (e.g., "LNOF_J01_1D" from "LNOF_J01_1D_22-12-2025 14-20-16")
+            import re
+            session_match = re.search(r'([A-Z0-9]+_[A-Z]\d+_\dD)', base_name)
+            session_prefix = session_match.group(1) if session_match else base_name
+
+            # Look for existing inspection_artifacts folder
+            from pathlib import Path
+            artifacts_pattern = f'inspection_artifacts_{base_name}*'
+            artifacts_folders = list(Path('.').glob(artifacts_pattern))
+
+            if artifacts_folders:
+                # Use existing folder
+                artifacts_folder = artifacts_folders[0]
+            else:
+                # Create new folder if none exists
+                artifacts_folder = Path(f'inspection_artifacts_{base_name}_{dt}')
+                artifacts_folder.mkdir(exist_ok=True)
+
+            # Save feedback CSV in artifacts folder with session prefix
+            feedback_csv = artifacts_folder / f'{session_prefix}_feedback.csv'
 
             # Save
             df.to_csv(feedback_csv, index=False)

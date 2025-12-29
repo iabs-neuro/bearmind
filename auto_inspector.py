@@ -30,7 +30,7 @@ from joblib import Parallel, delayed
 from polygon import (get_contours, get_circularities, convex_polygons_min_distance,
                      calculate_polygon_area, calculate_perimeter, get_max_edges, get_convexities,
                      convex_hull, get_aspect_ratios)
-from corner_artifacts import detect_edge_artifacts
+from corner_artifacts import detect_edge_artifacts, detect_ellipse_artifacts_from_positions
 from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON_FEATURE_COLS
 
 # NaN SEMANTICS for ML features:
@@ -1076,6 +1076,10 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     # Footprint compactness
     compactnesses = get_compactnesses(contours, areas)
 
+    # Half-crossing rate (crossings per minute)
+    print(f'      Computing half-crossing rates...')
+    half_crossing_rates = get_half_crossing_rates(raw_traces, fps)
+
     metrics = {
         'component_idx': comps_to_select,
         'area': areas,
@@ -1100,6 +1104,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
         'hurst_exponent': hurst_exponents,
         'baseline_drift': baseline_drifts,
         'footprint_compactness': compactnesses,
+        'half_crossing_rate': half_crossing_rates,
         'corr_groups': corr_groups
     }
 
@@ -1129,8 +1134,26 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     metrics_df = pd.DataFrame(metrics)
 
-    # Detect edge artifacts if enabled (combined corner + ellipse detection)
+    # ALWAYS compute ellipse_r (spatial feature independent of corner artifact detection)
     edge_info = None
+    try:
+        # Extract positions
+        positions = np.array([np.array(c) if not isinstance(c, np.ndarray) else c
+                             for c in metrics_df['center']])
+
+        # Compute ellipse_r for all neurons
+        _, ellipse_info = detect_ellipse_artifacts_from_positions(
+            positions,
+            fov_width=None,  # Auto-detect from positions
+            fov_height=None,
+            threshold=0.9
+        )
+        metrics_df['ellipse_r'] = ellipse_info['radial_dist']
+    except Exception as e:
+        print(f'Warning: ellipse_r computation failed: {e}')
+        metrics_df['ellipse_r'] = np.nan
+
+    # Detect corner artifacts if enabled
     if detect_corner_artifacts_flag:
         if corner_artifact_params is None:
             corner_artifact_params = {}
@@ -1212,6 +1235,8 @@ def t_off_check(series, t_off_min):
 DEFAULT_DELETION_RULES = [
     'area<1',          # DELETE if area < 1 pixel (reject tiny footprints)
     'circularity>4',   # DELETE if circularity > 4 (reject non-circular)
+    'events_per_min<=0',  # DELETE if no events detected (neurons without events are garbage)
+    'event_r2_score<0.0',   # DELETE if event reconstruction R² < 0 (negative event fit, catches 7% of artifacts with 0.12% FN rate)
 ]
 
 
@@ -1604,7 +1629,7 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
         FCD: Footprint Center Distance matrix
         FBD: Footprint Boundary Distance matrix
         deletion_rules: List of rule strings for threshold/hybrid brain
-                        (e.g., ['area<1', 'circularity>4'])
+                        (e.g., ['area<1', 'circularity>4', 'events_per_min<=0'])
                         If None, uses DEFAULT_DELETION_RULES
         pxlthr_distance_boundary: Distance threshold for merge detection (pixels)
         d_snr_thr: SNR difference threshold for merge detection

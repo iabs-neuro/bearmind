@@ -13,12 +13,29 @@ from sklearn.model_selection import StratifiedShuffleSplit
 # Columns that are NOT features (IDs, labels, spatial info, group assignments)
 # Everything else in the metrics DataFrame is automatically a feature
 NON_FEATURE_COLS = {
+    # Identifiers
     'component_idx',      # Neuron ID
+    'session_name',       # Session identifier
+    'session',            # Session identifier (legacy)
+    'experiment',         # Experiment type
     'center',             # Spatial position (not numeric)
-    'is_corner_artifact', # Label (artifact flag)
+
+    # Labels (target variables)
+    'ground_truth',       # Ground truth label (1=KEEP, 0=DELETE)
+    'delete',             # Decision label (1=DELETE, 0=KEEP)
+    'merge',              # Merge group assignment
+    'decision',           # String decision ('ok', 'delete', etc.)
+
+    # Metadata (not quality metrics)
+    'distance_to_gt',     # Distance to nearest GT neuron (for dataset creation)
+    'is_corner_artifact', # Artifact flag (metadata, not feature)
+    'failed_corner_artifact',  # Decision metadata
+    'failed_area',        # Decision metadata
+    'failed_circularity', # Decision metadata
     'corr_groups',        # Merge group ID (not quality metric)
-    'delete',             # Decision label
-    'merge',              # Decision label
+
+    # Derived/predicted (data leakage risk)
+    'ml_keep_probability',  # Model prediction (shouldn't train on this)
 }
 
 
@@ -50,13 +67,32 @@ def get_feature_cols(df):
 
 # Static list for backward compatibility and when DataFrame not available
 # This should match what get_feature_cols() returns for a full metrics DataFrame
+# SINGLE SOURCE OF TRUTH: All ML scripts should use this or get_feature_cols()
 FEATURE_COLS = [
-    'area', 'aspect_ratio', 'baseline', 'baseline_drift', 'bimodality', 'caiman_r_score', 'caiman_snr',
-    'circularity', 'convexity', 'eccentricity', 'edge_distance', 'ellipse_r',
-    'event_r2_score', 'event_snr', 'events_fraction', 'events_per_min', 'footprint_compactness',
-    'hurst_exponent', 'kinetics_opt', 'local_density', 'max_edge', 'mean_time_at_peak', 'nmae', 'nn_distance_center', 'noise_level',
-    'nrmse', 'peak_amplitude_cv', 'r2_score', 'snr_recon', 't_off', 't_rise',
-    'tau_decay', 'trace_kurtosis', 'trace_skewness'
+    # Spatial/morphological features
+    'area', 'aspect_ratio', 'circularity', 'convexity', 'eccentricity',
+    'edge_distance', 'ellipse_r', 'footprint_compactness', 'local_density',
+    'max_edge', 'nn_distance_center',
+
+    # Temporal/trace features
+    'baseline', 'baseline_drift', 'bimodality', 'hurst_exponent',
+    'mean_time_at_peak', 'noise_level', 'tau_decay', 'trace_kurtosis', 'trace_skewness',
+
+    # CaImAn quality metrics
+    'caiman_r_score', 'caiman_snr',
+
+    # Event-based features
+    'event_r2_score', 'event_snr', 'events_fraction', 'events_per_min',
+    'peak_amplitude_cv', 't_off', 't_rise',
+
+    # Reconstruction quality
+    'nmae', 'nrmse', 'r2_score', 'snr_recon',
+
+    # Kinetics features
+    'kinetics_opt', 'kinetics_source',
+
+    # New features (v8+)
+    'half_crossing_rate',
 ]
 
 
