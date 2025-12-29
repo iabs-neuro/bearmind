@@ -1,0 +1,38 @@
+{
+  "iteration": 8,
+  "dataset": "ml/results/training_dataset_v9_corrected_iter7.csv",
+  "n_train": 68658,
+  "n_test": 23584,
+  "threshold": 0.75,
+  "random_seed": 46,
+  "train_metrics": {
+    "precision": 0.9782385586133495,
+    "recall": 0.9355812051258747,
+    "fbeta": 0.9672136538524779,
+    "auc": 0.9805697524578149,
+    "accuracy": 0.9317049724722538
+  },
+  "test_metrics": {
+    "precision": 0.9722117304268062,
+    "recall": 0.9174134419551935,
+    "fbeta": 0.9579074682013319,
+    "auc": 0.965539149415648,
+    "accuracy": 0.9093877204884667
+  },
+  "confusion_matrix": {
+    "tp": 18018,
+    "fp": 515,
+    "fn": 1622,
+    "tn": 3429
+  },
+  "hyperparameters": {
+    "max_bins": 1024,
+    "interactions": 20,
+    "max_leaves": 3,
+    "min_samples_leaf": 5,
+    "outer_bags": 8,
+    "learning_rate": 0.01,
+    "max_rounds": 5000,
+    "early_stopping_rounds": 50
+  }
+}

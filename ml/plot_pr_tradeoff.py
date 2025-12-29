@@ -293,8 +293,8 @@ def plot_multi_model_comparison(
     ax1.set_title('Precision-Recall Trade-off Comparison', fontsize=14)
     ax1.legend(loc='lower left', fontsize=9)
     ax1.grid(True, alpha=0.3)
-    ax1.set_xlim([0.7, 1.01])
-    ax1.set_ylim([0.8, 1.01])
+    ax1.set_xlim([0.85, 1.01])
+    ax1.set_ylim([0.85, 1.01])
 
     # Plot 2: F-beta vs Threshold (top-right)
     ax2 = axes[0, 1]
@@ -309,7 +309,7 @@ def plot_multi_model_comparison(
     ax2.legend(loc='lower left', fontsize=9)
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim([0.3, 0.9])
-    ax2.set_ylim([0.85, 0.95])
+    ax2.set_ylim([0.80, 1.01])
 
     # Plot 3: Precision vs Threshold (bottom-left)
     ax3 = axes[1, 0]
@@ -336,10 +336,10 @@ def plot_multi_model_comparison(
     ax4.set_xlabel('Threshold', fontsize=12)
     ax4.set_ylabel('Recall', fontsize=12)
     ax4.set_title('Recall vs Threshold', fontsize=14)
-    ax4.legend(loc='lower left', fontsize=9)
+    ax4.legend(loc='upper right', fontsize=9)
     ax4.grid(True, alpha=0.3)
     ax4.set_xlim([0.3, 0.9])
-    ax4.set_ylim([0.7, 1.01])
+    ax4.set_ylim([0.85, 1.01])
 
     plt.tight_layout()
 
