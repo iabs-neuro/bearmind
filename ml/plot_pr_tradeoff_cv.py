@@ -59,10 +59,11 @@ def evaluate_at_thresholds(model, X, y, thresholds):
 def plot_pr_curves_cv(
     model_paths,
     model_names,
-    dataset_path,
+    dataset_paths,
     output_path,
     n_splits=10,
-    n_threshold_points=50
+    n_threshold_points=50,
+    retrain=False
 ):
     """
     Plot PR curves with CV confidence bands.
@@ -70,58 +71,39 @@ def plot_pr_curves_cv(
     Parameters
     ----------
     model_paths : list of str
-        Paths to model pickle files
+        Paths to model pickle files (or hyperparameters if retrain=True)
     model_names : list of str
         Names for each model
-    dataset_path : str
-        Path to dataset CSV
+    dataset_paths : str or list of str
+        Path(s) to dataset CSV. If single string, used for all models.
+        If list, must match length of model_paths (one dataset per model).
     output_path : str
         Output path for plot
     n_splits : int
         Number of CV splits
     n_threshold_points : int
         Number of thresholds to evaluate
+    retrain : bool
+        If True, retrain model on each CV fold (proper CV, no data leakage)
+        If False, use pre-trained models (faster, but has data leakage)
     """
+    # Handle dataset_paths as single string or list
+    if isinstance(dataset_paths, str):
+        dataset_paths = [dataset_paths] * len(model_paths)
+    elif len(dataset_paths) != len(model_paths):
+        raise ValueError(f'Number of datasets ({len(dataset_paths)}) must match number of models ({len(model_paths)})')
+
     print('='*80)
-    print('PR TRADEOFF WITH CROSS-VALIDATION')
+    mode = 'PROPER CV (retrain each fold)' if retrain else 'PRE-TRAINED EVALUATION (data leakage)'
+    print(f'PR TRADEOFF WITH CROSS-VALIDATION - {mode}')
     print('='*80)
     print(f'\nModels: {len(model_paths)}')
-    for name, path in zip(model_names, model_paths):
-        print(f'  - {name}: {path}')
-    print(f'\nDataset: {dataset_path}')
-    print(f'CV splits: {n_splits}')
+    for name, model_path, dataset_path in zip(model_names, model_paths, dataset_paths):
+        print(f'  - {name}: {model_path}')
+        print(f'    Dataset: {dataset_path}')
+    print(f'\nCV splits: {n_splits}')
     print(f'Threshold points: {n_threshold_points}')
-
-    # Load models
-    models = []
-    for path in model_paths:
-        with open(path, 'rb') as f:
-            models.append(pickle.load(f))
-
-    # Load dataset
-    df = pd.read_csv(dataset_path)
-    print(f'\nLoaded: {len(df):,} neurons')
-
-    # Determine session column
-    if 'session_name' in df.columns:
-        session_col = 'session_name'
-    elif 'session' in df.columns:
-        session_col = 'session'
-    else:
-        raise ValueError('No session column found')
-
-    # Get features and labels
-    feature_cols = get_feature_cols(df)
-    y = df['ground_truth'].values
-    sessions = df[session_col].values
-
-    # Get unique sessions and experiments
-    unique_sessions = df[session_col].unique()
-    if 'experiment' in df.columns:
-        session_to_exp = df.groupby(session_col)['experiment'].first().to_dict()
-        experiments = np.array([session_to_exp[s] for s in unique_sessions])
-    else:
-        experiments = np.array([s.split('_')[0] for s in unique_sessions])
+    print(f'Retrain mode: {retrain}')
 
     # Thresholds to evaluate
     thresholds = np.linspace(0.3, 0.9, n_threshold_points)
@@ -129,13 +111,60 @@ def plot_pr_curves_cv(
     # Store results for each model
     model_results = []
 
-    for model_idx, (model, model_name) in enumerate(zip(models, model_names)):
+    # Process each model with its respective dataset
+    for model_idx, (model_name, model_path, dataset_path) in enumerate(zip(model_names, model_paths, dataset_paths)):
         print(f'\n{"="*80}')
         print(f'Evaluating {model_name}')
+        print(f'  Dataset: {dataset_path}')
         print('='*80)
 
-        # Get model features
-        model_features = list(model.feature_names_in_)
+        # Load dataset for this model
+        df = pd.read_csv(dataset_path)
+        print(f'Loaded: {len(df):,} neurons')
+
+        # Determine session column
+        if 'session_name' in df.columns:
+            session_col = 'session_name'
+        elif 'session' in df.columns:
+            session_col = 'session'
+        else:
+            raise ValueError('No session column found')
+
+        # Get features and labels
+        feature_cols = get_feature_cols(df)
+        y = df['ground_truth'].values
+        sessions = df[session_col].values
+
+        # Get unique sessions and experiments
+        unique_sessions = df[session_col].unique()
+        if 'experiment' in df.columns:
+            session_to_exp = df.groupby(session_col)['experiment'].first().to_dict()
+            experiments = np.array([session_to_exp[s] for s in unique_sessions])
+        else:
+            experiments = np.array([s.split('_')[0] for s in unique_sessions])
+
+        # Load model and get hyperparameters/features
+        with open(model_path, 'rb') as f:
+            base_model = pickle.load(f)
+
+        model_features = list(base_model.feature_names_in_)
+        print(f'Using {len(model_features)} features')
+
+        if retrain:
+            # Extract EBM hyperparameters for retraining
+            hyperparams = {
+                'max_bins': base_model.max_bins,
+                'interactions': base_model.interactions,
+                'max_leaves': base_model.max_leaves,
+                'min_samples_leaf': base_model.min_samples_leaf,
+                'outer_bags': base_model.outer_bags,
+                'learning_rate': base_model.learning_rate,
+                'max_rounds': base_model.max_rounds,
+                'early_stopping_rounds': base_model.early_stopping_rounds,
+                'random_state': base_model.random_state
+            }
+            print('Hyperparameters:', hyperparams)
+
         X_model = df[model_features].values
 
         # Store metrics across all splits
@@ -151,20 +180,37 @@ def plot_pr_curves_cv(
             splitter = StratifiedShuffleSplit(n_splits=1, test_size=TEST_SIZE, random_state=seed)
             train_sessions, test_sessions = next(splitter.split(unique_sessions, experiments))
 
+            train_sessions_set = set(unique_sessions[train_sessions])
             test_sessions_set = set(unique_sessions[test_sessions])
+
+            train_mask = np.array([s in train_sessions_set for s in sessions])
             test_mask = np.array([s in test_sessions_set for s in sessions])
 
+            X_train = X_model[train_mask]
+            y_train = y[train_mask]
             X_test = X_model[test_mask]
             y_test = y[test_mask]
 
-            # Evaluate at all thresholds
-            precisions, recalls, fbetas = evaluate_at_thresholds(model, X_test, y_test, thresholds)
+            if retrain:
+                # Train new model on this fold
+                from interpret.glassbox import ExplainableBoostingClassifier
+                fold_model = ExplainableBoostingClassifier(
+                    feature_names=model_features,
+                    **hyperparams
+                )
+                fold_model.fit(X_train, y_train)
+
+                # Evaluate at all thresholds
+                precisions, recalls, fbetas = evaluate_at_thresholds(fold_model, X_test, y_test, thresholds)
+            else:
+                # Use pre-trained model
+                precisions, recalls, fbetas = evaluate_at_thresholds(base_model, X_test, y_test, thresholds)
 
             all_precisions.append(precisions)
             all_recalls.append(recalls)
             all_fbetas.append(fbetas)
 
-            if split_idx % 2 == 0:
+            if split_idx % 2 == 0 or split_idx == n_splits - 1:
                 print(f'  Split {split_idx+1}/{n_splits} complete')
 
         # Convert to arrays
@@ -242,7 +288,8 @@ def plot_pr_curves_cv(
 
     ax.set_xlabel('Recall', fontsize=13, fontweight='bold')
     ax.set_ylabel('Precision', fontsize=13, fontweight='bold')
-    ax.set_title(f'Precision-Recall Curves (CV with {n_splits} splits, ±1 std)',
+    mode_str = 'Retrained each fold' if retrain else 'Pre-trained (data leakage)'
+    ax.set_title(f'Precision-Recall Curves ({mode_str}, {n_splits} splits, ±1 std)',
                 fontsize=14, fontweight='bold')
     ax.legend(loc='lower left', fontsize=10)
     ax.grid(True, alpha=0.3)
@@ -358,18 +405,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Plot PR curves with CV')
     parser.add_argument('--models', nargs='+', required=True, help='Model paths')
     parser.add_argument('--names', nargs='+', required=True, help='Model names')
-    parser.add_argument('--dataset', required=True, help='Dataset path')
+    parser.add_argument('--datasets', nargs='+', required=True,
+                        help='Dataset paths (one per model, or single path for all)')
     parser.add_argument('--output', required=True, help='Output path')
     parser.add_argument('--n-splits', type=int, default=10, help='Number of CV splits')
     parser.add_argument('--n-thresholds', type=int, default=50, help='Number of thresholds')
+    parser.add_argument('--retrain', action='store_true', help='Retrain model on each fold (proper CV)')
 
     args = parser.parse_args()
 
     plot_pr_curves_cv(
         model_paths=args.models,
         model_names=args.names,
-        dataset_path=args.dataset,
+        dataset_paths=args.datasets,
         output_path=args.output,
         n_splits=args.n_splits,
-        n_threshold_points=args.n_thresholds
+        n_threshold_points=args.n_thresholds,
+        retrain=args.retrain
     )
