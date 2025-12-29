@@ -111,6 +111,39 @@ dev/
 *.tif
 *.tiff
 
+# Claude Code IDE
+.claude/
+
+# Large data directories
+data/
+output/
+
+# ML training artifacts (large, regenerable)
+ml/ebm_v*/
+ml/*grid_search*/
+ml/ebm_improvement/
+ml/ebm_models/
+ml/ebm_models_v2/
+ml/results/*_visualizations/
+ml/results/corr/
+ml/calibration/
+
+# Root-level data files (keep in ml/results/ instead)
+/*.csv
+/*.json
+!fps_data.csv
+!config.json
+
+# Old production models (keep only latest)
+production_models/*_iter[1-7].pkl
+
+# Inspection artifacts in root (should be in output/)
+/inspection_artifacts_*/
+
+# Windows artifacts
+nul
+desktop.ini
+
 # OS-specific
 .DS_Store
 .DS_Store?
