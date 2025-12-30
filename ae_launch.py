@@ -199,6 +199,7 @@ def run_auto_inspection(
     correlation_method: str = 'spearman',
     n_iter: int = 2,
     hybrid_kinetics: bool = True,
+    wavelet_backend: str = 'auto',
 
     # --- Decision parameters ---
     deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
@@ -384,7 +385,8 @@ def run_auto_inspection(
         event_method=event_method,
         correlation_method=correlation_method,
         n_iter=n_iter,
-        hybrid_kinetics=hybrid_kinetics
+        hybrid_kinetics=hybrid_kinetics,
+        wavelet_backend=wavelet_backend
     )
 
     if verbose:

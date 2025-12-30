@@ -7,6 +7,7 @@ from driada.experiment.wavelet_event_detection import extract_wvt_events, WVT_EV
 from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFAULT_FPS
 
 from utils import *
+from wavelet_backend import set_wavelet_backend
 import numpy as np
 import pandas as pd
 import warnings
@@ -397,7 +398,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             return nan_signal_metrics
 
 
-def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True):
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True, wavelet_backend='auto'):
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
@@ -407,6 +408,10 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
     rel_wvt_times_shared = None
 
     if event_method == 'wavelet':
+        # Set wavelet backend BEFORE importing ssqueezepy
+        actual_backend = set_wavelet_backend(wavelet_backend)
+
+        # Now import ssqueezepy (inherits backend setting)
         from ssqueezepy.wavelets import Wavelet, time_resolution
         from driada.experiment.wavelet_event_detection import WVT_EVENT_DETECTION_PARAMS, get_adaptive_wavelet_scales
 
@@ -959,7 +964,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
                          event_method='threshold', correlation_method='pearson', n_iter=2,
-                         hybrid_kinetics=True):
+                         hybrid_kinetics=True, wavelet_backend='auto'):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -1117,7 +1122,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                                                       include_heavy=include_heavy,
                                                       event_method=event_method,
                                                       n_iter=n_iter,
-                                                      hybrid_kinetics=hybrid_kinetics)
+                                                      hybrid_kinetics=hybrid_kinetics,
+                                                      wavelet_backend=wavelet_backend)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
