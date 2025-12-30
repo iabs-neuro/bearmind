@@ -128,6 +128,10 @@ ml/results/*_visualizations/
 ml/results/corr/
 ml/calibration/
 
+# Large training datasets (>50MB, regenerable)
+ml/results/training_dataset_*.csv
+!ml/results/*_log.csv
+
 # Root-level data files (keep in ml/results/ instead)
 /*.csv
 /*.json
