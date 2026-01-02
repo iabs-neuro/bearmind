@@ -128,11 +128,24 @@ def get_session_config_path(session):
 
 
 def get_parallelization_backend():
-    """Get the joblib parallelization backend from config.
+    """Get the joblib parallelization backend.
 
-    Returns 'loky' by default. Use 'threading' if GPU libraries
-    (PyTorch/CuPy) cause serialization issues with loky.
+    Automatically uses 'threading' when GPU wavelet backend is active
+    to avoid conflicts with PyTorch/CuPy. Otherwise uses config setting
+    (default: 'loky').
+
+    Returns
+    -------
+    str
+        'threading', 'loky', or 'multiprocessing'
     """
+    # Import here to avoid circular imports
+    from wavelet_backend import is_gpu_backend
+
+    # Auto-switch to threading when GPU is active (avoids loky/CUDA conflicts)
+    if is_gpu_backend():
+        return 'threading'
+
     return CONFIG.get('PARALLELIZATION_BACKEND', 'loky')
 
 
