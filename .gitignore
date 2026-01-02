@@ -103,6 +103,7 @@ CLAUDE.md
 temp/
 tmp/
 dev/
+experiments/
 *.h5
 *.hdf5
 *.mat

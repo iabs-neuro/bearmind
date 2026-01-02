@@ -147,7 +147,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
     if verbose:
         print("[2/6] Extracting metrics from raw estimates...")
 
-    metrics_df_init, match_mtx_init, FCD_init, FBD_init, _, _ = estimates_to_metrics(
+    metrics_df_init, match_mtx_init, FCD_init, FBD_init, _, _, _ = estimates_to_metrics(
         est_init,
         fps=fps,
         include_event_based=True,
@@ -164,7 +164,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
     if verbose:
         print("[3/6] Extracting metrics from ground truth estimates...")
 
-    metrics_df_gt, _, _, _, _, _ = estimates_to_metrics(
+    metrics_df_gt, _, _, _, _, _, _ = estimates_to_metrics(
         est_gt,
         fps=fps,
         include_event_based=False,
@@ -237,7 +237,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         metrics_df_init_filtered = metrics_df_init.copy()
 
     # Extract metrics from automated result
-    metrics_df_auto_final, _, _, _, _, _ = estimates_to_metrics(
+    metrics_df_auto_final, _, _, _, _, _, _ = estimates_to_metrics(
         est_auto,
         fps=fps,
         include_event_based=False,  # Only need positions for comparison
@@ -341,7 +341,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
             est_gt = load_estimates(os.path.join(gt_path, gt_file))
 
             # Extract metrics with heavy option
-            metrics_df_init, match_mtx_init, FCD_init, FBD_init, corner_info, _ = estimates_to_metrics(
+            metrics_df_init, match_mtx_init, FCD_init, FBD_init, corner_info, _, _ = estimates_to_metrics(
                 est_init,
                 fps=session_fps,
                 include_event_based=True,
@@ -351,7 +351,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 hybrid_kinetics=hybrid_kinetics
             )
 
-            metrics_df_gt, _, _, _, _, _ = estimates_to_metrics(
+            metrics_df_gt, _, _, _, _, _, _ = estimates_to_metrics(
                 est_gt,
                 fps=session_fps,
                 include_event_based=True,
@@ -408,7 +408,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 metrics_df_init_filtered = metrics_df_init.copy()
 
             # Extract metrics from automated result
-            metrics_df_auto_final, _, _, _, _, _ = estimates_to_metrics(
+            metrics_df_auto_final, _, _, _, _, _, _ = estimates_to_metrics(
                 est_auto,
                 fps=session_fps,
                 include_event_based=False,

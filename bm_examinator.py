@@ -341,7 +341,7 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
         print(f'Using pre-computed metrics from estimates.metrics_df ({len(mdf)} neurons)')
     else:
         # Compute metrics from scratch
-        mdf, _, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
+        mdf, _, _, _, _, _, _ = estimates_to_metrics(est, fps, comps_to_select=comps_to_select, cthr=cthr, contours=contours,
                                             corr_thr=corr_thr, num_sessions=num_sessions, match_threshold=match_threshold,
                                             sf=sf, ef=ef, ds=ds, include_event_based=include_event_based, include_heavy=include_heavy,
                                             detect_corner_artifacts_flag=detect_corner_artifacts, corner_artifact_params=corner_artifact_params,

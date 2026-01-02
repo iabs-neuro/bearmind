@@ -368,7 +368,7 @@ def run_auto_inspection(
     if verbose:
         print("[run_auto_inspection] Extracting metrics...")
 
-    metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions = estimates_to_metrics(
+    metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions, asp_cache = estimates_to_metrics(
         est, fps,
         comps_to_select=comps_to_select if comps_to_select else [],
         cthr=cthr,
@@ -487,6 +487,42 @@ def run_auto_inspection(
             print(f"[run_auto_inspection] Attached {len(transformed_recons)} reconstructions")
     else:
         est_processed.reconstructions = {}
+
+    # Attach ASP cache with transformed indices
+    if asp_cache:
+        transformed_asp = {}
+        old_to_new = mapping_info.get('old_to_new', {})
+        for old_idx, asp in asp_cache.items():
+            if old_idx in old_to_new:
+                new_idx = old_to_new[old_idx]
+                transformed_asp[new_idx] = asp
+        est_processed.asp_cache = transformed_asp
+        if verbose:
+            print(f"[run_auto_inspection] Attached {len(transformed_asp)} ASP arrays")
+    else:
+        est_processed.asp_cache = {}
+
+    # Store autoinspection config for reproducibility and export
+    est_processed.autoinspection_config = {
+        'fps': fps,
+        'brain': brain,
+        'ml_model_path': str(ml_model_path) if ml_model_path else None,
+        'ml_threshold': ml_threshold,
+        'deletion_rules': deletion_rules if deletion_rules else 'DEFAULT_DELETION_RULES',
+        'event_method': event_method,
+        'n_iter': n_iter,
+        'hybrid_kinetics': hybrid_kinetics,
+        'cthr': cthr,
+        'corr_thr': corr_thr,
+        'include_event_based': include_event_based,
+        'include_heavy': include_heavy,
+        'detect_corner_artifacts': detect_corner_artifacts,
+        'correlation_method': correlation_method,
+        'wavelet_backend': wavelet_backend,
+        'enable_merge': enable_merge,
+        'pxlthr_distance_boundary': pxlthr_distance_boundary,
+        'd_snr_thr': d_snr_thr,
+    }
 
     # Verify metrics_df was attached and indices are valid
     if verbose:

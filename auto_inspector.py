@@ -306,7 +306,8 @@ def get_signal_metrics(neuron, kinetics_result=None):
         'event_snr': event_snr,
         'peak_amplitude_cv': peak_amplitude_cv,
         'kinetics_opt': kinetics_opt,
-        'kinetics_source': kinetics_source
+        'kinetics_source': kinetics_source,
+        'asp': neuron.asp.data.copy()  # Store amplitude spikes for caching
     }
 
     return sig_metrics
@@ -442,6 +443,7 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
         for i in range(traces.shape[0])
     )
 
+    asp_cache = {}
     for metric in metrics_res[0].keys():
         if metric == 'reconstruction':
             # Extract reconstructions into separate dict (index → array)
@@ -449,10 +451,16 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
                 rec = metrics_res[i].get('reconstruction')
                 if rec is not None:
                     reconstructions[i] = rec
+        elif metric == 'asp':
+            # Extract ASP (amplitude spikes) into separate dict (index → array)
+            for i in range(n):
+                asp = metrics_res[i].get('asp')
+                if asp is not None:
+                    asp_cache[i] = asp
         else:
             all_metrics[metric] = [metrics_res[i][metric] for i in range(n)]
 
-    return all_metrics, reconstructions
+    return all_metrics, reconstructions, asp_cache
 
 
 def footprint_center_distmat(centers):
@@ -1114,10 +1122,11 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     }
 
     reconstructions = {}
+    asp_cache = {}
     if include_event_based:
         print(f'[4/4] Computing {event_method} event-based metrics (this may take a while)...')
         t1 = time.time()
-        event_based_metrics, local_reconstructions = get_multineuron_metrics(np.array(traces),
+        event_based_metrics, local_reconstructions, local_asp_cache = get_multineuron_metrics(np.array(traces),
                                                       fps=fps,
                                                       include_heavy=include_heavy,
                                                       event_method=event_method,
@@ -1135,6 +1144,13 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                 comp_idx = comps_to_select[local_idx]
                 reconstructions[comp_idx] = rec
             print(f'      Cached {len(reconstructions)} reconstructions')
+
+        # Map local indices to component indices for ASP cache
+        if local_asp_cache:
+            for local_idx, asp in local_asp_cache.items():
+                comp_idx = comps_to_select[local_idx]
+                asp_cache[comp_idx] = asp
+            print(f'      Cached {len(asp_cache)} ASP arrays')
     else:
         print(f'[4/4] Skipping event-based metrics (include_event_based=False)')
 
@@ -1181,7 +1197,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     t_total = time.time() - t_phase_start
     print(f'Metrics extraction completed: {n_cells} neurons in {t_total:.1f}s')
 
-    return metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions
+    return metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions, asp_cache
 
 
 def area_check(series, pxlthr_area):
@@ -2018,8 +2034,8 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         merged_indices = [g['new_idx'] for g in merged_groups]
 
         # Use estimates_to_metrics for proper metric computation
-        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions)
-        merged_metrics_df, _, _, _, _, _ = estimates_to_metrics(
+        # Returns tuple: (metrics_df, match_mtx, FCD, FBD, edge_info, reconstructions, asp_cache)
+        merged_metrics_df, _, _, _, _, _, _ = estimates_to_metrics(
             est_processed,
             fps=fps,
             comps_to_select=merged_indices,
@@ -2108,9 +2124,9 @@ def save_processed_estimates(est, output_path, session_name=None, compress=False
 
 
 def validate_decision(est_init, est_gt, est, fps=20):
-    df_init, _, _, _, _, _ = estimates_to_metrics(est_init, fps=fps, include_heavy=False)
-    df_gt, _, _, _, _, _ = estimates_to_metrics(est_gt, fps=fps, include_heavy=False)
-    df, _, _, _, _, _ = estimates_to_metrics(est, fps=fps, include_heavy=False)
+    df_init, _, _, _, _, _, _ = estimates_to_metrics(est_init, fps=fps, include_heavy=False)
+    df_gt, _, _, _, _, _, _ = estimates_to_metrics(est_gt, fps=fps, include_heavy=False)
+    df, _, _, _, _, _, _ = estimates_to_metrics(est, fps=fps, include_heavy=False)
 
 
 import pandas as pd
