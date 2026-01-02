@@ -9,7 +9,10 @@ DEFAULT_CONFIG = {
     'TEMP_PATHWAY': "c:\\Users\\1\\caiman_data\\temp\\",
     'DATA_PATHWAY': 'bonsai',
     'CPUs': multiprocessing.cpu_count(),
-    'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
+    'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1,
+    # Parallelization backend for joblib: 'loky', 'threading', or 'multiprocessing'
+    # Use 'threading' if you have GPU libraries (PyTorch/CuPy) that conflict with loky
+    'PARALLELIZATION_BACKEND': 'loky'
 }
 
 DEFAULT_MOUSE_CONFIG = {
@@ -122,6 +125,15 @@ def get_session_config_path(session):
     base_path = os.path.dirname(CONFIG['ROOT'])
     ms_config_name = os.path.join(base_path, 'SESSION_CONFIGS', session + '.json')
     return ms_config_name
+
+
+def get_parallelization_backend():
+    """Get the joblib parallelization backend from config.
+
+    Returns 'loky' by default. Use 'threading' if GPU libraries
+    (PyTorch/CuPy) cause serialization issues with loky.
+    """
+    return CONFIG.get('PARALLELIZATION_BACKEND', 'loky')
 
 
 if not os.path.exists('config.json'):

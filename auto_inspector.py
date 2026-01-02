@@ -8,6 +8,7 @@ from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFA
 
 from utils import *
 from wavelet_backend import set_wavelet_backend
+from config import get_parallelization_backend
 import numpy as np
 import pandas as pd
 import warnings
@@ -432,9 +433,9 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
 
         print(f'[OPTIMIZATION] Pre-computed wavelet objects for {n} neurons (saves ~{n*0.27:.1f}s)')
 
-    # Explicitly specify backend='loky' for reliable parallelization on Windows
+    # Use configurable backend for parallelization (default: loky, use 'threading' for GPU compatibility)
     # (default detection can fail in some contexts, causing severe slowdown)
-    metrics_res = Parallel(n_jobs=-1, backend='loky')(
+    metrics_res = Parallel(n_jobs=-1, backend=get_parallelization_backend())(
         delayed(get_single_neuron_metrics)(
             traces[i], fps=fps, include_heavy=include_heavy,
             event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics,
@@ -612,7 +613,7 @@ def get_trace_stats(traces):
     n_cells = traces.shape[0]
 
     # Parallel computation
-    results = Parallel(n_jobs=-1, backend='loky')(
+    results = Parallel(n_jobs=-1, backend=get_parallelization_backend())(
         delayed(_compute_single_trace_stats)(traces[i])
         for i in range(n_cells)
     )
@@ -689,7 +690,7 @@ def get_hurst_exponents(traces, min_window=10, max_windows=20):
     n_cells = traces.shape[0]
 
     # Parallel computation
-    hurst_values = Parallel(n_jobs=-1, backend='loky')(
+    hurst_values = Parallel(n_jobs=-1, backend=get_parallelization_backend())(
         delayed(_compute_single_hurst)(traces[i], min_window, max_windows)
         for i in range(n_cells)
     )
@@ -911,7 +912,7 @@ def get_saturation_metrics(traces, fps):
     n_cells = traces.shape[0]
 
     # Parallel computation
-    mean_times_at_peak = Parallel(n_jobs=-1, backend='loky')(
+    mean_times_at_peak = Parallel(n_jobs=-1, backend=get_parallelization_backend())(
         delayed(_compute_single_saturation)(traces[i], fps)
         for i in range(n_cells)
     )
