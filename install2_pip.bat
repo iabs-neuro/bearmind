@@ -57,13 +57,27 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
+echo Checking pip installation...
+"%PIP%" --version >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo [WARNING] pip is broken, reinstalling...
+    "%PYTHON%" -m ensurepip --upgrade
+    if %ERRORLEVEL% neq 0 (
+        echo [FAILED] Could not reinstall pip
+        echo Try: conda install -n %ENV_NAME% pip -y
+        pause
+        exit /b 1
+    )
+)
+
+echo.
 echo Upgrading pip...
-"%PIP%" install --upgrade pip
+"%PYTHON%" -m pip install --upgrade pip
 
 echo.
 echo Installing pip packages (preserving conda packages)...
 echo Using --upgrade-strategy only-if-needed to prevent numpy conflicts
-"%PIP%" install --upgrade-strategy only-if-needed -r requirements-pip.txt
+"%PYTHON%" -m pip install --upgrade-strategy only-if-needed -r requirements-pip.txt
 
 echo.
 echo ============================================
