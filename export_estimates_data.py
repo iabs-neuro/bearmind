@@ -93,17 +93,31 @@ def get_fps(session_name: str) -> float:
 
 
 def find_feedback_file(estimates_path: Path, session_name: str) -> Path | None:
-    """Find feedback CSV file in the same directory or artifacts folder."""
-    # Check same directory
+    """Find feedback CSV file.
+
+    Search locations (in order):
+    1. Same folder as estimates (new experiments - feedback in artifacts folder)
+    2. Parent folder (legacy - feedback in output/ folder)
+    """
     parent = estimates_path.parent
 
-    # Try exact session name pattern
-    feedback_candidates = [
-        parent / f'{session_name}_feedback.csv',
-        *parent.glob(f'*{session_name}*feedback*.csv'),
-    ]
+    # 1. Same folder as estimates (new behavior)
+    direct_match = parent / f'{session_name}_feedback.csv'
+    if direct_match.exists():
+        return direct_match
 
-    for path in feedback_candidates:
+    # Glob for variations in same folder
+    for path in parent.glob(f'*{session_name}*feedback*.csv'):
+        if path.exists():
+            return path
+
+    # 2. Parent folder (legacy behavior)
+    grandparent = parent.parent
+    legacy_match = grandparent / f'{session_name}_feedback.csv'
+    if legacy_match.exists():
+        return legacy_match
+
+    for path in grandparent.glob(f'*{session_name}*feedback*.csv'):
         if path.exists():
             return path
 
