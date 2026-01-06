@@ -19,12 +19,12 @@ Example usage:
 """
 
 from pathlib import Path
-import re
 import numpy as np
 import pandas as pd
 from scipy import sparse
 
 from bm_examinator import LoadEstimates
+from naming import extract_session_id, extract_base_session
 
 # Path to FPS lookup table
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
@@ -77,19 +77,10 @@ def get_fps_from_table(session_name: str, default_fps: int = 30) -> int:
     if session_name in fps_df['Filename'].values:
         return round(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
 
-    # Strategy 2: Extract session identifier using flexible pattern
-    # Pattern: ([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)
-    #   [A-Z0-9]+         - Experiment code (any length: NOF, LNOF, FOF, RFC, 3DM, future codes)
-    #   _[A-Z]\d+         - Mouse ID (letter + digits: H01, J53, F05, D17)
-    #   _\d[A-Z]          - Day (digit + letter: 1D, 2D, 3D, 4D)
-    #   (?:_\d[A-Z])?     - Optional trial suffix (_1T, _2T, etc.)
-    pattern = r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)'
-    match = re.search(pattern, session_name)
-
-    if match:
-        session_key = match.group(1)
-        if session_key in fps_df['Filename'].values:
-            return round(fps_df[fps_df['Filename'] == session_key]['FPS'].values[0])
+    # Strategy 2: Extract session identifier using flexible pattern from naming.py
+    session_key = extract_session_id(session_name)
+    if session_key and session_key in fps_df['Filename'].values:
+        return round(fps_df[fps_df['Filename'] == session_key]['FPS'].values[0])
 
     return default_fps
 
@@ -142,9 +133,7 @@ def _save_inspection_artifacts(
 
     # Extract base session name (without timestamp) for filenames
     # E.g., "LNOF_J01_1D_22-12-2025 14-20-16" -> "LNOF_J01_1D"
-    import re
-    base_session = re.search(r'([A-Z0-9]+_[A-Z]\d+_\dD)', session_name)
-    session_prefix = base_session.group(1) if base_session else session_name
+    session_prefix = extract_base_session(session_name) or session_name
 
     # Save full metrics with decisions
     decision_df.to_csv(folder / f'{session_prefix}_metrics_with_decisions.csv', index=False)

@@ -14,12 +14,13 @@ Output:
 import argparse
 import json
 import pickle
-import re
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from naming import extract_session_id, extract_base_session
 
 # FPS lookup - avoid heavy import chain from ae_launch
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
@@ -39,17 +40,15 @@ def get_fps_from_table(session_name: str, default_fps: int = None) -> int | None
     if session_name in fps_df['Filename'].values:
         return round(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
 
-    # Extract session identifier pattern
-    pattern = r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)'
-    match = re.search(pattern, session_name)
-    if match:
-        session_id = match.group(1)
+    # Extract session identifier using flexible pattern from naming.py
+    session_id = extract_session_id(session_name)
+    if session_id:
         if session_id in fps_df['Filename'].values:
             return round(fps_df[fps_df['Filename'] == session_id]['FPS'].values[0])
 
-        # Try without trial suffix
-        base_id = '_'.join(session_id.split('_')[:3])
-        if base_id in fps_df['Filename'].values:
+        # Try base session without trial suffix
+        base_id = extract_base_session(session_name)
+        if base_id and base_id in fps_df['Filename'].values:
             return round(fps_df[fps_df['Filename'] == base_id]['FPS'].values[0])
 
     return default_fps
@@ -68,10 +67,10 @@ def extract_session_name(est_or_path) -> str:
     else:
         name = str(est_or_path)
 
-    # Pattern: CODE_MOUSEID_DAY (e.g., LNOF_J01_1D, NOF_H03_2D)
-    match = re.search(r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z])', name)
-    if match:
-        return match.group(1)
+    # Extract base session using flexible pattern from naming.py
+    session_id = extract_base_session(name)
+    if session_id:
+        return session_id
 
     # Fallback to stem without common suffixes
     stem = Path(name).stem

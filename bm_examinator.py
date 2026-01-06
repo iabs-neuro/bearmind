@@ -40,6 +40,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
+from naming import extract_base_session
 from auto_inspector import estimates_to_metrics, save_processed_estimates
 from polygon import get_contours
 import matplotlib.colors as mcolors
@@ -1368,9 +1369,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             base_name = extract_name_with_pattern(estimates.name) if hasattr(estimates, 'name') else 'session'
 
             # Extract session name (e.g., "LNOF_J01_1D" from "LNOF_J01_1D_22-12-2025 14-20-16")
-            import re
-            session_match = re.search(r'([A-Z0-9]+_[A-Z]\d+_\dD)', base_name)
-            session_prefix = session_match.group(1) if session_match else base_name
+            session_prefix = extract_base_session(base_name) or base_name
 
             # Look for existing inspection_artifacts folder
             from pathlib import Path

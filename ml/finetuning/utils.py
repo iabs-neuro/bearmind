@@ -8,36 +8,28 @@ Provides common functions for:
 - File path handling
 """
 import re
+import sys
 import numpy as np
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+# Add project root to path to import naming module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Session name extraction pattern
-SESSION_PATTERN = r'[A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)_(_?\dT_)?'
+from naming import (
+    SESSION_PATTERN,
+    SESSION_PATTERN_BASE,
+    TIMESTAMP_PATTERN,
+    extract_session_id,
+    extract_base_session,
+    extract_experiment_id,
+    extract_timestamp
+)
 
-
-def extract_session_name(text: str) -> str:
-    """
-    Extract session name from file path or text using standard pattern.
-
-    Pattern: [A-Z]{3,4}_[A-Z]\d{2}_(\dD|\dT)_
-    Examples: NOF_H03_2D, LNOF_J12_1D, 3DM_F48_1D
-
-    Args:
-        text: File path or text containing session name
-
-    Returns:
-        Extracted session name, or empty string if not found
-    """
-    match = re.search(SESSION_PATTERN, text)
-
-    if match:
-        end_pos = match.end()
-        return text[:end_pos]
-    else:
-        return ""
+# Re-export for backward compatibility
+extract_session_name = extract_session_id
+get_experiment_from_session = extract_experiment_id
 
 
 def parse_feedback_timestamp(filename: str) -> Optional[datetime]:
@@ -52,41 +44,17 @@ def parse_feedback_timestamp(filename: str) -> Optional[datetime]:
     Returns:
         datetime object, or None if parsing fails
     """
-    # Extract timestamp pattern
-    timestamp_pattern = r'(\d{2}-\d{2}-\d{4} \d{2}-\d{2}-\d{2})'
-    match = re.search(timestamp_pattern, filename)
+    # Extract timestamp using pattern from naming.py
+    timestamp_str = extract_timestamp(filename)
 
-    if not match:
+    if not timestamp_str:
         return None
-
-    timestamp_str = match.group(1)
 
     try:
         # Parse: DD-MM-YYYY HH-MM-SS
         return datetime.strptime(timestamp_str, '%d-%m-%Y %H-%M-%S')
     except ValueError:
         return None
-
-
-def get_experiment_from_session(session_name: str) -> str:
-    """
-    Extract experiment ID from session name.
-
-    Args:
-        session_name: e.g., "NOF_H03_2D", "LNOF_J12_1D"
-
-    Returns:
-        Experiment ID: "NOF", "RFC", "FOF", "3DM", "LNOF", etc.
-    """
-    if not session_name:
-        return ""
-
-    # Extract up to first underscore
-    parts = session_name.split('_')
-    if len(parts) > 0:
-        return parts[0]
-
-    return ""
 
 
 # Feature columns (from ml/data_utils.py)
