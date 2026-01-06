@@ -1365,23 +1365,24 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             df = df[ordered_cols]
 
             # Generate filename and find/create artifacts folder
-            dt = get_datetime().replace(':', '-')
-            base_name = extract_name_with_pattern(estimates.name) if hasattr(estimates, 'name') else 'session'
-
-            # Extract session name (e.g., "LNOF_J01_1D" from "LNOF_J01_1D_22-12-2025 14-20-16")
-            session_prefix = extract_base_session(base_name) or base_name
-
-            # Look for existing inspection_artifacts folder
             from pathlib import Path
-            artifacts_pattern = f'inspection_artifacts_{base_name}*'
-            artifacts_folders = list(Path('.').glob(artifacts_pattern))
+
+            # Extract clean session prefix (e.g., "LNOF_J01_1D") for consistent naming
+            raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
+            session_prefix = extract_base_session(raw_name) or extract_name_with_pattern(raw_name) or 'session'
+
+            # Look for existing inspection_artifacts folder using session prefix
+            # This matches folders like: inspection_artifacts_LNOF_J01_1D,
+            # inspection_artifacts_LNOF_J01_1D_22-12-2025..., etc.
+            artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
+            artifacts_folders = sorted(Path('.').glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
 
             if artifacts_folders:
-                # Use existing folder
+                # Use most recently modified existing folder
                 artifacts_folder = artifacts_folders[0]
             else:
-                # Create new folder if none exists
-                artifacts_folder = Path(f'inspection_artifacts_{base_name}_{dt}')
+                # Create new folder with just session prefix (no timestamp in folder name)
+                artifacts_folder = Path(f'inspection_artifacts_{session_prefix}')
                 artifacts_folder.mkdir(exist_ok=True)
 
             # Save feedback CSV in artifacts folder with session prefix

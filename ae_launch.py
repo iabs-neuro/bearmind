@@ -128,12 +128,13 @@ def _save_inspection_artifacts(
         Path to the created artifacts folder
     """
     base = Path(artifacts_path) if artifacts_path else Path('.')
-    folder = base / f'inspection_artifacts_{session_name}'
-    folder.mkdir(parents=True, exist_ok=True)
 
-    # Extract base session name (without timestamp) for filenames
+    # Extract base session name (without timestamp) for folder and filenames
     # E.g., "LNOF_J01_1D_22-12-2025 14-20-16" -> "LNOF_J01_1D"
     session_prefix = extract_base_session(session_name) or session_name
+
+    folder = base / f'inspection_artifacts_{session_prefix}'
+    folder.mkdir(parents=True, exist_ok=True)
 
     # Save full metrics with decisions
     decision_df.to_csv(folder / f'{session_prefix}_metrics_with_decisions.csv', index=False)
