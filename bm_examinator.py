@@ -1372,28 +1372,38 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
                 session_prefix = extract_base_session(raw_name) or extract_name_with_pattern(raw_name) or 'session'
 
-                # Determine search directory: same directory as estimates file
-                # estimates.name contains full path like "C:\...\output\3DM\session_processed.pickle"
+                # Determine artifacts folder location
                 estimates_path = Path(raw_name) if raw_name != 'session' else None
-                search_dir = estimates_path.parent if estimates_path and estimates_path.exists() else Path('.')
+                parent_dir = estimates_path.parent if estimates_path else Path('.')
 
-                print(f"Searching for artifacts in: {search_dir.absolute()}")
+                # Step 1: Check if we're already inside an inspection_artifacts folder (by name)
+                if parent_dir.name.startswith('inspection_artifacts_'):
+                    artifacts_folder = parent_dir if parent_dir.exists() else parent_dir.resolve()
+                    print(f"Using current artifacts folder: {artifacts_folder}")
 
-                # Look for existing inspection_artifacts folder using session prefix
-                # This matches folders like: inspection_artifacts_LNOF_J01_1D,
-                # inspection_artifacts_LNOF_J01_1D_22-12-2025..., etc.
-                artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
-                artifacts_folders = sorted(search_dir.glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                # Step 2: Search in parent directory
+                elif parent_dir.exists():
+                    artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
+                    artifacts_folders = sorted(parent_dir.glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                    if artifacts_folders:
+                        artifacts_folder = artifacts_folders[0]
+                        print(f"Found artifacts folder: {artifacts_folder}")
+                    else:
+                        artifacts_folder = parent_dir / f'inspection_artifacts_{session_prefix}'
+                        artifacts_folder.mkdir(exist_ok=True)
+                        print(f"Created artifacts folder: {artifacts_folder}")
 
-                if artifacts_folders:
-                    # Use most recently modified existing folder
-                    artifacts_folder = artifacts_folders[0]
-                    print(f"Found existing artifacts folder: {artifacts_folder}")
+                # Step 3: Fallback to CWD
                 else:
-                    # Create new folder with just session prefix (no timestamp in folder name)
-                    artifacts_folder = search_dir / f'inspection_artifacts_{session_prefix}'
-                    artifacts_folder.mkdir(exist_ok=True)
-                    print(f"Created new artifacts folder: {artifacts_folder}")
+                    artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
+                    artifacts_folders = sorted(Path('.').glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                    if artifacts_folders:
+                        artifacts_folder = artifacts_folders[0]
+                        print(f"Found artifacts folder in CWD: {artifacts_folder}")
+                    else:
+                        artifacts_folder = Path(f'inspection_artifacts_{session_prefix}')
+                        artifacts_folder.mkdir(exist_ok=True)
+                        print(f"Created artifacts folder in CWD: {artifacts_folder}")
 
                 # Save feedback CSV in artifacts folder with session prefix
                 feedback_csv = artifacts_folder / f'{session_prefix}_feedback.csv'
