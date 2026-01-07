@@ -1341,65 +1341,85 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print("No feedback recorded yet. Mark some neurons first.")
                 return
 
-            # Convert to DataFrame (all metrics already in feedback_dict)
-            feedback_data = []
-            for neuron_idx, metrics in storage.feedback_dict.items():
-                # Add neuron_idx to the record (it's the dict key, not in values)
-                record = {'neuron_idx': neuron_idx}
-                record.update(metrics)
-                feedback_data.append(record)
+            try:
+                # Convert to DataFrame (all metrics already in feedback_dict)
+                feedback_data = []
+                for neuron_idx, metrics in storage.feedback_dict.items():
+                    # Add neuron_idx to the record (it's the dict key, not in values)
+                    record = {'neuron_idx': neuron_idx}
+                    record.update(metrics)
+                    feedback_data.append(record)
 
-            df = pd.DataFrame(feedback_data)
+                df = pd.DataFrame(feedback_data)
 
-            # Sort by neuron_idx for easier reading
-            if 'idx' in df.columns:
-                df = df.sort_values('idx')
-            else:
-                df = df.sort_values('neuron_idx')
+                # Sort by neuron_idx for easier reading
+                if 'idx' in df.columns:
+                    df = df.sort_values('idx')
+                else:
+                    df = df.sort_values('neuron_idx')
 
-            # Reorder columns: put key identifiers first, then all metrics
-            priority_cols = ['neuron_idx', 'feedback_type', 'session_name', 'timestamp',
-                           'ml_keep_probability', 'delete']
-            other_cols = [c for c in df.columns if c not in priority_cols]
-            ordered_cols = [c for c in priority_cols if c in df.columns] + sorted(other_cols)
-            df = df[ordered_cols]
+                # Reorder columns: put key identifiers first, then all metrics
+                priority_cols = ['neuron_idx', 'feedback_type', 'session_name', 'timestamp',
+                               'ml_keep_probability', 'delete']
+                other_cols = [c for c in df.columns if c not in priority_cols]
+                ordered_cols = [c for c in priority_cols if c in df.columns] + sorted(other_cols)
+                df = df[ordered_cols]
 
-            # Generate filename and find/create artifacts folder
-            from pathlib import Path
+                # Generate filename and find/create artifacts folder
+                from pathlib import Path
 
-            # Extract clean session prefix (e.g., "LNOF_J01_1D") for consistent naming
-            raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
-            session_prefix = extract_base_session(raw_name) or extract_name_with_pattern(raw_name) or 'session'
+                # Extract clean session prefix (e.g., "LNOF_J01_1D") for consistent naming
+                raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
+                session_prefix = extract_base_session(raw_name) or extract_name_with_pattern(raw_name) or 'session'
 
-            # Look for existing inspection_artifacts folder using session prefix
-            # This matches folders like: inspection_artifacts_LNOF_J01_1D,
-            # inspection_artifacts_LNOF_J01_1D_22-12-2025..., etc.
-            artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
-            artifacts_folders = sorted(Path('.').glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                # Determine search directory: same directory as estimates file
+                # estimates.name contains full path like "C:\...\output\3DM\session_processed.pickle"
+                estimates_path = Path(raw_name) if raw_name != 'session' else None
+                search_dir = estimates_path.parent if estimates_path and estimates_path.exists() else Path('.')
 
-            if artifacts_folders:
-                # Use most recently modified existing folder
-                artifacts_folder = artifacts_folders[0]
-            else:
-                # Create new folder with just session prefix (no timestamp in folder name)
-                artifacts_folder = Path(f'inspection_artifacts_{session_prefix}')
-                artifacts_folder.mkdir(exist_ok=True)
+                print(f"Searching for artifacts in: {search_dir.absolute()}")
 
-            # Save feedback CSV in artifacts folder with session prefix
-            feedback_csv = artifacts_folder / f'{session_prefix}_feedback.csv'
+                # Look for existing inspection_artifacts folder using session prefix
+                # This matches folders like: inspection_artifacts_LNOF_J01_1D,
+                # inspection_artifacts_LNOF_J01_1D_22-12-2025..., etc.
+                artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
+                artifacts_folders = sorted(search_dir.glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
 
-            # Save
-            df.to_csv(feedback_csv, index=False)
+                if artifacts_folders:
+                    # Use most recently modified existing folder
+                    artifacts_folder = artifacts_folders[0]
+                    print(f"Found existing artifacts folder: {artifacts_folder}")
+                else:
+                    # Create new folder with just session prefix (no timestamp in folder name)
+                    artifacts_folder = search_dir / f'inspection_artifacts_{session_prefix}'
+                    artifacts_folder.mkdir(exist_ok=True)
+                    print(f"Created new artifacts folder: {artifacts_folder}")
 
-            # Summary statistics
-            fp_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FP')
-            fn_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FN')
-            num_metrics = len(df.columns) - 4  # exclude neuron_idx, feedback_type, session_name, timestamp
+                # Save feedback CSV in artifacts folder with session prefix
+                feedback_csv = artifacts_folder / f'{session_prefix}_feedback.csv'
 
-            print(f"Saved {len(feedback_data)} feedback entries to {feedback_csv}")
-            print(f"  FP count: {fp_count}")
-            print(f"  FN count: {fn_count}")
-            print(f"  Metrics per neuron: {num_metrics}")
+                # Save with verification
+                df.to_csv(feedback_csv, index=False)
+
+                # Verify the file was actually saved
+                if not feedback_csv.exists():
+                    print(f"ERROR: Failed to save feedback - file not created at {feedback_csv}")
+                    return
+
+                # Summary statistics
+                fp_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FP')
+                fn_count = sum(1 for m in storage.feedback_dict.values() if m.get('feedback_type') == 'FN')
+                num_metrics = len(df.columns) - 4  # exclude neuron_idx, feedback_type, session_name, timestamp
+
+                print(f"SUCCESS: Saved {len(feedback_data)} feedback entries to {feedback_csv}")
+                print(f"  FP count: {fp_count}")
+                print(f"  FN count: {fn_count}")
+                print(f"  Metrics per neuron: {num_metrics}")
+
+            except Exception as e:
+                import traceback
+                print(f"ERROR saving feedback: {e}")
+                print(f"Full traceback:\n{traceback.format_exc()}")
 
 
         # Sorting radiobutton
