@@ -1,5 +1,5 @@
 """
-Export processed estimates data to NPZ and JSON files.
+Export processed estimates data to NPZ, JSON and MAT files.
 
 Usage:
     python export_estimates_data.py path/to/session_processed.pickle
@@ -9,6 +9,12 @@ Usage:
 Output:
     {session_name}_data.npz - numpy arrays (C, asp, reconstructions, component_indices)
     {session_name}_metadata.json - all metadata as JSON
+    {session_name}_filters.mat - spatial footprints as MATLAB array
+
+Features:
+    - ML threshold filtering: Removes neurons with ml_keep_probability < threshold (default 0.72)
+    - Feedback incorporation: Applies FP/FN corrections from feedback CSV
+    - Legacy file support: Works with files processed before autoinspection_config was added
 """
 
 import argparse
@@ -19,8 +25,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.io import savemat
+from scipy.ndimage import gaussian_filter
 
 from naming import extract_session_id, extract_base_session
+
+# Default ML threshold for legacy files without autoinspection_config
+DEFAULT_ML_THRESHOLD = 0.72
 
 # FPS lookup - avoid heavy import chain from ae_launch
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
@@ -222,8 +233,19 @@ def build_deletion_summary(metrics_df: pd.DataFrame) -> dict:
 
 def build_metadata(est, fps: float, session_name: str,
                    feedback_applied: bool = False,
-                   feedback_summary: dict = None) -> dict:
-    """Build metadata dictionary."""
+                   feedback_summary: dict = None,
+                   ml_filter_info: dict = None) -> dict:
+    """
+    Build metadata dictionary.
+
+    Args:
+        est: CaImAn estimates object
+        fps: Frames per second
+        session_name: Session identifier
+        feedback_applied: Whether feedback corrections were applied
+        feedback_summary: Dict with feedback correction details
+        ml_filter_info: Dict with ML filtering info (ml_filtered, threshold_used, n_before, n_after)
+    """
     metadata = {
         'session_name': session_name,
         'fps': fps,
@@ -273,6 +295,13 @@ def build_metadata(est, fps: float, session_name: str,
         stats['n_feedback_corrections'] = feedback_summary.get('n_total_corrections', 0)
         stats['feedback_details'] = feedback_summary
 
+    # ML filtering info
+    if ml_filter_info:
+        stats['ml_filtered'] = ml_filter_info.get('ml_filtered', False)
+        stats['ml_threshold_used'] = ml_filter_info.get('threshold_used')
+        stats['n_before_ml_filter'] = ml_filter_info.get('n_before')
+        stats['n_after_ml_filter'] = ml_filter_info.get('n_after')
+
     metadata['autoinspection_stats'] = stats
 
     # Metrics DataFrame
@@ -318,6 +347,42 @@ def export(data: dict, metadata: dict, session_name: str, output_dir: Path):
     return npz_path, json_path
 
 
+def export_filters_mat(est, component_indices: np.ndarray, output_path: Path, sigma: int = 3):
+    """
+    Export spatial filters as MATLAB .mat file.
+
+    Args:
+        est: CaImAn estimates object with A matrix and imax
+        component_indices: Array of component indices to export
+        output_path: Path for output .mat file
+        sigma: Gaussian smoothing sigma (default: 3, set to 0 for no smoothing)
+    """
+    if not hasattr(est, 'A') or est.A is None:
+        print("Warning: Cannot export filters - missing A matrix")
+        return None
+
+    if not hasattr(est, 'imax') or est.imax is None:
+        print("Warning: Cannot export filters - missing imax")
+        return None
+
+    ims = []
+    for idx in component_indices:
+        sp = est.A.T[idx]
+        im = np.asarray(sp.reshape(est.imax.shape[::-1]).todense())
+        if sigma:
+            im = gaussian_filter(im, sigma=sigma)
+        # Normalize to 0-255 uint8
+        max_val = np.max(im)
+        if max_val > 0:
+            ims.append((im * 255 / max_val).astype(np.uint8))
+        else:
+            ims.append(np.zeros(est.imax.shape[::-1], dtype=np.uint8))
+
+    savemat(output_path, {"A": np.array(ims)})
+    print(f"Saved filters to: {output_path}")
+    return output_path
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Export processed estimates to NPZ and JSON files'
@@ -346,12 +411,34 @@ def main():
     fps = get_fps(session_name)
     print(f"FPS: {fps}")
 
-    # Get component indices
+    # Get component indices and apply ML threshold filter
     component_indices = est.idx_components.copy()
+    n_before_ml_filter = len(component_indices)
+    ml_filtered = False
+    ml_threshold_used = None
+
+    # Apply ML threshold filtering if metrics available
+    if hasattr(est, 'metrics_df') and est.metrics_df is not None:
+        df = est.metrics_df
+        if 'ml_keep_probability' in df.columns:
+            # Get threshold from config (new files) or use default (legacy files)
+            threshold = DEFAULT_ML_THRESHOLD
+            if hasattr(est, 'autoinspection_config') and est.autoinspection_config:
+                threshold = est.autoinspection_config.get('ml_threshold', DEFAULT_ML_THRESHOLD)
+
+            # Filter by ml_keep_probability
+            ml_approved_mask = df['ml_keep_probability'] >= threshold
+            ml_approved_indices = set(df.loc[ml_approved_mask, 'component_idx'].tolist())
+            component_indices = np.array([i for i in component_indices if i in ml_approved_indices])
+
+            ml_filtered = True
+            ml_threshold_used = threshold
+            print(f"ML threshold filter ({threshold}): {n_before_ml_filter} -> {len(component_indices)} components")
+
     feedback_applied = False
     feedback_summary = None
 
-    # Apply feedback if requested
+    # Apply feedback AFTER ML filter (adds FN back, removes FP)
     if args.incorporate_feedback:
         feedback_path = find_feedback_file(args.estimates_path, session_name)
         if feedback_path:
@@ -366,19 +453,33 @@ def main():
 
     print(f"Extracting data for {len(component_indices)} components...")
 
+    # Build ML filter info for metadata
+    ml_filter_info = {
+        'ml_filtered': ml_filtered,
+        'threshold_used': ml_threshold_used,
+        'n_before': n_before_ml_filter,
+        'n_after': len(component_indices) if ml_filtered else None
+    }
+
     # Extract data
     data = extract_data(est, component_indices)
 
     # Build metadata
-    metadata = build_metadata(est, fps, session_name, feedback_applied, feedback_summary)
+    metadata = build_metadata(est, fps, session_name, feedback_applied, feedback_summary, ml_filter_info)
 
-    # Export
+    # Export NPZ and JSON
     output_dir = args.output_dir or args.estimates_path.parent
     npz_path, json_path = export(data, metadata, session_name, output_dir)
+
+    # Export spatial filters as .mat
+    mat_path = output_dir / f'{session_name}_filters.mat'
+    export_filters_mat(est, component_indices, mat_path)
 
     # Summary
     print(f"\nExport complete:")
     print(f"  Components: {len(component_indices)}")
+    if ml_filtered:
+        print(f"  ML filtered: {n_before_ml_filter} -> {len(component_indices)} (threshold={ml_threshold_used})")
     print(f"  C shape: {data['C'].shape}")
     if 'asp' in data:
         print(f"  ASP shape: {data['asp'].shape}")
