@@ -150,7 +150,8 @@ def apply_feedback(idx_components: np.ndarray, feedback_df: pd.DataFrame) -> tup
     Returns:
         Corrected component indices and summary dict
     """
-    idx_set = set(idx_components.tolist())
+    # Handle both list and numpy array
+    idx_set = set(list(idx_components))
 
     fp_indices = feedback_df[feedback_df['feedback_type'] == 'FP']['neuron_idx'].tolist()
     fn_indices = feedback_df[feedback_df['feedback_type'] == 'FN']['neuron_idx'].tolist()

@@ -1875,7 +1875,8 @@ def implement_decision(est, df, return_index_mapping=False):
 
     # CRITICAL: Capture original idx_components BEFORE any modifications
     # This tells us which components were accepted in the original estimates
-    original_idx_components = set(est.idx_components.tolist())
+    # Handle both list and numpy array (legacy files may have list)
+    original_idx_components = set(list(est.idx_components))
 
     # NOTE: We do NOT update idx_components_bad - all deleted neurons stay visible
     # Their deletion status is tracked in metrics_df for visualization purposes
