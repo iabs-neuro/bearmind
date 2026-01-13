@@ -815,7 +815,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             html += "<hr style='margin: 3px 0;'>"
 
             # Get all metrics from the source
-            exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'colors', 'dummy_x', 'dummy_id', 'metric']
+            exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'traces_recon', 'colors', 'dummy_x', 'dummy_id', 'metric']
             metrics_data = {}
 
             for key in src_partial.data.keys():
