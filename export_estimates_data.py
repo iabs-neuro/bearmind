@@ -235,7 +235,8 @@ def build_deletion_summary(metrics_df: pd.DataFrame) -> dict:
 def build_metadata(est, fps: float, session_name: str,
                    feedback_applied: bool = False,
                    feedback_summary: dict = None,
-                   ml_filter_info: dict = None) -> dict:
+                   ml_filter_info: dict = None,
+                   component_indices: np.ndarray = None) -> dict:
     """
     Build metadata dictionary.
 
@@ -246,6 +247,7 @@ def build_metadata(est, fps: float, session_name: str,
         feedback_applied: Whether feedback corrections were applied
         feedback_summary: Dict with feedback correction details
         ml_filter_info: Dict with ML filtering info (ml_filtered, threshold_used, n_before, n_after)
+        component_indices: Array of component indices being exported (for filtering metrics_df)
     """
     metadata = {
         'session_name': session_name,
@@ -305,12 +307,19 @@ def build_metadata(est, fps: float, session_name: str,
 
     metadata['autoinspection_stats'] = stats
 
-    # Metrics DataFrame
+    # Metrics DataFrame - filter to only exported components
     if hasattr(est, 'metrics_df') and est.metrics_df is not None:
+        df = est.metrics_df
+
+        # Filter to only exported components if indices provided
+        if component_indices is not None:
+            component_set = set(component_indices.tolist() if hasattr(component_indices, 'tolist') else component_indices)
+            df = df[df['component_idx'].isin(component_set)]
+
         # Convert to dict, handling numpy types
         metrics_dict = {}
-        for col in est.metrics_df.columns:
-            values = est.metrics_df[col].tolist()
+        for col in df.columns:
+            values = df[col].tolist()
             # Convert numpy types
             converted = []
             for v in values:
@@ -466,7 +475,8 @@ def main():
     data = extract_data(est, component_indices)
 
     # Build metadata
-    metadata = build_metadata(est, fps, session_name, feedback_applied, feedback_summary, ml_filter_info)
+    metadata = build_metadata(est, fps, session_name, feedback_applied, feedback_summary,
+                              ml_filter_info, component_indices)
 
     # Export NPZ and JSON
     output_dir = args.output_dir or args.estimates_path.parent
