@@ -316,6 +316,25 @@ def build_metadata(est, fps: float, session_name: str,
             component_set = set(component_indices.tolist() if hasattr(component_indices, 'tolist') else component_indices)
             df = df[df['component_idx'].isin(component_set)]
 
+        # Validation: Check metadata alignment
+        if component_indices is not None:
+            n_exported = len(component_indices)
+            n_metadata = len(df)
+
+            if n_exported != n_metadata:
+                print(f"[WARNING] Metadata count mismatch: exporting {n_exported} neurons but have {n_metadata} metadata rows")
+                print(f"  This may indicate index misalignment from compression. Consider re-running autoinspection.")
+
+            # Check that all component_idx values are in expected range
+            if 'component_idx' in df.columns and len(df) > 0:
+                min_idx = df['component_idx'].min()
+                max_idx = df['component_idx'].max()
+                expected_max = n_exported - 1
+
+                if max_idx > expected_max:
+                    print(f"[WARNING] metrics_df has component_idx up to {max_idx}, but only exporting {n_exported} neurons (0-{expected_max})")
+                    print(f"  This indicates index transformation was not applied during compression.")
+
         # Convert to dict, handling numpy types
         metrics_dict = {}
         for col in df.columns:
