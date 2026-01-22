@@ -121,6 +121,16 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
                 est.reconstructions = transformed_recons
                 print(f'  Transformed {len(transformed_recons)} reconstructions to new indices')
 
+            # Transform asp_cache to use new contiguous indices
+            if hasattr(est, 'asp_cache') and est.asp_cache:
+                transformed_asp = {}
+                for old_idx, asp in est.asp_cache.items():
+                    if old_idx in old_to_new:
+                        new_idx = old_to_new[old_idx]
+                        transformed_asp[new_idx] = asp
+                est.asp_cache = transformed_asp
+                print(f'  Transformed {len(transformed_asp)} ASP arrays to new indices')
+
             print(f'  Removed {n_bad} bad components')
 
     # 1. Convert YrA to float32 (KEEP - required for manual_merge!)
