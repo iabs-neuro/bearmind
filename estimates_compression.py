@@ -27,6 +27,22 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
     """
     Compress estimates object for ultra-lightweight storage.
 
+    CRITICAL INDEX TRANSFORMATION:
+    When bad components are removed (remove_bad_components=True), ALL data
+    structures that reference component indices must be transformed:
+
+    1. Arrays (C, S, YrA, A, bl, c1, etc.) - Sliced to remove bad rows/columns
+    2. Dicts (reconstructions, asp_cache) - Keys remapped via old_to_new
+    3. DataFrames (metrics_df) - component_idx column remapped AND rows filtered
+
+    Transformation pattern:
+        old_to_new = {old_sparse_idx: new_contiguous_idx}
+        For each structure:
+            - Remove entries for deleted components
+            - Remap remaining entries to new contiguous indices [0, 1, 2, ...]
+
+    Validation ensures all structures remain consistent after transformation.
+
     Args:
         est: CaImAn estimates object
         remove_bad_components: If True, removes data for idx_components_bad (default: True)
@@ -120,6 +136,90 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
                         transformed_recons[new_idx] = rec
                 est.reconstructions = transformed_recons
                 print(f'  Transformed {len(transformed_recons)} reconstructions to new indices')
+
+            # Transform asp_cache to use new contiguous indices
+            if hasattr(est, 'asp_cache') and est.asp_cache:
+                transformed_asp = {}
+                for old_idx, asp in est.asp_cache.items():
+                    if old_idx in old_to_new:
+                        new_idx = old_to_new[old_idx]
+                        transformed_asp[new_idx] = asp
+                est.asp_cache = transformed_asp
+                print(f'  Transformed {len(transformed_asp)} ASP arrays to new indices')
+
+            # Transform metrics_df component_idx to use new contiguous indices
+            if hasattr(est, 'metrics_df') and est.metrics_df is not None and not est.metrics_df.empty:
+                if 'component_idx' in est.metrics_df.columns:
+                    df = est.metrics_df
+                    old_component_indices = df['component_idx'].values
+
+                    # Map old indices to new indices
+                    new_component_indices = np.array([old_to_new.get(int(idx), -1)
+                                                      for idx in old_component_indices])
+
+                    # Filter out deleted components (those not in old_to_new mapping)
+                    valid_mask = new_component_indices >= 0
+                    df_transformed = df[valid_mask].copy()
+                    df_transformed['component_idx'] = new_component_indices[valid_mask]
+
+                    # Reset index for clean DataFrame
+                    df_transformed = df_transformed.reset_index(drop=True)
+                    est.metrics_df = df_transformed
+
+                    n_removed = (~valid_mask).sum()
+                    print(f'  Transformed metrics_df indices: {len(df_transformed)} rows kept, {n_removed} removed')
+
+            # VALIDATION: Ensure all component-indexed data is consistent
+            n_good = len(good_indices)
+            validation_errors = []
+
+            # Check idx_components
+            if len(est.idx_components) != n_good:
+                validation_errors.append(f"idx_components: expected {n_good}, got {len(est.idx_components)}")
+
+            # Check matrix rows
+            if hasattr(est, 'C') and est.C.shape[0] != n_good:
+                validation_errors.append(f"C rows: expected {n_good}, got {est.C.shape[0]}")
+
+            # Check metrics_df
+            if hasattr(est, 'metrics_df') and est.metrics_df is not None:
+                if len(est.metrics_df) != n_good:
+                    validation_errors.append(f"metrics_df rows: expected {n_good}, got {len(est.metrics_df)}")
+
+                # Check that component_idx values match idx_components
+                if 'component_idx' in est.metrics_df.columns:
+                    metrics_indices = set(est.metrics_df['component_idx'].values)
+                    expected_indices = set(est.idx_components)
+                    if metrics_indices != expected_indices:
+                        validation_errors.append(
+                            f"metrics_df component_idx mismatch: "
+                            f"expected {sorted(expected_indices)[:5]}..., "
+                            f"got {sorted(metrics_indices)[:5]}..."
+                        )
+
+            # Check reconstructions dict keys
+            if hasattr(est, 'reconstructions') and est.reconstructions:
+                recon_indices = set(est.reconstructions.keys())
+                expected_indices = set(est.idx_components)
+                if not recon_indices.issubset(expected_indices):
+                    validation_errors.append(
+                        f"reconstructions keys not subset of idx_components"
+                    )
+
+            # Check asp_cache dict keys
+            if hasattr(est, 'asp_cache') and est.asp_cache:
+                asp_indices = set(est.asp_cache.keys())
+                expected_indices = set(est.idx_components)
+                if not asp_indices.issubset(expected_indices):
+                    validation_errors.append(
+                        f"asp_cache keys not subset of idx_components"
+                    )
+
+            if validation_errors:
+                error_msg = "COMPRESSION VALIDATION FAILED:\n  " + "\n  ".join(validation_errors)
+                raise ValueError(error_msg)
+            else:
+                print(f'  Validation passed: all {n_good} components consistent across data structures')
 
             print(f'  Removed {n_bad} bad components')
 

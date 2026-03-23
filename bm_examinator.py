@@ -815,7 +815,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             html += "<hr style='margin: 3px 0;'>"
 
             # Get all metrics from the source
-            exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'colors', 'dummy_x', 'dummy_id', 'metric']
+            exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'traces_recon', 'colors', 'dummy_x', 'dummy_id', 'metric']
             metrics_data = {}
 
             for key in src_partial.data.keys():
@@ -1057,7 +1057,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 print('est partial before:', estimates_partial.idx_components)
                 print('sel_comps:', sel_comps)
                 print('new bad comps:', estimates_partial.idx_components[sel_inds].tolist())
-            temp = estimates.idx_components_bad.tolist() + sel_comps.tolist()
+            temp = list(estimates.idx_components_bad) + list(sel_comps)
             estimates.idx_components_bad = np.sort(temp)
             # print('all bad comps', len(temp))
             estimates.idx_components = [_ for _ in estimates.idx_components if _ not in sel_comps]
@@ -1766,8 +1766,8 @@ def split_estimate(fname, default_fps=20, nparts=2):
         not_selected = np.array([comp for comp in estimates0.idx_components if comp not in chunk])
 
         estimates1 = copy.deepcopy(estimates0)
-        estimates1.idx_components = selected.tolist()
-        temp = estimates1.idx_components_bad.tolist() + not_selected.tolist()
+        estimates1.idx_components = list(selected)
+        temp = list(estimates1.idx_components_bad) + list(not_selected)
         estimates1.idx_components_bad = np.sort(temp)
 
         base_name = fname.partition('_estimates')[0]
@@ -1788,8 +1788,8 @@ def merge_estimates(fnames, default_fps=20):
     not_selected = np.array([comp for comp in estimates0.idx_components if comp not in chunk])
 
     estimates1 = copy.deepcopy(estimates0)
-    estimates1.idx_components = selected.tolist()
-    temp = estimates1.idx_components_bad.tolist() + not_selected.tolist()
+    estimates1.idx_components = list(selected)
+    temp = list(estimates1.idx_components_bad) + list(not_selected)
     estimates1.idx_components_bad = np.sort(temp)
 
     base_name = fname.partition('_estimates')[0]
