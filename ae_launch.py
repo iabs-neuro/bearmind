@@ -175,7 +175,7 @@ def run_auto_inspection(
     # --- Metrics extraction parameters ---
     comps_to_select: list = None,
     cthr: float = 0.35,
-    corr_thr: float = 0.6,
+    corr_thr: float = 0.4,
     num_sessions: int = 1,
     match_threshold: int = 3,
     sf: int = None,
