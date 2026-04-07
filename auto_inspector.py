@@ -920,7 +920,7 @@ def get_saturation_metrics(traces, fps):
     return np.array(mean_times_at_peak)
 
 
-def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='pearson'):
+def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessions_num=5, correlation_method='spearman'):
     match_threshold /= sessions_num
     corr_num = len(neurons)
     corr_mtx_sessions = []
@@ -969,10 +969,10 @@ def multisession_corrmat(neurons, corr_threshold, match_threshold, fps=30, sessi
 
 
 def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
-                         corr_thr=0.6, num_sessions=1, match_threshold=3,
+                         corr_thr=0.4, num_sessions=1, match_threshold=3,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
-                         event_method='threshold', correlation_method='pearson', n_iter=2,
+                         event_method='threshold', correlation_method='spearman', n_iter=2,
                          hybrid_kinetics=True, wavelet_backend='auto'):
 
     match_threshold = min(match_threshold, num_sessions)
