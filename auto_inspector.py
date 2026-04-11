@@ -60,6 +60,13 @@ def compute_correlation_matrix(data, method='pearson'):
         # For matrix input with axis=1, computes pairwise correlations between rows
         if data.shape[0] == 1:
             return np.array([[1.0]])
+        if data.shape[0] == 2:
+            # scipy.stats.spearmanr returns a scalar (not a 2x2 matrix) for
+            # exactly 2 rows, so handle this case explicitly.
+            rho, _ = spearmanr(data[0], data[1])
+            if np.isnan(rho):
+                rho = 0.0
+            return np.array([[1.0, rho], [rho, 1.0]])
         corr_matrix, _ = spearmanr(data, axis=1)
         return corr_matrix
     else:
