@@ -56,19 +56,40 @@ def compute_correlation_matrix(data, method='pearson'):
     if method == 'pearson':
         return np.corrcoef(data)
     elif method == 'spearman':
-        # spearmanr returns (correlation, p-value) tuple
-        # For matrix input with axis=1, computes pairwise correlations between rows
-        if data.shape[0] == 1:
+        # spearmanr returns (correlation, p-value) tuple.
+        # For matrix input with axis=1, computes pairwise correlations between rows.
+        n = data.shape[0]
+        if n == 1:
             return np.array([[1.0]])
-        if data.shape[0] == 2:
+
+        # scipy.stats.spearmanr collapses to a scalar NaN when any input row
+        # has zero variance. Filter constant rows out, correlate the rest,
+        # then embed back into a full (N, N) matrix with zero correlation
+        # for the constant rows.
+        valid = data.std(axis=1) > 0
+        n_valid = int(valid.sum())
+
+        out = np.zeros((n, n))
+        np.fill_diagonal(out, 1.0)
+
+        if n_valid < 2:
+            return out
+
+        sub = data[valid]
+        if n_valid == 2:
             # scipy.stats.spearmanr returns a scalar (not a 2x2 matrix) for
             # exactly 2 rows, so handle this case explicitly.
-            rho, _ = spearmanr(data[0], data[1])
+            rho, _ = spearmanr(sub[0], sub[1])
             if np.isnan(rho):
                 rho = 0.0
-            return np.array([[1.0, rho], [rho, 1.0]])
-        corr_matrix, _ = spearmanr(data, axis=1)
-        return corr_matrix
+            sub_corr = np.array([[1.0, rho], [rho, 1.0]])
+        else:
+            sub_corr, _ = spearmanr(sub, axis=1)
+            sub_corr = np.nan_to_num(sub_corr, nan=0.0)
+
+        idx = np.where(valid)[0]
+        out[np.ix_(idx, idx)] = sub_corr
+        return out
     else:
         raise ValueError(f"Unknown correlation method: {method}. Use 'pearson' or 'spearman'")
 
