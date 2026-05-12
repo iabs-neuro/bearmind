@@ -354,6 +354,40 @@ def run_auto_inspection(
     if verbose:
         print(f"[run_auto_inspection] Loaded {len(est.idx_components)} components")
 
+    # Short-circuit on empty estimates: nothing to inspect, decision/merge pipeline
+    # would fail on an empty metrics_df (missing columns like 'corr_groups').
+    if len(est.idx_components) == 0:
+        if verbose:
+            print("[run_auto_inspection] 0 components — skipping metrics/decision pipeline.")
+        est.metrics_df = pd.DataFrame()
+        est.reconstructions = {}
+        est.asp_cache = {}
+        est.active_deletion_metrics = []
+        est.autoinspection_config = {
+            'fps': fps,
+            'brain': brain,
+            'ml_model_path': str(ml_model_path) if ml_model_path else None,
+            'ml_threshold': ml_threshold,
+            'deletion_rules': deletion_rules if deletion_rules else 'DEFAULT_DELETION_RULES',
+        }
+        return {
+            'estimates': est,
+            'metrics_df': pd.DataFrame(),
+            'match_mtx': None,
+            'FCD': np.array([]),
+            'FBD': np.array([]),
+            'edge_info': None,
+            'artifacts_folder': None,
+            'summary': {
+                'n_initial': 0,
+                'n_deleted': 0,
+                'n_merged': 0,
+                'n_corner_artifacts': 0,
+                'n_kept_before_merge': 0,
+                'n_final': 0,
+            },
+        }
+
     # --- Step 2: Extract metrics ---
     if verbose:
         print("[run_auto_inspection] Extracting metrics...")

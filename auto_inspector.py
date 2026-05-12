@@ -1010,7 +1010,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
 
     n_cells = len(comps_to_select)
     if n_cells == 0:
-        return pd.DataFrame(), None, np.array([]), np.array([]), None, {}
+        return pd.DataFrame(), None, np.array([]), np.array([]), None, {}, {}
 
     print(f'[1/4] Preparing traces for {n_cells} neurons...')
     t_phase_start = time.time()
