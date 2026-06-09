@@ -22,24 +22,24 @@
 \BIBdecl
 
 \bibitem{Zhou2018}
-\BIBentryALTinterwordspacing
 P.~Zhou, S.~L. Resendez, J.~Rodriguez-Romaguera, J.~C. Jimenez, S.~Q. Neufeld,
   A.~Giovannucci, J.~Friedrich, E.~A. Pnevmatikakis, G.~D. Stuber, R.~Hen,
   M.~A. Kheirbek, B.~L. Sabatini, R.~E. Kass, and L.~Paninski, ``Efficient and
   accurate extraction of in vivo calcium signals from microendoscopic video
-  data,'' \emph{eLife}, vol.~7, p. e28728, Feb. 2018. [Online]. Available:
-  \url{http://dx.doi.org/10.7554/eLife.28728}
-\BIBentrySTDinterwordspacing
+  data,'' \emph{eLife}, vol.~7, p. e28728, 2018.
 
 \bibitem{Giovannucci2019}
-\BIBentryALTinterwordspacing
 A.~Giovannucci, J.~Friedrich, P.~Gunn, J.~Kalfon, B.~L. Brown, S.~A. Koay,
   J.~Taxidis, F.~Najafi, J.~L. Gauthier, P.~Zhou, B.~S. Khakh, D.~W. Tank,
   D.~B. Chklovskii, and E.~A. Pnevmatikakis, ``{CaImAn}: An open source tool
   for scalable calcium imaging data analysis,'' \emph{eLife}, vol.~8, p.
-  e38173, Jan. 2019. [Online]. Available:
-  \url{http://dx.doi.org/10.7554/eLife.38173}
-\BIBentrySTDinterwordspacing
+  e38173, 2019.
+
+\bibitem{dataset2026}
+V.~Plusnin, N.~Pospelov, A.~Ivanova, M.~Orobets, O.~Rogozhnikova, N.~Savelev,
+  V.~Sotskov, K.~Toropova, O.~Ivashkina, and K.~Anokhin, ``Mouse hippocampal
+  one-photon calcium imaging dataset during free exploration tasks,'' 2026, in
+  preparation.
 
 \bibitem{lopes2015bonsai}
 G.~Lopes, N.~Bonacchi, J.~Fraz{\~a}o, J.~P. Neto, B.~V. Atallah, S.~Soares,
@@ -48,31 +48,27 @@ G.~Lopes, N.~Bonacchi, J.~Fraz{\~a}o, J.~P. Neto, B.~V. Atallah, S.~Soares,
   \emph{Frontiers in Neuroinformatics}, vol.~9, p.~7, 2015.
 
 \bibitem{Pnevmatikakis2017}
-\BIBentryALTinterwordspacing
 E.~A. Pnevmatikakis and A.~Giovannucci, ``{NoRMCorre}: An online algorithm for
   piecewise rigid motion correction of calcium imaging data,'' \emph{Journal of
-  Neuroscience Methods}, vol. 291, pp. 83--94, Nov. 2017. [Online]. Available:
-  \url{http://dx.doi.org/10.1016/j.jneumeth.2017.07.031}
-\BIBentrySTDinterwordspacing
+  Neuroscience Methods}, vol. 291, pp. 83--94, 2017.
 
 \bibitem{Sheintuch2017}
-\BIBentryALTinterwordspacing
 L.~Sheintuch, A.~Rubin, N.~Brande-Eilat, N.~Geva, N.~Sadeh, O.~Pinchasof, and
   Y.~Ziv, ``Tracking the same neurons across multiple days in {Ca2+} imaging
-  data,'' \emph{Cell Reports}, vol.~21, no.~4, pp. 1102--1115, Oct. 2017.
-  [Online]. Available: \url{http://dx.doi.org/10.1016/j.celrep.2017.10.013}
-\BIBentrySTDinterwordspacing
+  data,'' \emph{Cell Reports}, vol.~21, no.~4, pp. 1102--1115, 2017.
 
-\bibitem{Olhede2002}
-S.~C. Olhede and A.~T. Walden, ``Generalized morse wavelets,'' \emph{IEEE
-  Transactions on Signal Processing}, vol.~50, no.~11, pp. 2661--2670, 2002.
+\bibitem{Neugornet2021}
+S.~Neugornet, C.~N.~A. Wang, J.~J. Knierim, and E.~A. Mankin, ``Wavelet ridge
+  detection for calcium-transient identification in noisy fluorescence
+  signals,'' 2021, unpublished.
 
-\bibitem{Sych2019}
+\bibitem{driada}
 \BIBentryALTinterwordspacing
-Y.~Sych, M.~Chernysheva, L.~T. Sumanovski, and F.~Helmchen, ``High-density
-  multi-fiber photometry for studying large-scale brain circuit dynamics,''
-  \emph{Nature Methods}, vol.~16, no.~6, pp. 553--560, May 2019. [Online].
-  Available: \url{http://dx.doi.org/10.1038/s41592-019-0617-2}
+N.~Pospelov, V.~Plusnin, O.~Rogozhnikova, A.~Ivanova, V.~Sotskov, M.~Orobets,
+  K.~Toropova, O.~Ivashkina, V.~Avetisov, and K.~Anokhin, ``{DRIADA}:
+  Dimensionality reduction for integrated activity data analysis,'' 2026,
+  version 1.1.0, software. [Online]. Available:
+  \url{https://github.com/iabs-neuro/driada}
 \BIBentrySTDinterwordspacing
 
 \bibitem{Lou2013}

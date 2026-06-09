@@ -1,16 +1,23 @@
-% ---- Calcium-imaging extraction & preprocessing (reused) ----
+% ---- Dataset / biology (companion resource) ----
+
+@misc{dataset2026,
+  author = {Plusnin, Viktor and Pospelov, Nikita and Ivanova, Anna and Orobets, Margarita and Rogozhnikova, Olga and Savelev, Nikita and Sotskov, Vladimir and Toropova, Ksenia and Ivashkina, Olga and Anokhin, Konstantin},
+  title  = {Mouse Hippocampal One-Photon Calcium Imaging Dataset During Free Exploration Tasks},
+  year   = {2026},
+  note   = {In preparation}
+}
+
+% ---- Calcium-imaging extraction & preprocessing ----
 
 @article{Giovannucci2019,
   title = {{CaImAn}: An open source tool for scalable calcium imaging data analysis},
   volume = {8},
   ISSN = {2050-084X},
-  url = {http://dx.doi.org/10.7554/eLife.38173},
   DOI = {10.7554/eLife.38173},
   journal = {eLife},
   publisher = {eLife Sciences Publications, Ltd},
-  author = {Giovannucci, Andrea and Friedrich, Johannes and Gunn, Pat and Kalfon, Jérémie and Brown, Brandon L and Koay, Sue Ann and Taxidis, Jiannis and Najafi, Farzaneh and Gauthier, Jeffrey L and Zhou, Pengcheng and Khakh, Baljit S and Tank, David W and Chklovskii, Dmitri B and Pnevmatikakis, Eftychios A},
+  author = {Giovannucci, Andrea and Friedrich, Johannes and Gunn, Pat and Kalfon, J{\'e}r{\'e}mie and Brown, Brandon L and Koay, Sue Ann and Taxidis, Jiannis and Najafi, Farzaneh and Gauthier, Jeffrey L and Zhou, Pengcheng and Khakh, Baljit S and Tank, David W and Chklovskii, Dmitri B and Pnevmatikakis, Eftychios A},
   year = {2019},
-  month = jan,
   pages = {e38173}
 }
 
@@ -18,13 +25,11 @@
   title = {Efficient and accurate extraction of in vivo calcium signals from microendoscopic video data},
   volume = {7},
   ISSN = {2050-084X},
-  url = {http://dx.doi.org/10.7554/eLife.28728},
   DOI = {10.7554/eLife.28728},
   journal = {eLife},
   publisher = {eLife Sciences Publications, Ltd},
-  author = {Zhou, Pengcheng and Resendez, Shanna L and Rodriguez-Romaguera, Jose and Jimenez, Jessica C and Neufeld, Shay Q and Giovannucci, Andrea and Friedrich, Johannes and Pnevmatikakis, Eftychios A and Stuber, Garret D and Hen, René and Kheirbek, Mazen A and Sabatini, Bernardo L and Kass, Robert E and Paninski, Liam},
+  author = {Zhou, Pengcheng and Resendez, Shanna L and Rodriguez-Romaguera, Jose and Jimenez, Jessica C and Neufeld, Shay Q and Giovannucci, Andrea and Friedrich, Johannes and Pnevmatikakis, Eftychios A and Stuber, Garret D and Hen, Ren{\'e} and Kheirbek, Mazen A and Sabatini, Bernardo L and Kass, Robert E and Paninski, Liam},
   year = {2018},
-  month = feb,
   pages = {e28728}
 }
 
@@ -32,13 +37,11 @@
   title = {{NoRMCorre}: An online algorithm for piecewise rigid motion correction of calcium imaging data},
   volume = {291},
   ISSN = {0165-0270},
-  url = {http://dx.doi.org/10.1016/j.jneumeth.2017.07.031},
   DOI = {10.1016/j.jneumeth.2017.07.031},
   journal = {Journal of Neuroscience Methods},
   publisher = {Elsevier BV},
   author = {Pnevmatikakis, Eftychios A. and Giovannucci, Andrea},
   year = {2017},
-  month = nov,
   pages = {83--94}
 }
 
@@ -46,14 +49,12 @@
   title = {Tracking the Same Neurons across Multiple Days in {Ca2+} Imaging Data},
   volume = {21},
   ISSN = {2211-1247},
-  url = {http://dx.doi.org/10.1016/j.celrep.2017.10.013},
   DOI = {10.1016/j.celrep.2017.10.013},
   number = {4},
   journal = {Cell Reports},
   publisher = {Elsevier BV},
   author = {Sheintuch, Liron and Rubin, Alon and Brande-Eilat, Noa and Geva, Nitzan and Sadeh, Noa and Pinchasof, Or and Ziv, Yaniv},
   year = {2017},
-  month = oct,
   pages = {1102--1115}
 }
 
@@ -67,34 +68,21 @@
   publisher = {Frontiers Media SA}
 }
 
-% ---- Event detection ----
+% ---- Wavelet-based calcium-event detection (method + implementation) ----
 
-@article{Sych2019,
-  title = {High-density multi-fiber photometry for studying large-scale brain circuit dynamics},
-  volume = {16},
-  ISSN = {1548-7105},
-  url = {http://dx.doi.org/10.1038/s41592-019-0617-2},
-  DOI = {10.1038/s41592-019-0617-2},
-  number = {6},
-  journal = {Nature Methods},
-  publisher = {Springer Science and Business Media LLC},
-  author = {Sych, Yaroslav and Chernysheva, Maria and Sumanovski, Lazar T. and Helmchen, Fritjof},
-  year = {2019},
-  month = may,
-  pages = {553--560}
+@misc{Neugornet2021,
+  author = {Neugornet, Steven and Wang, Chong N. A. and Knierim, James J. and Mankin, Emily A.},
+  title  = {Wavelet Ridge Detection for Calcium-Transient Identification in Noisy Fluorescence Signals},
+  year   = {2021},
+  note   = {Unpublished}
 }
 
-@article{Olhede2002,
-  title = {Generalized Morse Wavelets},
-  volume = {50},
-  ISSN = {1053-587X},
-  DOI = {10.1109/TSP.2002.804066},
-  number = {11},
-  journal = {IEEE Transactions on Signal Processing},
-  publisher = {Institute of Electrical and Electronics Engineers (IEEE)},
-  author = {Olhede, S. C. and Walden, A. T.},
-  year = {2002},
-  pages = {2661--2670}
+@misc{driada,
+  author = {Pospelov, Nikita and Plusnin, Viktor and Rogozhnikova, Olga and Ivanova, Anna and Sotskov, Vladimir and Orobets, Margarita and Toropova, Ksenia and Ivashkina, Olga and Avetisov, Vladik and Anokhin, Konstantin},
+  title  = {{DRIADA}: Dimensionality Reduction for Integrated Activity Data Analysis},
+  year   = {2026},
+  note   = {Version 1.1.0, software},
+  url    = {https://github.com/iabs-neuro/driada}
 }
 
 % ---- Interpretable machine learning (Explainable Boosting Machines) ----
@@ -117,7 +105,7 @@
   url = {https://arxiv.org/abs/1909.09223}
 }
 
-% ---- Methods / metrics ----
+% ---- F-measure ----
 
 @book{vanRijsbergen1979,
   title = {Information Retrieval},

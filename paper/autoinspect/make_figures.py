@@ -45,7 +45,7 @@ SUMMARY_PATH = ML_DIR / "ebm_v9_iter8" / "summary.json"
 
 RANDOM_SEED = 46          # matches summary.json for v9_iter8
 TEST_SIZE = 0.25
-OPERATING_POINT = 0.75    # deployed default threshold (summary.json)
+OPERATING_POINT = 0.72    # deployed operating threshold
 N_TOP_FEATURES = 20
 
 # ---------------------------------------------------------------- global style: BIG fonts
@@ -172,10 +172,10 @@ def make_threshold_analysis():
     fig.savefig(out, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    # sanity check against summary.json
+    # sanity check: reproduce summary.json confusion matrix (reported at 0.75)
     summary = json.loads(Path(SUMMARY_PATH).read_text())
     cm = summary["confusion_matrix"]
-    i075 = int(np.argmin(np.abs(thr - OPERATING_POINT)))
+    i075 = int(np.argmin(np.abs(thr - 0.75)))
     print(f"[fig2] wrote {out}")
     print(f"[fig2] check @0.75: fp={fp[i075]} (summary {cm['fp']}), "
           f"fn={fn[i075]} (summary {cm['fn']}); optimal Fbeta @ {best_t:.2f}")

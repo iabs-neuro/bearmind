@@ -71,7 +71,7 @@ k.anokhin@gmail.com}
 \maketitle
 
 \begin{abstract}
-Manual curation of candidate neurons is a persistent bottleneck in one-photon calcium imaging: component-extraction algorithms deliberately over-segment to preserve sensitivity, leaving experts to inspect hundreds to thousands of candidates per session by hand. We present an automated, fully transparent screening system. First, redundant components are removed by a graph-based procedure that treats candidates as nodes of a temporal-correlation network and collapses its densely connected clusters. Each surviving candidate is then described by 36 interpretable features spanning spatial morphology, trace statistics, wavelet-derived calcium-event properties, and reconstruction quality. Calcium transients are detected in the time--scale plane via a continuous wavelet transform with generalized Morse wavelets, and a five-tier cascade restores event features for neurons on which detection fails, lifting coverage from 42\% to 80\%. Classification uses an Explainable Boosting Machine optimized for an asymmetric $F_\beta$ objective ($\beta=0.577$) that penalizes false positives three times more than false negatives. Under session-stratified cross-validation on 92{,}242 neurons from 187 sessions across four paradigms, the system attains $0.976$ precision and $0.933$ recall (AUC $0.978$), cutting curation from hours to minutes with a per-feature audit trail for every decision.
+Manual curation of candidate neurons is a persistent bottleneck in one-photon calcium imaging: component-extraction algorithms deliberately over-segment to preserve sensitivity, leaving experts to inspect hundreds to thousands of candidates per session by hand. We present an automated, fully transparent screening system. Redundant components---the same neuron split into several copies---are first removed by a correlation-network step that groups co-active footprints and keeps one representative. Each surviving candidate is then described by 36 interpretable features spanning spatial morphology, trace statistics, wavelet-derived calcium-event properties, and reconstruction quality, and classified by an Explainable Boosting Machine optimized for an asymmetric $F_\beta$ objective ($\beta=0.577$) that penalizes false positives three times more than false negatives. A five-tier cascade restores event features for neurons on which transient detection fails, lifting coverage from 42\% to 80\%. Validated by session-stratified cross-validation on 92{,}242 candidates from 187 sessions of freely-behaving mouse hippocampal recordings, the system reaches $0.976$ precision and $0.933$ recall (AUC $0.978$), cutting curation from hours to minutes with a per-feature audit trail for every decision.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -80,34 +80,24 @@ calcium imaging, quality control, correlation networks, wavelet event detection,
 
 \section{Introduction}
 
-One-photon calcium imaging with miniaturized microscopes (miniscopes) records the activity of large neuronal populations in freely behaving animals. Single-neuron signals are extracted by constrained matrix-factorization algorithms such as CNMF-E \cite{Zhou2018}, implemented in the CaImAn suite \cite{Giovannucci2019}. By design these algorithms favor sensitivity over specificity: they over-segment the field of view so that no genuine neuron is missed, accepting that many false candidates---from motion, neuropil contamination, imaging aberrations, edge effects, and over-splitting of single cells into several correlated components---are produced alongside real neurons.
+One-photon calcium imaging with miniaturized microscopes (miniscopes) records the activity of large neuronal populations in freely behaving animals. Single-neuron signals are extracted by constrained matrix-factorization algorithms such as CNMF-E \cite{Zhou2018}, implemented in the CaImAn suite \cite{Giovannucci2019}. By design these algorithms favor sensitivity over specificity: they over-segment the field of view so that no genuine neuron is missed, accepting that many false candidates---from motion, neuropil contamination, imaging aberrations, edge effects, and over-splitting of single cells into several copies---are produced alongside real neurons.
 
 The standard workflow therefore ends with a manual step in which an expert inspects every candidate, weighing its spatial footprint, temporal activity, and quality metrics, and labels it a neuron or an artifact. For a typical session of 500--1500 candidates this requires one to three hours, and the implicit criteria that distinguish a ``real'' neuron are inconsistent between annotators and hard to transfer.
 
-We automate this bottleneck with an interpretable pipeline whose contribution is fourfold: (i) a graph-based duplicate-removal stage that formulates redundancy elimination as clustering of a temporal-correlation network; (ii) a 36-dimensional interpretable feature space, including calcium-event descriptors extracted by continuous-wavelet analysis; (iii) a glass-box Explainable Boosting Machine (EBM) trained against an asymmetric-cost objective; and (iv) validation at scale---92{,}242 expert-labeled neurons from 187 sessions---yielding expert-level accuracy with a complete decision audit trail.
+We automate this bottleneck with an interpretable pipeline whose contribution is fourfold: (i) a correlation-network stage that removes duplicate components by clustering co-active footprints; (ii) a 36-dimensional interpretable feature space, including calcium-event descriptors from wavelet analysis; (iii) a glass-box Explainable Boosting Machine (EBM) trained against an asymmetric-cost objective; and (iv) validation at scale---92{,}242 expert-labeled candidates from 187 sessions---yielding expert-level accuracy with a complete decision audit trail.
 
 \section{Methods}
 
 \subsection{Animals, imaging, and preprocessing}
 
-Experiments were performed on male and female C57Bl/6 mice aged 3--5 months. Activity of CA1 neurons was recorded with a miniature microscope (UCLA Miniscope V4.4, OpenEphys). Animals underwent stereotaxic surgery in which viral particles carrying the gene of the calcium sensor GCaMP6s were injected into hippocampal area CA1, a GRIN lens (1~mm) was implanted, and a miniscope baseplate was fixed. Behavior was captured with a video camera (FLIR Chameleon 3) and synchronized with the imaging stream in Bonsai \cite{lopes2015bonsai}. All procedures were approved by the Animal Care Committee of Lomonosov Moscow State University (application No.~159-a, Bioethics Commission meeting No.~154-d of 17.08.2023) and complied with Order No.~267 of the Ministry of Health of the Russian Federation and the US NIH Guide for the Care and Use of Laboratory Animals. Video was motion-corrected with NoRMCorre \cite{Pnevmatikakis2017} and decomposed with CNMF-E \cite{Zhou2018} in the authors' BEARMIND package; traces were normalized as $dF/F$ and footprints registered across sessions with CellReg \cite{Sheintuch2017}. The resulting candidates form a labeled dataset of \textbf{92{,}242 neurons from 187 sessions} across four paradigms (LNOF: 49{,}767; NOF: 30{,}398; RFC: 7{,}505; FOF: 4{,}572), each manually labeled as a genuine neuron (81.1\%) or an artifact (18.9\%).
+The system was developed on data from a large hippocampal imaging program \cite{dataset2026}; we summarize the acquisition relevant to quality control. Adult C57BL/6 mice (with 5xFAD animals in a memory-impairment arm) were used. Under anesthesia, 300~nL of AAV1.CAG.GCaMP6s were injected unilaterally into dorsal hippocampal area CA1 (AP~$-1.94$, ML~$+1.46$, DV~$-1.2$~mm); one week later a 1-mm GRIN lens was implanted above CA1, and a baseplate for a miniature microscope (UCLA Miniscope V4.4) was mounted in a third procedure. After recovery, CA1 population activity was imaged in freely moving animals across four free-exploration and contextual-memory paradigms---among them cue-rich open-field exploration in a $44\times44$~cm arena over four daily 10-min sessions, contextual fear conditioning, a patterned open field, and a repeated open-field memory task. Overhead behavioral video was synchronized with the imaging stream in Bonsai \cite{lopes2015bonsai}. All procedures were approved by the Bioethics Commission of Lomonosov Moscow State University (application 159-g, meeting 154-d-r, 17 August 2023).
+
+Videos were motion-corrected with NoRMCorre \cite{Pnevmatikakis2017} and decomposed into spatial footprints and calcium traces with CNMF-E \cite{Zhou2018} in the authors' BEARMIND pipeline, built on CaImAn \cite{Giovannucci2019}. CNMF-E used estimated neuron size $3$--$6$~px (at 3~$\mu$m/px), local-correlation threshold $0.85$--$0.95$, and peak-to-noise ratio $3$--$15$, with a first pass keeping components of spatial correlation $\ge0.95$ and SNR $\ge3$. Traces were normalized as $dF/F$ and footprints registered across sessions with CellReg \cite{Sheintuch2017}. These steps yield \textbf{92{,}242 candidate components from 187 sessions}, each manually labeled as a genuine neuron (81.1\%) or an artifact (18.9\%)---the decisions our system learns to reproduce.
 
 \subsection{Network-based duplicate removal}
 \label{sec:network}
 
-CNMF-E frequently splits one physical neuron into several highly correlated components. We eliminate this redundancy by clustering a temporal-correlation network of candidates. Let $\rho^{(s)}_{ij}$ be the Spearman correlation between the $dF/F$ traces of components $i,j$ in temporal block $s$. Each block is binarized, $B^{(s)}_{ij}=\mathbb{1}[\rho^{(s)}_{ij}\ge\rho_0]$ with $\rho_0=0.4$, and co-activation is accumulated over $S$ blocks into a weighted adjacency
-\begin{equation}
-A_{ij} = \Big(\textstyle\sum_{s=1}^{S} B^{(s)}_{ij}\Big)\,
-         \mathbb{1}\!\Big[\textstyle\sum_{s} B^{(s)}_{ij}\ge m_0\Big],
-         \quad A_{ii}=0,
-\label{eq:adj}
-\end{equation}
-where $m_0=3$ requires reproducible co-activation. On the graph $G=(V,A)$ whose nodes are candidate components, the connected components $\{C_k\}$ (found by breadth-first search) with $|C_k|>1$ are duplicate groups. Each group is ranked by its internal correlation density
-\begin{equation}
-d(C)=\frac{1}{|C|\,(|C|-1)}\sum_{i\ne j\in C}\bar\rho_{ij},
-\label{eq:density}
-\end{equation}
-and groups are resolved in decreasing $d$. Within a group, two components whose footprints lie within $\delta=5$~px (boundary-to-boundary) are taken to be the same neuron: the higher-SNR copy is kept, and the other is merged when $|\Delta\mathrm{SNR}|\le\tau$ ($\tau=10$) or discarded otherwise. This collapses dense subgraphs to single representatives before classification.
+CNMF-E frequently splits one physical neuron into several near-identical copies. We remove this redundancy with a correlation-network step. Treating candidates as nodes, we connect two components when their $dF/F$ traces are strongly Spearman-correlated ($\rho\ge0.4$) reproducibly across temporal blocks of the recording. The connected components of the resulting graph are groups of putative duplicates, ranked by their mean internal correlation (a graph-density score). Within each group, components whose footprints are spatially adjacent are taken to be the same cell: the highest-SNR copy is retained and the others merged or discarded. Casting deduplication as clustering of a correlation graph removes redundancy before classification and links candidate screening to the analysis of correlation networks.
 
 \subsection{Interpretable feature space}
 
@@ -116,32 +106,19 @@ Each surviving candidate is described by 36 features in six groups: \emph{spatia
 \subsection{Wavelet-based event characterization}
 \label{sec:wavelet}
 
-The most discriminative features derive from calcium transients, which we detect in the time--scale plane. After min--max normalization and Gaussian smoothing, the trace $x(t)$ is mapped by the continuous wavelet transform
-\begin{equation}
-W(a,b)=\frac{1}{\sqrt{a}}\int x(t)\,
-        \psi^{*}\!\Big(\frac{t-b}{a}\Big)\,dt ,
-\label{eq:cwt}
-\end{equation}
-with a generalized Morse wavelet \cite{Olhede2002}, whose frequency-domain form is $\Psi_{\beta,\gamma}(\omega)=\mathbb{1}_{\omega>0}\,\omega^{\beta}\,e^{-\omega^{\gamma}}$, $(\beta,\gamma)=(2,3)$, as implemented in the DRIADA toolkit \cite{Sych2019}. This choice gives a nearly symmetric, low-oscillation analytic wavelet well matched to the asymmetric rise/decay of calcium events; scales $a$ are log-spaced to span transient durations $0.275$--$2.25$~s. Local maxima of $|W(a,\cdot)|$ are linked across scales into ridges, and a ridge is accepted as an event when it persists over $\ge L$ scales, reaches a maximum-magnitude scale index $\ge\sigma^{*}$, peak magnitude $\ge a_0$, and duration $\le\Delta$. From the event support $E\subset\{1,\dots,T\}$ we form, e.g., the event signal-to-noise ratio
-\begin{equation}
-\mathrm{SNR}_{\mathrm{ev}}=\log\!\Big(1+
-   \frac{\operatorname{med}_k A_k-\operatorname{med}(x_{\bar E})}
-        {\operatorname{MAD}(x_{\bar E})}\Big),
-\label{eq:evsnr}
-\end{equation}
-where $A_k$ are per-event peak amplitudes and $x_{\bar E}$ the inter-event baseline, and the event-restricted reconstruction quality
+The most discriminative features describe calcium transients, which we detect in the time--scale plane with a wavelet-ridge method \cite{Neugornet2021} implemented in our DRIADA toolkit \cite{driada}. The $dF/F$ trace is smoothed and mapped by a continuous wavelet transform using generalized Morse wavelets $\Psi_{\beta,\gamma}(\omega)\propto\omega^{\beta}e^{-\omega^{\gamma}}$ with $(\beta,\gamma)=(2,3)$---an analytic, low-oscillation wavelet well matched to the asymmetric rise and decay of calcium events; scales span transient durations of $0.275$--$2.25$~s. Local maxima of the transform are linked across scales into ridges, and a ridge is accepted as an event when it is sufficiently long, strong, and slow (thresholds on ridge length, peak magnitude, maximal scale, and duration). From the detected events $E$ we derive descriptors such as event rate, amplitude variability, rise/decay times, an event signal-to-noise ratio, and the event-restricted reconstruction quality
 \begin{equation}
 R^{2}_{\mathrm{ev}}=1-
    \frac{\sum_{t\in E}(x_t-\hat x_t)^2}
         {\sum_{t\in E}(x_t-\bar x_E)^2},
 \label{eq:evr2}
 \end{equation}
-against a single-compartment kinetics fit $\hat x$.
+measured against a single-compartment kinetics fit $\hat x$ of the trace $x$.
 
 \subsection{Cascading kinetics estimation}
 \label{sec:cascade}
 
-Ridge-based detection fails on 40--60\% of candidates (low SNR, sparse firing, nonstationary baseline), leaving eight event features undefined. A five-tier cascade restores them: (i) wavelet detection with strict criteria; (ii) wavelet with relaxed thresholds ($\ge3$ events, $R^2_{\mathrm{ev}}\ge0.6$); (iii)--(iv) a MAD-threshold detector ($n_{\mathrm{MAD}}=4$) at strict then relaxed criteria; and (v) physically plausible defaults ($t_{\mathrm{rise}}=0.25$~s, $t_{\mathrm{off}}=2.0$~s). The first successful tier is recorded as a categorical \emph{kinetics-provenance} feature, letting the classifier discount low-reliability event evidence. Coverage rises from 42\% (single attempt) to 80\%, and spatial, trace, and reconstruction features remain defined even at tier (v)---graceful degradation rather than outright failure.
+Ridge-based detection fails on 40--60\% of candidates (low SNR, sparse firing, nonstationary baseline), leaving eight event features undefined. A five-tier cascade restores them: (i) wavelet detection with strict criteria; (ii) wavelet with relaxed thresholds ($\ge3$ events, $R^2_{\mathrm{ev}}\ge0.6$); (iii)--(iv) a robust amplitude-threshold detector at strict then relaxed criteria; and (v) physically plausible defaults ($t_{\mathrm{rise}}=0.25$~s, $t_{\mathrm{off}}=2.0$~s). The first successful tier is recorded as a categorical \emph{kinetics-provenance} feature, letting the classifier discount low-reliability event evidence. Coverage rises from 42\% (single attempt) to 80\%, and spatial, trace, and reconstruction features remain defined even at tier (v)---graceful degradation rather than outright failure.
 
 \subsection{Classifier and decision objective}
 
@@ -161,11 +138,11 @@ with $\beta=\sqrt{1/3}\approx0.577$ \cite{vanRijsbergen1979}, weighting false po
 
 \subsection{Classification performance}
 
-We evaluate by cross-validation stratified \emph{by recording session}, so that neurons from one session never appear in both training and test folds; this precludes exploiting session-specific imaging conditions. Across folds (mean\,$\pm$\,s.d.) the production model (v9) attains $F_\beta=0.965\pm0.004$, precision $0.976\pm0.003$, recall $0.933\pm0.007$, and AUC $0.978\pm0.005$. A precision of $97.6\%$ means only $2.4\%$ of accepted candidates are artifacts; recall of $93.3\%$ means $6.7\%$ of genuine neurons are missed---a trade-off deliberately favoring precision. The low cross-session variance confirms stable generalization across paradigms.
+We evaluate by cross-validation stratified \emph{by recording session}, so that candidates from one session never appear in both training and test folds; this precludes exploiting session-specific imaging conditions. Across folds (mean\,$\pm$\,s.d.) the production model attains $F_\beta=0.965\pm0.004$, precision $0.976\pm0.003$, recall $0.933\pm0.007$, and AUC $0.978\pm0.005$. A precision of $97.6\%$ means only $2.4\%$ of accepted candidates are artifacts; recall of $93.3\%$ means $6.7\%$ of genuine neurons are missed---a trade-off deliberately favoring precision. The low cross-session variance confirms stable generalization across paradigms.
 
 \subsection{Which features matter}
 
-Feature-importance analysis (Fig.~\ref{fig:importance}) shows that temporal trace statistics carry the strongest discriminative power: trace skewness and kurtosis rank first and second, validating the heavy-tailed, ``spiky'' signature of genuine calcium dynamics. Wavelet-derived event descriptors (Eqs.~\ref{eq:evsnr}--\ref{eq:evr2}) rank immediately below, whereas the extractor's own amplitude SNR ranks lowest---temporal structure is far more informative than raw amplitude.
+Feature-importance analysis (Fig.~\ref{fig:importance}) shows that temporal trace statistics carry the strongest discriminative power: trace skewness and kurtosis rank first and second, validating the heavy-tailed, ``spiky'' signature of genuine calcium dynamics. Wavelet-derived event descriptors rank immediately below, whereas the extractor's own amplitude SNR ranks lowest---temporal structure is far more informative than raw amplitude.
 
 \begin{figure}[t]
 \centering
@@ -176,12 +153,12 @@ Feature-importance analysis (Fig.~\ref{fig:importance}) shows that temporal trac
 
 \subsection{Tuning the operating point}
 
-Because the EBM emits a calibrated score, a single threshold tunes the precision/recall balance (Fig.~\ref{fig:threshold}). The unconstrained $F_\beta$ optimum lies at a threshold of $0.66$; the deployed operating point ($0.75$) sits above it, trading a little recall for additional precision, consistent with the asymmetric-cost objective. Lower thresholds ($0.3$--$0.4$) maximize recall for exploratory screening, higher thresholds for publication-grade datasets.
+Because the EBM emits a calibrated score, a single threshold tunes the precision/recall balance (Fig.~\ref{fig:threshold}). The unconstrained $F_\beta$ optimum lies near a threshold of $0.66$; the deployed operating point ($0.72$) sits slightly above it, trading a little recall for additional precision, consistent with the asymmetric-cost objective. Lower thresholds ($0.3$--$0.4$) maximize recall for exploratory screening, higher thresholds for publication-grade datasets.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figs/figure2_threshold_analysis.png}
-\caption{Threshold analysis on the held-out test split. Left: $F_\beta$ ($\beta{=}0.577$) versus decision threshold, with the deployed operating point (0.75) and the $F_\beta$ optimum (0.66) marked. Right: false positives, false negatives, and total errors versus threshold.}
+\caption{Threshold analysis on the held-out test split. Left: $F_\beta$ ($\beta{=}0.577$) versus decision threshold, with the deployed operating point (0.72) and the $F_\beta$ optimum (0.66) marked. Right: false positives, false negatives, and total errors versus threshold.}
 \label{fig:threshold}
 \end{figure}
 
@@ -191,9 +168,9 @@ Manual curation of a 1000-candidate session takes one to two hours; duplicate re
 
 \section{Discussion and Conclusion}
 
-We have presented an automated quality-control system that closes the last manual step in calcium-imaging preprocessing. Casting duplicate removal as clustering of a temporal-correlation network (Sec.~\ref{sec:network}) links a practical engineering need to the analysis of correlation graphs, and the wavelet front end (Sec.~\ref{sec:wavelet}) supplies the features that prove most discriminative. Interpretability is functional, not cosmetic: the additive structure of Eq.~\ref{eq:ebm} exposes which features drove a decision, so a corrected label becomes a training example for the next iteration. Across eight such iterations the model gained measurably in precision and AUC on initially hard cases.
+We have presented an automated quality-control system that closes the last manual step in calcium-imaging preprocessing. Removing duplicates by clustering a correlation network (Sec.~\ref{sec:network}) and characterizing activity through wavelet-detected events (Sec.~\ref{sec:wavelet}) together supply the features that prove most discriminative. Interpretability is functional, not cosmetic: the additive structure of Eq.~\ref{eq:ebm} exposes which features drove a decision, so a corrected label becomes a training example for the next iteration. Across eight such iterations the model gained measurably in precision and AUC on initially hard cases.
 
-Limitations remain: the system was trained on one-photon GCaMP recordings of hippocampal and cortical neurons, so transfer to other modalities or cell types may require retraining; entirely silent neurons are inherently ambiguous; and $\sim$20\% of candidates still rely on default kinetics. Natural extensions include tighter coupling to upstream extractors, real-time assessment during acquisition, and session-specific calibration. More broadly, the work shows that interpretable machine learning can match expert judgment in a scientific decision task while remaining auditable, scaling human expertise rather than hiding it behind opaque automation; combined with CNMF-E extraction it enables a fully automated pipeline from raw miniscope video to verified neural populations.
+Limitations remain: the system was trained on one-photon GCaMP recordings of hippocampal neurons, so transfer to other modalities or cell types may require retraining; entirely silent neurons are inherently ambiguous; and $\sim$20\% of candidates still rely on default kinetics. Natural extensions include tighter coupling to upstream extractors, real-time assessment during acquisition, and session-specific calibration. More broadly, the work shows that interpretable machine learning can match expert judgment in a scientific decision task while remaining auditable, scaling human expertise rather than hiding it behind opaque automation; combined with CNMF-E extraction it enables a fully automated pipeline from raw miniscope video to verified neural populations.
 
 % \section*{Acknowledgment}
 % Optional: add personal acknowledgments here if desired.
