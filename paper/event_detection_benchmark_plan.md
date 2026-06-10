@@ -7,15 +7,27 @@
 
 ## 1. Thesis / contribution (one line)
 
-> An open, frame-rate-adaptive implementation of wavelet-ridgewalking calcium **event detection**, benchmarked for the first time against modern spike-inference methods (CASCADE, MLspike, OASIS) on a large simultaneous-ephys ground-truth corpus — establishing *when event detection beats spike inference*, and quantifying frame-rate invariance, coverage, and speed.
+> An open, **frame-rate-adaptive Python** implementation of wavelet-ridgewalking calcium **event detection**, benchmarked for the first time against *both* modern spike-inference methods (CASCADE, MLspike, OASIS) *and* existing event-detection tools (FluoroSNNAP, CWT peak-detection) on a large simultaneous-ephys ground-truth corpus — mapping *where event detection is preferable to spike inference*, and quantifying frame-rate invariance, coverage, and speed.
 
-The paper is **not** "we beat everyone on accuracy." It is "here is the missing benchmark for the event-detection niche, plus an open robust implementation."
+**Positioning (sharpened).** The differentiator is the **question asked**, not event duration: spike inference reconstructs *how many spikes and when* (sub-transient unit, F0-dependent, fragile); event detection robustly identifies *discrete transients* (event unit, F0-independent) — which is exactly what downstream feature extraction needs. The timescale/SNR map of where each wins is an **empirical result (E1)**, not the premise. Do **not** frame it as "we care about long events" — that invites "a long event is just many spikes."
+
+The paper is **not** "we beat everyone on accuracy." It is "here is the missing cross-paradigm benchmark for the event-detection niche, plus the only open, maintained, frame-rate-adaptive implementation."
 
 ## 2. Why this is publishable (the gap)
 
 - The core wavelet-ridgewalking method (Neugornet, O'Donovan, Ortinski 2021, *Front. Neurosci.* 15:620869) is published and shown to beat dF/F0 thresholding — but has **no maintained open-source implementation**, and was **never benchmarked against modern spike-inference methods** (CASCADE/MLspike/OASIS) on ground-truth ephys.
 - Spike-inference benchmarks (Rupprecht 2021) evaluate **spike-rate** accuracy — a *different task* from **event detection** (transient identification, F0-independent). Nobody has done a head-to-head at the **event level**.
 - DRIADA's genuine additions (frame-rate-adaptive scales, 5-tier cascade → 42%→80% coverage, MAD fallback, Numba speed, NNLS overlap handling) are **engineering**; they only become a *paper* when validated on ground truth. The benchmark is the scientific contribution; the implementation is the artifact.
+
+## 2b. Competitive landscape & scope (the niche is NOT empty)
+
+Three families address overlapping problems; be explicit about which we are in.
+
+- **(i) Spike inference** — CASCADE (Rupprecht 2021), MLspike, OASIS, peeling (Grewe 2010). Reconstruct spike trains. *Different question*; we benchmark **against** them, thresholded to events.
+- **(ii) 1D-trace event detection** — *our task*. Neugornet 2021 (CWT ridgewalking, no open code), Prada 2018 (CWT peak-detection, ImageJ+R), FluoroSNNAP (Patel 2015, template, MATLAB), PeakCaller (2017). Mostly **2010–2021, MATLAB/ImageJ, unmaintained, and never benchmarked against spike inference on ephys ground truth.** This staleness is our opening.
+- **(iii) Astrocyte spatiotemporal event tools** — AQuA/AQuA2 (Wang 2019), astroCaST (2024), MTED (2021), Astro-BEATS (2026). Operate on **movies/pixels**, not extracted 1D traces → **explicitly out of scope** (one paragraph in Related Work to pre-empt the reviewer).
+
+**Our niche (one sentence):** the only open, maintained, Python, frame-rate-adaptive **1D-trace** event detector, plus the missing cross-paradigm (event-vs-spike) benchmark. Novelty is the *benchmark + implementation*, not the detector algorithm — frame accordingly.
 
 ## 3. Datasets (all public)
 
@@ -28,12 +40,17 @@ The paper is **not** "we beat everyone on accuracy." It is "here is the missing 
 
 ## 4. Methods compared (all open-source, run at their authors' recommended settings)
 
+*Spike-inference family (different task — thresholded into events for a fair event-level comparison):*
 1. **dF/F0 + n·MAD threshold** — naive baseline (Neugornet's comparison target).
 2. **OASIS** deconvolution (CaImAn / Suite2p) → events.
 3. **MLspike** (model-based; MATLAB — Python wrapper or drop if time-boxed).
 4. **CASCADE** (pretrained GCaMP6/GCaMP8 models) → spike-rate → events.
-5. **Wavelet ridgewalking — DRIADA** (this work): FPS-adaptive scales, cascade, MAD fallback, Numba.
-   - If feasible, a **"vanilla wavelet"** ablation (fixed scales, no cascade) to isolate DRIADA's deltas vs the base Neugornet method.
+
+*Event-detection family (same task — MUST be included or reviewers will object):*
+5. **FluoroSNNAP** (Patel 2015) — template-matching event detection (MATLAB; wrap or reimplement core).
+6. **CWT peak-detection** (Prada 2018 style) — direct wavelet competitor.
+7. **Wavelet ridgewalking — DRIADA** (this work): FPS-adaptive scales, cascade, MAD fallback, Numba.
+   - **"vanilla wavelet"** ablation (fixed scales, no cascade) to isolate DRIADA's deltas vs the base Neugornet method.
 
 > Fairness rule: each method tuned per its own best practice; report both default and tuned. Never strawman a competitor.
 
@@ -72,6 +89,7 @@ Likely: CASCADE/MLspike win raw spike-timing at high SNR; **wavelet/DRIADA is co
 - **Natural fit:** *Frontiers in Neuroscience* (Neugornet's venue, receptive to this exact topic).
 - **Also:** *Neuroinformatics*; **bioRxiv preprint first** (priority + feedback).
 - Pairs well with the **DRIADA JOSS** software paper (software artifact ↔ this validation paper cross-cite).
+- **DCNA-lite (caution):** a 4-pp conference paper is possible *only if* it carries ≥1 quantitative result (cheapest: E2 frame-rate invariance on synthetic + own data, or E3 coverage). A pure "we wrote a Python framework with improvements" note risks reading as release notes, **and overlaps with the autoinspect DCNA submission (which already describes this detector in Sec II-D)** — a self-salami risk at the same venue. Prefer journal/JOSS for the real version; keep DCNA for autoinspect only.
 
 ## 10. Effort & timeline (~1–1.5 person-weeks)
 
