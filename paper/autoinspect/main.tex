@@ -62,12 +62,12 @@ xen.alexander@gmail.com}
 Moscow, Russia \\
 oivashkina@gmail.com}
 \and
-\IEEEauthorblockN{Andrey Evgeniev}
+\IEEEauthorblockN{Andrei Evgenev}
 \IEEEauthorblockA{\textit{Laboratory of Neuronal Intelligence} \\
 \textit{Institute for Advanced Brain Studies} \\
 \textit{Lomonosov Moscow State University}\\
 Moscow, Russia \\
-\textit{(email to be added)}}
+evgenevao@my.msu.ru}
 \and
 \IEEEauthorblockN{Konstantin Anokhin}
 \IEEEauthorblockA{\textit{Laboratory of Neuronal Intelligence} \\
@@ -88,11 +88,11 @@ calcium imaging, quality control, correlation networks, wavelet event detection,
 
 \section{Introduction}
 
-One-photon calcium imaging with miniaturized microscopes (miniscopes) records the activity of large neuronal populations in freely behaving animals. Single-neuron signals are extracted by constrained matrix-factorization algorithms such as CNMF-E \cite{Zhou2018}, implemented in the CaImAn suite \cite{Giovannucci2019}. By design these algorithms favor sensitivity over specificity: they over-segment the field of view so that no genuine neuron is missed, accepting that many false candidates---from motion, neuropil contamination, imaging aberrations, edge effects, and over-splitting of single cells into several copies---are produced alongside real neurons.
+One-photon calcium imaging with miniaturized microscopes (miniscopes) records the activity of large neuronal populations in freely behaving animals. Single-neuron signals are extracted by constrained matrix-factorization algorithms such as CNMF-E \cite{Zhou2018}, implemented in the CaImAn suite \cite{Giovannucci2019}. By design these algorithms favor sensitivity over specificity: they over-segment the field of view---a tendency aggravated in one-photon imaging by low axial resolution and overlapping out-of-focus sources---so that no genuine neuron is missed, accepting that many false candidates---from motion, neuropil contamination, imaging aberrations, edge effects, and over-splitting of single cells into several copies---are produced alongside real neurons.
 
 The standard workflow therefore ends with a manual step in which an expert inspects every candidate, weighing its spatial footprint, temporal activity, and quality metrics, and labels it a neuron or an artifact. For a typical session of 500--1500 candidates this requires one to three hours, and the implicit criteria that distinguish a ``real'' neuron are inconsistent between annotators and hard to transfer.
 
-We automate this bottleneck with an interpretable pipeline whose contribution is fourfold: (i) a correlation-network stage that removes duplicate components by clustering co-active footprints; (ii) a 35-dimensional interpretable feature space, including calcium-event descriptors from wavelet analysis; (iii) a glass-box Explainable Boosting Machine (EBM) trained against an asymmetric-cost objective; and (iv) validation at scale---92{,}242 expert-labeled candidates from 187 sessions---yielding expert-level accuracy with a complete decision audit trail.
+We automate this bottleneck with an interpretable pipeline whose contribution is fourfold: (i) a correlation-network stage that removes duplicate components by clustering co-active footprints; (ii) a 35-dimensional interpretable feature space, including calcium-event descriptors from wavelet analysis; (iii) a glass-box (fully inspectable) Explainable Boosting Machine (EBM) trained against an asymmetric-cost objective; and (iv) validation at scale---92{,}242 expert-labeled candidates from 187 sessions---yielding expert-level accuracy with a complete decision audit trail.
 
 \section{Methods}
 
@@ -100,16 +100,16 @@ We automate this bottleneck with an interpretable pipeline whose contribution is
 
 The system was developed on data from a large hippocampal imaging program \cite{dataset2026}; we summarize the acquisition relevant to quality control. Adult C57BL/6 mice (with 5xFAD animals in a memory-impairment arm) were used. Under anesthesia, 300~nL of AAV1.CAG.GCaMP6s were injected unilaterally into dorsal hippocampal area CA1 (AP~$-1.94$, ML~$+1.46$, DV~$-1.2$~mm); one week later a 1-mm GRIN lens was implanted above CA1, and a baseplate for a miniature microscope (UCLA Miniscope V4.4) was mounted in a third procedure. After recovery, CA1 population activity was imaged in freely moving animals across four free-exploration and contextual-memory paradigms---among them cue-rich open-field exploration in a $44\times44$~cm arena over four daily 10-min sessions, contextual fear conditioning, a patterned open field, and a repeated open-field memory task. Overhead behavioral video was synchronized with the imaging stream in Bonsai \cite{lopes2015bonsai}. All procedures were approved by the Bioethics Commission of Lomonosov Moscow State University (application 159-g, meeting 154-d-r, 17 August 2023).
 
-Videos were motion-corrected with NoRMCorre \cite{Pnevmatikakis2017} and decomposed into spatial footprints and calcium traces with CNMF-E \cite{Zhou2018} in the authors' BEARMIND pipeline, built on CaImAn \cite{Giovannucci2019}. CNMF-E used estimated neuron size $3$--$6$~px (at 3~$\mu$m/px), local-correlation threshold $0.85$--$0.95$, and peak-to-noise ratio $3$--$15$, with a first pass keeping components of spatial correlation $\ge0.95$ and SNR $\ge3$. Traces were normalized as $dF/F$ and footprints registered across sessions with CellReg \cite{Sheintuch2017}. These steps yield \textbf{92{,}242 candidate components from 187 sessions}, each manually labeled as a genuine neuron (81.1\%) or an artifact (18.9\%)---the decisions our system learns to reproduce.
+Videos were motion-corrected with NoRMCorre \cite{Pnevmatikakis2017} and decomposed into spatial footprints and calcium traces with CNMF-E \cite{Zhou2018} in the authors' BEARMIND pipeline (\texttt{github.com/iabs-neuro/bearmind}), built on CaImAn \cite{Giovannucci2019}. CNMF-E used estimated neuron size $3$--$6$~px (at 3~$\mu$m/px), local-correlation threshold $0.85$--$0.95$, and peak-to-noise ratio $3$--$15$, with a first pass keeping components of spatial correlation $\ge0.95$ and SNR $\ge3$. Traces were normalized as $dF/F$ (relative fluorescence change $\Delta F/F$) and footprints registered across sessions with CellReg \cite{Sheintuch2017}. These steps yield \textbf{92{,}242 candidate components from 187 sessions}, each manually labeled as a genuine neuron (81.1\%) or an artifact (18.9\%)---the decisions our system learns to reproduce.
 
 \subsection{Network-based duplicate removal}
 \label{sec:network}
 
-CNMF-E frequently splits one physical neuron into several near-identical copies. We remove this redundancy with a correlation-network step. Treating candidates as nodes, we connect two components when their $dF/F$ traces are strongly Spearman-correlated ($\rho\ge0.4$) reproducibly across temporal blocks of the recording. The connected components of the resulting graph are groups of putative duplicates, ranked by their mean internal correlation (a graph-density score). Within each group, components whose footprints are spatially adjacent are taken to be the same cell: the highest-SNR copy is retained and the others merged or discarded. The spatial-adjacency requirement guards against collapsing genuinely distinct but co-active neurons, which are correlated yet spatially separated. Casting deduplication as clustering of a correlation graph removes redundancy before classification and links candidate screening to the analysis of correlation networks.
+CNMF-E frequently splits one physical neuron into several near-identical copies. We remove this redundancy with a correlation-network step. Treating candidates as nodes, we connect two components when their $dF/F$ traces are Spearman-correlated ($\rho\ge0.4$) reproducibly across temporal blocks of the recording. The connected components of the resulting graph are groups of putative duplicates, ranked by their mean internal correlation (a graph-density score). Within each group, components whose footprints are spatially adjacent are taken to be the same cell: the highest-SNR copy is retained; a near-duplicate is merged into it when their SNRs are similar, otherwise the weaker copy is discarded. The spatial-adjacency requirement guards against collapsing genuinely distinct but co-active neurons, which are correlated yet spatially separated. Casting deduplication as clustering of a correlation graph removes redundancy before classification and links candidate screening to the analysis of correlation networks. The $92{,}242$ labeled candidates above are those presented to the classifier, and all reported metrics are computed on this set.
 
 \subsection{Interpretable feature space}
 
-Each surviving candidate is described by 35 features in six groups: \emph{spatial/morphological} (11; area, circularity, convexity, aspect ratio, eccentricity, edge distance, local density, $\dots$), \emph{temporal/trace} (9; skewness, kurtosis, baseline drift, noise, bimodality, Hurst exponent, $\dots$), \emph{event-based} (8; rate, fit quality, signal-to-noise, rise/decay times, amplitude variability, half-crossing rate), \emph{reconstruction} (4; $R^2$, NMAE, NRMSE, residual SNR of a calcium-kinetics fit), \emph{extractor-provided} (2; CaImAn SNR and spatial-correlation score), and a \emph{kinetics-success flag} (1; see Sec.~\ref{sec:cascade}). No single metric separates neurons from artifacts; the discriminative power is distributed across these complementary views.
+Each surviving candidate is described by 35 features in six groups: \emph{spatial/morphological} (11; area, circularity, convexity, aspect ratio, eccentricity, edge distance, local density, nearest-neighbour distance, $\dots$), \emph{temporal/trace} (9; skewness, kurtosis, baseline drift, noise, bimodality, Hurst exponent, $\dots$), \emph{event-based} (8; rate, fit quality, signal-to-noise, rise/decay times, amplitude variability, half-crossing rate), \emph{reconstruction} (4; $R^2$, NMAE, NRMSE, residual SNR of a calcium-kinetics fit), \emph{extractor-provided} (2; CaImAn SNR and spatial-correlation score), and a \emph{kinetics-success flag} (1; see Sec.~\ref{sec:cascade}). No single metric separates neurons from artifacts; the discriminative power is distributed across these complementary views.
 
 \subsection{Wavelet-based event characterization}
 \label{sec:wavelet}
@@ -126,21 +126,21 @@ measured against a single-compartment kinetics fit $\hat x$ of the trace $x$.
 \subsection{Cascading kinetics estimation}
 \label{sec:cascade}
 
-Ridge-based detection fails on 40--60\% of candidates (low SNR, sparse firing, nonstationary baseline), leaving eight event features undefined. A five-tier cascade restores them: (i) wavelet detection with strict criteria; (ii) wavelet with relaxed thresholds ($\ge3$ events, $R^2_{\mathrm{ev}}\ge0.6$); (iii)--(iv) a robust amplitude-threshold detector at strict then relaxed criteria; and (v) physically plausible defaults ($t_{\mathrm{rise}}=0.25$~s, $t_{\mathrm{off}}=2.0$~s). Whether kinetics estimation succeeded is recorded as a feature, letting the classifier discount low-reliability event evidence. Coverage rises from 42\% (single attempt) to 80\%, and spatial, trace, and reconstruction features remain defined even at tier (v) (graceful degradation).
+Ridge-based detection fails on a large fraction of candidates (low SNR, sparse firing, nonstationary baseline), leaving eight event features undefined. A five-tier cascade restores them: (i) wavelet detection with strict criteria; (ii) wavelet with relaxed thresholds ($\ge3$ events, $R^2_{\mathrm{ev}}\ge0.6$); (iii)--(iv) a robust amplitude-threshold detector at strict then relaxed criteria; and (v) physically plausible defaults ($t_{\mathrm{rise}}=0.25$~s, $t_{\mathrm{off}}=2.0$~s). Whether kinetics estimation succeeded is recorded as a feature, letting the classifier discount low-reliability event evidence. Coverage rises from 42\% (single attempt) to 80\%, and spatial, trace, and reconstruction features remain defined even at tier (v) (graceful degradation).
 
 \subsection{Classifier and decision objective}
 
-Candidates are classified by an Explainable Boosting Machine (EBM) \cite{Lou2013,Nori2019}, a generalized additive model
+Candidates are classified by an Explainable Boosting Machine (EBM) \cite{Lou2013,Nori2019}, a generalized additive model with logit link $g$,
 \begin{equation}
-g\big(\mathbb{E}[y\mid \bm{x}]\big)=\beta_0+\sum_{j} f_j(x_j)+\!\!\sum_{(j,k)\in\mathcal{I}}\!\! f_{jk}(x_j,x_k),
+g\big(\mathbb{E}[y\mid \bm{x}]\big)=f_0+\sum_{j} f_j(x_j)+\!\!\sum_{(j,k)\in\mathcal{I}}\!\! f_{jk}(x_j,x_k),
 \label{eq:ebm}
 \end{equation}
-with per-feature shape functions $f_j$ and $|\mathcal{I}|=20$ learned pairwise interactions. Unlike black-box ensembles, every prediction decomposes exactly into additive feature contributions, yielding a complete audit trail; its accuracy is benchmarked against black-box baselines in Sec.~\ref{sec:results}. Because errors are asymmetric---a false positive (artifact kept) can corrupt population statistics, whereas a false negative merely costs statistical power---we optimize
+with intercept $f_0$, per-feature shape functions $f_j$, and $|\mathcal{I}|=20$ automatically selected pairwise interactions. Unlike black-box ensembles, every prediction decomposes exactly into additive feature contributions, yielding a complete audit trail; its accuracy is benchmarked against black-box baselines in Sec.~\ref{sec:results}. Because errors are asymmetric---a false positive (artifact kept) can corrupt population statistics, whereas a false negative merely costs statistical power---we optimize
 \begin{equation}
 F_\beta=(1+\beta^2)\,\frac{\mathrm{precision}\cdot\mathrm{recall}}{\beta^2\,\mathrm{precision}+\mathrm{recall}},
 \label{eq:fbeta}
 \end{equation}
-with $\beta=\sqrt{1/3}\approx0.577$ \cite{vanRijsbergen1979}, weighting false positives three times more than false negatives. Hyperparameters were chosen by stratified cross-validation over 128 configurations. At deployment, candidates may be filtered by transparent rules, by EBM score at a tunable threshold, or by a hybrid that applies rules first and the EBM to the remainder.
+with $\beta=\sqrt{1/3}\approx0.577$ \cite{vanRijsbergen1979} (the F-measure weight, distinct from the wavelet exponent $\beta$ of Sec.~\ref{sec:wavelet}), weighting false positives three times more than false negatives. Hyperparameters were chosen by stratified cross-validation over 128 configurations. At deployment, candidates may be filtered by transparent rules, by EBM score at a tunable threshold, or by a hybrid that applies rules first and the EBM to the remainder.
 
 \section{Results}
 \label{sec:results}
@@ -149,7 +149,7 @@ with $\beta=\sqrt{1/3}\approx0.577$ \cite{vanRijsbergen1979}, weighting false po
 
 We evaluate by cross-validation stratified \emph{by recording session}, so that candidates from one session never appear in both training and test folds; this precludes exploiting session-specific imaging conditions. Across folds (mean\,$\pm$\,s.d.) the production model attains $F_\beta=0.965\pm0.004$, precision $0.976\pm0.003$, recall $0.933\pm0.007$, and AUC $0.978\pm0.005$. A precision of $97.6\%$ means only $2.4\%$ of accepted candidates are artifacts; recall of $93.3\%$ means $6.7\%$ of genuine neurons are missed---a trade-off deliberately favoring precision. The low cross-session variance confirms stable generalization across paradigms. Because the same neurons recur across days within an animal, we also re-evaluated under a stricter \emph{animal-stratified} split that shares no animal (hence no cross-day-tracked neuron) between train and test: a random-forest probe showed no degradation ($F_\beta$ $0.948\!\to\!0.959$, AUC $0.960\!\to\!0.965$), so the reported accuracy reflects cross-animal generalization rather than memorization of recurring neurons.
 
-CaImAn's own spatial-correlation and SNR metrics are weak discriminators on one-photon data (AUC $0.59$ and $0.56$ individually); even an optimally tuned threshold on both (Table~\ref{tab:baselines}, top row) reaches only $F_\beta=0.87$, no better than indiscriminately keeping every candidate, which is why multi-feature screening is needed. Among learned classifiers (Table~\ref{tab:baselines}, held-out test split), off-the-shelf logistic regression and random forests reach $F_\beta\approx0.95$, so the task is learnable; the glass-box EBM matches or exceeds both ($F_\beta=0.96$, AUC $0.97$, highest precision) while remaining fully interpretable---interpretability here costs no accuracy.
+Table~\ref{tab:baselines} benchmarks classifiers on a single held-out split, so its figures fall slightly below the cross-validated headline above. CaImAn's own spatial-correlation and SNR metrics are weak discriminators on one-photon data (AUC $0.59$ and $0.56$ individually); even an optimally tuned threshold on both (Table~\ref{tab:baselines}, top row) reaches only $F_\beta=0.87$, comparable to indiscriminately keeping every candidate, which is why multi-feature screening is needed. Among learned classifiers (Table~\ref{tab:baselines}, held-out test split), off-the-shelf logistic regression and random forests reach $F_\beta\approx0.95$, so the task is learnable; the glass-box EBM matches or exceeds both ($F_\beta=0.96$, AUC $0.97$, highest precision) while remaining fully interpretable---interpretability here costs no accuracy.
 
 \begin{table}[t]
 \caption{Test-split comparison (threshold tuned on training data; $\beta=0.577$).}
@@ -191,7 +191,7 @@ Because the EBM emits a calibrated score, a single threshold tunes the precision
 
 \subsection{Practical impact}
 
-Manual curation of a 1000-candidate session takes one to two hours; duplicate removal, feature extraction, and classification together process the same session in two to three minutes on a standard workstation---a $30$--$40\times$ speedup enabling same-day analysis. Identical criteria applied to every candidate make the output reproducible, and the additive decomposition of Eq.~\ref{eq:ebm} shows exactly why each decision was made.
+Manual curation of a 1000-candidate session takes one to three hours; duplicate removal, feature extraction, and classification together process the same session in two to three minutes on a standard workstation---more than an order of magnitude faster, enabling same-day analysis. Identical criteria applied to every candidate make the output reproducible, and the additive decomposition of Eq.~\ref{eq:ebm} shows exactly why each decision was made.
 
 \section{Discussion and Conclusion}
 
