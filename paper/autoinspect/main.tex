@@ -182,7 +182,7 @@ Feature-importance analysis (Fig.~\ref{fig:importance}) shows that temporal trac
 
 Because the EBM emits a calibrated score, a single threshold tunes the precision/recall balance (Fig.~\ref{fig:threshold}). The unconstrained $F_\beta$ optimum lies near a threshold of $0.66$; the deployed operating point ($0.72$) sits slightly above it, trading a little recall for additional precision, consistent with the asymmetric-cost objective. Lower thresholds ($0.3$--$0.4$) maximize recall for exploratory screening, higher thresholds for publication-grade datasets.
 
-\begin{figure}[t]
+\begin{figure}[b]
 \centering
 \includegraphics[width=\columnwidth]{figs/figure2_threshold_analysis.png}
 \caption{Threshold analysis on the held-out test split. Left: $F_\beta$ ($\beta{=}0.577$) versus decision threshold, with the deployed operating point (0.72) and the $F_\beta$ optimum (0.66) marked. Right: false positives, false negatives, and total errors versus threshold.}
