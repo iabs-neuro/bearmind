@@ -180,7 +180,7 @@ Feature-importance analysis (Fig.~\ref{fig:importance}) shows that temporal trac
 
 \subsection{Tuning the operating point}
 
-Because the EBM emits a calibrated score, a single threshold tunes the precision/recall balance (Fig.~\ref{fig:threshold}). The unconstrained $F_\beta$ optimum lies near a threshold of $0.66$; the deployed operating point ($0.72$) sits slightly above it, trading a little recall for additional precision, consistent with the asymmetric-cost objective. Lower thresholds ($0.3$--$0.4$) maximize recall for exploratory screening, higher thresholds for publication-grade datasets.
+Because the EBM emits a calibrated score, a single threshold tunes the precision/recall balance (Fig.~\ref{fig:threshold}). The unconstrained $F_\beta$ optimum lies near a threshold of $0.66$; the deployed operating point ($0.72$) sits slightly above it, trading a little recall for additional precision, consistent with the asymmetric-cost objective. Lower thresholds ($0.3$--$0.4$) maximize recall for exploratory screening.
 
 \begin{figure}[b]
 \centering
@@ -191,7 +191,7 @@ Because the EBM emits a calibrated score, a single threshold tunes the precision
 
 \subsection{Practical impact}
 
-Manual curation of a 1000-candidate session takes one to three hours; duplicate removal, feature extraction, and classification together process the same session in two to three minutes on a standard workstation---more than an order of magnitude faster, enabling same-day analysis. Identical criteria applied to every candidate make the output reproducible, and the additive decomposition of Eq.~\ref{eq:ebm} shows exactly why each decision was made.
+Manual curation of a single session takes one to three hours; duplicate removal, feature extraction, and classification together process the same session in two to three minutes on a standard workstation---more than an order of magnitude faster, enabling same-day analysis. Identical criteria applied to every candidate make the output reproducible, and the additive decomposition of Eq.~\ref{eq:ebm} shows exactly why each decision was made.
 
 \section{Discussion and Conclusion}
 
