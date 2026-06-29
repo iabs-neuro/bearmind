@@ -45,7 +45,6 @@ def find_identifiers(text):
         print("ID not found in text:", text)
     return identifier
 
-
 def extract_name_with_pattern(text):
     """Extract session name with pattern - alias for extract_session_id."""
     result = extract_session_id(text)
@@ -247,7 +246,7 @@ def extract_number(filename):
         return int(match.group(1))
     return float('inf')
 
-def DoCropAndRewrite(name, sort = True, write_mp4 = True):
+def DoCropAndRewrite(name, sort = True, write_mp4 = True, combined_mode = False):
     root = CONFIG['ROOT']
     pathway = CONFIG['DATA_PATHWAY']
 
@@ -285,30 +284,75 @@ def DoCropAndRewrite(name, sort = True, write_mp4 = True):
         num_frames_whole = num_frames_whole + num_frames
         print(f"{av_name} - {num_frames} frames")
 
-        #  cropping per se
-        data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in clip.iter_frames()])
+        # Получаем размеры видео
+        width, height = clip.size
+
+        # Дополнительная обрезка 8 пикселей сверху и слева, если разрешение 608x608
+        extra_crop_top = 0
+        extra_crop_left = 0
+        if combined_mode:
+            extra_crop_top = 8 if height == 608 else 0
+            extra_crop_left = 8 if width == 608 else 0
+
+        # Общий кроппинг (основной + дополнительный)
+        final_crop_top = cr_dict['UP'] + extra_crop_top
+        final_crop_left = cr_dict['LEFT'] + extra_crop_left
+
+        # cropping per se
+        data = np.array([frame[final_crop_top:, final_crop_left:, 0] for frame in clip.iter_frames()])
+
         if cr_dict['DOWN']:
             data = data[:, :-cr_dict['DOWN'], :]
         if cr_dict['RIGHT']:
             data = data[:, :, :-cr_dict['RIGHT']]
 
-        if pathway == 'legacy':
+        # Определяем, нужно ли удалять последний кадр (если разрешение НЕ 608x608)
+        if width == 608 and height == 608:
+            whole_data.append(data)  # Для 608x608 сохраняем все кадры
+        else:
             if i == len(avi_names) - 1:
-                whole_data.append(data)
+                whole_data.append(data)  # Последний файл - сохраняем все кадры
             else:
-                whole_data.append(data[:-1])
-        elif pathway == 'bonsai':
-            whole_data.append(data)
+                whole_data.append(data[:-1])  # Не последний файл - удаляем последний кадр
 
     out_fpath = os.path.join(root, out_fname)
     tfl.imwrite(out_fpath, np.concatenate(whole_data, axis=0), photometric='minisblack')
 
     if write_mp4:
         out_fpath_mp4 = out_fpath[:-4] + '.mp4'
-        mp4_clip = concatenate_videoclips(mp4_clips, method="compose")
+
+        # Определяем максимальное разрешение среди всех клипов
+        max_width = max(clip.w for clip in mp4_clips)
+        max_height = max(clip.h for clip in mp4_clips)
+
+        # Функция для добавления зеркальных границ
+        def add_mirror_borders(clip, target_width, target_height):
+            if clip.w == target_width and clip.h == target_height:
+                return clip
+
+            # Вычисляем сколько нужно добавить по краям
+            pad_left = (target_width - clip.w) // 2
+            pad_right = target_width - clip.w - pad_left
+            pad_top = (target_height - clip.h) // 2
+            pad_bottom = target_height - clip.h - pad_top
+
+            # Создаём зеркальные границы
+            return clip.margin(
+                left=pad_left, right=pad_right,
+                top=pad_top, bottom=pad_bottom,
+                color=None,  # None означает зеркальное отражение
+                mirror_only=True
+            )
+
+        # Применяем ко всем клипам
+        padded_clips = [add_mirror_borders(clip, max_width, max_height) for clip in mp4_clips]
+
+        # Объединяем клипы
+        mp4_clip = concatenate_videoclips(padded_clips, method="compose")
         mp4_clip.write_videofile(out_fpath_mp4)
+
         mp4_video_out = VideoFileClip(out_fpath_mp4)
-        print(f"Original videos have {num_frames_whole} frames.mp4 video has {mp4_video_out.reader.nframes} frames.") # tif has {tif_video_out.reader.nframes} frames")
+        print(f"Original videos have {num_frames_whole} frames. MP4 video has {mp4_video_out.reader.nframes} frames.")
 
     print(f'{out_fname} cropped in {time() - start:.1f}s')
 
@@ -373,12 +417,19 @@ def DoMotionCorrection(name, mc_dict):
         mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
 
     cm.stop_server(dview=dview)
-    dview.terminate()   
+    dview.terminate()
 
     
-def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False, noise_ampl=0):
-    #try:
-    # cropping according to user preferences
+def DoCNMF(
+    name,
+    cnmf_dict,
+    out_name=None,
+    start_frame=None,
+    end_frame=None,
+    verbose=False,
+    noise_ampl=0,
+    parallel_mode=True):
+
     if start_frame is None:
         start_frame = 0
         sf_text = '--'
@@ -392,8 +443,6 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
         ef_text = str(end_frame)
 
     time_crop = slice(start_frame, end_frame)
-
-    # output name construction
     frames_txt = f'_sf={sf_text}_ef={ef_text}'
     if out_name is None:
         out_name = name[:-4] + frames_txt + '_estimates.pickle'
@@ -402,38 +451,56 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
             out_name = out_name + frames_txt + '_estimates.pickle'
 
     start = time()
-    #cnmf option setting
     opts = params.CNMFParams(params_dict=cnmf_dict)
 
-    #start a cluster for parallel processing (if a cluster already exists it will be closed and a new session will be opened)
-    if 'dview' in locals():
-        cm.stop_server(dview=dview)
-        dview.terminate()
+    dview = None
+    n_processes = 1
+    if parallel_mode:
+        if 'dview' in locals():
+            try:
+                cm.stop_server(dview=dview)
+                dview.terminate()
+            except Exception:
+                pass
 
-    c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=None, single_thread=False)
+        if verbose:
+            print('Starting parallel cluster...')
+        c, dview, n_processes = cm.cluster.setup_cluster(
+            backend='local',
+            n_processes=None,
+            single_thread=False
+        )
+    else:
+        if verbose:
+            print('Running in single-process mode (parallel disabled).')
+        dview = None
+        n_processes = 1
 
-    # tif loading to memory
     if verbose:
         print('Loading tif to memory...')
 
-    mem_fname = cm.save_memmap([name],
-                               base_name=name[:-4],
-                               order='C',
-                               border_to_0=0,
-                               dview=dview,
-                               slices=[time_crop],
-                               add_to_movie=noise_ampl)
+    mem_fname = cm.save_memmap(
+        [name],
+        base_name=name[:-4],
+        order='C',
+        border_to_0=0,
+        dview=dview,
+        slices=[time_crop],
+        add_to_movie=noise_ampl
+    )
 
     Yr, dims, T = cm.load_memmap(mem_fname)
     images = Yr.T.reshape((T,) + dims, order='F')
 
-    # cnmf itself
     if verbose:
         print('Performing CNMF...')
-
-    if verbose:
         print('Source extracting...')
-    cnm = cm.source_extraction.cnmf.CNMF(n_processes=n_processes-1, dview=dview, params=opts)
+
+    cnm = cm.source_extraction.cnmf.CNMF(
+        n_processes=max(1, n_processes - 1),
+        dview=dview,
+        params=opts
+    )
 
     if verbose:
         print('Fitting...')
@@ -446,27 +513,40 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
     if verbose:
         print('Computing imax...')
 
-    #  addition of some fields to estimates object
     cnm.estimates.tif_name = name
     cnm.estimates.cnmf_dict = cnmf_dict
-    _, pnr = cm.summary_images.correlation_pnr(images[::5], gSig=cnmf_dict['gSig'][0], swap_dim=False)
-    pnr[np.where(pnr == np.inf)] = 0
+
+    _, pnr = cm.summary_images.correlation_pnr(
+        images[::5],
+        gSig=cnmf_dict['gSig'][0],
+        swap_dim=False
+    )
+    pnr[np.isinf(pnr)] = 0
     pnr[np.isnan(pnr)] = 0
-    pnr[np.where(pnr > 70)] = 70
-    cnm.estimates.imax = (pnr*255/np.max(pnr)).astype('uint8')
+    pnr[pnr > 70] = 70
+    cnm.estimates.imax = (pnr * 255 / np.max(pnr)).astype('uint8')
 
     if verbose:
         print('Saving result...')
-    #estimates object saving
     with open(out_name, "wb") as f:
         pickle.dump(cnm.estimates, f)
 
-    #cluster termination
-    cm.stop_server(dview=dview)
-    dview.terminate()
+    if dview is not None:
+        if verbose:
+            print('Stopping cluster...')
+        try:
+            cm.stop_server(dview=dview)
+        except Exception:
+            pass
+        try:
+            dview.terminate()
+        except Exception:
+            pass
+
     print(os.path.split(name)[-1] + f' cnmf-ed in {time() - start:.1f}s')
 
     return cnm.estimates
+
     '''
     except Exception as e:
     print(f'Problem with {out_name}, computation aborted:')

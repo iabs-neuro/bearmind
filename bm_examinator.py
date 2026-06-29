@@ -266,9 +266,9 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     sorted_nontrivial_ccs = [nontrivial_ccs[i] for i in np.argsort(group_corr_scores)[::-1]] # sort components from highest to lowest score
     sorted_group_corr_scores = sorted(group_corr_scores)
     for i, group in enumerate(sorted_nontrivial_ccs):
-        for comp in group:
-            corr_scores[comp] = sorted_group_corr_scores[i]
-            corr_groups[comp] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
+        for neuron in group:
+            corr_scores[neuron] = sorted_group_corr_scores[i]
+            corr_groups[neuron] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
 
     return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
                 hvals=hvals, colors=colors, corr_scores=corr_scores,
