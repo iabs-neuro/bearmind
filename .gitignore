@@ -168,6 +168,5 @@ batch_autoinspect_summary.csv
 # Legacy standalone MATLAB spike detector (kept locally, not tracked)
 spike_detector_MATLAB/
 
-# Stale public-facing docs/demo (superseded; kept locally, not tracked)
+# Stale public-facing demo notebook (superseded; kept locally, not tracked)
 BEARMIND_demo.ipynb
-README.md
