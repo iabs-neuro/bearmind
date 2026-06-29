@@ -63,7 +63,7 @@ def DrawFrameAndBox(data, x, left, right, up, down, dpi=200, size=5, title=''):
     plt.figure(dpi=dpi, figsize=(size, size))
     plt.imshow(data[x, :, :])
     plt.title(title)
-    plt.gca().add_patch(Rectangle((left, up), data.shape[1]-left-right, data.shape[2]-up-down, fill = None, ec = 'r', lw = 1))     
+    plt.gca().add_patch(Rectangle((left, up), data.shape[2]-left-right, data.shape[1]-up-down, fill = None, ec = 'r', lw = 1))     
 
 
 def LoadSelectedVideos(fnames, sort = True):
@@ -102,11 +102,13 @@ def DrawCropper(data, dpi=200, fname=''):
 
     u_slider.observe(update_down, 'value')
 
+    title = fname
+    '''
     try:
         title = get_session_name_from_path(fname)
     except Exception:
         title = ''
-
+    '''
     w = ipw.interactive(DrawFrameAndBox,
                         data=ipw.fixed(data),
                         x=x_slider,
@@ -200,8 +202,8 @@ def DrawCropper(data, dpi=200, fname=''):
     vbox2 = ipw.VBox([s_config_button, s_config_output])
     vbox3 = ipw.VBox([m_config_button, m_config_output])
     vbox4 = ipw.VBox([save_button, save_output])
-    display(ipw.HBox([vbox1, vbox2, vbox3, vbox4]))
-
+    #display(ipw.HBox([vbox1, vbox2, vbox3, vbox4]))
+    display(vbox4)
     display(w)
     
     return w
@@ -211,8 +213,7 @@ def SaveCrops(fname, left, right, up, down):
     session_name = get_session_name_from_path(fname)
     save_name = os.path.join(os.path.dirname(fname),
                              session_name + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
-
-    save_name = os.path.normpath(save_name)
+#   save_name = os.path.normpath(fname + f'_l={left}_r={right}_u={up}_d={down}'+'_cropping.pickle')
     cropping_dict = {
         "LEFT": left,
         "RIGHT": right,
@@ -356,6 +357,24 @@ def DoCropAndRewrite(name, sort = True, write_mp4 = True, combined_mode = False)
 
     print(f'{out_fname} cropped in {time() - start:.1f}s')
 
+
+def DoCropAndRewriteTiff(cr_fname, tif_fname, out_fname):
+    #crop and rewrite given .tif file with crops provided in cropping pickle
+    start = time()
+    with open(cr_fname, 'rb') as f:
+        cr_dict = pickle.load(f,)
+        
+    data = tfl.imread(tif_fname)
+    data = data[cr_dict['UP']:, cr_dict['LEFT']:, :]
+#    with tfl.TiffFile(tif_fname) as tif:
+#        data = np.array([frame[cr_dict['UP']:, cr_dict['LEFT']:, 0] for frame in tif.pages])
+    if cr_dict['DOWN']:
+        data = data[:, :-cr_dict['DOWN'], :]
+    if cr_dict['RIGHT']:
+        data = data[:, :, :-cr_dict['RIGHT']]
+
+    tfl.imwrite(out_fname, data, photometric='minisblack')  
+    print(f'{out_fname} cropped in {time() - start:.1f}s')
 
 
 def extract_and_copy_ts(name):
