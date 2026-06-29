@@ -164,3 +164,6 @@ Thumbs.db
 # Auto-inspection outputs (can be in any directory)
 **/capcan_artifacts_*/
 batch_autoinspect_summary.csv
+
+# Legacy standalone MATLAB spike detector (kept locally, not tracked)
+spike_detector_MATLAB/
