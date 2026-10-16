@@ -1,0 +1,71 @@
+"""Tests for bm_qc on small synthetic movies. Run: python -m pytest tests/test_bm_qc.py"""
+import os
+import sys
+
+import cv2
+import numpy as np
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import bm_qc  # noqa: E402
+
+
+def synthetic_movie(T=600, d=(64, 80), n_cells=6, amp=40., noise=4., seed=0):
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[:d[0], :d[1]]
+    centers = rng.uniform(12, np.array(d) - 12, size=(n_cells, 2))
+    mov = np.full((T,) + d, 60., np.float32)
+    mov += 20 * np.exp(-((yy - d[0] / 2) ** 2 + (xx - d[1] / 2) ** 2) / (2 * 30 ** 2))  # smooth background
+    kernel = np.exp(-np.arange(60) / 20.)
+    for cy, cx in centers:
+        spikes = (rng.random(T) < 0.01).astype(float)
+        trace = np.convolve(spikes, kernel)[:T]
+        fp = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * 3. ** 2))
+        mov += amp * trace[:, None, None] * fp[None]
+    mov += rng.normal(0, noise, mov.shape)
+    return np.clip(mov, 0, 255).astype(np.uint8), centers
+
+
+def test_strips_equal_full_frame():
+    mov, _ = synthetic_movie()
+    full = bm_qc.compute_init_maps(mov, gSig=3, tsub=2, max_mem_gb=10, verbose=False)
+    # tiny memory budget forces many strips
+    strips = bm_qc.compute_init_maps(mov, gSig=3, tsub=2, max_mem_gb=1e-5, verbose=False)
+    for k in ('cn', 'pnr', 'cn_neg', 'pnr_neg', 'mean'):
+        np.testing.assert_allclose(full[k], strips[k], rtol=1e-4, atol=1e-4)
+
+
+def test_seeds_find_cells_and_null_is_clean():
+    mov, centers = synthetic_movie()
+    maps = bm_qc.compute_init_maps(mov, gSig=3, tsub=2, verbose=False)
+    sugg, grid = bm_qc.suggest_init_thresholds(maps, border_pix=3)
+    s = sugg['mirror_fdr']
+    assert s['min_pnr'] is not None
+    seeds, null, _ = bm_qc.threshold_seeds(maps, s['min_corr'], s['min_pnr'], valid=bm_qc.valid_mask(maps, 3))
+    dist = np.sqrt(((seeds[:, None, :] - centers[None]) ** 2).sum(-1))
+    # every simulated cell is found, and almost every seed lies on a cell
+    assert np.all(dist.min(0) < 3)
+    assert np.sum(dist.min(1) > 5) <= 1
+    assert s['fdr'] <= 0.1
+
+
+def test_pure_noise_gives_high_fdr_at_low_thresholds():
+    mov, _ = synthetic_movie(n_cells=0)
+    maps = bm_qc.compute_init_maps(mov, gSig=3, tsub=2, verbose=False)
+    res = bm_qc.evaluate_thresholds(maps, 0.3, 2.0)
+    assert res['n_seeds'] > 10 and res['fdr'] > 0.5
+
+
+def test_count_seeds_matches_caiman_rule():
+    yy, xx = np.mgrid[:40, :40]
+    blob = lambda y, x: np.exp(-((yy - y) ** 2 + (xx - x) ** 2) / (2 * 3. ** 2)).astype(np.float32)
+    cn = 0.95 * (blob(10, 10) + blob(30, 30))
+    pnr = 12 * blob(10, 10) + 5 * blob(30, 30)  # second blob fails min_pnr
+    seeds = bm_qc.count_seeds(cn, pnr, 0.5, 6, gSiz=13, min_dist=6)
+    assert [tuple(s) for s in seeds] == [(10, 10)]
+
+
+def test_dff_video_written(tmp_path):
+    mov, _ = synthetic_movie(T=200)
+    out = bm_qc.make_dff_video(mov, out_path=str(tmp_path / 'v.mp4'), fps=20, f0_window_s=5, verbose=False)
+    assert os.path.getsize(out) > 0

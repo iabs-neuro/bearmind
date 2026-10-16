@@ -344,7 +344,9 @@ def DoMotionCorrection(name, mc_dict):
         cm.stop_server(dview=dview)
     c, dview, n_processes = cm.cluster.setup_cluster(backend='local', n_processes=14, single_thread=False)
     
-    opts = params.CNMFParams(params_dict=mc_dict)
+    # keys used only by this pipeline are not CaImAn parameters
+    own_keys = ('write_mp4', 'write_dff_mp4', 'fps', 'dff_video_kwargs')
+    opts = params.CNMFParams(params_dict={k: v for k, v in mc_dict.items() if k not in own_keys})
     dtype = get_bit_depth_tif(name)
 
     mc = MotionCorrect([name], dview=dview, **opts.get_group('motion'))
@@ -372,11 +374,20 @@ def DoMotionCorrection(name, mc_dict):
         mp4_clip = ImageSequenceClip(frames_list, fps=30)
         mp4_clip.write_videofile(name[:-4] + '_MC.mp4', codec='libx264')
 
+    if mc_dict.get('write_dff_mp4', False):  # raw | dF/F | high-pass video for visual inspection
+        from bm_qc import make_dff_video
+        make_dff_video(name[:-4] + '_MC.tif', fps=mc_dict.get('fps', 20), **mc_dict.get('dff_video_kwargs', {}))
+
     cm.stop_server(dview=dview)
-    dview.terminate()   
+    dview.terminate()
 
     
-def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False, noise_ampl=0):
+def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, verbose=False, noise_ampl=0,
+           qc=False, qc_kwargs=None):
+    """
+    qc: after saving estimates, write QC video (raw | raw-background | A*C | residual) and residual PNR/corr maps
+        next to the estimates file (see bm_qc.cnmf_qc). qc_kwargs are passed to cnmf_qc, e.g. {'fps': fps}.
+    """
     #try:
     # cropping according to user preferences
     if start_frame is None:
@@ -460,6 +471,11 @@ def DoCNMF(name, cnmf_dict, out_name=None, start_frame=None, end_frame=None, ver
     #estimates object saving
     with open(out_name, "wb") as f:
         pickle.dump(cnm.estimates, f)
+
+    if qc:
+        from bm_qc import cnmf_qc
+        cnmf_qc(cnm.estimates, movie=images, out_base=out_name.replace('_estimates.pickle', ''),
+                **(qc_kwargs or {}))
 
     #cluster termination
     cm.stop_server(dview=dview)
