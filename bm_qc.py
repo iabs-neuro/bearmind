@@ -735,7 +735,7 @@ def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted
 
     if residual_maps:
         res_mm.flush()
-        res_maps = compute_init_maps(res_mm, gSig, tsub=1, pre_tsub=tsub, mirror=False,
+        res_maps = compute_init_maps(res_mm, gSig, tsub=1, pre_tsub=tsub, mirror=True,
                                      max_mem_gb=max_mem_gb, verbose=verbose)
         del res_mm
         try:
@@ -747,8 +747,9 @@ def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted
                                      verbose=verbose) if compare_raw_maps else None
         summary.update(_residual_report(res_maps, raw_maps, model, cnmf_dict, conts, out_base))
         if verbose:
-            print(f"Residual maps saved: {out_base}_qc_residual_maps.png | candidate missed neurons: "
-                  f"{summary['residual_seeds_outside']} outside, {summary['residual_seeds_inside']} inside footprints")
+            print(f"Residual maps saved: {out_base}_qc_residual_maps.png | residual seeds outside footprints: "
+                  f"{summary['residual_seeds_outside']}, expected from noise: {summary['residual_null_outside']}, "
+                  f"excess (candidate missed neurons): {summary['residual_excess_outside']}")
 
     with open(out_base + '_qc.json', 'w') as f:
         json.dump(summary, f, indent=2, default=float)
@@ -776,6 +777,18 @@ def _residual_report(res_maps, raw_maps, model, cnmf_dict, conts, out_base):
     seeds = count_seeds(res_maps['cn'], res_maps['pnr'], min_corr, min_pnr, gSiz, valid=valid, min_dist=2 * gSig)
     inside = fp[seeds[:, 0], seeds[:, 1]] if len(seeds) else np.zeros(0, bool)
 
+    # null: the same seed search on the sign-inverted residual, outside footprints (where fitted cells leave
+    # negative halos), rescaled to the area of the outside region. Residual noise (compression blocks, neuropil)
+    # passes the session thresholds too, only the excess over this null hints at missed neurons.
+    null_outside = None
+    if 'cn_neg' in res_maps:
+        outside = valid & ~cv2.dilate(fp.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+        s0 = count_seeds(res_maps['cn_neg'], res_maps['pnr_neg'], min_corr, min_pnr, gSiz, valid=outside,
+                         min_dist=2 * gSig)
+        null_outside = len(s0) * (valid & ~fp).sum() / max(outside.sum(), 1)
+    n_out = int((~inside).sum())
+    excess = None if null_outside is None else max(0., n_out - null_outside)
+
     ncols = 3 if raw_maps is not None else 2
     fig, axs = plt.subplots(2, ncols, figsize=(5.5 * ncols, 10), dpi=150, squeeze=False)
     vmax = np.percentile(raw_maps['pnr'] if raw_maps is not None else res_maps['pnr'], 99.9)
@@ -799,9 +812,10 @@ def _residual_report(res_maps, raw_maps, model, cnmf_dict, conts, out_base):
         if len(seeds):
             ax.plot(seeds[~inside, 1], seeds[~inside, 0], 'o', mfc='none', mec='tab:red', ms=6)
             ax.plot(seeds[inside, 1], seeds[inside, 0], 'x', color='tab:orange', ms=4)
+    null_txt = '' if null_outside is None else f' (noise expects ~{null_outside:.0f}, excess {excess:.0f})'
     axs[0, col + 1].set_title(f'residual corr*PNR, thresholds corr {min_corr} / pnr {min_pnr}\n'
-                              f'red o: {int((~inside).sum())} outside footprints, '
-                              f'orange x: {int(inside.sum())} inside')
+                              f'red o: {n_out} outside footprints{null_txt}\n'
+                              f'orange x: {int(inside.sum())} inside', fontsize=9)
     axs[1, col + 1].set_title('footprints (selected components)')
     for ax in axs.ravel():
         ax.axis('off')
@@ -813,7 +827,9 @@ def _residual_report(res_maps, raw_maps, model, cnmf_dict, conts, out_base):
                         seeds=seeds, seeds_inside=inside,
                         **({'cn_raw': raw_maps['cn'], 'pnr_raw': raw_maps['pnr']} if raw_maps is not None else {}))
 
-    rep = {'residual_seeds_outside': int((~inside).sum()), 'residual_seeds_inside': int(inside.sum()),
+    rep = {'residual_seeds_outside': n_out, 'residual_seeds_inside': int(inside.sum()),
+           'residual_null_outside': None if null_outside is None else round(float(null_outside), 1),
+           'residual_excess_outside': None if excess is None else round(float(excess), 1),
            'residual_thresholds': {'min_corr': min_corr, 'min_pnr': min_pnr},
            'residual_pnr_p99': float(np.percentile(res_maps['pnr'], 99)),
            'residual_maps_png': out_base + '_qc_residual_maps.png'}

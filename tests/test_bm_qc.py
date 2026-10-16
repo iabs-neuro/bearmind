@@ -10,20 +10,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import bm_qc  # noqa: E402
 
 
-def synthetic_movie(T=600, d=(64, 80), n_cells=6, amp=40., noise=4., seed=0):
+def synthetic_movie(T=600, d=(64, 80), n_cells=6, amp=40., noise=4., seed=0, return_model=False):
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[:d[0], :d[1]]
     centers = rng.uniform(12, np.array(d) - 12, size=(n_cells, 2))
-    mov = np.full((T,) + d, 60., np.float32)
-    mov += 20 * np.exp(-((yy - d[0] / 2) ** 2 + (xx - d[1] / 2) ** 2) / (2 * 30 ** 2))  # smooth background
+    bg = 60 + 20 * np.exp(-((yy - d[0] / 2) ** 2 + (xx - d[1] / 2) ** 2) / (2 * 30 ** 2))  # smooth background
+    mov = np.repeat(bg[None].astype(np.float32), T, 0)
     kernel = np.exp(-np.arange(60) / 20.)
+    fps, traces = [], []
     for cy, cx in centers:
         spikes = (rng.random(T) < 0.01).astype(float)
-        trace = np.convolve(spikes, kernel)[:T]
+        trace = amp * np.convolve(spikes, kernel)[:T]
         fp = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * 3. ** 2))
-        mov += amp * trace[:, None, None] * fp[None]
+        mov += trace[:, None, None] * fp[None]
+        fps.append(fp)
+        traces.append(trace)
     mov += rng.normal(0, noise, mov.shape)
-    return np.clip(mov, 0, 255).astype(np.uint8), centers
+    mov = np.clip(mov, 0, 255).astype(np.uint8)
+    if return_model:
+        return mov, centers, np.array(fps), np.array(traces), bg
+    return mov, centers
 
 
 def test_strips_equal_full_frame():
@@ -63,6 +69,26 @@ def test_count_seeds_matches_caiman_rule():
     pnr = 12 * blob(10, 10) + 5 * blob(30, 30)  # second blob fails min_pnr
     seeds = bm_qc.count_seeds(cn, pnr, 0.5, 6, gSiz=13, min_dist=6)
     assert [tuple(s) for s in seeds] == [(10, 10)]
+
+
+def test_cnmf_qc_finds_omitted_cell(tmp_path):
+    from types import SimpleNamespace
+    import scipy.sparse as sp
+    mov, centers, fps, traces, bg = synthetic_movie(T=600, n_cells=5, amp=60., seed=3, return_model=True)
+    T, d1, d2 = mov.shape
+    A = sp.csc_matrix(np.stack([f.ravel(order='F') for f in fps], 1))
+    est = SimpleNamespace(A=A, C=traces.astype(np.float32), W=None, b0=None,
+                          b=bg.ravel(order='F')[:, None], f=np.ones((1, T)),
+                          idx_components=np.arange(4),  # the 5th cell is left out on purpose
+                          cnmf_dict={'gSig': [3, 3], 'gSiz': [13, 13], 'min_corr': 0.8, 'min_pnr': 6})
+    out = bm_qc.cnmf_qc(est, movie=mov, out_base=str(tmp_path / 'qc'), fps=20, tmp_dir=str(tmp_path),
+                        video_tbin=2, verbose=False)
+    assert os.path.getsize(out['video']) > 0
+    res = np.load(str(tmp_path / 'qc_qc_residual_maps.npz'))
+    seeds = res['seeds'][~res['seeds_inside']]
+    # the omitted cell shows up in the residual, outside the accepted footprints
+    assert np.sqrt(((seeds - centers[4]) ** 2).sum(1)).min() < 3
+    assert out['residual_excess_outside'] >= 1
 
 
 def test_dff_video_written(tmp_path):
