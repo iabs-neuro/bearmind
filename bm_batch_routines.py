@@ -610,62 +610,198 @@ def plot_gsig_range(fnames, maxframes=np.inf, min_gsig=3, max_gsig=6, step=5, dp
             plt.close()
 
 
-def plot_min_corr_and_pnr_range(fnames, maxframes=np.inf,
-                                gsig_range=[3,4,5], pnr_range=[5,10,15],
-                                mincorr_range=[0.85, 0.9, 0.95],
-                                step=5, dpi=300,
-                                show_images=False, save_images=True):
+def plot_min_corr_and_pnr_range(
+        fnames,
+        maxframes=np.inf,
+        gsig_range=[3, 4, 5],
+        pnr_range=[5, 10, 15],
+        mincorr_range=[0.85, 0.9, 0.95],
+        step=5,
+        dpi=300,
+        show_images=False,
+        save_images=True):
 
     for fname in tqdm.tqdm(fnames):
         tlen = len(tfl.TiffFile(fname).pages)
-        data = tfl.imread(fname, key=range(0, min(maxframes, tlen), step))
+        nframes = int(min(maxframes, tlen))
 
-        fig1, axs1 = plt.subplots(len(gsig_range), len(pnr_range), figsize=(3*len(gsig_range), 3*len(pnr_range)), dpi=dpi)
-        fig2, axs2 = plt.subplots(len(gsig_range), len(mincorr_range), figsize=(3*len(gsig_range), 3*len(mincorr_range)), dpi=dpi)
+        if step <= 0:
+            raise ValueError("step должен быть больше 0")
+
+        data = tfl.imread(fname, key=range(0, nframes, step))
+
+        fig1, axs1 = plt.subplots(
+            len(gsig_range), len(pnr_range),
+            figsize=(3 * len(pnr_range), 3 * len(gsig_range)),
+            dpi=dpi,
+            squeeze=False
+        )
+
+        fig2, axs2 = plt.subplots(
+            len(gsig_range), len(mincorr_range),
+            figsize=(3 * len(mincorr_range), 3 * len(gsig_range)),
+            dpi=dpi,
+            squeeze=False
+        )
+
         fig1.set_tight_layout(True)
         fig2.set_tight_layout(True)
+
         fig1.suptitle(os.path.basename(fname)[:-4])
         fig2.suptitle(os.path.basename(fname)[:-4])
 
-        for i, gsig in enumerate(gsig_range):
-            correlation_image_pnr, pnr_image = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
-            pnr_image[np.where(pnr_image == np.inf)] = 0
-            correlation_image_pnr[np.where(correlation_image_pnr == np.inf)] = 0
-            pnr_image[np.isnan(pnr_image)] = 0
-            correlation_image_pnr[np.isnan(correlation_image_pnr)] = 0
+        try:
+            for i, gsig in enumerate(gsig_range):
+                correlation_image_pnr, pnr_image = (
+                    cm.summary_images.correlation_pnr(
+                        data, gSig=gsig, swap_dim=False
+                    )
+                )
 
-            for j, pnr in enumerate(pnr_range):
-                ax1 = axs1[i][j]
-                ax1.imshow(pnr_image, cmap='jet', vmin=pnr)
-                ax1.set_title(f'gSig = {gsig}, pnr = {pnr}')
+                # Заменяем нечисловые и бесконечные значения.
+                pnr_image = np.nan_to_num(
+                    pnr_image, nan=0.0, posinf=0.0, neginf=0.0
+                )
+                correlation_image_pnr = np.nan_to_num(
+                    correlation_image_pnr,
+                    nan=0.0, posinf=0.0, neginf=0.0
+                )
 
-            for j, mincorr in enumerate(mincorr_range):
-                ax2 = axs2[i][j]
-                ax2.imshow(correlation_image_pnr, cmap='jet', vmin=mincorr)
-                ax2.set_title(f'gSig = {gsig}, min_corr = {mincorr}')
+                # PNR: отдельная шкала для каждого порога.
+                for j, pnr in enumerate(pnr_range):
+                    ax1 = axs1[i, j]
 
-        if save_images:
-            os.makedirs(os.path.normpath(
-                os.path.join(os.path.dirname(fname),
-                             'param_images')),
-            exist_ok=True)
+                    vmax = float(np.max(pnr_image))
+                    vmin = float(pnr)
 
-            figpath1 = os.path.normpath(
-                os.path.join(os.path.dirname(fname),
-                             'param_images',
-                             os.path.basename(fname)[:-4] + '_gSig-pnr.png')
-            )
+                    # Normalize не допускает vmin > vmax.
+                    if vmax <= vmin:
+                        vmax = vmin + 1e-6
 
-            figpath2 = os.path.normpath(
-                os.path.join(os.path.dirname(fname),
-                             'param_images',
-                             os.path.basename(fname)[:-4] + '_gSig-min_corr.png')
-            )
-            fig1.savefig(figpath1)
-            fig2.savefig(figpath2)
+                    ax1.imshow(
+                        pnr_image,
+                        cmap='jet',
+                        vmin=vmin,
+                        vmax=vmax
+                    )
+                    ax1.set_title(f'gSig = {gsig}, pnr = {pnr}')
+                    ax1.axis('off')
 
-        if show_images:
-            fig1.show()
-            fig2.show()
-        else:
-            plt.close()
+                # Correlation: отдельная шкала для каждого порога.
+                for j, mincorr in enumerate(mincorr_range):
+                    ax2 = axs2[i, j]
+
+                    vmax = float(np.max(correlation_image_pnr))
+                    vmin = float(mincorr)
+
+                    if vmax <= vmin:
+                        vmax = vmin + 1e-6
+
+                    ax2.imshow(
+                        correlation_image_pnr,
+                        cmap='jet',
+                        vmin=vmin,
+                        vmax=vmax
+                    )
+                    ax2.set_title(
+                        f'gSig = {gsig}, min_corr = {mincorr}'
+                    )
+                    ax2.axis('off')
+            if save_images:
+                outdir = os.path.join(
+                    os.path.dirname(fname), 'param_images'
+                )
+                os.makedirs(outdir, exist_ok=True)
+                basename = os.path.basename(fname)[:-4]
+                fig1.savefig(
+                    os.path.join(outdir, basename + '_gSig-pnr.png'),
+                    dpi=dpi,
+                    bbox_inches='tight'
+                )
+                fig2.savefig(
+                    os.path.join(outdir, basename + '_gSig-min_corr.png'),
+                    dpi=dpi,
+                    bbox_inches='tight'
+                )
+            if show_images:
+                plt.show()
+        finally:
+            plt.close(fig1)
+            plt.close(fig2)
+
+def crop_tiff(
+    tiff_path,
+    crop_top=0,
+    crop_bottom=0,
+    crop_left=0,
+    crop_right=0,
+    suffix="_cropped"
+):
+    """
+    Обрезает TIFF-файл с разных сторон и сохраняет в той же папке.
+
+    Parameters
+    ----------
+    tiff_path : str
+        Путь к TIFF-файлу
+    crop_top, crop_bottom, crop_left, crop_right : int
+        Количество пикселей для обрезки
+    suffix : str
+        Суффикс для выходного файла
+    """
+
+    # Загружаем TIFF
+    data = tfl.imread(tiff_path)
+
+    # Проверяем размерность
+    if data.ndim == 2:
+        # (Y, X)
+        cropped = data[
+            crop_top : data.shape[0] - crop_bottom,
+            crop_left : data.shape[1] - crop_right
+        ]
+    elif data.ndim == 3:
+        # (Z, Y, X)
+        cropped = data[
+            :,
+            crop_top : data.shape[1] - crop_bottom,
+            crop_left : data.shape[2] - crop_right
+        ]
+    else:
+        raise ValueError(f"Неподдерживаемая размерность TIFF: {data.shape}")
+
+    # Формируем имя выходного файла
+    folder, fname = os.path.split(tiff_path)
+    name, ext = os.path.splitext(fname)
+    out_path = os.path.join(folder, f"{name}{suffix}{ext}")
+
+    # Сохраняем
+    tfl.imwrite(out_path, cropped)
+
+    print(f"✅ Сохранено: {out_path}")
+    print(f"   Исходный размер: {data.shape}")
+    print(f"   Новый размер:    {cropped.shape}")
+
+def convert_tiff_to_mp4(tiff_paths, fps=30):
+    # tiff_paths может быть str или tuple/list
+    if isinstance(tiff_paths, (str, os.PathLike)):
+        tiff_paths = [str(tiff_paths)]
+
+    for tiff_path in tiff_paths:
+        out_mp4 = tiff_path[:-4] + ".mp4"  # как у тебя
+
+        if os.path.exists(out_mp4):
+            print(f"⏭ Пропущено (уже существует): {out_mp4}")
+            continue
+
+        frames = tfl.imread(tiff_path)
+
+        # если вдруг TIFF не стек, а одиночный кадр
+        if frames.ndim == 2:
+            frames = frames[None, ...]
+
+        frames_rgb = [np.stack((f,) * 3, axis=-1) for f in frames.astype("uint8")]
+        clip = ImageSequenceClip(frames_rgb, fps=fps)
+        clip.write_videofile(out_mp4, codec="libx264", audio=False)
+
+        print(f"✅ Готово: {out_mp4}")
