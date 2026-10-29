@@ -137,7 +137,10 @@ ml/results/training_dataset_*.csv
 /*.csv
 /*.json
 !fps_data.csv
-!config.json
+
+# Machine-local config (paths, CPU/RAM) - never shared
+config.json
+
 
 # Old production models (keep only latest)
 production_models/*_iter[1-7].pkl
