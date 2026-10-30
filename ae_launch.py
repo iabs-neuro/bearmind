@@ -129,9 +129,9 @@ def _save_inspection_artifacts(
     """
     base = Path(artifacts_path) if artifacts_path else Path('.')
 
-    # Extract base session name (without timestamp) for folder and filenames
+    # Extract session name (without timestamp, trial suffix kept) for folder and filenames
     # E.g., "LNOF_J01_1D_22-12-2025 14-20-16" -> "LNOF_J01_1D"
-    session_prefix = extract_base_session(session_name) or session_name
+    session_prefix = extract_session_id(session_name) or session_name
 
     folder = base / f'inspection_artifacts_{session_prefix}'
     folder.mkdir(parents=True, exist_ok=True)

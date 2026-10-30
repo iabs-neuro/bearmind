@@ -72,14 +72,14 @@ def load_estimates(path: Path):
 
 
 def extract_session_name(est_or_path) -> str:
-    """Extract session identifier (e.g., LNOF_J01_1D) from estimates or path."""
+    """Extract session identifier (e.g., LNOF_J01_1D or HOS_D04_1D_2T) from estimates or path."""
     if hasattr(est_or_path, 'name'):
         name = est_or_path.name
     else:
         name = str(est_or_path)
 
-    # Extract base session using flexible pattern from naming.py
-    session_id = extract_base_session(name)
+    # Extract session ID (trial suffix kept) using flexible pattern from naming.py
+    session_id = extract_session_id(name)
     if session_id:
         return session_id
 
@@ -111,6 +111,11 @@ def find_feedback_file(estimates_path: Path, session_name: str) -> Path | None:
     """
     parent = estimates_path.parent
 
+    def same_session(path: Path) -> bool:
+        # Prefix glob would match HOS_X_1D_2T for HOS_X_1D; require exact ID
+        sid = extract_session_id(session_name)
+        return not sid or extract_session_id(path.name) == sid
+
     # 1. Same folder as estimates (new behavior)
     direct_match = parent / f'{session_name}_feedback.csv'
     if direct_match.exists():
@@ -118,7 +123,7 @@ def find_feedback_file(estimates_path: Path, session_name: str) -> Path | None:
 
     # Glob for variations in same folder
     for path in parent.glob(f'*{session_name}*feedback*.csv'):
-        if path.exists():
+        if path.exists() and same_session(path):
             return path
 
     # 2. Parent folder (legacy behavior)
@@ -128,7 +133,7 @@ def find_feedback_file(estimates_path: Path, session_name: str) -> Path | None:
         return legacy_match
 
     for path in grandparent.glob(f'*{session_name}*feedback*.csv'):
-        if path.exists():
+        if path.exists() and same_session(path):
             return path
 
     return None

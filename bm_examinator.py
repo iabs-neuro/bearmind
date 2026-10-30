@@ -40,7 +40,7 @@ from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
 from table_routines import *
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
-from naming import extract_base_session
+from naming import extract_session_id
 from auto_inspector import estimates_to_metrics, save_processed_estimates
 from polygon import get_contours
 import matplotlib.colors as mcolors
@@ -97,6 +97,12 @@ def get_ml_probability_color(prob, threshold=0.5, is_deleted=False):
     rgba = cmap(normalized)
     # Convert RGBA to hex
     return mcolors.to_hex(rgba)
+
+
+def _same_session_folder(folder, session_prefix):
+    # Prefix glob would match HOS_X_1D_2T for HOS_X_1D; require exact ID
+    sid = extract_session_id(session_prefix)
+    return not sid or extract_session_id(folder.name) == sid
 
 
 def LoadEstimates(name, default_fps=20):
@@ -1368,9 +1374,9 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 # Generate filename and find/create artifacts folder
                 from pathlib import Path
 
-                # Extract clean session prefix (e.g., "LNOF_J01_1D") for consistent naming
+                # Extract clean session prefix (e.g., "LNOF_J01_1D" or "HOS_D04_1D_2T") for consistent naming
                 raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
-                session_prefix = extract_base_session(raw_name) or extract_name_with_pattern(raw_name) or 'session'
+                session_prefix = extract_session_id(raw_name) or extract_name_with_pattern(raw_name) or 'session'
 
                 # Determine artifacts folder location
                 estimates_path = Path(raw_name) if raw_name != 'session' else None
@@ -1384,7 +1390,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 # Step 2: Search in parent directory
                 elif parent_dir.exists():
                     artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
-                    artifacts_folders = sorted(parent_dir.glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                    artifacts_folders = sorted([p for p in parent_dir.glob(artifacts_pattern) if _same_session_folder(p, session_prefix)], key=lambda p: p.stat().st_mtime, reverse=True)
                     if artifacts_folders:
                         artifacts_folder = artifacts_folders[0]
                         print(f"Found artifacts folder: {artifacts_folder}")
@@ -1396,7 +1402,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
                 # Step 3: Fallback to CWD
                 else:
                     artifacts_pattern = f'inspection_artifacts_{session_prefix}*'
-                    artifacts_folders = sorted(Path('.').glob(artifacts_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+                    artifacts_folders = sorted([p for p in Path('.').glob(artifacts_pattern) if _same_session_folder(p, session_prefix)], key=lambda p: p.stat().st_mtime, reverse=True)
                     if artifacts_folders:
                         artifacts_folder = artifacts_folders[0]
                         print(f"Found artifacts folder in CWD: {artifacts_folder}")
