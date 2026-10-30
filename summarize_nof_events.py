@@ -63,8 +63,19 @@ def main():
         vals = df[col].replace([np.inf, -np.inf], np.nan).dropna()
         if drop_neg:
             vals = vals[vals >= 0]
+        # Clip the DISPLAY range to [p0.5, p99.5]: a tiny tail of events on
+        # near-zero baselines yields enormous dF/F0 / SNR values that otherwise
+        # collapse the whole histogram into one bin. Summary stats are unaffected.
+        title = label
+        if len(vals):
+            lo, hi = np.percentile(vals, [0.5, 99.5])
+            if hi > lo:
+                n_clip = int((vals < lo).sum() + (vals > hi).sum())
+                vals = vals.clip(lo, hi)
+                if n_clip:
+                    title = "%s  [%.3g, %.3g], %d clipped" % (label, lo, hi, n_clip)
         ax.hist(vals, bins=60)
-        ax.set_title(label)
+        ax.set_title(title, fontsize=9)
         ax.set_xlabel(label)
         ax.set_ylabel("count")
     fig.suptitle("NOF wavelet per-event distributions (n=%d events)" % len(df))
