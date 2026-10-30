@@ -61,18 +61,28 @@ def _measure_kinetics(ca, start, peak_idx, f0, fps):
     return float(t_rise_s), float(t_off_s)
 
 
-def extract_event_records(neuron, fps, baseline_window_sec=1.0):
+def extract_event_records(neuron, fps, baseline_window_sec=1.0, raw_trace=None):
     """Build per-event records from a wavelet-detected DRIADA Neuron.
 
     Parameters
     ----------
     neuron : DRIADA Neuron
-        Must have ``wvt_ridges`` populated via reconstruct_spikes(method='wavelet'),
-        and ``ca.data`` holding the RAW calcium trace.
+        Must have ``wvt_ridges`` populated via reconstruct_spikes(method='wavelet').
     fps : float
         Sampling rate (Hz).
     baseline_window_sec : float
         Pre-event window (seconds) used to estimate per-event F0.
+    raw_trace : array-like, optional
+        The ORIGINAL calcium trace the neuron was built from, used for all
+        amplitude/F0/baseline/kinetics measurements. Provide this when the
+        signal can go negative: DRIADA's Neuron rectifies ``ca.data`` to be
+        non-negative (clips negatives to 0), which destroys baseline noise for
+        traces centered near zero -> baseline MAD collapses to ~0 and event_snr
+        explodes (and F0 -> 0 makes dF/F0 blow up). Measuring on the un-rectified
+        raw trace keeps base noise / F0 meaningful. Must be the same length as
+        ``neuron.ca.data`` (ridge frame indices apply to both). If None, falls
+        back to ``neuron.ca.data`` (correct for non-negative inputs such as
+        CaImAn ``est.C``, preserving the original behaviour).
 
     Returns
     -------
@@ -85,7 +95,10 @@ def extract_event_records(neuron, fps, baseline_window_sec=1.0):
     if not ridges:
         return []
 
-    ca = np.asarray(neuron.ca.data, dtype=float)
+    if raw_trace is not None:
+        ca = np.asarray(raw_trace, dtype=float)
+    else:
+        ca = np.asarray(neuron.ca.data, dtype=float)
     n = len(ca)
     if n == 0:
         return []
