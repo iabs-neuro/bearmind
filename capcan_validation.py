@@ -188,7 +188,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         FCD_init,
         FBD_init,
         deletion_rules=VALIDATION_DELETION_RULES,
-        pxlthr_distance_boundary=5,
+        pxlthr_distance_boundary=15,  # conservative; most genuine NMF duplicates fit within 10 px
         d_snr_thr=10,
         enable_merge=True
     )
@@ -368,7 +368,7 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 FCD_init,
                 FBD_init,
                 deletion_rules=VALIDATION_DELETION_RULES,
-                pxlthr_distance_boundary=5,
+                pxlthr_distance_boundary=15,  # conservative; most genuine NMF duplicates fit within 10 px
                 d_snr_thr=10,
                 enable_merge=True
             )

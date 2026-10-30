@@ -284,7 +284,7 @@ def main():
 
             # Decision parameters
             deletion_rules=None,
-            pxlthr_distance_boundary=5,
+            pxlthr_distance_boundary=15,  # conservative; most genuine NMF duplicates fit within 10 px
             d_snr_thr=10,
             enable_merge=True,
 

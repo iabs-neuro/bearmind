@@ -193,7 +193,10 @@ def run_auto_inspection(
 
     # --- Decision parameters ---
     deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
-    pxlthr_distance_boundary: float = 5,  # For merge detection
+    # FBD merge cutoff (px). 15 is conservative — most NMF duplicates have
+    # FBD <= 10; the extra band 10-15 catches edge cases without merging
+    # genuinely distinct neighbouring cells.
+    pxlthr_distance_boundary: float = 15,  # For merge detection
     d_snr_thr: float = 10,  # For merge detection
     enable_merge: bool = True,  # Renamed from use_corr_check
 

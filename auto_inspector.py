@@ -1657,7 +1657,12 @@ def _apply_hybrid_brain(metrics_df, rules, model_path, ml_threshold=0.5,
 
 def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
                         deletion_rules=None,
-                        pxlthr_distance_boundary=5,
+                        # FBD cutoff for merge / SNR-loser-delete: 15 px is a
+                        # conservative bound; empirical FBD-vs-|corr| audit shows
+                        # most genuine NMF duplicates have FBD <= 10 px and the
+                        # 10-15 px band catches edge cases (~1 neuron-diameter
+                        # gap) without dragging in distinct neighbouring cells.
+                        pxlthr_distance_boundary=15,
                         d_snr_thr=10,
                         enable_merge=True,
                         track_criteria_failures=True,
