@@ -36,6 +36,9 @@ from caiman.source_extraction.cnmf.utilities import decimation_matrix
 def open_movie(movie):
     """Return a (T, d1, d2) array-like without loading the whole movie into RAM (when possible)."""
     if isinstance(movie, (str, os.PathLike)):
+        if str(movie).lower().endswith('.avi'):
+            from bearmind.video import VideoArray
+            return VideoArray(movie)
         try:
             return tfl.memmap(str(movie), mode='r')
         except ValueError:  # compressed or non-contiguous tiff

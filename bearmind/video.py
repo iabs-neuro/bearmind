@@ -1,0 +1,240 @@
+"""Video I/O: session raw chunks as one frame stream, FFV1/mp4 writers, array view over an AVI."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from fractions import Fraction
+from pathlib import Path
+from typing import Iterable, Iterator
+
+import av
+import numpy as np
+
+from .registry import SessionRecord
+
+
+@dataclass
+class CropBox:
+    top: int
+    left: int
+    height: int
+    width: int
+
+
+def _grey(frame) -> np.ndarray:
+    """uint8 2-D grey frame; miniscope frames are grey replicated, so the gray conversion equals channel 0."""
+    return frame.to_ndarray(format="gray")
+
+
+def _iter_avi(path: Path) -> Iterator[np.ndarray]:
+    with av.open(str(path)) as c:
+        s = c.streams.video[0]
+        for fr in c.decode(s):
+            yield _grey(fr)
+
+
+def video_info(path: Path) -> tuple[int, int, int, float]:
+    """(n_frames, h, w, fps). Counts packets when the container header has no frame count."""
+    with av.open(str(path)) as c:
+        s = c.streams.video[0]
+        h, w = s.codec_context.height, s.codec_context.width
+        rate = s.average_rate or s.guessed_rate
+        fps = float(rate) if rate else float("nan")
+        n = s.frames
+        if not n:
+            n = sum(1 for p in c.demux(s) if p.size)
+    return int(n), int(h), int(w), fps
+
+
+def last_frame_readable(path: Path) -> bool:
+    """True iff the last frame of the file decodes (detects files truncated mid-write)."""
+    try:
+        n = video_info(path)[0]
+        if n < 1:
+            return False
+        VideoArray(path)[n - 1]
+        return True
+    except Exception:
+        return False
+
+
+class SessionReader:
+    """A session's raw chunks as one uint8 (n, h, w) stream, with the registry's drop rules and optional crop."""
+
+    def __init__(self, series_root: Path, rec: SessionRecord, crop: CropBox | None = None):
+        self.root = Path(series_root)
+        self.rec = rec
+        self.crop = crop
+        h, w = rec.parts[0].shape
+        if crop is not None:
+            h, w = crop.height, crop.width
+        self.n_frames = int(rec.n_frames)
+        self.shape = (self.n_frames, h, w)
+
+    def _iter_frames(self) -> Iterator[np.ndarray]:
+        left = self.n_frames
+        for part in self.rec.parts:
+            last = len(part.chunks) - 1
+            for i, name in enumerate(part.chunks):
+                drop_last = (i < last and part.drop_chunk_tail) or (i == last and part.drop_last_frame)
+                prev = None  # held back one frame so the chunk's final frame can be dropped
+                for fr in _iter_avi(self.root / part.folder / name):
+                    if prev is not None:
+                        if left <= 0:
+                            return
+                        left -= 1
+                        yield prev
+                    prev = fr
+                if prev is not None and not drop_last:
+                    if left <= 0:
+                        return
+                    left -= 1
+                    yield prev
+
+    def _crop(self, fr: np.ndarray) -> np.ndarray:
+        c = self.crop
+        return fr if c is None else fr[c.top:c.top + c.height, c.left:c.left + c.width]
+
+    def iter_chunks(self, chunk: int = 1000) -> Iterator[np.ndarray]:
+        buf: list[np.ndarray] = []
+        for fr in self._iter_frames():
+            buf.append(self._crop(fr))
+            if len(buf) == chunk:
+                yield np.stack(buf)
+                buf = []
+        if buf:
+            yield np.stack(buf)
+
+    def sample(self, n: int, seed: int = 0) -> np.ndarray:
+        """n frames at random positions (in stream order), one pass over the stream."""
+        n = min(n, self.n_frames)
+        idx = set(np.random.default_rng(seed).choice(self.n_frames, n, replace=False).tolist())
+        out = []
+        for i, fr in enumerate(self._iter_frames()):
+            if i in idx:
+                out.append(self._crop(fr))
+                if len(out) == n:
+                    break
+        return np.stack(out) if out else np.empty((0,) + self.shape[1:], np.uint8)
+
+
+def _rate(fps: float) -> Fraction:
+    return Fraction(fps).limit_denominator(1000)
+
+
+def write_ffv1(chunks: Iterable[np.ndarray], path: Path, fps: float) -> int:
+    """Lossless grey FFV1 in AVI. Writes <stem>.partial.avi and renames on success."""
+    path = Path(path)
+    tmp = path.with_suffix(".partial.avi")
+    n = 0
+    try:
+        with av.open(str(tmp), "w", format="avi") as c:
+            s = None
+            for block in chunks:
+                for f in block:
+                    if s is None:
+                        s = c.add_stream("ffv1", rate=_rate(fps))
+                        s.height, s.width = f.shape
+                        s.pix_fmt = "gray"
+                    vf = av.VideoFrame.from_ndarray(np.ascontiguousarray(f), format="gray")
+                    for p in s.encode(vf):
+                        c.mux(p)
+                    n += 1
+            if s is not None:
+                for p in s.encode():
+                    c.mux(p)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return n
+
+
+def write_preview_mp4(chunks: Iterable[np.ndarray], path: Path, fps: float, crf: int = 23,
+                      speed: int = 4, tbin: int = 2) -> None:
+    """H.264 preview. Each output frame is the mean of `tbin` input frames; playback is `speed` x faster."""
+    path = Path(path)
+    out_rate = _rate(fps * speed / tbin)
+    with av.open(str(path), "w") as c:
+        s = None
+
+        def emit(mean: np.ndarray) -> None:
+            nonlocal s
+            h, w = mean.shape
+            if s is None:
+                s = c.add_stream("libx264", rate=out_rate)
+                s.pix_fmt = "yuv420p"
+                s.options = {"crf": str(crf)}
+                s.height, s.width = h - h % 2, w - w % 2  # yuv420p needs even dims
+            img = np.rint(mean).astype(np.uint8)[:s.height, :s.width]
+            vf = av.VideoFrame.from_ndarray(np.ascontiguousarray(img), format="gray").reformat(format="yuv420p")
+            for p in s.encode(vf):
+                c.mux(p)
+
+        acc, k = None, 0
+        for block in chunks:
+            for f in block:
+                acc = f.astype(np.float32) if acc is None else acc + f
+                k += 1
+                if k == tbin:
+                    emit(acc / k)
+                    acc, k = None, 0
+        if k:
+            emit(acc / k)
+        if s is not None:
+            for p in s.encode():
+                c.mux(p)
+
+
+class VideoArray:
+    """Read-only (T, h, w) uint8 view over an AVI; int and time-slice access, seeking per request."""
+
+    dtype = np.dtype(np.uint8)
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._n, h, w, _ = video_info(self.path)
+        self.shape = (self._n, h, w)
+        self.ndim = 3
+
+    def __len__(self) -> int:
+        return self._n
+
+    def _decode_from(self, start: int) -> Iterator[tuple[int, np.ndarray]]:
+        """Yield (index, frame) from `start` on; FFV1 frames are all keyframes, so the seek lands on it."""
+        with av.open(str(self.path)) as c:
+            s = c.streams.video[0]
+            tb = float(s.time_base)
+            rate = float(s.average_rate or s.guessed_rate)
+            if start > 0:
+                c.seek(int(round(start / rate / tb)), stream=s, backward=True)
+            for fr in c.decode(s):
+                idx = int(round(fr.pts * tb * rate))
+                if idx >= start:
+                    yield idx, _grey(fr)
+
+    def __getitem__(self, key):
+        n = self._n
+        if isinstance(key, tuple):  # (time, rows, cols): time part reads frames, the rest slices them
+            return self[key[0]][(slice(None),) * isinstance(key[0], slice) + key[1:]]
+        if isinstance(key, (int, np.integer)):
+            i = int(key) + (n if key < 0 else 0)
+            if not 0 <= i < n:
+                raise IndexError(key)
+            for idx, fr in self._decode_from(i):
+                if idx == i:
+                    return fr
+            raise IndexError(f"frame {i} not decodable in {self.path}")
+        if isinstance(key, slice):
+            r = range(*key.indices(n))
+            if len(r) == 0:
+                return np.empty((0,) + self.shape[1:], np.uint8)
+            if r.step < 0:
+                return np.stack([self[i] for i in r])
+            want, out = set(r), {}
+            for idx, fr in self._decode_from(r.start):
+                if idx in want:
+                    out[idx] = fr
+                if idx >= r[-1]:
+                    break
+            return np.stack([out[i] for i in r])
+        raise TypeError(f"unsupported index {key!r}")
