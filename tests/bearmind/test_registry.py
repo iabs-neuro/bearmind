@@ -112,3 +112,165 @@ def test_all_records(tmp_path):
     save_record(paths, make_record("A"))
     (paths.registry_file("A").parent / "stale.json.tmp").write_text("{")
     assert [r.sid for r in all_records(paths)] == ["A", "B"]
+
+
+# --- write protocol (R25): reload before save, unique temp files, short lock, PermissionError retry ---
+
+import logging
+import os
+import threading
+import time
+from pathlib import Path
+
+from bearmind import fileio
+from bearmind.registry import update_record
+
+
+def _lock_of(paths, sid="M1_D1") -> Path:
+    f = paths.registry_file(sid)
+    return f.with_name(f.name + ".lock")
+
+
+def test_params_roundtrip_and_old_records(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    rec = make_record()
+    rec.stages["mc"].params = {"mc": {"max_shifts": [35, 35]}, "fps": 30.0, "box_pos": None}
+    save_record(paths, rec)
+    assert load_record(paths, "M1_D1").stages["mc"].params == rec.stages["mc"].params
+    f = paths.registry_file("M1_D1")
+    d = json.loads(f.read_text(encoding="utf-8"))
+    del d["stages"]["mc"]["params"]  # written before the field existed
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert load_record(paths, "M1_D1").stages["mc"].params == {}
+
+
+def test_update_record_reloads_before_save(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    stale = load_record(paths, "M1_D1")
+    other = load_record(paths, "M1_D1")  # e.g. a GUI writing a decision meanwhile
+    other.decisions.append(Decision("manual_inspection", "not_needed", "viktor", "t"))
+    save_record(paths, other)
+
+    def mark(rec):
+        rec.stages["cnmf"] = StageRecord(state=State.DONE, params_hash="h")
+
+    out = update_record(paths, "M1_D1", mark)
+    back = load_record(paths, "M1_D1")
+    assert back == out
+    assert back.stages["cnmf"].state is State.DONE
+    assert [d.what for d in back.decisions] == ["fps", "manual_inspection"]
+    assert stale.stages["cnmf"].state is State.FAILED  # the caller's copy is not the source
+    assert not _lock_of(paths).exists()
+
+
+def test_update_record_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        update_record(SeriesPaths(tmp_path), "nope", lambda r: None)
+
+
+def test_concurrent_updates_not_lost(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+
+    def worker(k):
+        for i in range(15):
+            update_record(paths, "M1_D1",
+                          lambda r: r.decisions.append(Decision("x", f"{k}-{i}", "w", "t")))
+
+    threads = [threading.Thread(target=worker, args=(k,)) for k in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(load_record(paths, "M1_D1").decisions) == 1 + 45
+    folder = paths.registry_file("M1_D1").parent
+    assert sorted(p.name for p in folder.iterdir()) == ["M1_D1.json"]
+
+
+def test_stale_lock_is_broken(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    lock = _lock_of(paths)
+    lock.write_text("12345")
+    old = time.time() - 120  # holder died long ago
+    os.utime(lock, (old, old))
+    rec = make_record()
+    rec.excluded = True
+    save_record(paths, rec)
+    assert load_record(paths, "M1_D1").excluded
+    assert not lock.exists()
+
+
+def test_busy_lock_times_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(fileio, "LOCK_TIMEOUT_S", 0.3)
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    lock = _lock_of(paths)
+    lock.write_text("12345")  # fresh: another writer holds it
+    t0 = time.monotonic()
+    with pytest.raises(TimeoutError, match="lock"):
+        save_record(paths, make_record())
+    assert time.monotonic() - t0 >= 0.3
+    assert lock.exists()  # someone else's lock is left alone
+
+
+def test_replace_retries_permission_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(fileio, "REPLACE_STEP_S", 0.01)
+    paths = SeriesPaths(tmp_path)
+    real = os.replace
+    left = {"n": 3}
+
+    def flaky(src, dst):
+        if left["n"]:
+            left["n"] -= 1
+            raise PermissionError(13, "file is open in another program")
+        return real(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky)
+    save_record(paths, make_record())
+    assert left["n"] == 0
+    assert load_record(paths, "M1_D1") == make_record()
+
+
+def test_replace_gives_up_and_cleans_temp(tmp_path, monkeypatch):
+    monkeypatch.setattr(fileio, "REPLACE_STEP_S", 0.0)
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    calls = {"n": 0}
+
+    def deny(src, dst):
+        calls["n"] += 1
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(os, "replace", deny)
+    with pytest.raises(PermissionError):
+        save_record(paths, make_record("M1_D1"))
+    assert calls["n"] == fileio.REPLACE_TRIES
+    folder = paths.registry_file("M1_D1").parent
+    assert sorted(p.name for p in folder.iterdir()) == ["M1_D1.json"]
+
+
+def test_save_failure_releases_lock(tmp_path, monkeypatch):
+    paths = SeriesPaths(tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(registry.json, "dump", boom)
+    with pytest.raises(OSError):
+        save_record(paths, make_record())
+    assert list(paths.registry_file("M1_D1").parent.iterdir()) == []
+
+
+def test_all_records_skips_corrupt(tmp_path, caplog):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record("A"))
+    save_record(paths, make_record("C"))
+    paths.registry_file("B").write_text("{", encoding="utf-8")
+    d = json.loads(paths.registry_file("C").read_text(encoding="utf-8"))
+    d["stages"]["mc"]["state"] = "exploded"
+    paths.registry_file("D").write_text(json.dumps(d), encoding="utf-8")
+    with caplog.at_level(logging.ERROR, logger="bearmind"):
+        assert [r.sid for r in all_records(paths)] == ["A", "C"]
+    assert "B.json" in caplog.text and "D.json" in caplog.text

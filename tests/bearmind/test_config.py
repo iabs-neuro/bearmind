@@ -69,3 +69,43 @@ def test_machine_config(tmp_path):
     assert m["n_cpus"] >= 1
     update_yaml(home / "machine.yaml", {"n_cpus": 3})
     assert machine_config()["n_cpus"] == 3
+
+
+def test_update_yaml_concurrent_writers(tmp_path):
+    import threading
+
+    f = tmp_path / "c.yaml"
+
+    def worker(k):
+        for i in range(10):
+            update_yaml(f, {f"k{k}": {f"i{i}": i}})
+
+    threads = [threading.Thread(target=worker, args=(k,)) for k in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    data = yaml.safe_load(f.read_text())
+    assert data == {f"k{k}": {f"i{i}": i for i in range(10)} for k in range(3)}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["c.yaml"]
+
+
+def test_update_yaml_waits_for_lock_and_breaks_stale(tmp_path, monkeypatch):
+    import time
+
+    import pytest
+
+    from bearmind import fileio
+
+    f = tmp_path / "c.yaml"
+    lock = tmp_path / "c.yaml.lock"
+    lock.write_text("1")
+    old = time.time() - 120
+    os.utime(lock, (old, old))
+    update_yaml(f, {"a": 1})  # stale lock broken
+    assert yaml.safe_load(f.read_text()) == {"a": 1} and not lock.exists()
+    monkeypatch.setattr(fileio, "LOCK_TIMEOUT_S", 0.2)
+    lock.write_text("1")
+    with pytest.raises(TimeoutError):
+        update_yaml(f, {"a": 2})
+    assert yaml.safe_load(f.read_text()) == {"a": 1}

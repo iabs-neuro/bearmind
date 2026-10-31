@@ -1,8 +1,17 @@
-"""Session registry: one JSON file per session (stage states, anomalies, decisions)."""
+"""Session registry: one JSON file per session (stage states, anomalies, decisions).
+
+Several processes write the same file (the batch runner, the CLI, later the GUI). A writer that changes a
+record while another may also change it uses update_record: under a short file lock it rereads the file,
+applies its change to the fresh copy and writes it back, so the other writer's fields survive.
+"""
 import json
-import os
+import logging
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
+
+from bearmind import fileio
+
+log = logging.getLogger(__name__)
 
 STAGES = ("crop", "mc", "thresholds", "cnmf", "gate", "autoinspect", "export")
 
@@ -67,6 +76,7 @@ class StageRecord:
     metrics: dict = field(default_factory=dict)
     checks: list[Check] = field(default_factory=list)
     error: str | None = None
+    params: dict = field(default_factory=dict)  # resolved parameters the stage ran with (provenance)
 
 
 @dataclass
@@ -117,32 +127,44 @@ def _from_json(d: dict) -> SessionRecord:
     return _build(SessionRecord, d)
 
 
+def _read(f) -> SessionRecord:
+    return _from_json(json.loads(fileio.read_text(f)))
+
+
+def _write(f, rec: SessionRecord) -> None:
+    fileio.write_atomic(f, lambda fh: json.dump(_to_json(rec), fh, indent=2, ensure_ascii=False))
+
+
 def load_record(paths, sid: str) -> SessionRecord:
-    f = paths.registry_file(sid)
-    with open(f, encoding="utf-8") as fh:
-        return _from_json(json.load(fh))
+    return _read(paths.registry_file(sid))
 
 
 def save_record(paths, rec: SessionRecord) -> None:
-    """Write atomically: temp file in the same folder, fsync, os.replace."""
+    """Write the whole record atomically (unique temp file, fsync, replace) under the file lock."""
     f = paths.registry_file(rec.sid)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f.name + ".tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(_to_json(rec), fh, indent=2, ensure_ascii=False)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, f)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+    with fileio.file_lock(f):
+        _write(f, rec)
+
+
+def update_record(paths, sid: str, change) -> SessionRecord:
+    """Reread the record under the lock, call change(record) on it, write it back; returns the new record."""
+    f = paths.registry_file(sid)
+    with fileio.file_lock(f):
+        rec = _read(f)
+        change(rec)
+        _write(f, rec)
+    return rec
 
 
 def all_records(paths) -> list[SessionRecord]:
+    """All readable records, sorted by sid; a broken file is logged and skipped, not fatal."""
     folder = paths.registry_file("x").parent
     if not folder.is_dir():
         return []
-    files = [p for p in folder.glob("*.json") if not p.name.endswith(".tmp")]
-    return sorted((_from_json(json.loads(p.read_text(encoding="utf-8")))
-                   for p in files), key=lambda r: r.sid)
+    out = []
+    for p in sorted(folder.glob("*.json")):
+        try:
+            out.append(_read(p))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            log.error("registry file skipped, cannot read %s: %s: %s", p.name, type(e).__name__, e)
+    return sorted(out, key=lambda r: r.sid)

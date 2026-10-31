@@ -9,7 +9,7 @@ from pathlib import Path
 import psutil
 import yaml
 
-from . import naming
+from . import fileio, naming
 
 _DEFAULTS = Path(__file__).with_name("defaults.yaml")
 
@@ -18,8 +18,7 @@ def _read_yaml(path) -> dict:
     path = Path(path)
     if not path.exists():
         return {}
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return yaml.safe_load(fileio.read_text(path)) or {}
 
 
 def deep_merge(base: dict, over: dict) -> dict:
@@ -71,13 +70,11 @@ def resolve(paths, sid=None, mouse=None) -> dict:
 
 
 def update_yaml(path, patch: dict) -> None:
+    """Merge `patch` into the YAML file: reread under the file lock, write atomically (fileio)."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = deep_merge(_read_yaml(path), patch)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
-    os.replace(tmp, path)
+    with fileio.file_lock(path):
+        data = deep_merge(_read_yaml(path), patch)
+        fileio.write_atomic(path, lambda f: yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True))
 
 
 def params_hash(params: dict) -> str:
