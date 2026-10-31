@@ -88,8 +88,12 @@ def build_session_mapping(init_path, gt_path):
 
 
 # Build default session mapping (for module-level usage)
-mapping = build_session_mapping(init_path, gt_path)
-print(f"Found {len(mapping)} sessions to validate\n")
+if os.path.isdir(init_path) and os.path.isdir(gt_path):
+    mapping = build_session_mapping(init_path, gt_path)
+    print(f"Found {len(mapping)} sessions to validate\n")
+else:
+    mapping = {}
+    print("capcan_validation: data/raw_compressed or data/final_compressed not found; mapping is empty")
 
 
 def load_estimates(filepath):
