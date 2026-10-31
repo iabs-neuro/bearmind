@@ -71,10 +71,12 @@ autoinspect:
   hybrid_kinetics: true
 gate:
   enabled: true
-# Initial values; calibrated in task 17.
+# MC checks: provisional, from 6 real sessions (task 17, docs/superpowers/specs/2026-11-01-e2e-report.md):
+# max shift 2.2-4.6 px, template corr 0.82-0.94; a uniform 2 px misalignment lowers the corr to 0.57-0.75.
+# The cnmf / autoinspect / export values are the initial guesses: they need production data.
 checks:
-  mc_max_shift_px: {warn: 15, error: 30}
-  mc_template_corr: {warn: 0.6}
+  mc_max_shift_px: {warn: 10, error: 30}
+  mc_template_corr: {warn: 0.7}
   cnmf_n_components_vs_median: {warn: 2.0, error: 3.0}
   cnmf_missed_cells: {warn: 20}
   auto_deleted_frac: {warn: 0.8, error: 0.95}
