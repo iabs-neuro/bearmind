@@ -190,7 +190,8 @@ def get_convexities(contours):
             vec_1 = dot_prev - dot_cur
             vec_2 = dot_next - dot_cur
 
-            cross_product = np.cross(vec_1, vec_2)
+            # z component of the 2-D cross product (what np.cross returned for 2-vectors before NumPy 2)
+            cross_product = vec_1[0] * vec_2[1] - vec_1[1] * vec_2[0]
             angle = int(cross_product <= 0)
             angles.append(angle)
 
