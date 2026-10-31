@@ -9,3 +9,11 @@ class StageResult:
     outputs: dict[str, str] = field(default_factory=dict)
     metrics: dict = field(default_factory=dict)
     anomalies: list[Anomaly] = field(default_factory=list)
+
+
+class WaitingForInput(Exception):
+    """A stage needs a user decision (e.g. thresholds); the scheduler marks it WAITING instead of FAILED."""
+
+    def __init__(self, what: str):
+        super().__init__(f"waiting for {what}")
+        self.what = what
