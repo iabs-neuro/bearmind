@@ -145,3 +145,32 @@ def test_mc_stage_rejects_pw_rigid(tmp_path, make_avi):
     cfg["mc"]["pw_rigid"] = True
     with pytest.raises(ValueError, match="pw_rigid"):
         mc_stage.run(paths, rec, cfg)
+
+
+class _Frames:
+    """(T, h, w) array view with the VideoArray access the metric uses."""
+
+    def __init__(self, a):
+        self.a, self.shape = a, a.shape
+
+    def __getitem__(self, i):
+        return self.a[i]
+
+
+def test_template_corr_compares_in_the_template_domain():
+    """With gSig_filt, CaImAn's template is high-pass filtered: frames must be filtered the same way.
+
+    Real 1p frames are dominated by a smooth background; raw frames against the filtered template
+    correlated at 0.23 on LT1_K02_1D although the shifts were fine (filtered against filtered: 0.82).
+    """
+    from caiman.motion_correction import high_pass_filter_space
+
+    rng = np.random.default_rng(3)
+    yy, xx = np.mgrid[:64, :64]
+    background = 150 * np.exp(-((yy - 32) ** 2 + (xx - 32) ** 2) / (2 * 25.0 ** 2))
+    texture = 20 * gaussian_filter(rng.random((64, 64)), 1.5)
+    frames = np.stack([np.clip(background + texture + rng.normal(0, 1, (64, 64)), 0, 255)
+                       for _ in range(50)]).astype(np.uint8)
+    template = high_pass_filter_space(frames.astype(np.float32).mean(0), (3, 3))
+    corr = mc_stage._mean_template_corr(_Frames(frames), template, gSig_filt=(3, 3))
+    assert corr > 0.8

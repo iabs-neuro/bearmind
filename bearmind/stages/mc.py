@@ -65,10 +65,23 @@ def _preview_chunks(video: VideoArray):
         yield video[a:a + CHUNK]
 
 
-def _mean_template_corr(video: VideoArray, template: np.ndarray) -> float:
+def _mean_template_corr(video: VideoArray, template: np.ndarray, gSig_filt=None) -> float:
+    """Mean correlation of sampled corrected frames with CaImAn's template.
+
+    With gSig_filt CaImAn builds the template from high-pass filtered frames, so the frames are filtered
+    with the same function first; raw 1p frames are dominated by a smooth background and correlate poorly
+    with a filtered template however well they are aligned.
+    """
+    from caiman.motion_correction import high_pass_filter_space
+
     idx = np.unique(np.linspace(0, video.shape[0] - 1, min(N_CORR_FRAMES, video.shape[0])).astype(int))
     t = np.asarray(template, dtype=np.float64).ravel()
-    cs = [np.corrcoef(video[int(i)].astype(np.float64).ravel(), t)[0, 1] for i in idx]
+    cs = []
+    for i in idx:
+        fr = np.asarray(video[int(i)], dtype=np.float32)
+        if gSig_filt is not None:
+            fr = high_pass_filter_space(fr, tuple(gSig_filt))
+        cs.append(np.corrcoef(fr.astype(np.float64).ravel(), t)[0, 1])
     return float(np.nanmean(cs))
 
 
@@ -126,7 +139,7 @@ def run(paths, rec, cfg) -> StageResult:
 
         metrics = {
             "max_shift_px": float(np.max(np.abs(shifts))),
-            "mean_template_corr": _mean_template_corr(mc_vid, template),
+            "mean_template_corr": _mean_template_corr(mc_vid, template, mcfg.get("gSig_filt")),
             "n_frames": int(n),
             "crop": None if crop is None else [crop.top, crop.left, crop.height, crop.width],
         }
