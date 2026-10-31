@@ -73,3 +73,14 @@ def test_stage_without_checks():
 def test_autoinspect_deleted_frac():
     c = by_name(evaluate("autoinspect", {"deleted_frac": 0.9}, [], CFG))["auto_deleted_frac"]
     assert c.level == "warning"
+
+
+def test_nan_or_inf_metric_is_a_warning():
+    import numpy as np
+    res = by_name(evaluate("mc", {"max_shift_px": float("inf"), "mean_template_corr": np.float64("nan")},
+                           [], CFG))
+    for name, key in (("mc_max_shift_px", "max_shift_px"), ("mc_template_corr", "mean_template_corr")):
+        assert res[name].level == "warning" and res[name].message == f"{key} is not a number"
+        assert res[name].value is None  # keeps the registry JSON free of NaN
+    c = by_name(evaluate("export", {"median_snr": float("nan")}, [], CFG))["export_median_snr"]
+    assert c.level == "warning"

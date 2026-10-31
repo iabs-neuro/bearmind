@@ -1,4 +1,5 @@
 """Per-stage quality checks: warnings/errors recorded in metadata, never stopping the batch."""
+import math
 import statistics
 
 from bearmind.registry import Check
@@ -28,6 +29,8 @@ def _absolute(stage, name, metrics, key, cfg, higher_is_worse, template):
     value = metrics.get(key)
     if th is None or value is None:
         return None
+    if not math.isfinite(value):  # NaN compares False with every threshold and would grade "ok"
+        return Check(stage, name, "warning", None, f"{key} is not a number")
     level = _level(value, th.get("warn"), th.get("error"), higher_is_worse)
     message = template.format(v=_fmt(value) if not isinstance(value, float) or key != "max_shift_px"
                               else f"{value:.1f}") + f" ({_thresholds_text(th, higher_is_worse)})"
