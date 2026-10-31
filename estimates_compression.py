@@ -59,6 +59,8 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
             # Get indices to keep (good components only)
             good_indices = est.idx_components
             n_bad = len(est.idx_components_bad)
+            # Full component count, taken before C loses its bad rows below
+            n_total = est.C.shape[0] if getattr(est, 'C', None) is not None else len(good_indices) + n_bad
 
             # Remove rows from C, S, YrA for bad components
             if hasattr(est, 'C') and est.C is not None:
@@ -93,26 +95,18 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
                 savings['A_bad_removed'] = saved
                 total_saved += saved
 
-            # Remove other per-component arrays
-            # CRITICAL: Use sequential indices [0,1,2,...] not component IDs
-            # because we already removed bad components from C, S, YrA above
-            for attr in ['bl', 'c1', 'neurons_sn', 'SNR_comp', 'r_values']:
-                if hasattr(est, attr):
-                    arr = getattr(est, attr)
-                    if isinstance(arr, np.ndarray) and len(arr) > len(good_indices):
-                        # Take first N elements where N = number of good components
-                        setattr(est, attr, arr[:len(good_indices)])
-
-            # Update g (can be list or numpy array)
-            # CRITICAL: g contains AR parameters, one per neuron
-            # Must use sequential indices after bad component removal
-            if hasattr(est, 'g'):
-                if isinstance(est.g, list):
-                    # g is list: take first N elements
-                    est.g = [est.g[i] for i in range(len(good_indices))]
-                elif isinstance(est.g, np.ndarray):
-                    # g is numpy array: slice to first N elements
-                    est.g = est.g[:len(good_indices)]
+            # Remove other per-component arrays. Each is a separate full-length array
+            # indexed by component ID, exactly as C was before its rows were removed
+            # above, so it takes the same good_indices; taking its first N entries
+            # would give every good component the values of another one.
+            # g and lam may be lists (one entry per component) instead of arrays.
+            for attr in ['bl', 'c1', 'neurons_sn', 'SNR_comp', 'r_values', 'cnn_preds', 'g', 'lam']:
+                seq = getattr(est, attr, None)
+                if isinstance(seq, (np.ndarray, list)) and len(seq) == n_total:
+                    if isinstance(seq, list):
+                        setattr(est, attr, [seq[i] for i in good_indices])
+                    else:
+                        setattr(est, attr, seq[good_indices])
 
             # Preserve original bad component indices for record-keeping
             # Store in metadata BEFORE updating idx_components
