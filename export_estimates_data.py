@@ -194,10 +194,16 @@ def ml_approved_components(metrics_df: pd.DataFrame, threshold: float) -> set:
     were already kept, and the model is never applied to them, so their
     ml_keep_probability is NaN. A plain `>= threshold` comparison is False for
     NaN and would drop every merged neuron from the export.
+
+    Neurons marked deleted stay in idx_components for the GUI, and some of them
+    keep a high probability (the duplicate rule removes the lower-SNR neuron of a
+    close pair regardless of it), so the delete mark is checked as well.
     """
     approved = metrics_df['ml_keep_probability'] >= threshold
     if 'decision' in metrics_df.columns:
         approved |= metrics_df['decision'] == 'from_merge'
+    if 'delete' in metrics_df.columns:
+        approved &= metrics_df['delete'] != 1
     return set(metrics_df.loc[approved, 'component_idx'].tolist())
 
 
