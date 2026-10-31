@@ -78,6 +78,9 @@ def test_mc_matches_old_domotioncorrection(clip):
 def test_cnmf_matches_old_docnmf(clip):
     paths, rec = clip
     n = max(1, (os.cpu_count() or 2) - 1)  # what both would pick on this machine; pinned on both sides
+    pool = er.stage_pool(paths.root, rec.sid, n)
+    if pool != n:
+        pytest.skip(f"the RAM budget gives the CNMF stage a pool of {pool}, not {n}: no equal-pool comparison")
     outs = er.ensure_cnmf(paths.root, rec.sid, n)
     meta = {side: er.read_meta(out) for side, out in outs.items()}
     assert meta["old"]["pool"] == meta["new"]["pool"] == [n]

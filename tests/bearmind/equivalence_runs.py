@@ -2,8 +2,11 @@
 
 Each run starts in a fresh process with the thread settings of BLAS_ENV, so that the old and the new side
 get the same BLAS and pool settings, and OPENBLAS_CORETYPE is in place before numpy loads. The tests call
-`ensure_*`; a run is repeated only when its cache key changes (inputs, parameters, wrapper code, CaImAn
-version). By hand, to rebuild one side:
+`ensure_*`; a run is repeated only when its cache key changes. The key of every cached run (MC old side,
+CNMF-E old and new side) = the input clip (file sizes and mtimes), the resolved crop/mc/cnmf config, the
+CaImAn and NumPy versions, the pool and BLAS settings, and a hash of all code it may run: every *.py under
+bearmind/, every root-level *.py and this file (`code_files`). So the cache is invalidated by any change to
+the package or the root modules; over-invalidation is accepted. By hand, to rebuild one side:
 
     python tests/bearmind/equivalence_runs.py mc|cnmf-old|cnmf-new SERIES SID OUT_DIR N_PROCESSES
 
@@ -53,16 +56,33 @@ def _file_sig(path) -> list:
     return [st.st_size, st.st_mtime_ns]
 
 
-def _code_sig(*rel) -> str:
+def code_files(root: Path = REPO) -> list[Path]:
+    """The code a cached run may execute: every module of the package, every root-level module, this helper.
+
+    Deliberately wide: the stages import bm_qc, registry, config and more, and the old functions import half of
+    the root modules; any change to one of them recomputes the cache (a recompute is ~10 min on the clip).
+    """
+    root = Path(root)
+    files = set(root.glob("bearmind/**/*.py")) | set(root.glob("*.py"))
+    files.add(root / "tests" / "bearmind" / "equivalence_runs.py")
+    return sorted(f for f in files if f.is_file())
+
+
+def code_sig(root: Path = REPO) -> str:
     h = hashlib.sha256()
-    for r in rel:
-        h.update((REPO / r).read_bytes())
+    for f in code_files(root):
+        h.update(f.relative_to(root).as_posix().encode() + b"\0")
+        h.update(f.read_bytes() + b"\0")
     return h.hexdigest()
 
 
-def _caiman_version() -> str:
+def _versions() -> dict:
     from importlib.metadata import version
-    return version("caiman")
+    return {"caiman": version("caiman"), "numpy": version("numpy")}
+
+
+def _config_sig(cfg) -> dict:
+    return {k: cfg.get(k) for k in ("crop", "mc", "cnmf")}
 
 
 def _load(series_root, sid):
@@ -87,21 +107,28 @@ def mc_key(series_root, sid) -> dict:
     paths, rec, cfg = _load(series_root, sid)
     raw = [[f"{p.folder}/{c}", *_file_sig(paths.root / p.folder / c)] for p in rec.parts for c in p.chunks]
     return {"version": CACHE_VERSION, "kind": "mc", "sid": sid, "n_frames": rec.n_frames, "raw": raw,
-            "crop": [cfg["crop"].get("box_pos"), cfg["crop"].get("box")], "mc_dict": mc_dict(cfg, rec.n_frames),
-            "code": _code_sig("bm_batch_routines.py", "bearmind/stages/mc.py", "bearmind/video.py"),
-            "caiman": _caiman_version()}
+            "config": _config_sig(cfg), "mc_dict": mc_dict(cfg, rec.n_frames),
+            "code": code_sig(), **_versions()}
 
 
 def cnmf_key(series_root, sid, side, n_processes) -> dict:
     from bearmind.stages.cnmf import cnmf_params
 
     paths, rec, cfg = _load(series_root, sid)
-    code = {"old": ("bm_batch_routines.py", "bearmind/stages/cnmf.py", "bearmind/video.py"),
-            "new": ("bearmind/stages/cnmf.py", "bearmind/video.py")}[side]
     return {"version": CACHE_VERSION, "kind": f"cnmf-{side}", "sid": sid,
-            "mc_video": _file_sig(paths.mc_video(sid)), "params": cnmf_params(cfg, rec.fps),
-            "n_processes": int(n_processes), "blas": BLAS_ENV, "code": _code_sig(*code),
-            "caiman": _caiman_version()}
+            "mc_video": _file_sig(paths.mc_video(sid)), "config": _config_sig(cfg),
+            "params": cnmf_params(cfg, rec.fps), "n_processes": int(n_processes), "blas": BLAS_ENV,
+            "code": code_sig(), **_versions()}
+
+
+def stage_pool(series_root, sid, n_processes) -> int:
+    """Pool size the CNMF stage picks with n_cpus = n_processes + 1; smaller when the RAM budget limits it."""
+    from bearmind.stages.cnmf import cnmf_params, patch_workers
+    from bearmind.video import video_info
+
+    paths, rec, cfg = _load(series_root, sid)
+    cfg["machine"] = {**cfg["machine"], "n_cpus": n_processes + 1}
+    return patch_workers(video_info(paths.mc_video(sid))[0], cnmf_params(cfg, rec.fps)["tsub"], cfg)
 
 
 def _norm(x):
@@ -253,19 +280,45 @@ def match_components(old: dict, new: dict, thr: float = 0.95) -> dict:
 
 # ----------------------------------------------------------------------------------------------- the runs
 
+class PoolWatch:
+    """Tells a dead pool worker from successive sets of live worker pids.
+
+    multiprocessing.Pool replaces a worker that dies (e.g. a segfault in native code), and the task it held
+    never returns, so Pool.map waits forever. The current pool = the workers seen while at least one of them
+    is alive. A member that disappears while the pool runs, with a new worker joining the same pool (in the
+    same or a later sample), is a death: Pool replaces dead workers only (CaImAn pools have no
+    maxtasksperchild). Members vanishing with no replacement (terminate) or a new pool after the old one is
+    gone are not. Each of our runs starts one pool (DoMotionCorrection, DoCNMF and the CNMF stage each call
+    setup_cluster once).
+    """
+
+    def __init__(self):
+        self.pool: set[int] = set()
+        self.lost: set[int] = set()
+
+    def update(self, alive) -> set[int]:
+        """Feed the live worker pids; returns the dead members once a replacement shows up, else an empty set."""
+        alive = set(alive)
+        if not alive & self.pool:  # no pool yet, or the previous one is gone: start over
+            self.pool, self.lost = alive, set()
+            return set()
+        self.lost |= self.pool - alive
+        joined = alive - self.pool
+        self.pool |= joined
+        return set(self.lost) if joined and self.lost else set()
+
+
 class PeakMemory:
     """Peak RSS and private bytes of this process and all its children, sampled every second.
 
-    Also a watchdog: multiprocessing.Pool replaces a worker that dies (e.g. a segfault in native code), and
-    the task it held never returns, so Pool.map waits forever. More distinct pool workers than `pool`
-    means a worker died: the run is aborted instead of hanging until the timeout.
+    Also a watchdog (PoolWatch): when a pool worker dies, the run is aborted instead of hanging until the
+    timeout.
     """
 
-    def __init__(self, pool: int, every_s: float = 1.0):
-        self.pool = pool
+    def __init__(self, every_s: float = 1.0):
         self.every_s = every_s
         self.peak_rss_gb = self.peak_private_gb = 0.0
-        self._workers: set[int] = set()
+        self._watch = PoolWatch()
         self._cmd: dict[int, bool] = {}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -295,11 +348,9 @@ class PeakMemory:
             priv += getattr(mi, "private", 0)
         self.peak_rss_gb = max(self.peak_rss_gb, rss / 2 ** 30)
         self.peak_private_gb = max(self.peak_private_gb, priv / 2 ** 30)
-        self._workers.update(p.pid for p in kids if self._is_worker(p))
-        if len(self._workers) > self.pool:
-            alive = {p.pid for p in kids}
-            print(f"[FAILED] pool worker(s) died: {sorted(self._workers - alive)} "
-                  f"({len(self._workers)} workers seen, pool {self.pool}); aborting", file=sys.stderr, flush=True)
+        dead = self._watch.update(p.pid for p in kids if self._is_worker(p))
+        if dead:
+            print(f"[FAILED] pool worker(s) died: {sorted(dead)}; aborting", file=sys.stderr, flush=True)
             for p in kids:
                 try:
                     p.kill()
@@ -361,7 +412,7 @@ def run_mc_old(series_root, sid, out: Path) -> None:
     old.MotionCorrect = Recording
     d = mc_dict(cfg, rec.n_frames)
     t0 = time.time()
-    with PeakMemory(pool=14) as pm:  # DoMotionCorrection hard-codes 14 workers
+    with PeakMemory() as pm:
         old.DoMotionCorrection(str(tif), dict(d))
     wall = time.time() - t0
     np.save(out / "old_shifts.npy", np.asarray(made[0].shifts_rig, dtype=np.float64))
@@ -410,7 +461,7 @@ def run_cnmf_old(series_root, sid, out: Path, n_processes: int) -> None:
     import bm_batch_routines as old
 
     t0 = time.time()
-    with PeakMemory(pool=n_processes) as pm:
+    with PeakMemory() as pm:
         # noise_ampl = the CaImAn save_memmap default the stage's memmap writer reproduces (DoCNMF default: 0)
         est = old.DoCNMF(str(tif), dict(params), out_name=str(out / "old_estimates.pickle"),
                          noise_ampl=float(cnmf_stage.ADD_TO_MOVIE), parallel_mode=True)
@@ -454,7 +505,7 @@ def run_cnmf_new(series_root, sid, out: Path, n_processes: int) -> None:
     if n_workers != n_processes:
         raise RuntimeError(f"stage pool would be {n_workers}, not {n_processes} (RAM budget)")
     t0 = time.time()
-    with PeakMemory(pool=n_processes) as pm:
+    with PeakMemory() as pm:
         res = cnmf_stage.run(paths, rec, cfg)
     wall = time.time() - t0
     import pickle
