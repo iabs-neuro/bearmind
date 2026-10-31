@@ -106,7 +106,8 @@ def _save_inspection_artifacts(
     artifacts_path: str = None,
     save_matrices: bool = True,
     save_corner_detection: bool = True,
-    compress_estimates: bool = False
+    compress_estimates: bool = False,
+    artifacts_dir: str = None
 ) -> Path:
     """
     Save all inspection artifacts to a folder.
@@ -123,6 +124,8 @@ def _save_inspection_artifacts(
         save_matrices: Whether to save FCD, FBD, match_mtx as .npy files
         save_corner_detection: Whether to save corner artifact visualization
         compress_estimates: Whether to compress estimates before saving
+        artifacts_dir: If given, write directly into this folder (no
+            inspection_artifacts_<session> subfolder; artifacts_path is ignored)
 
     Returns:
         Path to the created artifacts folder
@@ -133,7 +136,7 @@ def _save_inspection_artifacts(
     # E.g., "LNOF_J01_1D_22-12-2025 14-20-16" -> "LNOF_J01_1D"
     session_prefix = extract_session_id(session_name) or session_name
 
-    folder = base / f'inspection_artifacts_{session_prefix}'
+    folder = Path(artifacts_dir) if artifacts_dir else base / f'inspection_artifacts_{session_prefix}'
     folder.mkdir(parents=True, exist_ok=True)
 
     # Save full metrics with decisions
@@ -215,6 +218,7 @@ def run_auto_inspection(
     save_matrices: bool = True,
     save_corner_detection: bool = True,
     compress_estimates: bool = True,
+    artifacts_dir: str = None,
 
     # --- Verbosity ---
     verbose: bool = False
@@ -594,7 +598,8 @@ def run_auto_inspection(
             artifacts_path=str(artifacts_path),
             save_matrices=save_matrices,
             save_corner_detection=save_corner_detection,
-            compress_estimates=compress_estimates
+            compress_estimates=compress_estimates,
+            artifacts_dir=artifacts_dir
         )
 
         if verbose:
