@@ -12,7 +12,8 @@ Output:
     {session_name}_filters.mat - spatial footprints as MATLAB array
 
 Features:
-    - ML threshold filtering: Removes neurons with ml_keep_probability < threshold (default 0.72)
+    - ML threshold filtering: Removes neurons with ml_keep_probability < threshold (default 0.72);
+      merged components carry no probability and are kept
     - Feedback incorporation: Applies FP/FN corrections from feedback CSV
     - Legacy file support: Works with files processed before autoinspection_config was added
 """
@@ -179,6 +180,21 @@ def apply_feedback(idx_components: np.ndarray, feedback_df: pd.DataFrame) -> tup
     }
 
     return corrected, summary
+
+
+def ml_approved_components(metrics_df: pd.DataFrame, threshold: float) -> set:
+    """
+    Component indices that pass the export ML filter.
+
+    Components produced by automatic merging are built only from neurons that
+    were already kept, and the model is never applied to them, so their
+    ml_keep_probability is NaN. A plain `>= threshold` comparison is False for
+    NaN and would drop every merged neuron from the export.
+    """
+    approved = metrics_df['ml_keep_probability'] >= threshold
+    if 'decision' in metrics_df.columns:
+        approved |= metrics_df['decision'] == 'from_merge'
+    return set(metrics_df.loc[approved, 'component_idx'].tolist())
 
 
 def extract_data(est, component_indices: np.ndarray) -> dict:
@@ -449,8 +465,7 @@ def main():
                 threshold = est.autoinspection_config.get('ml_threshold', DEFAULT_ML_THRESHOLD)
 
             # Filter by ml_keep_probability
-            ml_approved_mask = df['ml_keep_probability'] >= threshold
-            ml_approved_indices = set(df.loc[ml_approved_mask, 'component_idx'].tolist())
+            ml_approved_indices = ml_approved_components(df, threshold)
             component_indices = np.array([i for i in component_indices if i in ml_approved_indices])
 
             ml_filtered = True
