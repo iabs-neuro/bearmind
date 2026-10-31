@@ -105,7 +105,10 @@ def test_update_yaml_waits_for_lock_and_breaks_stale(tmp_path, monkeypatch):
     update_yaml(f, {"a": 1})  # stale lock broken
     assert yaml.safe_load(f.read_text()) == {"a": 1} and not lock.exists()
     monkeypatch.setattr(fileio, "LOCK_TIMEOUT_S", 0.2)
-    lock.write_text("1")
+    import psutil
+
+    me = psutil.Process()
+    lock.write_text(f"{me.pid} {me.create_time()} other-writer")  # fresh lock of a live writer
     with pytest.raises(TimeoutError):
         update_yaml(f, {"a": 2})
     assert yaml.safe_load(f.read_text()) == {"a": 1}

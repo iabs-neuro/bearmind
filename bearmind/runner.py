@@ -24,6 +24,12 @@ from pathlib import Path
 
 import psutil
 
+try:
+    import msvcrt
+except ImportError:  # not Windows
+    msvcrt = None
+    import fcntl
+
 from bearmind import checks, config, fileio, provenance, registry
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Decision, StageRecord, State
@@ -64,7 +70,8 @@ _LEVEL = {"ok": 0, "warning": 1, "error": 2}
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    # milliseconds: gate.run compares a manual decision with the CNMF finish time (R28)
+    return datetime.now().isoformat(timespec="milliseconds")
 
 
 def _func(spec):
@@ -83,9 +90,10 @@ def _stages_until(until) -> tuple:
 
 
 def _what(st) -> str:
-    """What a WAITING stage waits for, from its error text 'waiting for <what>'."""
+    """What a WAITING stage waits for, from its error text 'waiting for <what>[: <detail>]'."""
     e = st.error or ""
-    return e[len("waiting for "):] if e.startswith("waiting for ") else e
+    e = e[len("waiting for "):] if e.startswith("waiting for ") else e
+    return e.split(":", 1)[0]
 
 
 # --- parameters and hashes ---
@@ -105,9 +113,20 @@ def _model_sha(f: Path) -> str | None:
     return _SHA_CACHE[key]
 
 
-def _latest_inspection(rec) -> str | None:
+def _latest_inspection(rec):
     found = [d for d in rec.decisions if d.what == "manual_inspection"]
-    return found[-1].value if found else None
+    return found[-1] if found else None
+
+
+def _file_stat(f) -> dict | None:
+    try:
+        st = Path(f).stat()
+    except OSError:
+        return None
+    return {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+
+
+_CROP_WRITTEN = ("box", "box_pos")  # written by finalize after crop is done: inputs of MC, not of crop
 
 
 def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
@@ -119,7 +138,8 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     if stage == "crop":
         return {"parts": [{"folder": p.folder, "chunks": list(p.chunks), "n_frames": p.n_frames}
                           for p in rec.parts],
-                "n_frames": rec.n_frames}
+                "n_frames": rec.n_frames,
+                "crop": {k: v for k, v in (cfg.get("crop") or {}).items() if k not in _CROP_WRITTEN}}
     if stage == "mc":
         c = cfg.get("crop") or {}
         return {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET), "fps": rec.fps}
@@ -135,13 +155,13 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     if stage == "gate":
         if not (cfg.get("gate") or {}).get("enabled", True):
             return {"enabled": False}
-        decision = _latest_inspection(rec)
-        out = {"enabled": True, "decision": decision, "manual_result": None}
-        f = paths.manual_result(rec.sid)
-        if decision == "cleaned" and f.is_file():  # a re-saved inspection result re-runs what follows
-            st = f.stat()
-            out["manual_result"] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
-        return out
+        d = _latest_inspection(rec)
+        cnmf = rec.stages.get("cnmf")
+        # R28: a new decision, a re-saved manual result or a new CNMF output re-runs the gate
+        return {"enabled": True,
+                "decision": None if d is None else {"what": d.what, "value": d.value, "when": d.when},
+                "manual_result": _file_stat(paths.manual_result(rec.sid)),
+                "cnmf_finished": None if cnmf is None else cnmf.finished}
     if stage == "autoinspect":
         return {"autoinspect": cfg["autoinspect"],
                 "model_sha256": _model_sha(provenance.model_file(cfg)),
@@ -151,7 +171,13 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
         # (ae_launch stores the argument in autoinspection_config); its stored params give it without
         # loading a pickle of hundreds of MB per session on every check.
         ran = (rec.stages.get("autoinspect") or StageRecord()).params.get("autoinspect") or {}
-        return {"ml_threshold": ran.get("ml_threshold", cfg["autoinspect"].get("ml_threshold"))}
+        # R31: the exported timestamps file is built from these (a rescan may change them)
+        parts = [{"timestamps_file": p.timestamps_file, "ts_format": p.ts_format, "start_ms": p.start_ms,
+                  "n_frames": p.n_frames,
+                  "file": _file_stat(paths.root / p.timestamps_file) if p.timestamps_file else None}
+                 for p in rec.parts]
+        return {"ml_threshold": ran.get("ml_threshold", cfg["autoinspect"].get("ml_threshold")),
+                "timestamps": parts}
     raise ValueError(f"unknown stage {stage!r}")
 
 
@@ -353,7 +379,7 @@ class _Heartbeat:
         self.paths = paths
         self.lock = threading.Lock()
         self.payload = {"pid": os.getpid(), "time": None, "current": None,
-                        "counts": dict.fromkeys(COUNT_KEYS, 0), "status": "running"}
+                        "counts": dict.fromkeys(COUNT_KEYS, 0), "by_stage": {}, "status": "running"}
         self._stop = threading.Event()
         self._thread = None
 
@@ -384,77 +410,115 @@ class _Heartbeat:
             self._thread.join(timeout=10)
 
 
-def _read_lock(lock: Path, tries: int = 10):
-    for i in range(tries):
-        try:
-            return json.loads(lock.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return None
-        except (OSError, ValueError):
-            if i == tries - 1:
-                return None
-            time.sleep(0.1)  # the holder may be writing it right now
+_LOCK_BYTE = 1 << 20  # the OS lock covers one byte past the text, so others can still read who holds it
 
 
-def _alive(holder) -> bool:
-    """The lock holder still runs: same PID and same process start time (a PID can be reused)."""
+def _os_lock(fh) -> bool:
+    fh.seek(_LOCK_BYTE)
     try:
-        p = psutil.Process(int(holder["pid"]))
-        if holder.get("create_time") is None:
-            return p.is_running()
-        return abs(p.create_time() - float(holder["create_time"])) < 1.0
-    except (psutil.NoSuchProcess, psutil.ZombieProcess, KeyError, TypeError, ValueError):
+        if msvcrt is not None:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.lockf(fh, fcntl.LOCK_EX | fcntl.LOCK_NB, 1, _LOCK_BYTE)
+        return True
+    except OSError:
         return False
-    except psutil.AccessDenied:
-        return True  # cannot tell: do not take the series from a running process
 
 
-def _acquire_lock(paths) -> dict:
+def _os_unlock(fh) -> None:
+    fh.seek(_LOCK_BYTE)
+    if msvcrt is not None:
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.lockf(fh, fcntl.LOCK_UN, 1, _LOCK_BYTE)
+
+
+def _lock_holder(lock: Path):
+    """PID text of the runner holding the lock, for the message only (the OS lock decides)."""
+    try:
+        return json.loads(lock.read_text(encoding="utf-8")).get("pid")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _acquire_lock(paths):
+    """OS lock on _bearmind/run.lock, held through an open handle for the whole run.
+
+    The OS releases it when the process dies, so a killed runner never blocks the series; the PID and
+    process start time written into the file only tell a second runner who holds it.
+    """
     lock = paths.lock
     lock.parent.mkdir(parents=True, exist_ok=True)
+    fh = os.fdopen(os.open(lock, os.O_RDWR | os.O_CREAT), "r+b", buffering=0)
+    if not _os_lock(fh):
+        fh.close()
+        pid = _lock_holder(lock)
+        raise RuntimeError(f"series is already being processed by PID {pid if pid is not None else 'unknown'}")
     me = psutil.Process()
-    mine = {"pid": me.pid, "create_time": me.create_time(), "time": _now()}
-    for _ in range(5):
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            holder = _read_lock(lock)
-            if holder is not None and _alive(holder):
-                raise RuntimeError(f"series is already being processed by PID {holder['pid']}")
-            log.warning("run lock of a process that is gone taken over: %s", holder)
-            try:
-                lock.unlink()
-            except FileNotFoundError:
-                pass
-            continue
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(mine, fh)
-        return mine
-    raise RuntimeError(f"cannot take the run lock {lock}")
+    fh.seek(0)
+    fh.truncate()
+    fh.write(json.dumps({"pid": me.pid, "create_time": me.create_time(), "time": _now()}).encode())
+    return fh
 
 
-def _release_lock(paths, mine) -> None:
-    holder = _read_lock(paths.lock, tries=3)
-    if holder and holder.get("pid") == mine["pid"] and holder.get("create_time") == mine["create_time"]:
-        paths.lock.unlink(missing_ok=True)
+def _release_lock(paths, fh) -> None:
+    try:
+        _os_unlock(fh)
+    except OSError:
+        pass
+    fh.close()
+    try:
+        paths.lock.unlink()
+    except (FileNotFoundError, PermissionError):
+        pass  # a new runner opened it already
 
 
 # --- the run ---
 
-def _counts(records, scope, stages) -> dict:
-    c = dict.fromkeys(COUNT_KEYS, 0)
+RESULT_WRITE_TRIES = 7  # x LOCK_TIMEOUT_S: longer than LOCK_STALE_S, so a stuck lock is broken meanwhile
+
+
+def _session_status(r, scope, stages) -> str | None:
+    sts = [r.stages.get(s) or StageRecord() for s in stages if scope.has(r, s)]
+    if not sts:
+        return None
+    states = [st.state for st in sts]
+    if State.RUNNING in states:
+        return "running"
+    waiting = [st for st in sts if st.state is State.WAITING]
+    if waiting:
+        return _WAIT_KIND.get(_what(waiting[0]), "waiting_manual")
+    if State.FAILED in states:
+        return "failed"
+    if State.SKIPPED in states:
+        return "skipped"
+    return "done" if all(x is State.DONE for x in states) else "pending"
+
+
+def _counts(records, scope, stages):
+    """Sessions by status (each non-excluded session once) and the number of DONE sessions per stage."""
+    c, by_stage = dict.fromkeys(COUNT_KEYS, 0), dict.fromkeys(stages, 0)
     for r in records:
         if r.excluded:
             continue
+        status = _session_status(r, scope, stages)
+        if status is not None:
+            c[status] += 1
         for s in stages:
-            if not scope.has(r, s):
-                continue
-            st = r.stages.get(s) or StageRecord()
-            if st.state is State.WAITING:
-                c[_WAIT_KIND.get(_what(st), "waiting_manual")] += 1
-            else:
-                c[st.state.value] += 1
-    return c
+            if scope.has(r, s) and (r.stages.get(s) or StageRecord()).state is State.DONE:
+                by_stage[s] += 1
+    return c, by_stage
+
+
+def _update(paths, sid, change, tries=1):
+    """registry.update_record, retried on LockTimeout (each try waits up to fileio.LOCK_TIMEOUT_S)."""
+    for i in range(tries):
+        try:
+            return registry.update_record(paths, sid, change)
+        except fileio.LockTimeout as e:
+            if i == tries - 1:
+                raise
+            log.warning("%s: registry busy, retrying: %s", sid, e, extra={"sid": sid})
 
 
 class _Run:
@@ -478,8 +542,8 @@ class _Run:
         """Heartbeat counts and summary.csv from the registry as it is now."""
         records = registry.all_records(self.paths) if records is None else records
         cur = None if self.current is None else {"sid": self.current[0], "stage": self.current[1]}
-        self.hb.update(counts=_counts(records, _Scope(records, self.sids), self.stages), status=status,
-                       current=cur)
+        counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages)
+        self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur)
         summary(self.paths, records)
 
     def abort(self):
@@ -526,7 +590,11 @@ def _reset_running(paths) -> None:
                 if st is not None and st.state is State.RUNNING:
                     st.state, st.error = State.PENDING, None
 
-        registry.update_record(paths, rec.sid, back)
+        try:
+            _update(paths, rec.sid, back)
+        except fileio.LockTimeout as e:  # a RUNNING stage is not up to date anyway: it runs again
+            log.warning("%s: registry busy, left as running: %s", rec.sid, e, extra={"sid": rec.sid})
+            continue
         _clean_temp(temp_root, rec.sid)
         log.warning("%s %s: was running at start (process killed?), set to pending", rec.sid,
                     ",".join(running), extra={"sid": rec.sid})
@@ -540,33 +608,37 @@ def _box_list(box):
     return [int(x) for x in box]
 
 
-def _finalize_due(records, view, scope, attempted) -> list:
+def _finalize_due(records, view, scope, attempted, once, poll_s) -> list:
     """Mice whose crop detection is settled for every session and whose box is not placed yet.
 
     Settled = up to date, or FAILED with unchanged parameters (one bad session does not hold its mouse).
-    Only sessions with crop DONE are passed to finalize_mouse. A crop re-run drops metrics['box'], so the
-    box is placed again; `attempted` stops a retry loop when finalize leaves a session without a box.
+    A session that cannot be scheduled (unreadable config) is not settled: its mouse waits (M1). Only
+    sessions with crop DONE are passed to finalize_mouse. A crop re-run drops metrics['box'], so the box is
+    placed again. `attempted` maps a key to (ok, time): a key that worked is not run again; one that failed
+    is retried after poll_s (once=True: by the next run).
     """
     by_mouse = {}
     for r in records:
         if not r.excluded and scope.has(r, "crop"):
             by_mouse.setdefault(r.mouse, []).append(r)
     due = []
+    now = time.monotonic()
     for mouse, recs in sorted(by_mouse.items()):
         done = [r for r in recs if view.current(r, "crop")]
-        if not done or any(not (view.current(r, "crop") or view.blocked(r, "crop") or view.hashes(r) is None)
-                           for r in recs):
+        if not done or any(not (view.current(r, "crop") or view.blocked(r, "crop")) for r in recs):
             continue
         if all("box" in r.stages["crop"].metrics and "box_pos" in (view.cfg(r).get("crop") or {})
                for r in done):
             continue
         key = (mouse, tuple((r.sid, r.stages["crop"].params_hash, r.stages["crop"].finished) for r in done))
-        if key not in attempted:
+        tried = attempted.get(key)
+        if tried is None or (not tried[0] and not once and now - tried[1] >= poll_s):
             due.append((mouse, done, key))
     return due
 
 
-def _run_finalize(paths, mouse, done, run_: _Run) -> None:
+def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
+    """Place the mouse box. An error is logged and retried later; crop stays DONE (M2)."""
     before = {r.sid: len(r.anomalies) for r in done}
     finished = {r.sid: r.stages["crop"].finished for r in done}
 
@@ -577,45 +649,41 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> None:
     try:
         cfg = config.resolve(paths, mouse=mouse)
         boxes = _func(FINALIZE_FUNC)(paths, mouse, done, cfg) or {}
+        for r in done:
+            new = [dataclasses.replace(a, data={**a.data, "stage": "crop"}) for a in r.anomalies[before[r.sid]:]]
+
+            def apply(d, r=r, new=new):
+                if not ours(d):
+                    return
+                if r.sid in boxes:
+                    d.stages["crop"].metrics["box"] = _box_list(boxes[r.sid])
+                have = {a.code for a in d.anomalies if a.data.get("stage") == "crop"}
+                d.anomalies.extend(a for a in new if a.code not in have)
+
+            rec = _update(paths, r.sid, apply, RESULT_WRITE_TRIES)
+            with run_.logs.session(r.sid):
+                if r.sid in boxes:
+                    log.info("%s crop: box %s (mouse %s)", r.sid, rec.stages["crop"].metrics.get("box"), mouse,
+                             extra={"sid": r.sid})
+                else:
+                    log.warning("%s crop: finalize placed no box (no crop metrics)", r.sid, extra={"sid": r.sid})
     except Exception as e:
         last, tb = _last_line(e), traceback.format_exc()
         for r in done:
             with run_.logs.session(r.sid):
-                log.error("%s crop: finalize of mouse %s failed: %s", r.sid, mouse, last, extra={"sid": r.sid})
+                log.error("%s crop: finalize of mouse %s failed, retried later (MC waits): %s", r.sid, mouse,
+                          last, extra={"sid": r.sid})
                 log.error("%s", tb, extra={"sid": r.sid, "session_only": True})
-
-            def fail(d):
-                if ours(d):
-                    d.stages["crop"].state = State.FAILED
-                    d.stages["crop"].error = f"crop finalize failed: {last}"
-                    run_.result["skipped"] += _skip_downstream(d, "crop")
-                    run_.result["failed"] += 1
-
-            registry.update_record(paths, r.sid, fail)
-        return
-
-    for r in done:
-        new = [dataclasses.replace(a, data={**a.data, "stage": "crop"}) for a in r.anomalies[before[r.sid]:]]
-
-        def apply(d, r=r, new=new):
-            if not ours(d):
-                return
-            if r.sid in boxes:
-                d.stages["crop"].metrics["box"] = _box_list(boxes[r.sid])
-            have = {a.code for a in d.anomalies if a.data.get("stage") == "crop"}
-            d.anomalies.extend(a for a in new if a.code not in have)
-
-        rec = registry.update_record(paths, r.sid, apply)
-        with run_.logs.session(r.sid):
-            if r.sid in boxes:
-                log.info("%s crop: box %s (mouse %s)", r.sid, rec.stages["crop"].metrics.get("box"), mouse,
-                         extra={"sid": r.sid})
-            else:
-                log.warning("%s crop: finalize placed no box (no crop metrics)", r.sid, extra={"sid": r.sid})
+        return False
+    return True
 
 
 def _run_stage(paths, sid, stage, run_: _Run) -> str:
-    """Run one stage of one session; returns 'done' | 'waiting' | 'failed' (or 'none': not started)."""
+    """Run one stage of one session.
+
+    Returns 'done' | 'waiting' | 'failed', 'none' (could not start: config or record changed) or 'retry'
+    (the registry lock was busy: the stage is offered again on the next loop, the batch goes on).
+    """
     try:
         rec = registry.load_record(paths, sid)
         cfg = config.resolve(paths, sid=sid, mouse=rec.mouse)  # reread before every stage
@@ -640,12 +708,17 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
         # reset_from or another writer changed the stage meanwhile: its decision wins over this result
         return st is not None and st.state is State.RUNNING and st.started == started and st.params_hash == h
 
-    rec = registry.update_record(paths, sid, running)
+    try:
+        rec = _update(paths, sid, running)
+    except fileio.LockTimeout as e:
+        log.warning("%s %s: not started, registry lock busy: %s", sid, stage, e, extra={"sid": sid})
+        return "retry"
     run_.current = (sid, stage, started, h, temp_root)
     run_.refresh()
     with run_.logs.session(sid):
         if (sid, stage) not in run_.waiting_logged:
             log.info("%s %s: started", sid, stage, extra={"sid": sid})
+        applied = []  # the result was written: nobody changed the stage while it ran
         try:
             res = _func(STAGE_FUNCS[stage])(paths, rec, cfg)
             missing = [k for k in REQUIRED[stage] if not _output_ok(paths, res.outputs, k)]
@@ -659,23 +732,27 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
 
             def done(d):
                 if ours(d):
+                    applied.append(True)
                     st = d.stages[stage]
                     st.state, st.finished, st.error = State.DONE, _now(), None
                     st.outputs, st.metrics, st.checks = dict(res.outputs), dict(res.metrics), found
                     d.anomalies = [a for a in d.anomalies if a.data.get("stage") != stage] + anomalies
 
             # inside the try: metrics the registry cannot store fail this stage, not the batch
-            registry.update_record(paths, sid, done)
+            _update(paths, sid, done, RESULT_WRITE_TRIES)
         except WaitingForInput as w:
             def waiting(d):
                 if ours(d):
+                    applied.append(True)
                     d.stages[stage].state, d.stages[stage].error = State.WAITING, str(w)
 
-            registry.update_record(paths, sid, waiting)
-            if (sid, stage) not in run_.waiting_logged:  # retried every poll; log once
+            outcome = _record_outcome(paths, sid, stage, waiting, "waiting", applied)
+            if outcome == "waiting" and (sid, stage) not in run_.waiting_logged:  # retried every poll
                 run_.waiting_logged.add((sid, stage))
                 log.info("%s %s: %s", sid, stage, w, extra={"sid": sid})
-            outcome = "waiting"
+        except fileio.LockTimeout as e:  # registry or config lock held too long: run it again later
+            log.warning("%s %s: registry lock busy, the stage runs again: %s", sid, stage, e, extra={"sid": sid})
+            outcome = "retry"
         except Exception as e:
             last = _last_line(e)
             log.error("%s %s: failed: %s", sid, stage, last, extra={"sid": sid})
@@ -685,23 +762,44 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
 
             def failed(d):
                 if ours(d):
+                    applied.append(True)
                     st = d.stages[stage]
                     st.state, st.error, st.finished = State.FAILED, last, _now()
                     skipped.append(_skip_downstream(d, stage))
 
-            registry.update_record(paths, sid, failed)
-            run_.result["failed"] += 1
-            run_.result["skipped"] += sum(skipped)
-            outcome = "failed"
+            outcome = _record_outcome(paths, sid, stage, failed, "failed", applied)
+            if outcome == "failed":
+                run_.result["failed"] += 1
+                run_.result["skipped"] += sum(skipped)
         else:
             run_.waiting_logged.discard((sid, stage))
-            worst = max((c.level for c in found), key=_LEVEL.get, default="ok")
-            log.info("%s %s: done (checks: %s)", sid, stage, worst, extra={"sid": sid})
-            run_.result["done"] += 1
-            outcome = "done"
+            if applied:
+                worst = max((c.level for c in found), key=_LEVEL.get, default="ok")
+                log.info("%s %s: done (checks: %s)", sid, stage, worst, extra={"sid": sid})
+                run_.result["done"] += 1
+                outcome = "done"
+            else:
+                outcome = _superseded(sid, stage)
     run_.current = None
     run_.refresh()
     return outcome
+
+
+def _record_outcome(paths, sid, stage, change, outcome, applied) -> str:
+    try:
+        _update(paths, sid, change, RESULT_WRITE_TRIES)
+    except fileio.LockTimeout as e:
+        log.error("%s %s: %s not recorded, registry lock busy; the stage runs again: %s", sid, stage, outcome,
+                  e, extra={"sid": sid})
+        return "retry"
+    return outcome if applied else _superseded(sid, stage)
+
+
+def _superseded(sid, stage) -> str:
+    """The stage was changed while it ran (reset_from, a new decision): its result is dropped, it runs again."""
+    log.info("%s %s: changed while running (reset or new decision); result dropped, runs again", sid, stage,
+             extra={"sid": sid})
+    return "retry"
 
 
 def _waiting(records, scope, stages) -> list:
@@ -709,55 +807,78 @@ def _waiting(records, scope, stages) -> list:
             if scope.has(r, s) and s in r.stages and r.stages[s].state is State.WAITING]
 
 
+def _skip(tried, not_started, records, once, poll_s) -> set:
+    """(sid, stage) pairs not to offer now.
+
+    A waiting stage tried less than poll_s ago (once=True: tried in this run) is skipped only while it is
+    still WAITING: a decision written meanwhile makes it ready at once (C1). A stage that could not start
+    is skipped for poll_s (once=True: for the run).
+    """
+    now = time.monotonic()
+    still_waiting = {(r.sid, s) for r in records for s, st in r.stages.items() if st.state is State.WAITING}
+    skip = {k for k, t in tried.items() if k in still_waiting and (once or now - t < poll_s)}
+    return skip | {k for k, t in not_started.items() if once or now - t < poll_s}
+
+
 def _loop(paths, run_: _Run) -> dict:
     tried = {}  # (sid, stage) -> monotonic time of the last attempt that ended WAITING
-    attempted = set()
+    not_started = {}  # (sid, stage) -> monotonic time of the last attempt that could not start
+    attempted = {}  # finalize key -> (ok, monotonic time)
     reported = set()
     last_msg = None
+    once, poll_s = run_.once, run_.poll_s
+
+    def ready(records, view=None):
+        return next_ready(records, paths, until=run_.until, sids=run_.sids,
+                          skip=_skip(tried, not_started, records, once, poll_s), _view=view)
+
     while True:
         records = registry.all_records(paths)
         scope = _Scope(records, run_.sids)
         view = _View(paths)
-        due = _finalize_due(records, view, scope, attempted)
+        due = _finalize_due(records, view, scope, attempted, once, poll_s)
         if due:
             for mouse, done, key in due:
-                attempted.add(key)
-                _run_finalize(paths, mouse, done, run_)
+                attempted[key] = (_run_finalize(paths, mouse, done, run_), time.monotonic())
             run_.refresh()
             continue
-        now = time.monotonic()
-        skip = {k for k, t in tried.items() if run_.once or now - t < run_.poll_s}
-        job = next_ready(records, paths, until=run_.until, sids=run_.sids, skip=skip, _view=view)
+        job = ready(records, view)
         for sid, err in view.errors.items():
             if (sid, err) not in reported:
                 reported.add((sid, err))
                 log.error("%s: cannot be scheduled: %s", sid, err, extra={"sid": sid})
         if job is not None:
             outcome = _run_stage(paths, *job, run_)
-            if outcome in ("waiting", "none"):
+            tried.pop(job, None)
+            not_started.pop(job, None)
+            if outcome == "waiting":
                 tried[job] = time.monotonic()
-            else:
-                tried.pop(job, None)
-            continue
+            elif outcome == "none":
+                not_started[job] = time.monotonic()
+            continue  # 'retry': offered again on the next loop
         waiting = _waiting(records, scope, run_.stages)
-        if run_.once or not waiting:
-            run_.result["waiting"] = len(waiting)
-            return dict(run_.result)
-        whats = [w for _, _, w in waiting]
-        msg = (f"waiting: thresholds {whats.count('thresholds')}, "
-               f"manual inspection {sum(w not in _WAIT_KIND for w in whats)}")
-        if whats.count("crop_finalize"):
-            msg += f", crop finalize {whats.count('crop_finalize')}"
-        if msg != last_msg:
-            log.info(msg)
-            last_msg = msg
-        run_.refresh(status="waiting", records=records)
-        now = time.monotonic()
-        # next retry of a waiting stage; one that is due but was not offered (its session cannot be
-        # scheduled now) must not turn this into a busy loop, so it waits a full poll
-        due_at = [tried[(s, st)] + run_.poll_s for s, st, _ in waiting
-                  if (s, st) in tried and tried[(s, st)] + run_.poll_s > now]
-        time.sleep(max(0.01, min(due_at) - now if due_at else run_.poll_s))
+        if not once and waiting:
+            whats = [w for _, _, w in waiting]
+            msg = (f"waiting: thresholds {whats.count('thresholds')}, "
+                   f"manual inspection {sum(w not in _WAIT_KIND for w in whats)}")
+            if whats.count("crop_finalize"):
+                msg += f", crop finalize {whats.count('crop_finalize')}"
+            if msg != last_msg:
+                log.info(msg)
+                last_msg = msg
+            run_.refresh(status="waiting", records=records)
+            now = time.monotonic()
+            # next retry of a waiting stage; one that is due but was not offered (its session cannot be
+            # scheduled now) must not turn this into a busy loop, so it waits a full poll
+            due_at = [t + poll_s for t in list(tried.values()) + list(not_started.values()) if t + poll_s > now]
+            time.sleep(max(0.01, min(due_at) - now if due_at else poll_s))
+            continue
+        # about to return: a decision may have landed after this snapshot was read (C1)
+        fresh = registry.all_records(paths)
+        if ready(fresh) is not None or (not once and _waiting(fresh, _Scope(fresh, run_.sids), run_.stages)):
+            continue
+        run_.result["waiting"] = len(_waiting(fresh, _Scope(fresh, run_.sids), run_.stages))
+        return dict(run_.result)
 
 
 def run(series_root: Path, until: str | None = None, sids: list[str] | None = None, once: bool = False,
@@ -771,7 +892,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     paths = SeriesPaths(Path(series_root).resolve())  # absolute before the chdir below
     run_ = _Run(paths, until, sids, once, poll_s)
     config.resolve(paths)  # a broken series config stops here, before any state changes
-    mine = _acquire_lock(paths)
+    lock = _acquire_lock(paths)
     cwd = os.getcwd()
     try:
         os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
@@ -793,7 +914,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     finally:
         run_.close()
         os.chdir(cwd)
-        _release_lock(paths, mine)
+        _release_lock(paths, lock)
 
 
 # --- summary table ---
@@ -847,18 +968,27 @@ def _summary_row(paths, rec) -> dict:
     return row
 
 
+_SUMMARY_WARNED: set = set()  # summary files whose last write failed (warned once until a write works)
+
+
 def summary(paths, records=None):
     """One row per session (state and key number of each stage, thresholds, worst check); writes summary.csv.
 
-    A failed write (file open in Excel) is a warning: the table is still returned.
+    One write attempt, no retry loop (it runs after every transition and must not hold the batch); a
+    failure (file open in Excel) is a warning, given once until a write succeeds again.
     """
     import pandas as pd
 
     records = registry.all_records(paths) if records is None else records
     df = pd.DataFrame([_summary_row(paths, r) for r in records], columns=SUMMARY_COLUMNS)
+    key = str(paths.summary_csv)
     try:
         fileio.write_atomic(paths.summary_csv, lambda fh: df.to_csv(fh, index=False, lineterminator="\n"),
-                            newline="")
+                            newline="", replace_tries=1)
     except Exception as e:
-        log.warning("summary.csv not written: %s", _last_line(e))
+        if key not in _SUMMARY_WARNED:
+            _SUMMARY_WARNED.add(key)
+            log.warning("summary.csv not written (warned once until it works again): %s", _last_line(e))
+    else:
+        _SUMMARY_WARNED.discard(key)
     return df

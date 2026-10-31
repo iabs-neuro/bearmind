@@ -1,3 +1,7 @@
+# Stage sections are hashed into each stage's parameters (runner.stage_params): adding or changing a key
+# in a section re-runs that stage, and every stage after it, for every session. crop.box / crop.box_pos
+# and the thresholds (cnmf.gSig / min_corr / min_pnr) are written by the pipeline and are inputs of the
+# later stages only (MC, CNMF).
 scan:
   max_mismatch_frac: 0.02
   gap_factor: 2.0

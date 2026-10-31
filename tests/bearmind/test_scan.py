@@ -1,9 +1,13 @@
 import numpy as np
 import pytest
 
+import threading
+import time
+
 from bearmind import scan
 from bearmind.paths import SeriesPaths
-from bearmind.registry import Decision, load_record, save_record
+from bearmind.registry import (Anomaly, Decision, StageRecord, State, load_record, save_record,
+                               update_record)
 from bearmind.video import SessionReader
 
 
@@ -286,3 +290,47 @@ def test_nominal_frame_rate_lenient(make_series, tmp_path, rate, expect_outlier)
     meta.write_text(json.dumps({"frameRate": rate}), encoding="utf-8")
     r = scan.scan_series(root)[0]
     assert ("fps_outlier" in codes(r)) == expect_outlier
+
+
+
+def test_rescan_keeps_stage_anomalies(make_series, tmp_path):
+    """R29: a rescan replaces the scan's own anomalies only; stage-tagged ones stay."""
+    root = make_series(tmp_path / "s", "bonsai", ts_rows=28)
+    paths = SeriesPaths(root)
+    r = scan.scan_series(root)[0]
+    scan_codes = sorted(a.code for a in r.anomalies)
+
+    def tag(d):
+        d.anomalies.append(Anomaly("fov_not_found", "warning", "x", data={"stage": "crop"}))
+        d.anomalies.append(Anomaly("stage_trouble", "error", "y", data={"stage": "mc"}))
+
+    update_record(paths, r.sid, tag)
+    r2 = scan.scan_series(root)[0]
+    assert sorted(a.code for a in r2.anomalies if not a.data.get("stage")) == scan_codes
+    assert {a.code for a in r2.anomalies if a.data.get("stage")} == {"fov_not_found", "stage_trouble"}
+    assert not r2.excluded  # exclusion is decided by scan anomalies and user decisions only
+    assert load_record(paths, r.sid) == r2
+
+
+def test_rescan_keeps_a_concurrent_update(make_series, tmp_path):
+    """R29: the rescan rereads under the lock, so a runner write made meanwhile survives."""
+    root = make_series(tmp_path / "s", "bonsai")
+    paths = SeriesPaths(root)
+    sid = scan.scan_series(root)[0].sid
+    entered, release = threading.Event(), threading.Event()
+
+    def slow(d):
+        entered.set()
+        release.wait(20)
+        d.stages["mc"] = StageRecord(state=State.DONE, params_hash="h")
+
+    t = threading.Thread(target=update_record, args=(paths, sid, slow))
+    t.start()
+    assert entered.wait(10)
+    sc = threading.Thread(target=scan.scan_series, args=(root,))
+    sc.start()
+    time.sleep(1.5)  # the scan has read the videos and wants the record
+    release.set()
+    t.join(20)
+    sc.join(20)
+    assert load_record(paths, sid).stages["mc"].params_hash == "h"

@@ -16,7 +16,7 @@ import psutil
 import pytest
 import yaml
 
-from bearmind import config, fileio, provenance, runner
+from bearmind import config, fileio, provenance, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, State,
                                load_record, save_record)
@@ -37,7 +37,8 @@ def _record(sid, decided=True, excluded=False):
     part = RawPart(folder=f"1_Raw/{sid}", chunks=[f"{sid}_0.avi"], n_frames=100, shape=(16, 16),
                    timestamps_file=f"0_TimeStamps/{sid}_Mini_TS.csv", ts_format="bonsai_ticks",
                    start_ms=None, metadata_file=None)
-    decisions = [Decision("manual_inspection", "not_needed", "viktor", "2026-10-31T10:00:00")] if decided else []
+    # R28: a manual decision counts only if made after the current CNMF output; far future = always
+    decisions = [Decision("manual_inspection", "not_needed", "viktor", "2099-01-01T00:00:00")] if decided else []
     return SessionRecord(sid=sid, mouse=sid.rsplit("_", 1)[0], mode="bonsai", parts=[part], n_frames=100,
                          fps=19.76, fps_info={"source": "timestamps"},
                          anomalies=[Anomaly("scan_note", "warning", "from the scan")], decisions=decisions,
@@ -230,7 +231,10 @@ def test_waiting_does_not_block_others(series):
     assert res["waiting"] == 2 and res["failed"] == 0
     assert s.stubs.calls.count((S1, "gate")) == 1  # once=True: each waiting stage is tried once
     hb = _heartbeat(s.paths)
-    assert hb["counts"]["waiting_manual"] == 1 and hb["counts"]["waiting_thresholds"] == 1
+    assert hb["counts"] == {"done": 1, "running": 0, "waiting_thresholds": 1, "waiting_manual": 1,
+                            "waiting_crop": 0, "failed": 0, "skipped": 0, "pending": 0}  # per session
+    assert hb["by_stage"] == {"crop": 3, "mc": 3, "thresholds": 3, "cnmf": 2, "gate": 1, "autoinspect": 1,
+                              "export": 1}
     assert hb["status"] == "idle" and hb["current"] is None and hb["pid"] == os.getpid()
 
 
@@ -269,15 +273,45 @@ def test_disk_full_cleans_temp(series):
     assert _states(s.paths, S1) == [State.DONE] * 7 and _states(s.paths, S3) == [State.DONE] * 7
 
 
+def _hold_run_lock(s, sid=S1, stage="crop"):
+    """Start a runner in a thread that blocks inside one stage; returns (thread, release event)."""
+    entered, release = threading.Event(), threading.Event()
+
+    def block(paths, rec, cfg):
+        entered.set()
+        assert release.wait(30)
+
+    s.stubs.hooks[(sid, stage)] = block
+    t = threading.Thread(target=lambda: _run(s), daemon=True)
+    t.start()
+    assert entered.wait(60)
+    return t, release
+
+
 def test_second_runner_refused(series):
+    """M4: the run lock is an OS lock held for the whole run; the PID in it is for the message."""
     s = series
-    me = psutil.Process()
-    s.paths.lock.parent.mkdir(parents=True, exist_ok=True)
-    s.paths.lock.write_text(json.dumps({"pid": me.pid, "create_time": me.create_time()}), encoding="utf-8")
-    with pytest.raises(RuntimeError, match=f"series is already being processed by PID {me.pid}"):
+    t, release = _hold_run_lock(s)
+    with pytest.raises(RuntimeError, match=f"series is already being processed by PID {os.getpid()}"):
         _run(s)
-    assert s.stubs.calls == []
-    assert s.paths.lock.exists()  # the other runner's lock stays
+    release.set()
+    t.join(60)
+    assert not t.is_alive()
+    del s.stubs.hooks[(S1, "crop")]
+    assert _run(s) == ZERO  # released: a new run starts
+
+
+def test_live_runner_kept_when_lock_file_content_is_unreadable(series):
+    s = series
+    t, release = _hold_run_lock(s)
+    with open(s.paths.lock, "r+b") as fh:  # the PID text is for display; the OS lock decides
+        fh.write(b"garbage")
+    try:
+        with pytest.raises(RuntimeError, match="already being processed"):
+            _run(s)
+    finally:
+        release.set()
+        t.join(60)
 
 
 def test_summary_csv(series):
@@ -359,8 +393,13 @@ def test_missing_required_output_reruns(series):
 def test_concurrent_gate_decision_not_lost(series):
     s = series
     save_record(s.paths, _record(S1, decided=False))
-    # a person decides while the runner holds S1's record (loaded before CNMF started)
-    s.stubs.hooks[(S1, "cnmf")] = lambda paths, rec, cfg: gate.decide(paths, S1, "not_needed", "viktor")
+    # a person decides while the runner holds S1's record (loaded before the gate started); a decision made
+    # during CNMF would not count (R28), so it lands while the gate itself runs
+    def decide_once(paths, rec, cfg):
+        del s.stubs.hooks[(S1, "gate")]
+        gate.decide(paths, S1, "not_needed", "viktor")
+
+    s.stubs.hooks[(S1, "gate")] = decide_once
     _run(s)
     rec = load_record(s.paths, S1)
     assert [d.what for d in rec.decisions] == ["manual_inspection"]
@@ -428,6 +467,11 @@ def test_stage_hash_inputs(series):
     assert h["gate"] == base["gate"] and h["autoinspect"] != base["autoinspect"]
     h = hashes(lambda c: c["preview"].update(crf=30))
     assert h == base  # previews are not results
+    h = hashes(lambda c: c["crop"].update(fov_threshold_frac=0.3))  # R30: detection parameters
+    assert h["crop"] != base["crop"]
+    rec2 = copy.deepcopy(rec)
+    rec2.parts[0].start_ms = 5.0  # R31: timestamp inputs belong to export only
+    assert [runner.stage_hash(rec2, x, cfg, s.paths) == base[x] for x in STAGES] == [True] * 6 + [False]
     # box_pos null (no field of view: uncropped) differs from box_pos not written yet
     h1 = hashes(lambda c: c["crop"].update(box_pos=None))
     h2 = hashes(lambda c: c["crop"].pop("box_pos", None))
@@ -459,11 +503,14 @@ def test_stage_params_export_threshold_from_autoinspect(series):
     _run(s)
     rec = load_record(s.paths, S1)
     cfg = config.resolve(s.paths, sid=S1)
-    assert rec.stages["export"].params == {"ml_threshold": 0.72}
+    assert rec.stages["export"].params["ml_threshold"] == 0.72
+    assert rec.stages["export"].params["timestamps"] == [
+        {"timestamps_file": f"0_TimeStamps/{S1}_Mini_TS.csv", "ts_format": "bonsai_ticks", "start_ms": None,
+         "n_frames": 100, "file": None}]
     assert rec.stages["autoinspect"].params["fps"] == 20
     assert len(rec.stages["autoinspect"].params["model_sha256"]) == 64
     rec.stages["autoinspect"].params["autoinspect"]["ml_threshold"] = 0.6  # what the pickle was made with
-    assert runner.stage_params("export", rec, cfg, s.paths) == {"ml_threshold": 0.6}
+    assert runner.stage_params("export", rec, cfg, s.paths)["ml_threshold"] == 0.6
     assert provenance.collect(s.paths, rec, cfg)["stage_params"]["cnmf"]["fr"] == 19.76
 
 
@@ -487,8 +534,9 @@ def test_heartbeat_logs_and_cwd(series, monkeypatch):
     assert b["time"] != a["time"]  # the background thread keeps the pulse while a stage runs
     hb = _heartbeat(s.paths)
     assert hb["status"] == "idle" and hb["current"] is None
-    assert hb["counts"] == {"done": 21, "running": 0, "waiting_thresholds": 0, "waiting_manual": 0,
+    assert hb["counts"] == {"done": 3, "running": 0, "waiting_thresholds": 0, "waiting_manual": 0,
                             "waiting_crop": 0, "failed": 0, "skipped": 0, "pending": 0}
+    assert hb["by_stage"] == {st: 3 for st in STAGES}
     assert not any(t.name == "bearmind-heartbeat" for t in threading.enumerate())
     for sid in SIDS:
         text = s.paths.session_log(sid).read_text(encoding="utf-8")
@@ -615,17 +663,32 @@ def test_checks_use_series_metrics(series):
 
 
 def test_summary_write_failure_is_warning(series, monkeypatch, caplog):
+    """M3: one attempt per write (no retry loop blocking the batch), one warning until a write succeeds."""
     s = series
     _run(s)
+    monkeypatch.setattr(fileio, "REPLACE_STEP_S", 0.0)
+    real = os.replace
+    calls = {"n": 0, "deny": True}
 
-    def locked(src, dst):
-        raise PermissionError(13, "summary.csv is open in Excel")
+    def replace(src, dst):
+        if str(dst).endswith("summary.csv"):
+            calls["n"] += 1
+            if calls["deny"]:
+                raise PermissionError(13, "summary.csv is open in Excel")
+        return real(src, dst)
 
-    monkeypatch.setattr(fileio, "replace", locked)
+    monkeypatch.setattr(os, "replace", replace)
     with caplog.at_level(logging.WARNING, logger="bearmind"):
-        df = runner.summary(s.paths)
-    assert len(df) == 3
-    assert "summary.csv" in caplog.text
+        assert len(runner.summary(s.paths)) == 3
+        runner.summary(s.paths)
+        assert calls["n"] == 2
+        assert caplog.text.count("summary.csv not written") == 1
+        calls["deny"] = False
+        runner.summary(s.paths)
+        calls["deny"] = True
+        runner.summary(s.paths)
+        assert caplog.text.count("summary.csv not written") == 2
+    assert not list(s.paths.summary_csv.parent.glob("*.tmp"))
 
 
 def test_unstorable_metrics_fail_only_that_stage(series):
@@ -638,18 +701,21 @@ def test_unstorable_metrics_fail_only_that_stage(series):
     assert res["failed"] == 1
 
 
-def test_broken_session_config_holds_only_that_session(series):
+def test_broken_session_config_holds_its_mouse_finalize(series):
     s = series
     good = s.paths.session_config(S2).read_text(encoding="utf-8")
-    s.paths.session_config(S2).write_text("cnmf: [unclosed\n", encoding="utf-8")
+    s.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
     _run(s)
     assert _states(s.paths, S2) == [State.PENDING] * 7  # held, not failed: nothing to reset later
-    assert _states(s.paths, S1) == [State.DONE] * 7
+    s1 = load_record(s.paths, S1)  # same mouse: the box waits for S2's crop (M1)
+    assert s1.stages["crop"].state is State.DONE and s1.stages["mc"].state is State.WAITING
+    assert s1.stages["mc"].error == "waiting for crop_finalize"
+    assert _states(s.paths, S3) == [State.DONE] * 7
     assert f"{S2}: cannot be scheduled: config" in s.paths.series_log.read_text(encoding="utf-8")
     s.paths.session_config(S2).write_text(good, encoding="utf-8")
     s.stubs.calls.clear()
     _run(s)
-    assert s.stubs.calls == _tail(S2, "crop")
+    assert s.stubs.calls == [(S2, "crop")] + [(sid, st) for st in STAGES[1:] for sid in (S1, S2)]
 
 
 def test_waiting_session_that_cannot_be_scheduled_does_not_spin(series, monkeypatch):
@@ -670,3 +736,135 @@ def test_waiting_session_that_cannot_be_scheduled_does_not_spin(series, monkeypa
     with pytest.raises(KeyboardInterrupt):
         runner.run(s.paths.root, poll_s=5)
     assert len(sleeps) == 4 and all(x >= 5 for x in sleeps), sleeps
+
+
+# --- fix round 1 ---
+
+def test_decision_inside_poll_window_is_picked_up(series, monkeypatch):
+    """C1: the decision lands while the runner sleeps and it wakes before the stage is due again."""
+    s = series
+    save_record(s.paths, _record(S1, decided=False))
+    clock = [1000.0]
+    sleeps = []
+
+    def fake_sleep(x):
+        sleeps.append(x)
+        if len(sleeps) == 1:
+            gate.decide(s.paths, S1, "not_needed", "viktor")
+        if len(sleeps) > 20:
+            raise KeyboardInterrupt  # the runner never got back to S1
+        clock[0] += x / 2  # coarse clock: woke inside the poll window
+
+    monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=fake_sleep))
+    res = runner.run(s.paths.root, poll_s=5)
+    assert _states(s.paths, S1) == [State.DONE] * 7
+    assert res["waiting"] == 0
+
+
+def test_cleaned_decision_must_follow_current_cnmf(series):
+    """R28: a manual decision and the manual result must be newer than the CNMF output they clean."""
+    s = series
+    save_record(s.paths, _record(S1, decided=False))
+    _run(s)
+    assert load_record(s.paths, S1).stages["gate"].state is State.WAITING
+    _touch(s.paths.manual_result(S1), b"manual result of cnmf v1")
+    gate.decide(s.paths, S1, "cleaned", "viktor")
+    _run(s)
+    assert _states(s.paths, S1) == [State.DONE] * 7
+
+    runner.reset_from(s.paths, S1, "cnmf", "viktor")
+
+    def decide_during_cnmf(paths, rec, cfg):  # the person confirms while the new CNMF still runs
+        gate.decide(paths, S1, "cleaned", "viktor")
+        time.sleep(0.05)
+
+    s.stubs.hooks[(S1, "cnmf")] = decide_during_cnmf
+    s.stubs.calls.clear()
+    _run(s)
+    st = load_record(s.paths, S1).stages["gate"]
+    assert st.state is State.WAITING and "older than the current CNMF output" in st.error
+    assert (S1, "gate") in s.stubs.calls and (S1, "autoinspect") not in s.stubs.calls
+    assert _heartbeat(s.paths)["counts"]["waiting_manual"] == 1
+
+    del s.stubs.hooks[(S1, "cnmf")]
+    _touch(s.paths.manual_result(S1), b"manual result of cnmf v2")
+    gate.decide(s.paths, S1, "cleaned", "viktor")
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == [(S1, "gate"), (S1, "autoinspect"), (S1, "export")]
+    assert load_record(s.paths, S1).stages["gate"].params["decision"]["value"] == "cleaned"
+
+
+def test_crop_detection_params_rerun_crop(series):
+    """R30: the crop section is an input of crop, except the keys the pipeline writes."""
+    s = series
+    _run(s)
+    s.stubs.calls.clear()
+    config.update_yaml(s.paths.mouse_config("NOF_H02"), {"crop": {"fov_threshold_frac": 0.3}})
+    _run(s)
+    assert s.stubs.calls == _tail(S3, "crop")
+
+
+def test_export_hashes_timestamp_inputs(series):
+    """R31: a rescan that changes the timestamps of a part re-runs export only."""
+    s = series
+    _run(s)
+    s.stubs.calls.clear()
+
+    def shift(d):
+        d.parts[0].start_ms = 1728989165178.0
+
+    registry.update_record(s.paths, S1, shift)
+    _run(s)
+    assert s.stubs.calls == [(S1, "export")]
+    s.stubs.calls.clear()
+    rec = load_record(s.paths, S2)
+    _touch(s.paths.root / rec.parts[0].timestamps_file, b"0" + bytes([10]) + b"500000" + bytes([10]))
+    _run(s)
+    assert s.stubs.calls == [(S2, "export")]
+
+
+def test_lock_timeout_on_registry_write_does_not_abort(series, monkeypatch):
+    """I3: a registry lock timeout skips the stage for this loop; the batch goes on."""
+    s = series
+    real = registry.update_record
+    hits = {"running": 0, "done": 0}
+
+    def flaky(paths, sid, change):
+        name = getattr(change, "__name__", "")
+        if sid == S2 and name in hits and hits[name] == 0:
+            hits[name] += 1
+            raise fileio.LockTimeout(f"lock is held by another writer: {sid}")
+        return real(paths, sid, change)
+
+    monkeypatch.setattr(registry, "update_record", flaky)
+    res = _run(s)
+    assert hits == {"running": 1, "done": 1}
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)
+    assert res["failed"] == 0
+    assert "lock" in s.paths.series_log.read_text(encoding="utf-8")
+
+
+def test_finalize_error_is_retried_not_failed(series, monkeypatch):
+    """M2: a finalize error keeps crop DONE; MC waits and finalize is retried by the next run."""
+    s = series
+    from bearmind.stages import crop as crop_stage
+
+    calls = {"n": 0}
+
+    def flaky_finalize(paths, mouse, records, cfg):
+        calls["n"] += 1
+        if mouse == "NOF_H01" and calls["n"] == 1:
+            raise fileio.LockTimeout("lock is held by another writer: mouse config")
+        return crop_stage.finalize_mouse(paths, mouse, records, cfg)
+
+    monkeypatch.setattr(runner, "FINALIZE_FUNC", flaky_finalize)
+    res = _run(s)
+    for sid in (S1, S2):
+        rec = load_record(s.paths, sid)
+        assert rec.stages["crop"].state is State.DONE
+        assert rec.stages["mc"].state is State.WAITING and rec.stages["mc"].error == "waiting for crop_finalize"
+    assert _states(s.paths, S3) == [State.DONE] * 7
+    assert res["failed"] == 0
+    _run(s)
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)

@@ -12,8 +12,8 @@ from pathlib import Path
 from . import config
 from .naming import mouse_id, session_id
 from .paths import SeriesPaths
-from .registry import (STAGES, Anomaly, RawPart, SessionRecord, StageRecord, load_record,
-                       save_record)
+from .registry import (STAGES, Anomaly, RawPart, SessionRecord, StageRecord, save_record,
+                       update_record)
 from .timestamps import read_timestamps, robust_fps, stitch
 from .video import last_frame_readable, video_info
 
@@ -305,9 +305,10 @@ def _latest_decision(rec: SessionRecord, what: str):
 
 
 def _excluded(rec: SessionRecord) -> bool:
-    """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly.
+    """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly of the scan.
 
     An accepted mismatch stays in the record as a warning; n_frames is already the common length.
+    Anomalies tagged with a stage (data["stage"]) belong to that stage and do not exclude the session.
     """
     if _latest_decision(rec, "accept_mismatch") == "true":
         for a in rec.anomalies:
@@ -316,7 +317,7 @@ def _excluded(rec: SessionRecord) -> bool:
     exclude = _latest_decision(rec, "exclude")
     if exclude is not None:
         return exclude == "true"
-    return any(a.level == "error" for a in rec.anomalies)
+    return any(a.level == "error" for a in rec.anomalies if not a.data.get("stage"))
 
 
 def scan_series(series_root: Path) -> list[SessionRecord]:
@@ -350,16 +351,21 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
     for sid, (parts, mode, n, fps, info, anomalies, _nominal) in built.items():
         f = paths.registry_file(sid)
         if f.is_file():
-            rec = load_record(paths, sid)
-            rec.parts, rec.n_frames, rec.fps = parts, n, fps
-            rec.fps_info, rec.anomalies, rec.mode = info, anomalies, mode
+            # under the record lock: the runner or a person may be writing this record meanwhile
+            def rescan(rec, parts=parts, n=n, fps=fps, info=info, anomalies=anomalies, mode=mode):
+                rec.parts, rec.n_frames, rec.fps, rec.fps_info, rec.mode = parts, n, fps, info, mode
+                # the scan's own anomalies are replaced; those of the stages stay with their stage
+                rec.anomalies = [a for a in rec.anomalies if a.data.get("stage")] + anomalies
+                rec.excluded = _excluded(rec)
+
+            rec = update_record(paths, sid, rescan)
         else:
             rec = SessionRecord(
                 sid=sid, mouse=mouse_id(sid), mode=mode, parts=parts, n_frames=n, fps=fps,
                 fps_info=info, anomalies=anomalies, decisions=[], excluded=False,
                 stages={s: StageRecord() for s in STAGES})
-        rec.excluded = _excluded(rec)
-        save_record(paths, rec)
+            rec.excluded = _excluded(rec)
+            save_record(paths, rec)
         records.append(rec)
 
     out = paths._service / "scan_unrecognized.csv"

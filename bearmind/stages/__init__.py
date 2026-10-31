@@ -14,6 +14,6 @@ class StageResult:
 class WaitingForInput(Exception):
     """A stage needs a user decision (e.g. thresholds); the scheduler marks it WAITING instead of FAILED."""
 
-    def __init__(self, what: str):
-        super().__init__(f"waiting for {what}")
+    def __init__(self, what: str, detail: str | None = None):
+        super().__init__(f"waiting for {what}" + (f": {detail}" if detail else ""))
         self.what = what

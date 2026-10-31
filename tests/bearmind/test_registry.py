@@ -122,6 +122,11 @@ import threading
 import time
 from pathlib import Path
 
+import subprocess
+import sys
+
+import psutil
+
 from bearmind import fileio
 from bearmind.registry import update_record
 
@@ -207,7 +212,8 @@ def test_busy_lock_times_out(tmp_path, monkeypatch):
     paths = SeriesPaths(tmp_path)
     save_record(paths, make_record())
     lock = _lock_of(paths)
-    lock.write_text("12345")  # fresh: another writer holds it
+    me = psutil.Process()
+    lock.write_text(f"{me.pid} {me.create_time()} other-writer")  # fresh, live holder
     t0 = time.monotonic()
     with pytest.raises(TimeoutError, match="lock"):
         save_record(paths, make_record())
@@ -298,3 +304,60 @@ def test_corrupt_file_logged_once_per_version(tmp_path, caplog):
         bad.write_text("{{", encoding="utf-8")  # changed again: worth a new message
         all_records(paths)
         assert caplog.text.count("B.json") == 2
+
+
+
+def _dead_pid() -> int:
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    return p.pid
+
+
+def test_dead_holder_lock_taken_over_at_once(tmp_path):
+    """I3: a lock whose writer is gone is broken at once, not after the 60 s age."""
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    lock = _lock_of(paths)
+    lock.write_text(f"{_dead_pid()} 1.0 dead-writer")
+    t0 = time.monotonic()
+    rec = make_record()
+    rec.excluded = True
+    save_record(paths, rec)
+    assert time.monotonic() - t0 < 2.0
+    assert load_record(paths, "M1_D1").excluded and not lock.exists()
+    me = psutil.Process()
+    lock.write_text(f"{me.pid} {me.create_time() - 1000} reused-pid")  # same PID, other process
+    t0 = time.monotonic()
+    save_record(paths, make_record())
+    assert time.monotonic() - t0 < 2.0 and not lock.exists()
+
+
+def test_unreadable_lock_content_counts_as_held(tmp_path, monkeypatch):
+    monkeypatch.setattr(fileio, "LOCK_TIMEOUT_S", 0.3)
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    lock = _lock_of(paths)
+    lock.write_text("")  # a writer between create and write
+    with pytest.raises(fileio.LockTimeout):
+        save_record(paths, make_record())
+    assert lock.exists()
+
+
+def test_contenders_take_over_a_dead_lock_one_at_a_time(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record())
+    _lock_of(paths).write_text(f"{_dead_pid()} 1.0 dead-writer")
+
+    def worker(k):
+        for i in range(10):
+            update_record(paths, "M1_D1",
+                          lambda r: r.decisions.append(Decision("x", f"{k}-{i}", "w", "t")))
+
+    threads = [threading.Thread(target=worker, args=(k,)) for k in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(load_record(paths, "M1_D1").decisions) == 1 + 40
+    folder = paths.registry_file("M1_D1").parent
+    assert sorted(p.name for p in folder.iterdir()) == ["M1_D1.json"]
