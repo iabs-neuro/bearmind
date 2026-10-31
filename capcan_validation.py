@@ -46,7 +46,7 @@ def load_fps_data(fps_file='fps_data.csv'):
         dict: Mapping of session_id -> fps (rounded to nearest int)
     """
     fps_path = os.path.join(project_root, fps_file)
-    fps_df = pd.read_csv(fps_path)
+    fps_df = pd.read_csv(fps_path, sep=';')
 
     # Create mapping: filename (first 10 chars) -> rounded FPS
     fps_map = {}
@@ -97,6 +97,34 @@ def load_estimates(filepath):
     with open(filepath, 'rb') as f:
         estimates = pickle.load(f)
     return estimates
+
+
+def kept_components(est_auto, mapping_info):
+    """
+    Post-merge indices of the neurons the automatic pipeline kept.
+
+    implement_decision leaves deleted neurons in idx_components so the GUI can
+    show them; their status is only in the decision table.
+    """
+    old_to_new = mapping_info['old_to_new']
+    deleted_new = {old_to_new[d] for d in mapping_info['deleted'] if d in old_to_new}
+    return np.array([i for i in est_auto.idx_components if i not in deleted_new], dtype=int)
+
+
+def auto_result_metrics(est_auto, mapping_info, fps, template_df):
+    """Metrics of kept neurons only; positions are all the comparison needs."""
+    kept = kept_components(est_auto, mapping_info)
+    if len(kept) == 0:
+        # estimates_to_metrics treats an empty selection as "all components"
+        return template_df.iloc[0:0].copy()
+    metrics_df, _, _, _, _, _, _ = estimates_to_metrics(
+        est_auto,
+        fps=fps,
+        comps_to_select=kept,
+        include_event_based=False,
+        include_heavy=False
+    )
+    return metrics_df
 
 
 def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=True, event_method='threshold', n_iter=2, hybrid_kinetics=False):
@@ -222,7 +250,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
 
     # Apply ALL decisions including corner artifacts
     # Corner artifacts are already marked for deletion via 'delete' column
-    est_auto = implement_decision(est_init, metrics_df_auto)
+    est_auto, mapping_info = implement_decision(est_init, metrics_df_auto, return_index_mapping=True)
 
     # After implementing decisions, identify which neurons were corner artifacts
     # for reporting purposes (exclude from validation metrics)
@@ -237,12 +265,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         metrics_df_init_filtered = metrics_df_init.copy()
 
     # Extract metrics from automated result
-    metrics_df_auto_final, _, _, _, _, _, _ = estimates_to_metrics(
-        est_auto,
-        fps=fps,
-        include_event_based=False,  # Only need positions for comparison
-        include_heavy=False
-    )
+    metrics_df_auto_final = auto_result_metrics(est_auto, mapping_info, fps, metrics_df_init)
 
     n_auto = len(metrics_df_auto_final)
 
@@ -264,7 +287,7 @@ def validate_single_session(session_id, init_file, gt_file, fps=None, verbose=Tr
         metrics_df_init_filtered,
         metrics_df_gt,
         metrics_df_auto_final,
-        max_match_distance=50  # pixels
+        max_match_distance=3  # pixels, same as batch validation and training labels
     )
 
     # Add session metadata
@@ -386,7 +409,8 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 est_init.S = est_init.S.toarray()
 
             # Implement decisions (handles merges) - apply ALL decisions including corner artifacts
-            est_auto = implement_decision(est_init, metrics_df_auto)
+            est_auto, mapping_info = implement_decision(est_init, metrics_df_auto,
+                                                        return_index_mapping=True)
 
             # Save processed estimates if requested (inside artifacts folder)
             if save_estimates:
@@ -408,12 +432,8 @@ def batch_validate(mapping, fps=None, include_heavy=True, output_file=None, save
                 metrics_df_init_filtered = metrics_df_init.copy()
 
             # Extract metrics from automated result
-            metrics_df_auto_final, _, _, _, _, _, _ = estimates_to_metrics(
-                est_auto,
-                fps=session_fps,
-                include_event_based=False,
-                include_heavy=False
-            )
+            metrics_df_auto_final = auto_result_metrics(est_auto, mapping_info, session_fps,
+                                                        metrics_df_init)
 
             # Compute validation metrics
             validation_metrics = compute_metrics(
