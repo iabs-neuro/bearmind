@@ -1,0 +1,82 @@
+scan:
+  max_mismatch_frac: 0.02
+  gap_factor: 2.0
+  fps_series_dev: 0.05
+crop:
+  n_sample_frames: 300
+  margin_px: 10
+  min_fov_frac: 0.05
+# splits_rig is not stored: the MC stage uses ceil(T/500).
+# memory_fact is dropped: it is a CNMF patch parameter that MotionCorrect ignores.
+mc:
+  pw_rigid: false
+  max_shifts: [35, 35]
+  gSig_filt: [8, 8]
+  strides: [48, 48]
+  overlaps: [24, 24]
+  max_deviation_rigid: 15
+  border_nan: copy
+  niter_rig: 1
+  use_cuda: false
+memory:
+  patch_gb_per_mframe: {1: 245, 2: 163}
+thresholds:
+  gsig_range: [3, 4, 5, 6, 7]
+# gSig, min_corr, min_pnr come from the session config; gSiz = 4*gSig + 1; fr = session FPS.
+cnmf:
+  decay_time: 1
+  method_init: corr_pnr
+  K: null
+  merge_thr: 0.8
+  p: 1
+  tsub: 1
+  ssub: 1
+  rf: 40
+  stride: 25
+  only_init: true
+  nb: 0
+  nb_patch: 0
+  method_deconvolution: oasis
+  low_rank_background: null
+  update_background_components: true
+  normalize_init: false
+  center_psf: true
+  ssub_B: 2
+  ring_size_factor: 1.5
+  del_duplicates: true
+  border_pix: 5
+  min_SNR: 2.5
+  rval_thr: 0.95
+  use_cnn: false
+autoinspect:
+  brain: hybrid
+  model_path: production_models/ebm_v9_iter8.pkl
+  ml_threshold: 0.72
+  n_iter: 3
+  detect_corner_artifacts: false
+  correlation_method: spearman
+  cthr: 0.35
+  corr_thr: 0.4
+  pxlthr_distance_boundary: 15
+  d_snr_thr: 10
+  enable_merge: true
+  include_event_based: true
+  include_heavy: true
+  event_method: wavelet
+  hybrid_kinetics: true
+gate:
+  enabled: true
+# Initial values; calibrated in task 17.
+checks:
+  mc_max_shift_px: {warn: 15, error: 30}
+  mc_template_corr: {warn: 0.6}
+  cnmf_n_components_vs_median: {warn: 2.0, error: 3.0}
+  cnmf_missed_cells: {warn: 20}
+  auto_deleted_frac: {warn: 0.8, error: 0.95}
+  export_n_neurons: {warn: 30, error: 5}
+  export_median_snr: {warn: 3.0}
+  min_sessions_for_relative: 3
+preview:
+  crf: 23
+  speed: 4
+  tbin: 2
