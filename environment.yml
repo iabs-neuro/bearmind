@@ -14,7 +14,7 @@ channels:
   - conda-forge
 
 dependencies:
-  - python=3.12
+  - python=3.12.16
   - caiman=1.13.2
 
   # BLAS: OpenBLAS. The lab machines are AMD (Ryzen 9 7950X3D), where MKL gains
@@ -27,12 +27,16 @@ dependencies:
   # pynwb, psutil, ipyparallel and jupyter.
 
   # Video I/O: FFV1 intermediate (3_MC) and mp4 previews
-  - ffmpeg
+  - ffmpeg=9.0.2
+  - av=19.0.2
+  - numpy=2.5.4
+  - scipy=1.18.1
+  - opencv=5.0.0
 
   # Utilities
-  - natsort
-  - pyyaml
-  - tqdm
-  - pywavelets
+  - natsort=8.4.0
+  - pyyaml=6.0.3
+  - tqdm=4.70.1
+  - pywavelets=1.10.0
 
   - pip

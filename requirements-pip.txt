@@ -2,17 +2,17 @@
 #   pip install -r requirements-pip.txt
 #
 # Keep NumPy from conda: pip must not replace it (DLL conflicts on Windows).
-numpy>=2
+numpy==2.5.4
 
 # === CORE NEUROSCIENCE ===
-driada
+driada==1.2.2
 
 # === MACHINE LEARNING (production EBM model of the autoinspection) ===
-interpret
-sortedcontainers>=2.4.0
+interpret==0.7.8
+sortedcontainers==2.4.0
 
 # === VIDEO (old preview code; to be replaced by ffmpeg/PyAV writers) ===
-moviepy>=1.0.3,<2.0
+moviepy==1.0.3
 
 # === TESTS ===
-pytest
+pytest==9.2.0
