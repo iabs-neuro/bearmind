@@ -121,6 +121,15 @@ def test_stitched_ucla_timestamps(tmp_path):
     assert lines[1].split(",")[1] == "0" and lines[-1].split(",")[1] == str(3600_000 + 14 * 50)
 
 
+def test_part_with_fewer_rows_than_frames_is_rejected(tmp_path):
+    import pytest
+    paths, rec, cfg = _setup(tmp_path, layout="legacy", n_frames=30)
+    rec.parts[0].n_frames = 16  # registry from before per-part capping: part A has 15 rows
+    with pytest.raises(ValueError, match="rescan"):
+        export.run(paths, rec, cfg)
+    assert not paths.export_json(SID).exists()
+
+
 def test_frame_mismatch_warns_and_writes_min(tmp_path):
     paths, rec, cfg = _setup(tmp_path, n_frames=30, est_frames=25)
     res = export.run(paths, rec, cfg)

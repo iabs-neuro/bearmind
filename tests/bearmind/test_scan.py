@@ -1,12 +1,21 @@
+import numpy as np
 import pytest
 
 from bearmind import scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import Decision, load_record, save_record
+from bearmind.video import SessionReader
 
 
 def codes(rec):
     return {a.code: a for a in rec.anomalies}
+
+
+def _numbered_chunks(make_avi, folder, names, first, n):
+    """Chunks of constant 16x16 frames whose pixel value is the running frame number from `first`."""
+    for j, nm in enumerate(names):
+        vals = np.arange(first + j * n, first + (j + 1) * n).astype(np.uint8)
+        make_avi(folder / nm, np.broadcast_to(vals[:, None, None], (n, 16, 16)).copy())
 
 
 def test_bonsai_nested_and_ts_dir(make_series, tmp_path):
@@ -41,6 +50,30 @@ def test_legacy_split_is_stitched(make_series, tmp_path):
     assert r.n_frames == sum(p.n_frames for p in r.parts) == 60
     assert not r.excluded
     assert r.parts[0].start_ms < r.parts[1].start_ms
+
+
+def test_split_part_surplus_frames_do_not_shift_next_part(make_series, make_avi, tmp_path):
+    from bearmind.stages.export import _stitched_timestamps
+    root = make_series(tmp_path / "s", "legacy_split", n_chunks=2, chunk_frames=60)
+    minis = sorted((root / "1_Raw").rglob("Miniscope"))  # 10_00_00 (part A), 11_00_00 (part B)
+    for k, mini in enumerate(minis):
+        _numbered_chunks(make_avi, mini, ["0.avi", "1.avi"], k * 120, 60)
+    # part A: 120 frames but 118 timestamp rows; part B: 120 / 120
+    (minis[0] / "timeStamps.csv").write_text("Frame Number,Time Stamp (ms),Buffer Index\n"
+                                             + "".join(f"{i},{i * 50},0\n" for i in range(118)),
+                                             encoding="utf-8")
+    r = scan.scan_series(root)[0]
+    assert [p.n_frames for p in r.parts] == [118, 120] and r.n_frames == 238
+    a = codes(r)["frames_ts_mismatch"]
+    assert a.level == "warning" and a.auto_fixed
+    assert a.data == {"diff": 2, "where": "part 0 end", "part": 0}
+    assert not r.excluded
+    frames = np.concatenate(list(SessionReader(root, r).iter_chunks(50)))
+    assert frames[:, 0, 0].tolist() == list(range(118)) + list(range(120, 240))
+    ts = _stitched_timestamps(SeriesPaths(root), r)
+    assert len(ts.raw) == r.n_frames
+    # frame k of part B gets timestamp row k of part B (part B starts 1 h after part A)
+    assert ts.raw[118:].tolist() == [3600_000 + k * 50 for k in range(120)]
 
 
 def test_legacy_single_part(make_series, tmp_path):

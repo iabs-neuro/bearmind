@@ -38,8 +38,13 @@ def _truncate(ts, n):
 
 def _stitched_timestamps(paths, rec):
     parts = []
-    for p in rec.parts:
+    for i, p in enumerate(rec.parts):
         ts = read_timestamps(paths.root / p.timestamps_file, start_epoch_ms=p.start_ms)
+        if i < len(rec.parts) - 1 and len(ts.raw) < p.n_frames:
+            # the video of this part is longer than its timestamps: every later frame would get a
+            # timestamp from the wrong position (registries scanned before parts were cut per part)
+            raise ValueError(f"{p.folder}: {p.n_frames} frames but {len(ts.raw)} timestamp rows; "
+                             f"rescan the series")
         parts.append(_truncate(ts, p.n_frames))
     return stitch(parts)
 

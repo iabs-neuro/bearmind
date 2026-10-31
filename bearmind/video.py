@@ -102,21 +102,29 @@ class SessionReader:
     def _iter_frames(self) -> Iterator[np.ndarray]:
         left = self.n_frames
         for part in self.rec.parts:
+            # a part stops at its own frame count, so a surplus at its end cannot shift the next part
+            part_left = int(part.n_frames)
             last = len(part.chunks) - 1
             for i, name in enumerate(part.chunks):
+                if part_left <= 0:
+                    break
                 drop_last = (i < last and part.drop_chunk_tail) or (i == last and part.drop_last_frame)
                 prev = None  # held back one frame so the chunk's final frame can be dropped
                 for fr in _iter_avi(self.root / part.folder / name):
                     if prev is not None:
                         if left <= 0:
                             return
+                        if part_left <= 0:
+                            break
                         left -= 1
+                        part_left -= 1
                         yield prev
                     prev = fr
-                if prev is not None and not drop_last:
+                if prev is not None and not drop_last and part_left > 0:
                     if left <= 0:
                         return
                     left -= 1
+                    part_left -= 1
                     yield prev
 
     def _crop(self, fr: np.ndarray) -> np.ndarray:

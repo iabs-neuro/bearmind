@@ -119,6 +119,12 @@ def _walk(paths: SeriesPaths):
     return found, unrecognized
 
 
+def _head(ts, n):
+    """The first n rows of a Timestamps."""
+    return dataclasses.replace(ts, raw=ts.raw[:n], t_ms=ts.t_ms[:n],
+                               buffer=None if ts.buffer is None else ts.buffer[:n])
+
+
 class _Unreadable(Exception):
     def __init__(self, chunk, exc):
         super().__init__(f"{chunk}: {exc}")
@@ -249,8 +255,26 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
                                      f"recording split into {len(parts)} parts; stitched by start time",
                                      data={"gaps_s": gaps}))
 
-    total = sum(p.n_frames for p in parts)
-    n_frames, fps, fps_info, st = total, None, {}, None
+    # Each part is cut to its own timestamp rows: a surplus at the end of one part must not shift
+    # the frames of the next part against their timestamps.
+    for k, (p, ts) in enumerate(zip(parts, tss)):
+        if ts is None:
+            continue
+        rows = len(ts.t_ms)
+        diff = p.n_frames - rows
+        if diff:
+            frac = abs(diff) / rows if rows else 1.0
+            ok = frac <= cfg_scan["max_mismatch_frac"]
+            label, data = (f"part {k} ({p.folder}): ", {"where": f"part {k} end", "part": k}) if multi \
+                else ("", {"where": "end"})
+            anomalies.append(Anomaly(
+                "frames_ts_mismatch", "warning" if ok else "error",
+                f"{label}{p.n_frames} frames in video, {rows} timestamp rows (diff {diff}, {frac:.1%})",
+                auto_fixed=ok, data={"diff": diff, **data}))
+            p.n_frames = min(p.n_frames, rows)
+            tss[k] = _head(ts, p.n_frames)
+
+    n_frames, fps, fps_info, st = sum(p.n_frames for p in parts), None, {}, None
     bad = next((e for e in errors if e), None)
     if bad is not None:
         anomalies.append(Anomaly("no_timestamps", "error", bad))
@@ -258,18 +282,8 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         st = stitch(tss) if multi else tss[0]
 
     if st is not None:
-        rows = len(st.t_ms)
-        diff = total - rows
-        if diff:
-            frac = abs(diff) / rows if rows else 1.0
-            ok = frac <= cfg_scan["max_mismatch_frac"]
-            anomalies.append(Anomaly(
-                "frames_ts_mismatch", "warning" if ok else "error",
-                f"{total} frames in video, {rows} timestamp rows (diff {diff}, {frac:.1%})",
-                auto_fixed=ok, data={"diff": diff, "where": "end"}))
-        n_frames = min(total, rows)
         try:
-            est = robust_fps(st.t_ms[:n_frames], cfg_scan["gap_factor"])
+            est = robust_fps(st.t_ms, cfg_scan["gap_factor"])
         except ValueError as e:
             est = None
             anomalies.append(Anomaly("fps_unavailable", "warning", str(e)))
