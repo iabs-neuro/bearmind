@@ -101,12 +101,15 @@ def test_production_model_loads():
 - Create (временные, вне репо): скрипты замеров в scratch-папке
 
 **Interfaces:**
-- Consumes: отчёт предварительной разведки по 1.11.3 и обёртке (scratch `memrecon/report.md`).
-- Produces: решения, которые задачи 8 и 10 принимают как данность: формат временного входа MC, способ получить MC-видео без загрузки целиком, способ подать `3_MC` в CNMF-E, параметры CaImAn, ограничивающие память (число процессов, патчи), и бюджет памяти на часовую сессию при `tsub=1`.
+- Consumes: `docs/superpowers/specs/2026-10-31-caiman-memory-prelim.md` (разведка по 1.11.3: горячие точки, множители, минимальный набор правок); скрипты замеров scratch `memrecon/`.
+- Produces: для задач 8 и 10 — подтверждённые на 1.13.2 правки обёртки и три числа/решения: (1) коэффициент памяти воркера патча `patch_gb_per_mframe` для `tsub=1` и `tsub=2` (ГБ на миллион кадров); (2) даёт ли один поток BLAS на воркер (`OPENBLAS_NUM_THREADS=1`) результат, не зависящий от размера пула; (3) материализует ли `compute_W` в 1.13.2 весь фильм и, если да, проходит ли out-of-core monkeypatch проверку на совпадение.
 
-- [ ] **Step 1:** Перепроверить на исходниках 1.13.2 каждый пункт отчёта по 1.11.3.
-- [ ] **Step 2:** Замерить пиковую память (psutil, опрос RSS всех процессов дерева раз в 0.5 с) MC и CNMF-E на синтетическом видео при T = 2000, 8000, 32000 кадров и на одной часовой сессии LNOF (копия, кроп 450×450) при `tsub=1`.
-- [ ] **Step 3:** Записать в отчёт: таблицу «этап → пик ГБ → формула от T», выбранные решения и что изменится в задачах 8 и 10. Если решения отличаются от того, что написано в задачах 8 и 10, обновить эти задачи в этом плане.
+- [ ] **Step 1:** Перепроверить на исходниках 1.13.2 каждую горячую точку отчёта (#1–#7): та же ли строка, тот же ли множитель.
+- [ ] **Step 2:** Повторить замеры скриптами `memrecon/` в `bearmind`: воркер патча (T = 2000/4000/8000, `tsub` 1 и 2), `motion_correct` при `splits_rig=ceil(T/500)`, `save_movie=False`, `compute_W`.
+- [ ] **Step 3:** Тест детерминизма: синтетика 160×160×1500, пул 2 против пула 5, с `OPENBLAS_NUM_THREADS=1` в воркерах; сравнить A, C, S, YrA, idx побитово.
+- [ ] **Step 4:** Если `compute_W` по-прежнему материализует фильм — написать out-of-core версию (те же ядра, выходы в disk memmap) и сравнить W, b0 со штатной на синтетике; результат записать. Применять её в задаче 10 можно только после согласия автора (дизайн §5.15).
+- [ ] **Step 5:** Один замер на часовой сессии LNOF (копия, кроп 450×450, `tsub=1`) с правками задач 8 и 10: пик памяти и время по этапам.
+- [ ] **Step 6:** Отчёт: таблица «этап → пик ГБ → формула от T», три решения выше. Если они расходятся с текстом задач 8 и 10 — обновить задачи в этом плане.
 - [ ] **Step 4:** Commit: `docs: CaImAn 1.13.2 memory profile and decisions for MC/CNMF-E stages`.
 
 ### Task 0.4: Насколько CaImAn 1.13.2 меняет результаты
@@ -187,12 +190,13 @@ def test_paths_layout(tmp_path):
 
 **Interfaces:**
 - Consumes: `SeriesPaths` (задача 1).
-- Produces: `load_defaults() -> dict`; `machine_config() -> dict` (файл `~/.bearmind/machine.yaml`, создаётся при первом вызове: `temp_dir` = `%TEMP%/bearmind`, `n_cpus`, `ram_gb` из psutil); `resolve(paths, sid=None, mouse=None) -> dict` (глубокое слияние: defaults < series < mouse < session; плюс ключ `machine`); `update_yaml(path, patch: dict) -> None` (атомарно); `params_hash(params: dict) -> str` (sha256 от `json.dumps(sort_keys=True, default=str)`).
+- Produces: `load_defaults() -> dict`; `machine_config() -> dict` (файл `~/.bearmind/machine.yaml`, создаётся при первом вызове: `temp_dir` = `%TEMP%/bearmind`, `n_cpus`, `ram_gb` из psutil, `cnmf_ram_budget_gb` = 0.6 × `ram_gb`); `resolve(paths, sid=None, mouse=None) -> dict` (глубокое слияние: defaults < series < mouse < session; плюс ключ `machine`); `update_yaml(path, patch: dict) -> None` (атомарно); `params_hash(params: dict) -> str` (sha256 от `json.dumps(sort_keys=True, default=str)`).
 
 `defaults.yaml` содержит разделы с точными значениями:
 - `scan`: `max_mismatch_frac: 0.02`, `gap_factor: 2.0`, `fps_series_dev: 0.05`.
 - `crop`: `n_sample_frames: 300`, `margin_px: 10`, `min_fov_frac: 0.05`.
-- `mc`: из ячейки ноутбука `mc_dict` без `write_mp4` и `memory_fact` (`pw_rigid: false`, `max_shifts: [35, 35]`, `gSig_filt: [8, 8]`, `strides: [48, 48]`, `overlaps: [24, 24]`, `max_deviation_rigid: 15`, `border_nan: copy`, `niter_rig: 1`, `splits_rig: 20`, `use_cuda: false`); `memory_fact` вычисляется как `machine.ram_gb / 16`.
+- `mc`: из ячейки ноутбука `mc_dict` без `write_mp4` и `memory_fact` (`pw_rigid: false`, `max_shifts: [35, 35]`, `gSig_filt: [8, 8]`, `strides: [48, 48]`, `overlaps: [24, 24]`, `max_deviation_rigid: 15`, `border_nan: copy`, `niter_rig: 1`, `use_cuda: false`); `splits_rig` не хранится — этап MC ставит `ceil(T/500)`; `memory_fact` выброшен: это параметр патчей CNMF, MotionCorrect его игнорирует (разведка памяти).
+- `memory`: `patch_gb_per_mframe: {1: 245, 2: 163}` (ГБ на миллион кадров на воркер патча; по 1.11.3, уточняется задачей 0.3).
 - `thresholds`: `gsig_range: [3, 4, 5, 6, 7]`.
 - `cnmf`: словарь ячейки ноутбука (`decay_time: 1`, `method_init: corr_pnr`, `K: null`, `merge_thr: 0.8`, `p: 1`, `tsub: 1`, `ssub: 1`, `rf: 40`, `stride: 25`, `only_init: true`, `nb: 0`, `nb_patch: 0`, `method_deconvolution: oasis`, `low_rank_background: null`, `update_background_components: true`, `normalize_init: false`, `center_psf: true`, `ssub_B: 2`, `ring_size_factor: 1.5`, `del_duplicates: true`, `border_pix: 5`, `min_SNR: 2.5`, `rval_thr: 0.95`, `use_cnn: false`); `gSig`, `min_corr`, `min_pnr` — из конфига сессии; `gSiz = 4*gSig + 1`; `fr` = FPS сессии.
 - `autoinspect`: значения из Global Constraints.
@@ -404,15 +408,15 @@ def test_finalize_keeps_existing_mouse_size(tmp_path): ...  # second call with a
 - Consumes: `SessionReader`, `CropBox` из конфига сессии, `write_ffv1`, `write_preview_mp4`, `bm_qc.make_dff_video`, решения задачи 0.3.
 - Produces: `run(paths, rec, cfg) -> StageResult`: `outputs = {"mc_video", "mc_shifts", "preview_raw", "preview_raw_dff", "preview_mc", "preview_mc_dff"}`; `metrics = {"max_shift_px", "mean_template_corr", "n_frames", "crop": [top, left, h, w] | None}`.
 
-Порядок внутри этапа (если задача 0.3 не решила иначе):
-1. Кропнутая сессия потоком (`SessionReader.iter_chunks`) пишется во временный BigTIFF uint8 в `machine.temp_dir/<sid>/`.
-2. `caiman.motion_correction.MotionCorrect([tmp_tif], dview, **mc)` → `motion_correct(save_movie=True)`; кластер — `n_processes` из `machine.n_cpus`.
-3. Исправленное видео читается из memmap CaImAn кусками, переводится в uint8 через `np.clip(np.rint(x), 0, 255)` и пишется в FFV1 (`write_ffv1`); целиком в память не загружается.
+Порядок внутри этапа (по разведке памяти, `2026-10-31-caiman-memory-prelim.md`, точки #2, #4, #5, #9; задача 0.3 подтверждает на 1.13.2). Ни один шаг не держит в памяти всё видео:
+1. Кропнутая сессия потоком (`SessionReader.iter_chunks`) пишется во временный BigTIFF uint8 через `tifffile.TiffWriter` в `machine.temp_dir/<sid>/`.
+2. `MotionCorrect([tmp_tif], dview, **mc)` с `splits_rig = ceil(T/500)` и `motion_correct(save_movie=False)` — нужны только сдвиги и шаблон (сдвиги не зависят от `splits_rig` и `save_movie` при `niter_rig=1`, замерено).
+3. Сдвиги применяются кусками по 1000 кадров той же функцией CaImAn, что внутри `apply_shifts_movie` (`apply_shift_iteration` с теми же `border_nan`, интерполяцией), кадры переводятся в uint8 через `np.clip(np.rint(x), 0, 255)` и потоком пишутся в FFV1 (`write_ffv1`) и в mp4-превью `mc`.
 4. Сдвиги → `3_MC/<sid>_MC_shifts.npy`; `max_shift_px` = макс. |сдвиг|; `mean_template_corr` = средняя корреляция 200 равномерно взятых кадров с шаблоном MC.
-5. Превью: `raw` (сырое без кропа), `mc`; dF/F-версии обоих через `bm_qc.make_dff_video`.
-6. Временные файлы и memmap удаляются в `finally`; кластер останавливается в `finally`.
+5. Превью: `raw` (сырое без кропа, потоком), `mc`; dF/F-версии обоих через `bm_qc.make_dff_video` (его память ограничена `max_mem_gb`).
+6. Временные файлы удаляются в `finally`; кластер останавливается в `finally`.
 
-- [ ] **Step 1: Тест** на синтетике (300 кадров 64×64, известный сдвиг ±3 px): выходы существуют; `max_shift_px` ≈ 3 (±0.5); временная папка пуста после этапа; при исключении внутри MotionCorrect (monkeypatch) временная папка тоже пуста и исключение пробрасывается.
+- [ ] **Step 1: Тест** на синтетике (300 кадров 64×64, известный сдвиг ±3 px): выходы существуют; `max_shift_px` ≈ 3 (±0.5); кадры FFV1 = `np.clip(np.rint(apply_shifts_movie(...)), 0, 255)` того же входа (побитово); временная папка пуста после этапа; при исключении внутри MotionCorrect (monkeypatch) временная папка тоже пуста и исключение пробрасывается.
 - [ ] **Step 2–4:** FAIL → реализовать → PASS.
 - [ ] **Step 5:** Commit: `feat(bearmind): motion correction stage with FFV1 output and previews`.
 
@@ -440,7 +444,13 @@ def test_finalize_keeps_existing_mouse_size(tmp_path): ...  # second call with a
 - Consumes: `mc_video`, конфиг сессии (`gSig`, `min_corr`, `min_pnr`), `rec.fps`, решения задачи 0.3, `bm_qc.cnmf_qc`.
 - Produces: `cnmf_params(cfg, fps) -> dict` (словарь CaImAn: базовый `cnmf` + `gSig=(g,g)`, `gSiz=(4g+1, 4g+1)`, `min_corr`, `min_pnr`, `fr=fps`); `run(paths, rec, cfg) -> StageResult`: `outputs = {"estimates", "preview_cnmf_qc", "residual_png"}`; `metrics = {"n_components", "missed_cells", "median_snr", "gSig", "min_corr", "min_pnr"}`. Если порогов в конфиге сессии нет — `raise WaitingForInput("thresholds")` (класс в `stages/__init__.py`), планировщик ставит `WAITING`.
 
-Порядок: FFV1 → временный memmap CaImAn в `machine.temp_dir` потоком (без загрузки целиком) → `CNMF(n_processes, dview, params=CNMFParams(params_dict=cnmf_params(...)))` → `fit` → `evaluate_components` → в estimates: `est.cnmf_dict = cnmf_params`, `est.mc_video = paths.rel(mc_video)` (относительный путь; абсолютного `tif_name` нет) → pickle через `.partial` → `bm_qc.cnmf_qc(est, movie=memmap, out_base=…)`: QC-видео и карту остатков переместить в `Preview/`, `missed_cells` = `residual_excess_outside` из его JSON → удалить memmap в `finally`.
+Порядок (по разведке памяти, точки #1, #3, #6, #7; задача 0.3 подтверждает на 1.13.2):
+- FFV1 → временный C-order memmap CaImAn в `machine.temp_dir` полосами по столбцам (тот же файл, что дал бы `cm.save_memmap`, побитово; без загрузки целиком).
+- Пул на этапе патчей: `patch_workers(T, tsub, cfg) -> int` = `floor(machine.cnmf_ram_budget_gb / (patch_gb_per_mframe[tsub] * T / 1e6))`, ограничить `[1, machine.n_cpus - 1]`; `patch_gb_per_mframe` из задачи 0.3 (по 1.11.3: ≈ 245 ГБ при `tsub=1`, ≈ 163 ГБ при `tsub=2` на миллион кадров), `cnmf_ram_budget_gb` по умолчанию = 0.6 × `ram_gb`. Размер пула пишется в метаданные (он влияет на результат).
+- В воркерах `OPENBLAS_NUM_THREADS=1`, если задача 0.3 подтвердила, что это делает результат независимым от пула.
+- `compute_W`: штатный, если в 1.13.2 он не материализует фильм; иначе out-of-core версия из задачи 0.3 — только после согласия автора.
+- `imax` в estimates (нужен окну ручной инспекции) — потоковым двухпроходным PNR, не `correlation_pnr(images[::5])`.
+- `CNMF(n_processes, dview, params=CNMFParams(params_dict=cnmf_params(...)))` → `fit` → `evaluate_components` → в estimates: `est.cnmf_dict = cnmf_params`, `est.mc_video = paths.rel(mc_video)` (относительный путь; абсолютного `tif_name` нет) → pickle через `.partial` → `bm_qc.cnmf_qc(est, movie=memmap, out_base=…)`: QC-видео и карту остатков переместить в `Preview/`, `missed_cells` = `residual_excess_outside` из его JSON → удалить memmap в `finally`.
 
 - [ ] **Step 1: Тесты**
 
@@ -453,6 +463,12 @@ def test_fr_equals_fps_regardless_of_tsub():
 def test_waiting_without_thresholds(tmp_path): ...  # raises WaitingForInput
 
 def test_cnmf_on_synthetic(tmp_path): ...  # synthetic_movie(6 cells) in FFV1 -> n_components >= 4, estimates pickle has mc_video relative path, temp dir empty
+
+def test_patch_workers_budget():
+    cfg = {"machine": {"n_cpus": 32, "cnmf_ram_budget_gb": 115}, "memory": {"patch_gb_per_mframe": {1: 245, 2: 163}}}
+    assert patch_workers(108000, 1, cfg) == 4 and patch_workers(108000, 2, cfg) == 6 and patch_workers(2000, 1, cfg) == 31
+
+def test_memmap_strips_identical_to_save_memmap(tmp_path): ...  # small FFV1 -> our memmap bytes == cm.save_memmap bytes on the same frames
 ```
 
 - [ ] **Step 2–4:** FAIL → реализовать → PASS.
@@ -591,7 +607,7 @@ def test_reset_from_reruns_only_downstream(...): ...        # reset_from(s1, "cn
 - Create: `tests/bearmind/test_equivalence.py` (маркеры `realdata`, `slow`)
 
 - [ ] **Step 1: MC.** Одна сессия NOF: старый путь (кроп той же рамкой в TIF → `DoMotionCorrection`) и этап MC. Сдвиги совпадают (`np.allclose(atol=1e-6)`), кадры отличаются не больше чем на 1 уровень серого (округление вместо усечения).
-- [ ] **Step 2: CNMF-E.** Тот же MC-вход: старый `DoCNMF` (`fr`=FPS, те же параметры) и этап CNMF-E. Одинаковое число компонент; у каждой компоненты пара с корреляцией футпринтов > 0.99.
+- [ ] **Step 2: CNMF-E.** Тот же MC-вход: старый `DoCNMF` (`fr`=FPS, те же параметры) и этап CNMF-E **с одинаковым размером пула и одинаковыми настройками потоков BLAS** (разведка показала, что от них зависит результат). Критерий: если задача 0.3 подтвердила детерминизм — побитовое совпадение A и C; иначе ≥ 98% компонент каждой стороны имеют пару с корреляцией футпринтов > 0.95 и трейсов > 0.95. Отдельно записать в отчёт, как меняется результат при пуле 4 против 31 (цена ограничения памяти).
 - [ ] **Step 3: ML.** Найти локально `*_processed.pickle` со столбцом `ml_keep_probability` (например, под `H:\Dataset\CalciumData\*`); пересчитать вероятности моделью в `bearmind` по его `metrics_df` → `np.allclose(atol=1e-6)`. Если таких файлов нет — записать «не проверено» в отчёт задачи 17.
 - [ ] **Step 4:** Схема экспорта: ключи `npz` и `mat` совпадают со старым экспортом того же processed-pickle; ключи `json` — надмножество.
 - [ ] **Step 5:** Commit: `test: equivalence of MC, CNMF-E, ML and export schema with the old code`.
