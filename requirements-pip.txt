@@ -1,31 +1,18 @@
-# BEARMiND pip dependencies (MINIMAL)
-# Install after conda environment: pip install -r requirements-pip.txt
+# BEARMiND pip dependencies. Install after the conda environment:
+#   pip install -r requirements-pip.txt
 #
-# Only packages ACTUALLY USED in the codebase
-# Dependencies are auto-installed by pip
-
-# === CRITICAL: NumPy constraint ===
-# This prevents pip from upgrading conda's numpy (causes DLL conflicts on Windows)
-# We don't install numpy via pip - conda handles it - but we constrain it
-numpy<2.0
-
-# TensorFlow 2.10 needs protobuf < 3.20; driada's optional Google deps pull 6.x and
-# then `import driada` fails through tensorflow. pip check will still complain about
-# google-api-core: those deps are not used by the pipeline.
-protobuf==3.19.6
+# Keep NumPy from conda: pip must not replace it (DLL conflicts on Windows).
+numpy>=2
 
 # === CORE NEUROSCIENCE ===
-# Versions verified together on 2026-10-31 (tests/ pass, production EBM loads)
-driada==1.2.2
+driada
 
-# === MACHINE LEARNING ===
-# interpret pulls scikit-learn 1.7.2 over the conda pin
-interpret==0.7.8
+# === MACHINE LEARNING (production EBM model of the autoinspection) ===
+interpret
 sortedcontainers>=2.4.0
+
+# === VIDEO (old preview code; to be replaced by ffmpeg/PyAV writers) ===
+moviepy>=1.0.3,<2.0
 
 # === TESTS ===
 pytest
-
-# === IMAGE/VIDEO ===
-opencv-python>=4.8
-moviepy>=1.0.3,<2.0
