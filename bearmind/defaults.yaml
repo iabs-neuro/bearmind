@@ -6,6 +6,7 @@ crop:
   n_sample_frames: 300
   margin_px: 10
   min_fov_frac: 0.05
+  fov_threshold_frac: 0.2
 # splits_rig is not stored: the MC stage uses ceil(T/500).
 # memory_fact is dropped: it is a CNMF patch parameter that MotionCorrect ignores.
 mc:

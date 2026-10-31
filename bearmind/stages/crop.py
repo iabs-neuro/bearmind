@@ -9,7 +9,7 @@ from bearmind.video import CropBox, SessionReader
 def detect(paths, rec, cfg) -> StageResult:
     c = cfg["crop"]
     frames = SessionReader(paths.root, rec, crop=None).sample(c["n_sample_frames"])
-    fov = detect_fov(frames, c["min_fov_frac"])
+    fov = detect_fov(frames, c["min_fov_frac"], c["fov_threshold_frac"])
     return StageResult(metrics={
         "fov": list(fov) if fov is not None else None,
         "frame_shape": [int(frames.shape[1]), int(frames.shape[2])],

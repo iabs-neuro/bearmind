@@ -1,22 +1,25 @@
 """Rough automatic crop: find the lit field of view, keep one box size per mouse."""
 import numpy as np
 from scipy import ndimage
-from skimage.filters import threshold_otsu
 
 from bearmind.video import CropBox
 
 MIN_CONTRAST = 5.0  # grey levels, uint8 scale
 
 
-def detect_fov(frames: np.ndarray, min_fov_frac: float = 0.05):
-    """(top, left, height, width) of the lit area of the mean frame, or None."""
+def detect_fov(frames: np.ndarray, min_fov_frac: float = 0.05, threshold_frac: float = 0.2):
+    """(top, left, height, width) of the lit area of the mean frame, or None.
+
+    Threshold sits at threshold_frac of the p1..p99 range of the smoothed mean image:
+    Otsu would keep only the brightest part and cut dim but live tissue at the edges.
+    """
     mean = frames.astype(np.float32).mean(axis=0)
     smooth = ndimage.gaussian_filter(mean, sigma=5)
-    # Constant image: Otsu is undefined. Range under a few grey levels is noise only
-    # (smoothing leaves ~1 level of it), and Otsu would still split it into blobs.
-    if float(smooth.max() - smooth.min()) < MIN_CONTRAST:
+    p1, p99 = np.percentile(smooth, [1, 99])
+    # Range under a few grey levels is noise only (also covers a constant image).
+    if float(p99 - p1) < MIN_CONTRAST:
         return None
-    lab, n = ndimage.label(smooth > threshold_otsu(smooth))
+    lab, n = ndimage.label(smooth > p1 + threshold_frac * (p99 - p1))
     if n == 0:
         return None
     sizes = ndimage.sum(np.ones_like(lab), lab, index=range(1, n + 1))

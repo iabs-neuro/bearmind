@@ -15,7 +15,7 @@ def test_detect_fov_bright_disk():
     rng = np.random.default_rng(0)
     frames = np.clip(img + rng.normal(0, 5, (20, 200, 240)), 0, 255).astype(np.uint8)
     top, left, h, w = detect_fov(frames)
-    assert abs(top - 40) <= 3 and abs(left - 70) <= 3 and abs(h - 101) <= 3 and abs(w - 101) <= 3
+    assert abs(top - 40) <= 6 and abs(left - 70) <= 6 and abs(h - 101) <= 8 and abs(w - 101) <= 8  # low threshold grows the box a little: cropping too little is safe
     assert all(type(v) is int for v in (top, left, h, w))
 
 
@@ -76,3 +76,15 @@ def test_finalize_no_fov_anywhere(tmp_path):
     out = finalize_mouse(paths, "M2", [r], config.resolve(paths, mouse="M2"))
     assert out == {"M2_d1": None}
     assert "box" not in (config.resolve(paths, mouse="M2")["crop"] or {})
+
+
+def test_detect_fov_covers_dim_tissue():
+    yy, xx = np.mgrid[:300, :300]
+    r2 = (yy - 150) ** 2 + (xx - 150) ** 2
+    img = np.zeros((300, 300))
+    img[r2 < 120**2] = 50.0   # dim tissue, ~25% of the bright level
+    img[r2 < 40**2] = 200.0   # bright core
+    rng = np.random.default_rng(2)
+    frames = np.clip(img + rng.normal(0, 3, (10, 300, 300)), 0, 255).astype(np.uint8)
+    top, left, h, w = detect_fov(frames)
+    assert top <= 40 and left <= 40 and h >= 220 and w >= 220  # bright core alone would give ~80
