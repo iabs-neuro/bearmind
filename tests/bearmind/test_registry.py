@@ -274,3 +274,27 @@ def test_all_records_skips_corrupt(tmp_path, caplog):
     with caplog.at_level(logging.ERROR, logger="bearmind"):
         assert [r.sid for r in all_records(paths)] == ["A", "C"]
     assert "B.json" in caplog.text and "D.json" in caplog.text
+
+
+def test_numpy_metrics_saved_as_numbers(tmp_path):
+    import numpy as np
+
+    paths = SeriesPaths(tmp_path)
+    rec = make_record()
+    rec.stages["mc"].metrics = {"max_shift_px": np.float32(1.5), "n": np.int64(3), "a": np.arange(2)}
+    save_record(paths, rec)
+    assert load_record(paths, "M1_D1").stages["mc"].metrics == {"max_shift_px": 1.5, "n": 3, "a": [0, 1]}
+
+
+def test_corrupt_file_logged_once_per_version(tmp_path, caplog):
+    paths = SeriesPaths(tmp_path)
+    save_record(paths, make_record("A"))
+    bad = paths.registry_file("B")
+    bad.write_text("{", encoding="utf-8")
+    with caplog.at_level(logging.ERROR, logger="bearmind"):
+        all_records(paths)
+        all_records(paths)
+        assert caplog.text.count("B.json") == 1
+        bad.write_text("{{", encoding="utf-8")  # changed again: worth a new message
+        all_records(paths)
+        assert caplog.text.count("B.json") == 2

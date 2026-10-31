@@ -131,8 +131,16 @@ def _read(f) -> SessionRecord:
     return _from_json(json.loads(fileio.read_text(f)))
 
 
+def _plain(x):
+    """json default: numpy scalars / arrays in stage metrics become Python numbers / lists."""
+    if hasattr(x, "tolist"):
+        return x.tolist()
+    raise TypeError(f"{type(x).__name__} is not JSON serializable")
+
+
 def _write(f, rec: SessionRecord) -> None:
-    fileio.write_atomic(f, lambda fh: json.dump(_to_json(rec), fh, indent=2, ensure_ascii=False))
+    fileio.write_atomic(f, lambda fh: json.dump(_to_json(rec), fh, indent=2, ensure_ascii=False,
+                                                default=_plain))
 
 
 def load_record(paths, sid: str) -> SessionRecord:
@@ -156,8 +164,11 @@ def update_record(paths, sid: str, change) -> SessionRecord:
     return rec
 
 
+_reported: set = set()  # broken files already logged: the runner calls all_records every loop
+
+
 def all_records(paths) -> list[SessionRecord]:
-    """All readable records, sorted by sid; a broken file is logged and skipped, not fatal."""
+    """All readable records, sorted by sid; a broken file is logged (once per file version) and skipped."""
     folder = paths.registry_file("x").parent
     if not folder.is_dir():
         return []
@@ -166,5 +177,12 @@ def all_records(paths) -> list[SessionRecord]:
         try:
             out.append(_read(p))
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            log.error("registry file skipped, cannot read %s: %s: %s", p.name, type(e).__name__, e)
+            try:
+                st = p.stat()
+                key = (str(p), st.st_size, st.st_mtime_ns)
+            except OSError:
+                key = (str(p), None, None)
+            if key not in _reported:
+                _reported.add(key)
+                log.error("registry file skipped, cannot read %s: %s: %s", p.name, type(e).__name__, e)
     return sorted(out, key=lambda r: r.sid)

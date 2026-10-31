@@ -14,11 +14,22 @@ from . import fileio, naming
 _DEFAULTS = Path(__file__).with_name("defaults.yaml")
 
 
+_PARSED: dict = {}  # path -> (text, parsed): the runner resolves every session's config each loop
+
+
 def _read_yaml(path) -> dict:
+    """Parsed YAML ({} when absent); a private copy, reparsed only when the file content changed."""
     path = Path(path)
-    if not path.exists():
+    try:
+        text = fileio.read_text(path)
+    except FileNotFoundError:
         return {}
-    return yaml.safe_load(fileio.read_text(path)) or {}
+    key = str(path)
+    hit = _PARSED.get(key)
+    if hit is None or hit[0] != text:  # content, not mtime: an edit may keep size and mtime
+        hit = (text, yaml.safe_load(text) or {})
+        _PARSED[key] = hit
+    return copy.deepcopy(hit[1])
 
 
 def deep_merge(base: dict, over: dict) -> dict:

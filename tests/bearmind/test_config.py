@@ -109,3 +109,24 @@ def test_update_yaml_waits_for_lock_and_breaks_stale(tmp_path, monkeypatch):
     with pytest.raises(TimeoutError):
         update_yaml(f, {"a": 2})
     assert yaml.safe_load(f.read_text()) == {"a": 1}
+
+
+def test_yaml_reads_follow_content_and_are_private_copies(tmp_path):
+    from bearmind import config
+
+    f = tmp_path / "s.yaml"
+    f.write_text("cnmf:\n  gSig: 4\n", encoding="utf-8")
+    st = f.stat()
+    a = config._read_yaml(f)
+    a["cnmf"]["gSig"] = 99  # the caller's copy
+    f.write_text("cnmf:\n  gSig: 5\n", encoding="utf-8")  # same size
+    os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns))  # and same mtime: content decides
+    assert config._read_yaml(f) == {"cnmf": {"gSig": 5}}
+    b = config._read_yaml(f)
+    b["cnmf"]["gSig"] = 7
+    assert config._read_yaml(f) == {"cnmf": {"gSig": 5}}
+    f.unlink()
+    assert config._read_yaml(f) == {}
+    d = config.load_defaults()
+    d["cnmf"]["tsub"] = 3
+    assert config.load_defaults()["cnmf"]["tsub"] == 1
