@@ -167,11 +167,45 @@ def test_rescan_keeps_decisions(make_series, tmp_path):
     root = make_series(tmp_path / "s", "bonsai")
     paths = SeriesPaths(root)
     r = scan.scan_series(root)[0]
-    r.excluded = True
     r.decisions.append(Decision("accept", "yes", "me", "2026-01-01"))
+    r.decisions.append(Decision("exclude", "true", "me", "2026-01-01"))
     save_record(paths, r)
     r2 = scan.scan_series(root)[0]
-    assert r2.excluded and r2.decisions[0].what == "accept"
+    assert r2.excluded and [d.what for d in r2.decisions] == ["accept", "exclude"]
+
+
+def test_rescan_reevaluates_exclusion(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", with_ts=False)
+    assert scan.scan_series(root)[0].excluded
+    ts = root / "0_TimeStamps" / "NOF_H01_1D_Mini_TS.csv"
+    ts.parent.mkdir(parents=True)
+    ts.write_text("".join(f"{i * 500000}\n" for i in range(30)), encoding="utf-8")
+    r = scan.scan_series(root)[0]
+    assert "no_timestamps" not in codes(r) and not r.excluded
+
+
+def test_latest_user_exclude_decision_wins(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", with_ts=False)
+    paths = SeriesPaths(root)
+    r = scan.scan_series(root)[0]
+    r.decisions.append(Decision("exclude", "true", "me", "2026-01-01"))
+    r.decisions.append(Decision("exclude", "false", "me", "2026-01-02"))
+    save_record(paths, r)
+    r = scan.scan_series(root)[0]
+    assert codes(r)["no_timestamps"].level == "error" and not r.excluded
+
+
+def test_accept_mismatch_keeps_large_mismatch_included(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", ts_rows=25)
+    paths = SeriesPaths(root)
+    r = scan.scan_series(root)[0]
+    assert r.excluded
+    r.decisions.append(Decision("accept_mismatch", "true", "me", "2026-01-01"))
+    save_record(paths, r)
+    r = scan.scan_series(root)[0]
+    a = codes(r)["frames_ts_mismatch"]
+    assert a.level == "warning" and a.auto_fixed and a.data["diff"] == 5
+    assert r.n_frames == 25 and not r.excluded
 
 
 def test_fps_outlier_vs_series_median(make_series, tmp_path):

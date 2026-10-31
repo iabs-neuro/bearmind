@@ -299,6 +299,26 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
     return parts, mode, n_frames, fps, fps_info, anomalies, nominal
 
 
+def _latest_decision(rec: SessionRecord, what: str):
+    found = [d for d in rec.decisions if d.what == what]
+    return found[-1].value if found else None
+
+
+def _excluded(rec: SessionRecord) -> bool:
+    """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly.
+
+    An accepted mismatch stays in the record as a warning; n_frames is already the common length.
+    """
+    if _latest_decision(rec, "accept_mismatch") == "true":
+        for a in rec.anomalies:
+            if a.code == "frames_ts_mismatch" and a.level == "error":
+                a.level, a.auto_fixed = "warning", True
+    exclude = _latest_decision(rec, "exclude")
+    if exclude is not None:
+        return exclude == "true"
+    return any(a.level == "error" for a in rec.anomalies)
+
+
 def scan_series(series_root: Path) -> list[SessionRecord]:
     paths = SeriesPaths(series_root)
     if not paths.series_config.exists():
@@ -336,9 +356,9 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
         else:
             rec = SessionRecord(
                 sid=sid, mouse=mouse_id(sid), mode=mode, parts=parts, n_frames=n, fps=fps,
-                fps_info=info, anomalies=anomalies, decisions=[],
-                excluded=any(a.level == "error" for a in anomalies),
+                fps_info=info, anomalies=anomalies, decisions=[], excluded=False,
                 stages={s: StageRecord() for s in STAGES})
+        rec.excluded = _excluded(rec)
         save_record(paths, rec)
         records.append(rec)
 
