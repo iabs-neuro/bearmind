@@ -1,3 +1,4 @@
+import pytest
 import sys
 from pathlib import Path
 
@@ -46,3 +47,37 @@ def test_thresholds_stage(tmp_path):
     assert 0 < s["min_corr"] <= 1
     assert s["min_pnr"] > 0
     assert s["method"] in ("mirror_fdr", "robust_bg")
+
+
+def _setup(tmp_path):
+    mov, _ = synthetic_movie(T=200)
+    paths = SeriesPaths(tmp_path / "series")
+    mc = paths.mc_video(SID)
+    mc.parent.mkdir(parents=True)
+    write_ffv1([mov], mc, 20.0)
+    rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[], n_frames=200, fps=20.0,
+                        fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
+    cfg = config.load_defaults()
+    cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp")}
+    cfg["thresholds"]["gsig_range"] = [4]
+    return paths, rec, cfg
+
+
+@pytest.mark.parametrize("mode", ["empty", "nan", "raise"])
+def test_no_suggestion_keeps_maps(tmp_path, monkeypatch, mode):
+    paths, rec, cfg = _setup(tmp_path)
+    none_r = {"min_corr": None, "min_pnr": None}
+    nan_r = {"min_corr": float("nan"), "min_pnr": 3.0}
+
+    def fake(maps, gSiz=None, **kw):
+        if mode == "raise":
+            raise RuntimeError("boom")
+        r = none_r if mode == "empty" else nan_r
+        return {"mirror_fdr": r, "robust_bg": r}, None
+
+    monkeypatch.setattr(thresholds.bm_qc, "suggest_init_thresholds", fake)
+    res = thresholds.run(paths, rec, cfg)
+    assert paths.threshold_maps(SID).exists()
+    assert res.metrics["suggested"] is None
+    assert [a.code for a in res.anomalies] == ["no_threshold_suggestion"]
+    assert res.anomalies[0].level == "warning"
