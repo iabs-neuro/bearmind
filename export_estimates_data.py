@@ -7,7 +7,7 @@ Usage:
     python export_estimates_data.py path/to/session_processed.pickle -o output_dir
 
 Output:
-    {session_name}_data.npz - numpy arrays (C, asp, reconstructions, component_indices)
+    {session_name}_data.npz - numpy arrays (C, asp, reconstructions, component_indices, fps)
     {session_name}_metadata.json - all metadata as JSON
     {session_name}_filters.mat - spatial footprints as MATLAB array
 
@@ -38,8 +38,12 @@ DEFAULT_ML_THRESHOLD = 0.72
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
 
 
-def get_fps_from_table(session_name: str, default_fps: int = None) -> int | None:
-    """Look up FPS for a session from fps_data.csv."""
+def get_fps_from_table(session_name: str, default_fps: float = None) -> float | None:
+    """Look up FPS for a session from fps_data.csv.
+
+    Returned as stored, not rounded: exported traces are put on a time axis with
+    this rate, and rounding 19.76 to 20 stretches it by more than one percent.
+    """
     if not FPS_TABLE_PATH.exists():
         return default_fps
 
@@ -50,18 +54,18 @@ def get_fps_from_table(session_name: str, default_fps: int = None) -> int | None
 
     # Exact match
     if session_name in fps_df['Filename'].values:
-        return round(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
+        return float(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
 
     # Extract session identifier using flexible pattern from naming.py
     session_id = extract_session_id(session_name)
     if session_id:
         if session_id in fps_df['Filename'].values:
-            return round(fps_df[fps_df['Filename'] == session_id]['FPS'].values[0])
+            return float(fps_df[fps_df['Filename'] == session_id]['FPS'].values[0])
 
         # Try base session without trial suffix
         base_id = extract_base_session(session_name)
         if base_id and base_id in fps_df['Filename'].values:
-            return round(fps_df[fps_df['Filename'] == base_id]['FPS'].values[0])
+            return float(fps_df[fps_df['Filename'] == base_id]['FPS'].values[0])
 
     return default_fps
 
@@ -373,7 +377,8 @@ def export(data: dict, metadata: dict, session_name: str, output_dir: Path):
 
     # Save data as NPZ
     npz_path = output_dir / f'{session_name}_data.npz'
-    np.savez_compressed(npz_path, **data)
+    # The rate travels with the traces: the NPZ is often used without the JSON
+    np.savez_compressed(npz_path, fps=np.float64(metadata['fps']), **data)
     print(f"Saved data to: {npz_path}")
 
     # Save metadata as JSON
