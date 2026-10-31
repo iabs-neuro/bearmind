@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 from caiman.source_extraction.cnmf import params
 from caiman.components_evaluation import (
         evaluate_components_CNN, estimate_components_quality_auto,
-        select_components_from_metrics, compute_eccentricity,
+        select_components_from_metrics,
         compute_event_exceptionality)
 
 
@@ -40,6 +40,27 @@ from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON
 # - caiman_snr: capped at max finite value if Inf
 # - Other NaNs: degenerate footprints or processing failures
 # - EBM handles NaN natively; no imputation required
+
+
+def compute_eccentricity(A, dims, order='F'):
+    """caiman.components_evaluation.compute_eccentricity with the eigenvalues NumPy 1 returned.
+
+    NumPy 2 np.linalg.eigvals returns complex128 even when every eigenvalue is real (NumPy 1 returned float64 then),
+    so CaImAn's function gives a complex column that the EBM model rejects. The covariance is symmetric: its
+    eigenvalues are real and the real parts are taken, as NumPy 1 did; a negative ratio stays NaN as before.
+    """
+    import cv2
+    ecc = []
+    for i in range(A.shape[-1]):
+        a = A[:, i].reshape(dims, order=order).toarray()
+        M = cv2.moments(a)
+        cov = np.array([[M['mu20'], M['mu11']], [M['mu11'], M['mu02']]]) / (M['m00'] + np.finfo(np.float32).eps)
+        eigs = np.linalg.eigvals(cov)
+        if not np.any(eigs.imag):
+            eigs = eigs.real
+        eigs = np.sort(eigs)
+        ecc.append(np.sqrt(eigs[1] / (eigs[0] + np.finfo(np.float32).eps)))
+    return np.array(ecc)
 
 
 def compute_correlation_matrix(data, method='pearson'):
