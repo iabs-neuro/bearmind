@@ -101,7 +101,8 @@ def test_export_matches_old_structure(tmp_path):
     assert prov["decisions"][0]["what"] == "thresholds"
     assert prov["inputs"] == ["1_Raw/x"]
     assert set(prov["packages"]) == {"caiman", "numpy", "driada", "interpret", "python"}
-    assert len(paths.export_timestamps(SID).read_text().split()) == T
+    rows = paths.export_timestamps(SID).read_text().split()
+    assert len(rows) == T and rows[0] == "0" and rows[-1] == str((T - 1) * 500000)
     mat = scipy.io.loadmat(paths.export_filters(SID))
     assert mat["A"].shape == (2, H, W)
     assert res.metrics == {"n_neurons": 2, "median_snr": 2.0}
@@ -136,3 +137,41 @@ def test_provenance_git_and_missing_package(tmp_path, monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
     p = provenance.collect(paths, rec, cfg)
     assert p["code"] == {"git_commit": None, "git_dirty": None}
+
+
+def test_no_filters_removes_stale_file_and_unlists_output(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    paths.export_filters(SID).parent.mkdir(parents=True)
+    paths.export_filters(SID).write_bytes(b"stale")
+    monkeypatch.setattr(export.old, "export_filters_mat", lambda *a, **k: None)
+    res = export.run(paths, rec, cfg)
+    assert "filters" not in res.outputs and not paths.export_filters(SID).exists()
+    assert "no_filters" in [a.code for a in res.anomalies]
+
+
+def test_short_timestamps_warn(tmp_path):
+    paths, rec, cfg = _setup(tmp_path, n_frames=30)
+    paths.timestamps_root.joinpath(f"{SID}_Mini_TS.csv").write_text(
+        "".join(f"{i * 500000}\n" for i in range(20)), encoding="utf-8")
+    res = export.run(paths, rec, cfg)
+    assert "export_frames_mismatch" in [a.code for a in res.anomalies]
+    assert len(paths.export_timestamps(SID).read_text().split()) == 20
+
+
+def test_replace_failure_leaves_no_json(tmp_path, monkeypatch):
+    import pytest
+    paths, rec, cfg = _setup(tmp_path)
+    export.run(paths, rec, cfg)
+    assert paths.export_json(SID).exists()
+    real = export.os.replace
+
+    def flaky(src, dst):
+        if str(dst).endswith("_data.npz"):
+            raise OSError("boom")
+        return real(src, dst)
+
+    monkeypatch.setattr(export.os, "replace", flaky)
+    with pytest.raises(OSError):
+        export.run(paths, rec, cfg)
+    assert not paths.export_json(SID).exists()
+    assert not (paths.root / "6_Export" / "npz" / f".partial_{SID}").exists()
