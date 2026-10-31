@@ -102,3 +102,39 @@ def test_open_movie_avi(tmp_path):
     f = _frames(6)
     write_ffv1([f], tmp_path / "x.AVI", fps=20.0)
     assert isinstance(bm_qc.open_movie(tmp_path / "x.AVI"), VideoArray)
+
+
+def test_videoarray_spatial_slicing(tmp_path):
+    f = _frames(40)
+    write_ffv1([f], tmp_path / "x.avi", fps=20.0)
+    v = VideoArray(tmp_path / "x.avi")
+    assert np.array_equal(v[3:35:4, 2:12, 5:20], f[3:35:4, 2:12, 5:20])
+    assert np.array_equal(v[10:20, 4:9, :], f[10:20, 4:9, :])
+    assert np.array_equal(v[7, 2:5, 3:6], f[7, 2:5, 3:6])
+    assert np.array_equal(v[30:5:-5, 1:3], f[30:5:-5, 1:3])
+
+
+def test_open_movie_avi_strip(tmp_path):
+    import bm_qc
+    f = _frames(20)
+    write_ffv1([f], tmp_path / "x.avi", fps=20.0)
+    mov = bm_qc.open_movie(tmp_path / "x.avi")
+    assert np.array_equal(mov[slice(2, 18), 3:10, :], f[2:18, 3:10, :])
+
+
+def test_preview_partial_cleanup(tmp_path):
+    def gen():
+        yield _frames(4)
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        write_preview_mp4(gen(), tmp_path / "p.mp4", fps=20.0)
+    assert list(tmp_path.iterdir()) == []
+    write_preview_mp4([_frames(4)], tmp_path / "p.mp4", fps=20.0)
+    assert [p.name for p in tmp_path.iterdir()] == ["p.mp4"]
+
+
+def test_write_ffv1_empty(tmp_path):
+    with pytest.raises(ValueError, match="no frames to write"):
+        write_ffv1([], tmp_path / "x.avi", fps=20.0)
+    assert list(tmp_path.iterdir()) == []

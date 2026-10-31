@@ -139,9 +139,10 @@ def write_ffv1(chunks: Iterable[np.ndarray], path: Path, fps: float) -> int:
                     for p in s.encode(vf):
                         c.mux(p)
                     n += 1
-            if s is not None:
-                for p in s.encode():
-                    c.mux(p)
+            if s is None:
+                raise ValueError("no frames to write")
+            for p in s.encode():
+                c.mux(p)
         tmp.replace(path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -153,8 +154,18 @@ def write_preview_mp4(chunks: Iterable[np.ndarray], path: Path, fps: float, crf:
                       speed: int = 4, tbin: int = 2) -> None:
     """H.264 preview. Each output frame is the mean of `tbin` input frames; playback is `speed` x faster."""
     path = Path(path)
+    tmp = path.with_suffix(".partial.mp4")
+    try:
+        _write_mp4(chunks, tmp, fps, crf, speed, tbin)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _write_mp4(chunks, path, fps, crf, speed, tbin) -> None:
     out_rate = _rate(fps * speed / tbin)
-    with av.open(str(path), "w") as c:
+    with av.open(str(path), "w", format="mp4") as c:
         s = None
 
         def emit(mean: np.ndarray) -> None:
@@ -212,29 +223,39 @@ class VideoArray:
                 if idx >= start:
                     yield idx, _grey(fr)
 
-    def __getitem__(self, key):
+    def _read(self, tkey, spatial: tuple):
+        """Frames for `tkey` (int or slice); `spatial` is applied per frame so no full-size stack is built."""
         n = self._n
-        if isinstance(key, tuple):  # (time, rows, cols): time part reads frames, the rest slices them
-            return self[key[0]][(slice(None),) * isinstance(key[0], slice) + key[1:]]
-        if isinstance(key, (int, np.integer)):
-            i = int(key) + (n if key < 0 else 0)
+        sp = spatial if spatial else (slice(None),)
+        if isinstance(tkey, (int, np.integer)):
+            i = int(tkey) + (n if tkey < 0 else 0)
             if not 0 <= i < n:
-                raise IndexError(key)
+                raise IndexError(tkey)
             for idx, fr in self._decode_from(i):
                 if idx == i:
-                    return fr
+                    return fr[sp]
             raise IndexError(f"frame {i} not decodable in {self.path}")
-        if isinstance(key, slice):
-            r = range(*key.indices(n))
-            if len(r) == 0:
-                return np.empty((0,) + self.shape[1:], np.uint8)
-            if r.step < 0:
-                return np.stack([self[i] for i in r])
-            want, out = set(r), {}
-            for idx, fr in self._decode_from(r.start):
-                if idx in want:
-                    out[idx] = fr
-                if idx >= r[-1]:
-                    break
-            return np.stack([out[i] for i in r])
-        raise TypeError(f"unsupported index {key!r}")
+        if not isinstance(tkey, slice):
+            raise TypeError(f"unsupported index {tkey!r}")
+        r = range(*tkey.indices(n))
+        oshape = np.broadcast_to(np.zeros((), bool), self.shape[1:])[sp].shape
+        out = np.empty((len(r),) + oshape, np.uint8)
+        if len(r) == 0:
+            return out
+        if r.step < 0:
+            for k, i in enumerate(r):
+                out[k] = self._read(i, spatial)
+            return out
+        pos = {i: k for k, i in enumerate(r)}
+        for idx, fr in self._decode_from(r.start):
+            k = pos.get(idx)
+            if k is not None:
+                out[k] = fr[sp]
+            if idx >= r[-1]:
+                break
+        return out
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):  # (time, rows, cols)
+            return self._read(key[0], key[1:])
+        return self._read(key, ())
