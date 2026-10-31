@@ -304,7 +304,7 @@ def _latest_decision(rec: SessionRecord, what: str):
     return found[-1].value if found else None
 
 
-def _excluded(rec: SessionRecord) -> bool:
+def evaluate_excluded(rec: SessionRecord) -> bool:
     """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly of the scan.
 
     An accepted mismatch stays in the record as a warning; n_frames is already the common length.
@@ -318,6 +318,9 @@ def _excluded(rec: SessionRecord) -> bool:
     if exclude is not None:
         return exclude == "true"
     return any(a.level == "error" for a in rec.anomalies if not a.data.get("stage"))
+
+
+_excluded = evaluate_excluded  # old name
 
 
 def scan_series(series_root: Path) -> list[SessionRecord]:
@@ -356,7 +359,7 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
                 rec.parts, rec.n_frames, rec.fps, rec.fps_info, rec.mode = parts, n, fps, info, mode
                 # the scan's own anomalies are replaced; those of the stages stay with their stage
                 rec.anomalies = [a for a in rec.anomalies if a.data.get("stage")] + anomalies
-                rec.excluded = _excluded(rec)
+                rec.excluded = evaluate_excluded(rec)
 
             rec = update_record(paths, sid, rescan)
         else:
@@ -364,7 +367,7 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
                 sid=sid, mouse=mouse_id(sid), mode=mode, parts=parts, n_frames=n, fps=fps,
                 fps_info=info, anomalies=anomalies, decisions=[], excluded=False,
                 stages={s: StageRecord() for s in STAGES})
-            rec.excluded = _excluded(rec)
+            rec.excluded = evaluate_excluded(rec)
             save_record(paths, rec)
         records.append(rec)
 
