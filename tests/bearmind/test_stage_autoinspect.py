@@ -1,8 +1,10 @@
+import pickle
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import ae_launch
 from bearmind import config
@@ -21,12 +23,23 @@ def _setup(tmp_path, fps=19.76):
     return paths, rec, config.load_defaults()
 
 
+def _processed(paths):
+    return paths.inspection_dir(SID) / f"{SID}_processed.pickle"
+
+
+def _write_processed(paths):
+    """What run_auto_inspection does for a session with components: save the processed pickle."""
+    _processed(paths).parent.mkdir(parents=True, exist_ok=True)
+    _processed(paths).write_bytes(pickle.dumps(SimpleNamespace(a=1)))
+
+
 def test_passes_production_parameters(tmp_path, monkeypatch):
     paths, rec, cfg = _setup(tmp_path)
     calls = []
 
     def fake(estimates_path, fps=None, **kw):
         calls.append((estimates_path, fps, kw))
+        _write_processed(paths)
         return {"summary": {"n_initial": 100, "n_final": 60}}
 
     monkeypatch.setattr(ae_launch, "run_auto_inspection", fake)
@@ -41,13 +54,41 @@ def test_passes_production_parameters(tmp_path, monkeypatch):
     assert "model_path" not in kw
     assert res.outputs == {"processed": f"5_Inspection/{SID}/{SID}_processed.pickle"}
     assert res.metrics == {"n_initial": 100, "n_final": 60, "deleted_frac": 0.4, "autoinspection_fps": 20}
+    assert res.anomalies == []
 
 
-def test_zero_components_gives_zero_deleted_frac(tmp_path, monkeypatch):
+def test_zero_components_saves_estimates_with_warning(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    est = SimpleNamespace(idx_components=[], metrics_df=pd.DataFrame())
+    # the real function returns early for 0 components and saves nothing
+    monkeypatch.setattr(ae_launch, "run_auto_inspection",
+                        lambda *a, **k: {"estimates": est, "summary": {"n_initial": 0, "n_final": 0}})
+    res = autoinspect.run(paths, rec, cfg)
+    assert res.metrics["deleted_frac"] == 0.0
+    assert res.outputs == {"processed": paths.rel(_processed(paths))}
+    back = pickle.loads(_processed(paths).read_bytes())
+    assert back.idx_components == [] and back.metrics_df.empty
+    assert not list(paths.inspection_dir(SID).glob("*.partial"))
+    assert [(a.code, a.level) for a in res.anomalies] == [("no_components", "warning")]
+
+
+def test_zero_components_replaces_stale_processed(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    _write_processed(paths)  # from an earlier run on other estimates
+    est = SimpleNamespace(idx_components=[], metrics_df=pd.DataFrame())
+    monkeypatch.setattr(ae_launch, "run_auto_inspection",
+                        lambda *a, **k: {"estimates": est, "summary": {"n_initial": 0, "n_final": 0}})
+    res = autoinspect.run(paths, rec, cfg)
+    assert pickle.loads(_processed(paths).read_bytes()).idx_components == []
+    assert [a.code for a in res.anomalies] == ["no_components"]
+
+
+def test_missing_processed_estimates_raise(tmp_path, monkeypatch):
     paths, rec, cfg = _setup(tmp_path)
     monkeypatch.setattr(ae_launch, "run_auto_inspection",
-                        lambda *a, **k: {"summary": {"n_initial": 0, "n_final": 0}})
-    assert autoinspect.run(paths, rec, cfg).metrics["deleted_frac"] == 0.0
+                        lambda *a, **k: {"summary": {"n_initial": 5, "n_final": 3}})
+    with pytest.raises(FileNotFoundError, match="autoinspection produced no processed estimates"):
+        autoinspect.run(paths, rec, cfg)
 
 
 def test_uses_manual_result_when_cleaned(tmp_path, monkeypatch):
@@ -59,7 +100,8 @@ def test_uses_manual_result_when_cleaned(tmp_path, monkeypatch):
     from bearmind.registry import load_record
     seen = []
     monkeypatch.setattr(ae_launch, "run_auto_inspection",
-                        lambda p, fps=None, **k: seen.append(p) or {"summary": {"n_initial": 1, "n_final": 1}})
+                        lambda p, fps=None, **k: seen.append(p) or _write_processed(paths)
+                        or {"summary": {"n_initial": 1, "n_final": 1}})
     autoinspect.run(paths, load_record(paths, SID), cfg)
     assert seen == [str(paths.manual_result(SID))]
 
