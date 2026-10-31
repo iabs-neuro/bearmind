@@ -1933,9 +1933,24 @@ def implement_decision(est, df, return_index_mapping=False):
     # Capture state BEFORE merge for mapping
     nr_before = est.C.shape[0]
 
+    # CaImAn's manual_merge reorders A, C, bl, g etc. but leaves these arrays in
+    # the old order, so they are rebuilt below with the same reordering.
+    quality_before = {}
+    for attr in ('SNR_comp', 'r_values', 'cnn_preds', 'lam'):
+        values = getattr(est, attr, None)
+        if values is not None and np.ndim(values) == 1 and len(values) == nr_before:
+            quality_before[attr] = np.asarray(values, dtype=float)
+
     # Apply all merges in single call (if any)
     if all_merge_groups:
         est.manual_merge(all_merge_groups, params=params.CNMFParams(params_dict=est.cnmf_dict))
+        # manual_merge silently drops a merge whose result is empty; every later
+        # merged component would then get the wrong index below.
+        expected_nr = nr_before - sum(len(g) for g in all_merge_groups) + len(all_merge_groups)
+        if est.C.shape[0] != expected_nr:
+            raise ValueError(
+                f'CaImAn dropped {expected_nr - est.C.shape[0]} empty merge(s) among groups '
+                f'{all_merge_groups}; merged component indices would be shifted')
 
     # Build mapping info following CaImAn's index transformation logic:
     # - good_neurons = indices NOT in any merge group
@@ -1963,6 +1978,17 @@ def implement_decision(est, df, return_index_mapping=False):
 
         group_info['new_idx'] = new_merged_idx
         group_info['primary_source'] = primary
+
+    # Merged component gets the mean of its sources, as in the ExamineCells GUI:
+    # the true value would need the movie.
+    if all_merge_groups:
+        for attr, old in quality_before.items():
+            merged_values = []
+            for group in all_merge_groups:
+                src = old[group]
+                src = src[np.isfinite(src)]
+                merged_values.append(src.mean() if len(src) else np.nan)
+            setattr(est, attr, np.concatenate([old[good_neurons], merged_values]))
 
     # CRITICAL FIX: Rebuild idx_components using NEW indices
     # After manual_merge, the A/C matrices have new indices (0 to nr_after-1)
