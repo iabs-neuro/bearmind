@@ -324,3 +324,11 @@ def test_cyrillic_path_not_escaped(tmp_path, capsys):
 def test_bat_setlocal():
     text = (REPO / "run_bearmind.bat").read_text(encoding="ascii")
     assert text.lower().splitlines()[1].strip() == "setlocal"
+
+
+def test_warn_accept_mismatch_on_warning_level_mismatch(series, capsys):
+    # a warning-level mismatch is not changed by the decision, so the student is told
+    update_record(series.paths, S1, lambda r: r.anomalies.append(
+        Anomaly("frames_ts_mismatch", "warning", "small mismatch")))
+    assert _main("decide", series.root, S1, "accept-mismatch") == 0
+    assert "[WARN]" in capsys.readouterr().out

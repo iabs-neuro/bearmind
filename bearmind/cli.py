@@ -334,8 +334,8 @@ def cmd_decide(args) -> int:
     _check_sids(_records(paths), [args.sid])
     recs = _records(paths)
     if args.action == "accept-mismatch" and not any(
-            a.code == "frames_ts_mismatch" for a in recs[args.sid].anomalies):
-        _say(f"[WARN] {args.sid} has no frames_ts_mismatch anomaly; the decision is recorded but changes nothing")
+            a.code == "frames_ts_mismatch" and a.level == "error" for a in recs[args.sid].anomalies):
+        _say(f"[WARN] {args.sid} has no frames_ts_mismatch error; the decision is recorded but changes nothing")
     what, value = _DECIDE[args.action]
     now, who = _now(), _who(args)
 
