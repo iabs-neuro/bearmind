@@ -18,7 +18,7 @@ from bearmind.registry import SessionRecord  # noqa: E402
 from bearmind.stages import WaitingForInput  # noqa: E402
 from bearmind.stages import cnmf  # noqa: E402
 from bearmind.stages.cnmf import cnmf_params, patch_workers  # noqa: E402
-from bearmind.video import VideoArray, write_ffv1  # noqa: E402
+from bearmind.video import VideoArray, decode_to_memmap, write_ffv1  # noqa: E402
 
 SID = "NOF_H01_1D"
 FPS = 19.76
@@ -112,8 +112,10 @@ def test_memmap_strips_identical_to_save_memmap(tmp_path, monkeypatch):
 
     ours_dir = tmp_path / "ours"
     ours_dir.mkdir()
-    strip_gb = 4 * T * H / 1e9  # 4 columns per strip: 13 = 4 + 4 + 4 + 1, the last strip partial
-    ours = cnmf.write_memmap(VideoArray(avi), ours_dir, strip_gb=strip_gb)
+    u8 = decode_to_memmap(avi, tmp_path / "mc_u8.dat")
+    monkeypatch.setattr(cnmf, "TILE", 8)  # 37 frames = 8 + 8 + 8 + 8 + 5
+    mem_gb = 4 * 4 * T * H / 1e9  # float32 strip of 4 columns: 13 = 4 + 4 + 4 + 1, the last strip partial
+    ours = cnmf.write_memmap(u8, ours_dir, mem_gb=mem_gb)
 
     assert ours.parent == ours_dir
     assert ours.name == ref.name
@@ -122,24 +124,13 @@ def test_memmap_strips_identical_to_save_memmap(tmp_path, monkeypatch):
     assert dims == (H, W) and TT == T
     images = Yr.T.reshape((T,) + dims, order="F")
     np.testing.assert_array_equal(images, mov.astype(np.float32) + np.float32(1e-4))
-    del Yr, images
+    del Yr, images, u8
 
 
-def test_memmap_strip_reads_are_bounded(tmp_path, monkeypatch):
-    mov = np.random.default_rng(4).integers(0, 256, (11, 6, 9), dtype=np.uint8)
-    avi = tmp_path / "m.avi"
-    write_ffv1([mov], avi, 20.0)
-    reads = []
-    orig = VideoArray.__getitem__
-
-    def spy(self, key):
-        out = orig(self, key)
-        reads.append(out.shape)
-        return out
-
-    monkeypatch.setattr(VideoArray, "__getitem__", spy)
-    cnmf.write_memmap(VideoArray(avi), tmp_path, strip_gb=2 * 11 * 6 / 1e9)
-    assert reads == [(11, 6, 2)] * 4 + [(11, 6, 1)]
+def test_mem_budget_from_machine_ram():
+    assert cnmf.mem_budget_gb({"machine": {"ram_gb": 16}}) == 2  # 1.6 raised to the floor
+    assert cnmf.mem_budget_gb({"machine": {"ram_gb": 192}}) == pytest.approx(19.2)
+    assert cnmf.mem_budget_gb({"machine": {"ram_gb": 512}}) == 32
 
 
 def test_imax_from_threshold_maps(tmp_path, monkeypatch):
@@ -153,18 +144,15 @@ def test_imax_from_threshold_maps(tmp_path, monkeypatch):
         raise AssertionError("must not recompute maps when the threshold maps have pnr_<gSig>")
 
     monkeypatch.setattr(cnmf.bm_qc, "compute_init_maps", boom)
-    imax = cnmf._imax(paths, SID, gSig=4, tsub=1, dims=(6, 7))
+    imax = cnmf._imax(paths, SID, gSig=4, tsub=1, dims=(6, 7), movie=None, mem_gb=2)
     c = np.clip(pnr, 0, 70)
     np.testing.assert_array_equal(imax, (c * 255 / c.max()).astype(np.uint8))
     assert imax.dtype == np.uint8 and imax.max() == 255 and imax.min() == 0
 
 
-def test_imax_fallback_streams_init_maps(tmp_path, monkeypatch):
+def test_imax_fallback_uses_decoded_movie(tmp_path, monkeypatch):
     paths = SeriesPaths(tmp_path / "series")
     mov = np.random.default_rng(5).integers(0, 256, (10, 6, 7), dtype=np.uint8)
-    mc = paths.mc_video(SID)
-    mc.parent.mkdir(parents=True)
-    write_ffv1([mov], mc, 20.0)
     # maps for another gSig only: the fallback must run for gSig 4
     out = paths.threshold_maps(SID)
     out.parent.mkdir(parents=True)
@@ -174,12 +162,12 @@ def test_imax_fallback_streams_init_maps(tmp_path, monkeypatch):
     pnr[0, 0] = np.inf
 
     def fake(movie, gSig, tsub=2, max_mem_gb=4, **kw):
-        calls.append((type(movie).__name__, gSig, tsub, max_mem_gb))
+        calls.append((movie is mov, gSig, tsub, max_mem_gb))
         return {"pnr": pnr, "cn": np.zeros_like(pnr)}
 
     monkeypatch.setattr(cnmf.bm_qc, "compute_init_maps", fake)
-    imax = cnmf._imax(paths, SID, gSig=4, tsub=2, dims=(6, 7))
-    assert calls == [("VideoArray", 4, 2, 16)]
+    imax = cnmf._imax(paths, SID, gSig=4, tsub=2, dims=(6, 7), movie=mov, mem_gb=3.5)
+    assert calls == [(True, 4, 2, 3.5)]
     assert imax[0, 0] == 255 and imax[1, 1] == 127
 
 
@@ -202,12 +190,20 @@ def test_move_falls_back_to_copy_across_drives(tmp_path, monkeypatch):
     assert sorted(p.name for p in dst.parent.iterdir()) == ["y.mp4"]
 
 
+def _no_videoarray_reads(monkeypatch):
+    def boom(self, key):
+        raise AssertionError("the stage must read the movie from its decoded uint8 memmap, not VideoArray")
+
+    monkeypatch.setattr(VideoArray, "__getitem__", boom)
+
+
 @pytest.mark.slow
-def test_cnmf_on_synthetic(tmp_path):
+def test_cnmf_on_synthetic(tmp_path, monkeypatch):
     mov, centers = synthetic_movie(T=1000, n_cells=6)
     paths, rec, cfg = _setup(tmp_path, mov)
     cfg["cnmf"].update(rf=20, stride=10)  # several patches, so the pool and the memmap name are exercised
     env = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
+    _no_videoarray_reads(monkeypatch)  # no threshold maps here, so imax takes the fallback path too
 
     res = cnmf.run(paths, rec, cfg)
 
@@ -247,25 +243,37 @@ def test_cnmf_on_synthetic(tmp_path):
 
 
 @pytest.mark.slow
-def test_cnmf_failure_cleans_up(tmp_path, monkeypatch):
+@pytest.mark.parametrize("where", ["fit", "qc"])
+def test_cnmf_failure_cleans_up(tmp_path, monkeypatch, where):
     from caiman.source_extraction.cnmf.cnmf import CNMF
+    from caiman.source_extraction.cnmf.estimates import Estimates
 
     mov, _ = synthetic_movie(T=200, n_cells=2)
     paths, rec, cfg = _setup(tmp_path, mov)
     env = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     seen = {}
 
-    def boom(self, images):
-        seen["mmap"] = Path(images.filename)
-        seen["env"] = (os.environ.get("CAIMAN_TEMP"), os.environ.get("OPENBLAS_NUM_THREADS"))
+    def boom(*a, **k):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(CNMF, "fit", boom)
+    def fit(self, images):
+        seen["mmap"] = Path(images.filename)
+        seen["temp"] = sorted(p.name for p in (tmp_path / "tmp" / SID).iterdir())
+        seen["env"] = (os.environ.get("CAIMAN_TEMP"), os.environ.get("OPENBLAS_NUM_THREADS"))
+        if where == "fit":
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(CNMF, "fit", fit)
+    if where == "qc":  # CNMF "succeeds", the QC step fails: no estimates file may be left
+        monkeypatch.setattr(Estimates, "evaluate_components", lambda self, *a, **k: None)
+        monkeypatch.setattr(cnmf.bm_qc, "cnmf_qc", boom)
     with pytest.raises(RuntimeError, match="boom"):
         cnmf.run(paths, rec, cfg)
     assert seen["mmap"].parent == tmp_path / "tmp" / SID
+    assert seen["temp"] == [seen["mmap"].name]  # the uint8 copy is gone before the fit
     assert seen["env"] == (str(tmp_path / "tmp" / SID), "1")
     assert not seen["mmap"].exists()
     assert _temp_empty(tmp_path)
-    assert not paths.estimates(SID).exists()
+    est_dir = paths.estimates(SID).parent
+    assert not est_dir.exists() or not any(est_dir.iterdir())  # neither the pickle nor a .partial
     assert {k: os.environ.get(k) for k in env} == env

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from bearmind.registry import RawPart, SessionRecord
-from bearmind.video import (CropBox, SessionReader, VideoArray, last_frame_readable,
+from bearmind.video import (CropBox, SessionReader, VideoArray, decode_to_memmap, last_frame_readable,
                             video_info, write_ffv1, write_preview_mp4)
 
 
@@ -138,3 +138,39 @@ def test_write_ffv1_empty(tmp_path):
     with pytest.raises(ValueError, match="no frames to write"):
         write_ffv1([], tmp_path / "x.avi", fps=20.0)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_decode_to_memmap_equals_videoarray(tmp_path):
+    frames = _frames(37)
+    write_ffv1([frames], tmp_path / "x.avi", fps=20.0)
+    mm = decode_to_memmap(tmp_path / "x.avi", tmp_path / "x_u8.dat", block=10)  # 10+10+10+7
+    assert isinstance(mm, np.memmap) and mm.dtype == np.uint8 and mm.shape == (37, 24, 32)
+    assert mm.flags["C_CONTIGUOUS"] and not mm.flags["WRITEABLE"]
+    assert np.array_equal(mm, VideoArray(tmp_path / "x.avi")[:])
+    assert np.array_equal(mm, frames)
+    del mm
+
+
+def test_decode_to_memmap_removes_output_on_error(tmp_path, monkeypatch):
+    import bearmind.video as video
+
+    write_ffv1([_frames(12)], tmp_path / "x.avi", fps=20.0)
+
+    def broken(path):
+        yield _frames(1)[0]
+        raise RuntimeError("decode error")
+
+    monkeypatch.setattr(video, "_iter_avi", broken)
+    with pytest.raises(RuntimeError, match="decode error"):
+        decode_to_memmap(tmp_path / "x.avi", tmp_path / "x_u8.dat")
+    assert not (tmp_path / "x_u8.dat").exists()
+
+
+def test_decode_to_memmap_rejects_short_decode(tmp_path, monkeypatch):
+    import bearmind.video as video
+
+    write_ffv1([_frames(12)], tmp_path / "x.avi", fps=20.0)
+    monkeypatch.setattr(video, "_iter_avi", lambda path: iter(_frames(5)))
+    with pytest.raises(ValueError, match="decoded 5 frames"):
+        decode_to_memmap(tmp_path / "x.avi", tmp_path / "x_u8.dat")
+    assert not (tmp_path / "x_u8.dat").exists()

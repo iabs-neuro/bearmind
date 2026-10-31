@@ -11,12 +11,19 @@ from bearmind import config  # noqa: E402
 from bearmind.paths import SeriesPaths  # noqa: E402
 from bearmind.registry import SessionRecord  # noqa: E402
 from bearmind.stages import thresholds  # noqa: E402
-from bearmind.video import write_ffv1  # noqa: E402
+from bearmind.video import VideoArray, write_ffv1  # noqa: E402
 
 SID = "NOF_H01_1D"
 
 
-def test_thresholds_stage(tmp_path):
+def _no_videoarray_reads(monkeypatch):
+    def boom(self, key):
+        raise AssertionError("the stage must read the movie from its decoded uint8 memmap, not VideoArray")
+
+    monkeypatch.setattr(VideoArray, "__getitem__", boom)
+
+
+def test_thresholds_stage(tmp_path, monkeypatch):
     mov, _ = synthetic_movie(T=300)
     paths = SeriesPaths(tmp_path / "series")
     mc = paths.mc_video(SID)
@@ -25,10 +32,22 @@ def test_thresholds_stage(tmp_path):
     rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[], n_frames=300, fps=20.0,
                         fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
     cfg = config.load_defaults()
-    cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp")}
+    cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp"), "ram_gb": 16}
     cfg["thresholds"]["gsig_range"] = [3, 4]
+    _no_videoarray_reads(monkeypatch)
+    calls = []
+    real = thresholds.bm_qc.compute_init_maps
+
+    def spy(movie, **kw):
+        calls.append((isinstance(movie, np.memmap), kw["max_mem_gb"]))
+        return real(movie, **kw)
+
+    monkeypatch.setattr(thresholds.bm_qc, "compute_init_maps", spy)
 
     res = thresholds.run(paths, rec, cfg)
+
+    assert calls == [(True, 2), (True, 2)]  # decoded once; budget clip(0.1 * 16 GB, 2, 32)
+    assert not (tmp_path / "tmp" / SID).exists()
 
     out = paths.threshold_maps(SID)
     assert res.outputs == {"threshold_maps": paths.rel(out)}
@@ -58,7 +77,7 @@ def _setup(tmp_path):
     rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[], n_frames=200, fps=20.0,
                         fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
     cfg = config.load_defaults()
-    cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp")}
+    cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp"), "ram_gb": 16}
     cfg["thresholds"]["gsig_range"] = [4]
     return paths, rec, cfg
 
@@ -81,3 +100,25 @@ def test_no_suggestion_keeps_maps(tmp_path, monkeypatch, mode):
     assert res.metrics["suggested"] is None
     assert [a.code for a in res.anomalies] == ["no_threshold_suggestion"]
     assert res.anomalies[0].level == "warning"
+
+
+def test_thresholds_failure_removes_temp(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+
+    def boom(movie, **kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(thresholds.bm_qc, "compute_init_maps", boom)
+    with pytest.raises(RuntimeError, match="boom"):
+        thresholds.run(paths, rec, cfg)
+    assert not (tmp_path / "tmp" / SID).exists()
+    assert not paths.threshold_maps(SID).exists()
+
+
+def test_thresholds_reports_temp_left_behind(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    monkeypatch.setattr(thresholds.shutil, "rmtree", lambda *a, **k: None)
+    monkeypatch.setattr(thresholds.time, "sleep", lambda s: None)
+    res = thresholds.run(paths, rec, cfg)
+    assert "temp_not_removed" in [a.code for a in res.anomalies]
+    assert not (tmp_path / "tmp" / SID / "mc_u8.dat").exists()  # the decoded copy itself is deleted

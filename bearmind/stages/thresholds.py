@@ -1,12 +1,18 @@
 """Threshold maps: CNMF-E correlation / PNR images per candidate gSig for the threshold GUI."""
+import gc
 import os
+import shutil
+import time
+import traceback
+from pathlib import Path
 
 import numpy as np
 
 import bm_qc
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
-from bearmind.video import VideoArray
+from bearmind.stages.cnmf import mem_budget_gb
+from bearmind.video import decode_to_memmap
 
 BLOCK = 1000  # frames per streamed block for mean/max projections
 
@@ -42,21 +48,43 @@ def run(paths, rec, cfg) -> StageResult:
     gsigs = [int(g) for g in cfg["thresholds"]["gsig_range"]]
     g_sug = 4 if 4 in gsigs else gsigs[len(gsigs) // 2]
     tsub = cfg["cnmf"]["tsub"]
-    movie = VideoArray(paths.mc_video(sid))
-
-    arrays = {"gsig": np.array(gsigs, dtype=int)}
-    arrays["mean"], arrays["max"] = _projections(movie)
-    sug_maps = None
-    for g in gsigs:
-        maps = bm_qc.compute_init_maps(movie, gSig=g, tsub=tsub, mirror=True, max_mem_gb=16,
-                                       verbose=False)
-        arrays[f"cn_{g}"] = np.asarray(maps["cn"], np.float32)
-        arrays[f"pnr_{g}"] = np.asarray(maps["pnr"], np.float32)
-        if "cn_neg" in maps:
-            arrays[f"cn_mirror_{g}"] = np.asarray(maps["cn_neg"], np.float32)
-            arrays[f"pnr_mirror_{g}"] = np.asarray(maps["pnr_neg"], np.float32)
-        if g == g_sug:
-            sug_maps = maps
+    mem_gb = mem_budget_gb(cfg)
+    tmp_dir = Path(cfg["machine"]["temp_dir"]) / sid
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    u8_path = tmp_dir / "mc_u8.dat"
+    movie = None
+    try:
+        # one decode: compute_init_maps reads row strips, and each strip of a VideoArray re-decodes the file
+        movie = decode_to_memmap(paths.mc_video(sid), u8_path)
+        n_frames = int(movie.shape[0])
+        arrays = {"gsig": np.array(gsigs, dtype=int)}
+        arrays["mean"], arrays["max"] = _projections(movie)
+        sug_maps = None
+        for g in gsigs:
+            maps = bm_qc.compute_init_maps(movie, gSig=g, tsub=tsub, mirror=True, max_mem_gb=mem_gb,
+                                           verbose=False)
+            arrays[f"cn_{g}"] = np.asarray(maps["cn"], np.float32)
+            arrays[f"pnr_{g}"] = np.asarray(maps["pnr"], np.float32)
+            if "cn_neg" in maps:
+                arrays[f"cn_mirror_{g}"] = np.asarray(maps["cn_neg"], np.float32)
+                arrays[f"pnr_mirror_{g}"] = np.asarray(maps["pnr_neg"], np.float32)
+            if g == g_sug:
+                sug_maps = maps
+    except BaseException as e:
+        traceback.clear_frames(e.__traceback__)  # traceback frames would keep the memmap (and its file) open
+        raise
+    finally:
+        movie = None  # Windows cannot delete a mapped file
+        gc.collect()
+        try:
+            u8_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        for _ in range(5):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if not tmp_dir.exists():
+                break
+            time.sleep(0.5)
 
     out = paths.threshold_maps(sid)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -69,9 +97,11 @@ def run(paths, rec, cfg) -> StageResult:
 
     # The suggestion only seeds the GUI: a failure must not lose the maps already written.
     suggested, anomalies = None, []
+    if tmp_dir.exists():
+        anomalies.append(Anomaly("temp_not_removed", "warning", str(tmp_dir)))
     try:
         suggested = _suggest(sug_maps, g_sug)
     except Exception as e:
         anomalies.append(Anomaly("no_threshold_suggestion", "warning", str(e) or type(e).__name__))
     return StageResult(outputs={"threshold_maps": paths.rel(out)}, anomalies=anomalies,
-                       metrics={"suggested": suggested, "gsig_range": gsigs, "n_frames": int(movie.shape[0])})
+                       metrics={"suggested": suggested, "gsig_range": gsigs, "n_frames": n_frames})

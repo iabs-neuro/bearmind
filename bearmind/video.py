@@ -28,8 +28,37 @@ def _grey(frame) -> np.ndarray:
 def _iter_avi(path: Path) -> Iterator[np.ndarray]:
     with av.open(str(path)) as c:
         s = c.streams.video[0]
+        s.thread_type = "AUTO"  # frame threading: ~3x faster FFV1 decode, same frames
         for fr in c.decode(s):
             yield _grey(fr)
+
+
+def decode_to_memmap(path: Path, out: Path, block: int = 1000) -> np.memmap:
+    """Whole AVI as a uint8 C-order (T, h, w) file at `out`, decoded in one sequential pass; returned read-only.
+
+    Stages that read a movie many times in strips use this instead of VideoArray, which re-decodes per request.
+    """
+    path, out = Path(path), Path(out)
+    n, h, w, _ = video_info(path)
+    try:
+        k = 0
+        with open(out, "wb") as f:  # sequential writes: np.memmap('w+') would zero-fill the whole file first
+            buf: list[np.ndarray] = []
+            for fr in _iter_avi(path):
+                buf.append(fr)
+                if len(buf) == block:
+                    f.write(np.stack(buf).tobytes())
+                    k += len(buf)
+                    buf = []
+            if buf:
+                f.write(np.stack(buf).tobytes())
+                k += len(buf)
+        if k != n:
+            raise ValueError(f"{path}: decoded {k} frames, the container reports {n}")
+        return np.memmap(out, dtype=np.uint8, mode="r", shape=(n, h, w))
+    except BaseException:
+        out.unlink(missing_ok=True)
+        raise
 
 
 def video_info(path: Path) -> tuple[int, int, int, float]:
@@ -210,10 +239,12 @@ class VideoArray:
     def __len__(self) -> int:
         return self._n
 
-    def _decode_from(self, start: int) -> Iterator[tuple[int, np.ndarray]]:
+    def _decode_from(self, start: int, threads: bool = True) -> Iterator[tuple[int, np.ndarray]]:
         """Yield (index, frame) from `start` on; FFV1 frames are all keyframes, so the seek lands on it."""
         with av.open(str(self.path)) as c:
             s = c.streams.video[0]
+            if threads:  # frame threading speeds up runs of frames but delays the first one (~2x slower single reads)
+                s.thread_type = "AUTO"
             tb = float(s.time_base)
             rate = float(s.average_rate or s.guessed_rate)
             if start > 0:
@@ -231,7 +262,7 @@ class VideoArray:
             i = int(tkey) + (n if tkey < 0 else 0)
             if not 0 <= i < n:
                 raise IndexError(tkey)
-            for idx, fr in self._decode_from(i):
+            for idx, fr in self._decode_from(i, threads=False):
                 if idx == i:
                     return fr[sp]
             raise IndexError(f"frame {i} not decodable in {self.path}")
