@@ -9,12 +9,22 @@
 # We don't install numpy via pip - conda handles it - but we constrain it
 numpy<2.0
 
+# TensorFlow 2.10 needs protobuf < 3.20; driada's optional Google deps pull 6.x and
+# then `import driada` fails through tensorflow. pip check will still complain about
+# google-api-core: those deps are not used by the pipeline.
+protobuf==3.19.6
+
 # === CORE NEUROSCIENCE ===
-driada>=0.6.0
+# Versions verified together on 2026-10-31 (tests/ pass, production EBM loads)
+driada==1.2.2
 
 # === MACHINE LEARNING ===
-interpret>=0.5
+# interpret pulls scikit-learn 1.7.2 over the conda pin
+interpret==0.7.8
 sortedcontainers>=2.4.0
+
+# === TESTS ===
+pytest
 
 # === IMAGE/VIDEO ===
 opencv-python>=4.8

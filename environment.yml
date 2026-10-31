@@ -33,9 +33,19 @@ dependencies:
   - tensorflow=2.10.0
   - keras=2.10.0
 
+  # caiman 1.11.3 imports pkg_resources, which setuptools >= 81 no longer ships
+  - setuptools<81
+
   # === SCIENTIFIC COMPUTING ===
   - numpy=1.26.4
   - scipy=1.14.1
+  # BLAS: the newer conda-forge MKL builds (mkl 2024.2.2 + llvm-openmp, libblas build 35)
+  # hard-crash numpy/scipy linalg on Windows with 0xc06d007f; this combination works
+  - mkl=2024.1.0
+  - intel-openmp
+  - libblas=3.9.0=23_win64_mkl
+  - liblapack=3.9.0=23_win64_mkl
+  - libcblas=3.9.0=23_win64_mkl
   - pandas=2.2.2
   - h5py>=3.11.0
 
