@@ -94,9 +94,25 @@ another component's bl / c1 / neurons_sn / SNR_comp / r_values / g by taking
 the first N entries instead of the kept IDs (fixed together with
 tests/test_compression_values.py). The same class of defect - per-component
 data aligned by position in one place and by component ID in another - also
-exists elsewhere. Not fixed yet.
+exists elsewhere; entries below say which are fixed.
 
-### [HIGH] Merge leaves SNR_comp / r_values / lam / cnn_preds on the old numbering
+### [HIGH] Training features come from mis-compressed files
+- **Location**: `capcan_validation.py` init_path = data/raw_compressed ->
+  metrics_init.csv -> `experiments/create_training_dataset.py` -> EBM training data
+- **Issue**: all 127 files in data/raw_compressed (and data/final_compressed) were made
+  by the old compression: stored SNR_comp vs SNR recomputed from each file's own traces
+  has Spearman rho ~0 on average (max 0.68; a correctly paired session gives 0.85).
+  Labels are matched by position and are fine; caiman_snr, caiman_r_score, noise_level,
+  baseline and tau_decay are partly another neuron's. On uncompressed sessions these
+  features are correct, so the model is trained on a different distribution than it
+  is applied to. Needs the original uncompressed CaImAn outputs to rebuild.
+
+### [FIXED] Merge leaves SNR_comp / r_values / lam / cnn_preds on the old numbering
+- **Fix**: implement_decision rebuilds these arrays with manual_merge's reordering;
+  a merged component gets the mean of its sources' finite values, as in the GUI.
+  If CaImAn drops an empty merge, it raises instead of shifting later merged IDs.
+  Test: tests/test_merge_alignment.py. Processed pickles made before the fix keep the
+  shift (detectable: SNR_comp longer than C) and need autoinspection re-run.
 - **Location**: `auto_inspector.py` implement_decision -> CaImAn `Estimates.manual_merge`
 - **Issue**: CaImAn 1.11.3 manual_merge renumbers A, C, YrA, S, bl, c1, neurons_sn, g
   but not SNR_comp, r_values, lam, cnn_preds. After a merge these arrays keep the old
@@ -109,7 +125,12 @@ exists elsewhere. Not fixed yet.
 - **Note**: compression now leaves such stale-length arrays untouched instead of
   cutting them, so it neither fixes nor worsens post-merge files.
 
-### [HIGH] capcan validation counts deleted neurons as kept
+### [FIXED] capcan validation counts deleted neurons as kept
+- **Fix**: the automatic result is the post-merge idx_components minus deleted neurons
+  (kept_components); single-session matching distance 50 px -> 3 px, same as batch
+  validation and training labels. The module also failed on import since fps_data.csv
+  switched to ';' separators; fixed. Validation still rounds fps to an integer.
+  Test: tests/test_validation_kept.py. Saved results (batch_validation_*.csv) predate it.
 - **Location**: `capcan_validation.py` (around lines 225-240 and 389-414);
   `auto_inspector.validate_decision`
 - **Issue**: since implement_decision keeps deleted neurons visible in idx_components
@@ -133,18 +154,16 @@ exists elsewhere. Not fixed yet.
   metrics rows by position. Reported by the audit, not independently re-checked.
 
 ### [INVESTIGATE] Lower-confidence findings
-- Export filters only on ml_keep_probability and ignores metrics_df['delete'], so a
-  neuron deleted by the duplicate rule (lower SNR of a close pair) keeps a high
-  probability and is exported: LNOF_J12_1D component 112, p=0.95, delete=1. Honouring
-  'delete' would also drop 6 neurons at p=0.74-0.75 from that legacy file (no
-  autoinspection_config; apparently inspected at 0.75, exported at 0.72). Merged
-  components being dropped is fixed (ml_approved_components).
+- [FIXED] Export ignored metrics_df['delete'], so a neuron deleted by the duplicate
+  rule (lower SNR of a close pair) kept a high probability and was exported:
+  LNOF_J12_1D component 112, p=0.95, delete=1. ml_approved_components now skips
+  delete == 1; on that legacy file export goes 317 -> 310 (also drops 6 neurons at
+  p=0.74-0.75, apparently inspected at 0.75, exported at 0.72). Test:
+  tests/test_export_deleted.py.
 - ExamineCells save (`bm_examinator.py` ~385-402, `_session.mat`) writes every visible
   neuron, deleted ones included.
 - Legacy LNOF_J12_1D holds from_merge rows with component_idx 552-554 while C has 481
   rows; not reproduced with current code.
-- implement_decision assigns merged IDs as len(good)+i even if CaImAn drops an empty
-  merge, shifting later merged IDs.
 - Merged rows get population features (nn_distance_center, local_density, ...)
   computed over merged components only - transform_metrics_df_indices.
 - `ml/apply_corrections.py` looks corrections up by CSV row number (iloc[fn_idx-1]).
