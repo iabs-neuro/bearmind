@@ -154,3 +154,49 @@ def test_detect_mode(make_series, tmp_path):
     assert scan.detect_mode(root / "1_Raw") is None
     root2 = make_series(tmp_path / "t", "legacy")
     assert scan.detect_mode(root2 / "1_Raw" / "LNOF_J01_1D" / "2024_10_15" / "10_00_00" / "Miniscope") == "legacy"
+
+
+def test_legacy_unattributable_folder_reported(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "legacy")
+    bad = root / "1_Raw" / "badname" / "2024_10_15" / "10_00_00" / "Miniscope"
+    bad.mkdir(parents=True)
+    (bad / "0.avi").write_bytes(b"x")
+    odd = root / "1_Raw" / "LNOF_J02_1D" / "2024_10_15" / "10_00_00" / "Miniscope"
+    odd.mkdir(parents=True)
+    (odd / "video.avi").write_bytes(b"x")
+    cam = root / "1_Raw" / "LNOF_J01_1D" / "2024_10_15" / "10_00_00" / "BehavCam_0"
+    cam.mkdir(parents=True)
+    (cam / "0.avi").write_bytes(b"x")
+    scan.scan_series(root)
+    text = (root / "_bearmind" / "scan_unrecognized.csv").read_text(encoding="utf-8")
+    assert "badname/2024_10_15/10_00_00/Miniscope,legacy folder name is not a session id" in text
+    assert "LNOF_J02_1D/2024_10_15/10_00_00/Miniscope,Miniscope AVI names are not <n>.avi" in text
+    assert "BehavCam" not in text
+
+
+def test_corrupt_chunk_does_not_abort_series(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai")
+    make_series(tmp_path / "s", "bonsai", sid="NOF_H02_1D")
+    bad = next((root / "1_Raw").rglob("NOF_H02_1D_1.avi"))
+    bad.write_bytes(bytes(range(256)) * 20)
+    recs = {r.sid: r for r in scan.scan_series(root)}
+    assert recs["NOF_H01_1D"].n_frames == 30 and not recs["NOF_H01_1D"].excluded
+    a = codes(recs["NOF_H02_1D"])["unreadable_video"]
+    assert a.level == "error" and "NOF_H02_1D_1.avi" in a.message
+    assert recs["NOF_H02_1D"].excluded
+
+
+def test_fps_unavailable_reported(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", chunk_frames=1, n_chunks=2, ts_rows=2)
+    r = scan.scan_series(root)[0]
+    assert r.fps is None and codes(r)["fps_unavailable"].level == "warning"
+
+
+@pytest.mark.parametrize("rate,expect_outlier", [("30FPS", True), ("20.0 FPS", False), ("fast", False)])
+def test_nominal_frame_rate_lenient(make_series, tmp_path, rate, expect_outlier):
+    import json
+    root = make_series(tmp_path / "s", "legacy")
+    meta = next((root / "1_Raw").rglob("Miniscope/metaData.json"))
+    meta.write_text(json.dumps({"frameRate": rate}), encoding="utf-8")
+    r = scan.scan_series(root)[0]
+    assert ("fps_outlier" in codes(r)) == expect_outlier

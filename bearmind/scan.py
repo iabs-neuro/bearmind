@@ -60,6 +60,16 @@ def detect_mode(folder: Path) -> str | None:
     return None
 
 
+def _parse_rate(value) -> float | None:
+    """Nominal frame rate from a number or a string like '30FPS'; None if nothing parses."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value > 0 else None
+    m = re.search(r"\d+(?:\.\d+)?", str(value or ""))
+    return float(m.group()) if m and float(m.group()) > 0 else None
+
+
 def _json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -95,10 +105,13 @@ def _walk(paths: SeriesPaths):
             found.setdefault(session_id(d.name), []).append((mode, d))
         elif mode == "legacy":
             found.setdefault(_legacy_sid(d), []).append((mode, d))
+        elif d.name == "Miniscope":
+            if _legacy_chunks(d):
+                unrecognized.append((d, "legacy folder name is not a session id"))
+            else:
+                unrecognized.append((d, "Miniscope AVI names are not <n>.avi"))
         elif (d.parent / "Miniscope").is_dir():
             continue  # other camera of a legacy recording (e.g. BehavCam), not a miniscope
-        elif d.name == "Miniscope":
-            unrecognized.append((d, "Miniscope folder is not under <SID>/<date>/<time>"))
         elif session_id(d.name) is None:
             unrecognized.append((d, "folder name is not a session id"))
         else:
@@ -106,11 +119,21 @@ def _walk(paths: SeriesPaths):
     return found, unrecognized
 
 
+class _Unreadable(Exception):
+    def __init__(self, chunk, exc):
+        super().__init__(f"{chunk}: {exc}")
+
+
 def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: dict):
     """Inspect one part: chunks, frame counts, timestamps, per-part drop rules. Returns (RawPart, extras)."""
     chunks = _bonsai_chunks(folder) if mode == "bonsai" else _legacy_chunks(folder)
     names = [n for _, n in chunks]
-    infos = [video_info(folder / n) for n in names]
+    infos = []
+    for n in names:
+        try:
+            infos.append(video_info(folder / n))
+        except Exception as e:
+            raise _Unreadable(n, e) from e
     total = sum(i[0] for i in infos)
     shape = (infos[0][1], infos[0][2])
     anomalies: list[Anomaly] = []
@@ -128,8 +151,8 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
             except (KeyError, TypeError, ValueError):
                 start_ms = None
         nominal_data = _json(folder / "metaData.json") if (folder / "metaData.json").is_file() else None
-        if nominal_data and nominal_data.get("frameRate"):
-            nominal = float(nominal_data["frameRate"])
+        if nominal_data:
+            nominal = _parse_rate(nominal_data.get("frameRate"))
         ts_path = folder / "timeStamps.csv"
         ts_path = ts_path if ts_path.is_file() else None
     else:
@@ -148,7 +171,11 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
 
     kept = total
     drop_last = drop_tail = False
-    if not last_frame_readable(folder / names[-1]):
+    try:
+        last_ok = last_frame_readable(folder / names[-1])
+    except Exception as e:
+        raise _Unreadable(names[-1], e) from e
+    if not last_ok:
         drop_last = True
         kept -= 1
         anomalies.append(Anomaly("broken_last_frame", "warning",
@@ -170,14 +197,22 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
 
 def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
     parts, tss, errors, nominals, anomalies = [], [], [], [], []
+    unreadable = []
     for mode, folder in items:
-        p, ts, err, nominal, an = _read_part(paths, sid, mode, folder, cfg_scan)
+        try:
+            p, ts, err, nominal, an = _read_part(paths, sid, mode, folder, cfg_scan)
+        except _Unreadable as e:
+            unreadable.append(Anomaly("unreadable_video", "error", str(e)))
+            continue
         parts.append(p)
         tss.append(ts)
         errors.append(err)
         nominals.append(nominal)
         anomalies += an
+    anomalies += unreadable
     mode = items[0][0]
+    if not parts:
+        return [], mode, 0, None, {}, anomalies, None
     multi = len(parts) > 1
 
     # order: legacy by recording start, bonsai by first timestamp; folder name when neither is known
@@ -235,8 +270,9 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         n_frames = min(total, rows)
         try:
             est = robust_fps(st.t_ms[:n_frames], cfg_scan["gap_factor"])
-        except ValueError:
+        except ValueError as e:
             est = None
+            anomalies.append(Anomaly("fps_unavailable", "warning", str(e)))
         if est is not None:
             fps = est.fps
             fps_info = {**dataclasses.asdict(est), "source": "timestamps"}
