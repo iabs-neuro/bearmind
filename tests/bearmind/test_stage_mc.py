@@ -95,3 +95,25 @@ def test_crop_from_config():
     assert mc_stage._crop(cfg) == CropBox(1, 2, 10, 12)
     assert mc_stage._crop({"crop": {"box": [10, 12], "box_pos": None}}) is None
     assert mc_stage._crop({"crop": {"box": [10, 12]}}) is None
+
+
+@pytest.mark.slow
+def test_mc_stage_writer_failure_releases_temp(tmp_path, make_avi, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    monkeypatch.setattr(mc_stage, "CHUNK", 128)
+
+    def bad_write(chunks, path, fps):
+        next(iter(chunks))  # consume the first chunk, leave the generator suspended
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mc_stage, "write_ffv1", bad_write)
+    with pytest.raises(OSError, match="disk full"):
+        mc_stage.run(paths, rec, cfg)
+    assert not (tmp_path / "tmp" / SID).exists()
+
+
+def test_mc_stage_rejects_pw_rigid(tmp_path, make_avi):
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    cfg["mc"]["pw_rigid"] = True
+    with pytest.raises(ValueError, match="pw_rigid"):
+        mc_stage.run(paths, rec, cfg)

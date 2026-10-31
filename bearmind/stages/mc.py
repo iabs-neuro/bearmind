@@ -1,14 +1,17 @@
 """Motion correction stage: shifts from CaImAn on a cropped temp BigTIFF, applied by streaming to FFV1."""
 from __future__ import annotations
 
+import gc
 import math
 import os
 import shutil
+import time
 from pathlib import Path
 
 import numpy as np
 import tifffile
 
+from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
 
@@ -36,14 +39,21 @@ def _corrected_chunks(tif: Path, shifts: np.ndarray, border_nan: str):
     from caiman.motion_correction import apply_shift_iteration
 
     mm = tifffile.memmap(str(tif), mode="r")
-    for a in range(0, mm.shape[0], CHUNK):
-        block = np.asarray(mm[a:a + CHUNK], dtype=np.float32)
-        out = np.empty(block.shape, np.uint8)
-        for i, (img, sh) in enumerate(zip(block, shifts[a:a + CHUNK])):
-            x = apply_shift_iteration(img, tuple(sh), border_nan=border_nan)
-            out[i] = np.clip(np.rint(x), 0, 255).astype(np.uint8)
-        yield out
-    del mm
+    block = out = None
+    try:
+        for a in range(0, mm.shape[0], CHUNK):
+            block = np.asarray(mm[a:a + CHUNK], dtype=np.float32)
+            out = np.empty(block.shape, np.uint8)
+            for i, (img, sh) in enumerate(zip(block, shifts[a:a + CHUNK])):
+                x = apply_shift_iteration(img, tuple(sh), border_nan=border_nan)
+                out[i] = np.clip(np.rint(x), 0, 255).astype(np.uint8)
+            yield out
+    finally:
+        del block, out
+        mm_base = getattr(mm, "_mmap", None)
+        del mm
+        if mm_base is not None:
+            mm_base.close()
 
 
 def _preview_chunks(video: VideoArray):
@@ -65,6 +75,9 @@ def run(paths, rec, cfg) -> StageResult:
 
     import bm_qc
 
+    mcfg = dict(cfg["mc"])
+    if mcfg.get("pw_rigid"):
+        raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
     crop = _crop(cfg)
     n_in = int(rec.n_frames)
@@ -74,6 +87,8 @@ def run(paths, rec, cfg) -> StageResult:
     os.environ["CAIMAN_TEMP"] = str(tmp)
     os.environ["OPENBLAS_NUM_THREADS"] = "1"  # workers inherit env at start; 4 threads each cost 7x RAM
     dview = None
+    gen = None
+    result = None
     pv = cfg["preview"]
     prev_kw = dict(crf=pv["crf"], speed=pv["speed"], tbin=pv["tbin"])
     try:
@@ -83,16 +98,17 @@ def run(paths, rec, cfg) -> StageResult:
         _, dview, _ = setup_cluster(backend="multiprocessing",
                                     n_processes=max(1, int(cfg["machine"]["n_cpus"]) - 1),
                                     single_thread=False)
-        mcfg = dict(cfg["mc"])
-        mc = cmc.MotionCorrect([str(tif)], dview=dview, splits_rig=math.ceil(n_in / 500),
-                               shifts_opencv=True, **mcfg)
+        mc = cmc.MotionCorrect([str(tif)], dview=dview, **{
+            **mcfg, "splits_rig": math.ceil(n_in / 500), "shifts_opencv": True})
         mc.motion_correct(save_movie=False)
         shifts = np.asarray(mc.shifts_rig, dtype=np.float32)
         template = np.asarray(mc.total_template_rig)
 
         paths.mc_video(sid).parent.mkdir(parents=True, exist_ok=True)
         np.save(paths.mc_shifts(sid), shifts)
-        n = write_ffv1(_corrected_chunks(tif, shifts, mcfg["border_nan"]), paths.mc_video(sid), fps)
+        gen = _corrected_chunks(tif, shifts, mcfg["border_nan"])
+        n = write_ffv1(gen, paths.mc_video(sid), fps)
+        gen.close()
         mc_vid = VideoArray(paths.mc_video(sid))
 
         paths.preview(sid, "raw").parent.mkdir(parents=True, exist_ok=True)
@@ -117,8 +133,10 @@ def run(paths, rec, cfg) -> StageResult:
             "preview_mc": paths.rel(paths.preview(sid, "mc")),
             "preview_mc_dff": paths.rel(paths.preview(sid, "mc_dff")),
         }
-        return StageResult(outputs=outputs, metrics=metrics)
+        result = StageResult(outputs=outputs, metrics=metrics)
     finally:
+        if gen is not None:
+            gen.close()  # releases the tif memmap even after a writer error (Windows locks open files)
         if dview is not None:
             try:
                 cm.stop_server(dview=dview)
@@ -133,4 +151,13 @@ def run(paths, rec, cfg) -> StageResult:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-        shutil.rmtree(tmp, ignore_errors=True)
+        mc = mm = None
+        gc.collect()
+        for _ in range(5):
+            shutil.rmtree(tmp, ignore_errors=True)
+            if not tmp.exists():
+                break
+            time.sleep(0.5)
+    if tmp.exists():
+        result.anomalies.append(Anomaly("temp_not_removed", "warning", str(tmp)))
+    return result
