@@ -82,6 +82,30 @@ def test_finalize_no_fov_anywhere(tmp_path):
     assert [a.code for a in r.anomalies] == ["fov_not_found"]
 
 
+def test_finalize_skips_records_without_crop_metrics(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    ok = _rec("M3_d1", [100, 120, 300, 310])
+    no_shape = SimpleNamespace(sid="M3_d2", anomalies=[], stages={  # big FOV, must not count for the size
+        "crop": SimpleNamespace(metrics={"fov": [10, 10, 500, 500]})})
+    failed = SimpleNamespace(sid="M3_d3", anomalies=[], stages={"crop": SimpleNamespace(metrics={})})
+    no_stage = SimpleNamespace(sid="M3_d4", anomalies=[], stages={})
+    recs = [ok, no_shape, failed, no_stage]
+    out = finalize_mouse(paths, "M3", recs, config.resolve(paths, mouse="M3"))
+    assert set(out) == {"M3_d1"} and (out["M3_d1"].height, out["M3_d1"].width) == (320, 330)
+    assert config.resolve(paths, mouse="M3")["crop"]["box"] == [320, 330]
+    for sid in ("M3_d2", "M3_d3", "M3_d4"):
+        assert "box_pos" not in config.resolve(paths, sid=sid)["crop"]
+    assert all(r.anomalies == [] for r in recs)
+
+
+def test_finalize_twice_adds_fov_not_found_once(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    recs = [_rec("M4_d1", [100, 120, 300, 310]), _rec("M4_d2", None)]
+    for _ in range(2):
+        finalize_mouse(paths, "M4", recs, config.resolve(paths, mouse="M4"))
+    assert [a.code for a in recs[1].anomalies] == ["fov_not_found"]
+
+
 def test_detect_fov_covers_dim_tissue():
     yy, xx = np.mgrid[:300, :300]
     r2 = (yy - 150) ** 2 + (xx - 150) ** 2

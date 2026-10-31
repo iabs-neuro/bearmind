@@ -17,13 +17,19 @@ def detect(paths, rec, cfg) -> StageResult:
 
 
 def finalize_mouse(paths, mouse, records, cfg) -> dict:
-    """Write crop.box (mouse) and crop.box_pos (sessions); return the box per sid."""
-    fovs = {r.sid: r.stages["crop"].metrics.get("fov") for r in records}
+    """Write crop.box (mouse) and crop.box_pos (sessions); return the box per sid.
+
+    Records without crop metrics (crop stage failed or older record) are skipped: no box_pos, no say in
+    the box size, not in the result.
+    """
+    metrics = {r.sid: getattr(r.stages.get("crop"), "metrics", None) or {} for r in records}
+    records = [r for r in records if metrics[r.sid].get("frame_shape")]
+    fovs = {r.sid: metrics[r.sid].get("fov") for r in records}
     found = [tuple(f) for f in fovs.values() if f]
     if found:
         frame_shape = (
-            min(r.stages["crop"].metrics["frame_shape"][0] for r in records),
-            min(r.stages["crop"].metrics["frame_shape"][1] for r in records),
+            min(metrics[r.sid]["frame_shape"][0] for r in records),
+            min(metrics[r.sid]["frame_shape"][1] for r in records),
         )
         # Reread: the mouse config may have been written by an earlier batch.
         size = (config.resolve(paths, mouse=mouse).get("crop") or {}).get("box")
@@ -42,8 +48,9 @@ def finalize_mouse(paths, mouse, records, cfg) -> dict:
         else:
             out[r.sid] = None
             config.update_yaml(paths.session_config(r.sid), {"crop": {"box_pos": None}})
-            r.anomalies.append(Anomaly(
-                "fov_not_found", "warning",
-                "no field of view found; session is processed uncropped, "
-                "its frame size differs from the other sessions of the mouse"))
+            if not any(a.code == "fov_not_found" for a in r.anomalies):  # finalize runs again for late sessions
+                r.anomalies.append(Anomaly(
+                    "fov_not_found", "warning",
+                    "no field of view found; session is processed uncropped, "
+                    "its frame size differs from the other sessions of the mouse"))
     return out
