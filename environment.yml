@@ -20,6 +20,11 @@ dependencies:
   # BLAS: OpenBLAS. The lab machines are AMD (Ryzen 9 7950X3D), where MKL gains
   # little, and newer conda-forge MKL builds (mkl 2024.2.2 + llvm-openmp) hard-crash
   # numpy/scipy linalg on Windows with 0xc06d007f.
+  # WORKAROUND: OpenBLAS 0.3.34 does not recognise Zen 4 and its AVX2 dgemm kernels
+  # segfault (e.g. 2000x239 . 239x600 float64, CaImAn compute_W). bearmind/__init__.py,
+  # tests/conftest.py and the conda env variable set OPENBLAS_CORETYPE=Sandybridge.
+  # TODO proper fix: an OpenBLAS build that knows Zen 4, or MKL (currently unsolvable
+  # next to this stack because of blas-devel).
   - libblas=*=*openblas
 
   # caiman pulls numpy, scipy, scikit-image, scikit-learn, opencv, av, pims,
