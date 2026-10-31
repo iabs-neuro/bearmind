@@ -1668,7 +1668,7 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
         else:
             gsig = 6
 
-        imdata_ = build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5)
+        imdata_ = build_average_image(fname, gsig, start_frame=0, end_frame=np.inf, step=5)
         imdata = np.flip(imdata_, axis=0)  # flip for reverting y-axis
 
         imwidth = size
@@ -1710,7 +1710,7 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
     show(bkapp)
 
 
-def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+def build_average_image(fname, gsig, start_frame=0, end_frame=np.inf, step=5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
@@ -1722,7 +1722,7 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
     return imax
 
 
-def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.Inf, step=5):
+def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.inf, step=5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 

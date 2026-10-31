@@ -46,7 +46,7 @@ def load_fps_data(fps_file='fps_data.csv'):
         dict: Mapping of session_id -> fps (rounded to nearest int)
     """
     fps_path = os.path.join(project_root, fps_file)
-    fps_df = pd.read_csv(fps_path)
+    fps_df = pd.read_csv(fps_path, sep=';')
 
     # Create mapping: filename (first 10 chars) -> rounded FPS
     fps_map = {}

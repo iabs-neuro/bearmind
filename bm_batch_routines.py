@@ -666,7 +666,7 @@ def FindMaxima(estimates):
     return np.array(pts)
 
 
-def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.Inf, step = 5):
+def Test_gSig_Range(fname, default_gsig = 6, maxframes = np.inf, step = 5):
     tlen = len(tfl.TiffFile(fname).pages)
     data = tfl.imread(fname, key = range(0, min(maxframes, tlen), step))
     
