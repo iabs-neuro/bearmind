@@ -20,19 +20,17 @@ def finalize_mouse(paths, mouse, records, cfg) -> dict:
     """Write crop.box (mouse) and crop.box_pos (sessions); return the box per sid."""
     fovs = {r.sid: r.stages["crop"].metrics.get("fov") for r in records}
     found = [tuple(f) for f in fovs.values() if f]
-    if not found:
-        return {r.sid: None for r in records}
-
-    frame_shape = (
-        min(r.stages["crop"].metrics["frame_shape"][0] for r in records),
-        min(r.stages["crop"].metrics["frame_shape"][1] for r in records),
-    )
-    # Reread: the mouse config may have been written by an earlier batch.
-    size = (config.resolve(paths, mouse=mouse).get("crop") or {}).get("box")
-    if size is None:
-        size = mouse_box_size(found, frame_shape, cfg["crop"]["margin_px"])
-        config.update_yaml(paths.mouse_config(mouse), {"crop": {"box": list(size)}})
-    size = (int(size[0]), int(size[1]))
+    if found:
+        frame_shape = (
+            min(r.stages["crop"].metrics["frame_shape"][0] for r in records),
+            min(r.stages["crop"].metrics["frame_shape"][1] for r in records),
+        )
+        # Reread: the mouse config may have been written by an earlier batch.
+        size = (config.resolve(paths, mouse=mouse).get("crop") or {}).get("box")
+        if size is None:
+            size = mouse_box_size(found, frame_shape, cfg["crop"]["margin_px"])
+            config.update_yaml(paths.mouse_config(mouse), {"crop": {"box": list(size)}})
+        size = (int(size[0]), int(size[1]))
 
     out = {}
     for r in records:

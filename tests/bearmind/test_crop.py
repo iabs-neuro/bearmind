@@ -76,6 +76,10 @@ def test_finalize_no_fov_anywhere(tmp_path):
     out = finalize_mouse(paths, "M2", [r], config.resolve(paths, mouse="M2"))
     assert out == {"M2_d1": None}
     assert "box" not in (config.resolve(paths, mouse="M2")["crop"] or {})
+    # finalized as uncropped (explicit null), so MC does not wait for crop_finalize
+    crop = config.resolve(paths, sid="M2_d1")["crop"]
+    assert "box_pos" in crop and crop["box_pos"] is None
+    assert [a.code for a in r.anomalies] == ["fov_not_found"]
 
 
 def test_detect_fov_covers_dim_tissue():

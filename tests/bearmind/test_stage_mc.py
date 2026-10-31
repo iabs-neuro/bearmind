@@ -6,6 +6,7 @@ from scipy.ndimage import gaussian_filter
 from bearmind import config
 from bearmind.paths import SeriesPaths
 from bearmind.registry import RawPart, SessionRecord
+from bearmind.stages import WaitingForInput
 from bearmind.stages import mc as mc_stage
 from bearmind.video import CropBox, SessionReader, VideoArray
 
@@ -93,8 +94,35 @@ def test_mc_stage_failure_cleans_up(tmp_path, make_avi, monkeypatch):
 def test_crop_from_config():
     cfg = {"crop": {"box": [10, 12], "box_pos": [1, 2]}}
     assert mc_stage._crop(cfg) == CropBox(1, 2, 10, 12)
-    assert mc_stage._crop({"crop": {"box": [10, 12], "box_pos": None}}) is None
-    assert mc_stage._crop({"crop": {"box": [10, 12]}}) is None
+    assert mc_stage._crop({"crop": {"box": [10, 12], "box_pos": None}}) is None  # no FOV: uncropped
+    with pytest.raises(WaitingForInput) as e:  # crop not finalized for the mouse yet
+        mc_stage._crop({"crop": {"box": [10, 12]}})
+    assert e.value.what == "crop_finalize"
+
+
+def test_mc_waits_for_crop_finalize_before_heavy_work(tmp_path, make_avi, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    del cfg["crop"]["box_pos"]
+    monkeypatch.setattr(mc_stage, "SessionReader", None)  # any video work would fail differently
+    with pytest.raises(WaitingForInput) as e:
+        mc_stage.run(paths, rec, cfg)
+    assert e.value.what == "crop_finalize"
+    assert not (tmp_path / "tmp").exists()
+
+
+@pytest.mark.slow
+def test_mc_stage_dff_failure_releases_temp_tif(tmp_path, make_avi, monkeypatch):
+    import bm_qc
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+
+    def bad_dff(movie, out_path=None, fps=None, verbose=False):
+        mm = tifffile.memmap(movie, mode="r")  # held by this frame of the traceback  # noqa: F841
+        raise RuntimeError("dff failed")
+
+    monkeypatch.setattr(bm_qc, "make_dff_video", bad_dff)
+    with pytest.raises(RuntimeError, match="dff failed"):
+        mc_stage.run(paths, rec, cfg)
+    assert not (tmp_path / "tmp" / SID).exists()
 
 
 @pytest.mark.slow

@@ -6,13 +6,14 @@ import math
 import os
 import shutil
 import time
+import traceback
 from pathlib import Path
 
 import numpy as np
 import tifffile
 
 from bearmind.registry import Anomaly
-from bearmind.stages import StageResult
+from bearmind.stages import StageResult, WaitingForInput
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
 
 CHUNK = 1000
@@ -20,7 +21,10 @@ N_CORR_FRAMES = 200
 
 
 def _crop(cfg) -> CropBox | None:
+    """Crop box of the session; None (explicit box_pos: null) means no FOV was found: uncropped."""
     c = cfg.get("crop") or {}
+    if "box_pos" not in c:  # written by crop.finalize_mouse once every session of the mouse is detected
+        raise WaitingForInput("crop_finalize")
     pos, box = c.get("box_pos"), c.get("box")
     if pos is None or box is None:
         return None
@@ -69,6 +73,8 @@ def _mean_template_corr(video: VideoArray, template: np.ndarray) -> float:
 
 
 def run(paths, rec, cfg) -> StageResult:
+    crop = _crop(cfg)  # WaitingForInput before any heavy work
+
     import caiman as cm
     import caiman.motion_correction as cmc
     from caiman.cluster import setup_cluster
@@ -79,7 +85,6 @@ def run(paths, rec, cfg) -> StageResult:
     if mcfg.get("pw_rigid"):
         raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
-    crop = _crop(cfg)
     n_in = int(rec.n_frames)
     tmp = Path(cfg["machine"]["temp_dir"]) / sid
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a missing CAIMAN_TEMP folder
@@ -134,6 +139,10 @@ def run(paths, rec, cfg) -> StageResult:
             "preview_mc_dff": paths.rel(paths.preview(sid, "mc_dff")),
         }
         result = StageResult(outputs=outputs, metrics=metrics)
+    except BaseException as e:
+        # traceback frames (e.g. of make_dff_video) still reference the tif memmap and would block its deletion
+        traceback.clear_frames(e.__traceback__)
+        raise
     finally:
         if gen is not None:
             gen.close()  # releases the tif memmap even after a writer error (Windows locks open files)
