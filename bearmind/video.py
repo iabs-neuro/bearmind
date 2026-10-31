@@ -25,12 +25,31 @@ def _grey(frame) -> np.ndarray:
     return frame.to_ndarray(format="gray")
 
 
-def _iter_avi(path: Path) -> Iterator[np.ndarray]:
+def _iter_avi(path: Path, threads: bool = True) -> Iterator[np.ndarray]:
     with av.open(str(path)) as c:
         s = c.streams.video[0]
-        s.thread_type = "AUTO"  # frame threading: ~3x faster FFV1 decode, same frames
+        if threads:
+            s.thread_type = "AUTO"  # frame threading: ~3x faster FFV1 decode, same frames
         for fr in c.decode(s):
             yield _grey(fr)
+
+
+def _head_frames(path: Path, n: int, broken_tail: bool) -> Iterator[np.ndarray]:
+    """The first n frames of an AVI; fewer decoded frames is an error, since later frames would shift.
+
+    With `broken_tail` the frame after them is unreadable. Decoding without frame threading then outputs
+    each frame before the next packet is read, so stopping at n never sends the broken packet to the
+    decoder (it raises InvalidDataError there, or a threaded decoder drops it silently).
+    """
+    if n <= 0:
+        return
+    k = 0
+    for fr in _iter_avi(path, threads=not broken_tail):
+        yield fr
+        k += 1
+        if k == n:
+            return
+    raise ValueError(f"{path}: decoded {k} of {n} frames")
 
 
 def decode_to_memmap(path: Path, out: Path, block: int = 1000) -> np.memmap:
@@ -106,26 +125,20 @@ class SessionReader:
             part_left = int(part.n_frames)
             last = len(part.chunks) - 1
             for i, name in enumerate(part.chunks):
+                if left <= 0:
+                    return
                 if part_left <= 0:
                     break
-                drop_last = (i < last and part.drop_chunk_tail) or (i == last and part.drop_last_frame)
-                prev = None  # held back one frame so the chunk's final frame can be dropped
-                for fr in _iter_avi(self.root / part.folder / name):
-                    if prev is not None:
-                        if left <= 0:
-                            return
-                        if part_left <= 0:
-                            break
-                        left -= 1
-                        part_left -= 1
-                        yield prev
-                    prev = fr
-                if prev is not None and not drop_last and part_left > 0:
-                    if left <= 0:
-                        return
-                    left -= 1
-                    part_left -= 1
-                    yield prev
+                path = self.root / part.folder / name
+                # registries scanned before chunk_frames was recorded: ask the container
+                count = part.chunk_frames[i] if part.chunk_frames else video_info(path)[0]
+                broken = i == last and part.drop_last_frame
+                drop = broken or (i < last and part.drop_chunk_tail)
+                n = min(count - 1 if drop else count, part_left, left)
+                for fr in _head_frames(path, n, broken):
+                    yield fr
+                part_left -= n
+                left -= n
 
     def _crop(self, fr: np.ndarray) -> np.ndarray:
         c = self.crop

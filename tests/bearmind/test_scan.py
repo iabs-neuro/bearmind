@@ -112,6 +112,25 @@ def test_broken_last_frame(make_series, tmp_path, monkeypatch):
     assert r.n_frames == 29 and not r.excluded
 
 
+def test_truncated_last_chunk_on_real_file(make_series, make_avi, tmp_path):
+    import av
+    root = make_series(tmp_path / "s", "bonsai", ts_rows=29)
+    folder = root / "1_Raw" / "HM_NOF_1D" / "NOF_H01_1D"
+    names = [f"NOF_H01_1D_{i}.avi" for i in range(3)]
+    _numbered_chunks(make_avi, folder, names, 0, 10)
+    last = folder / names[-1]
+    with av.open(str(last)) as c:
+        pk = [p for p in c.demux(c.streams.video[0]) if p.size][-1]
+        cut = pk.pos + pk.size // 2  # recording stopped in the middle of writing the last frame
+    last.write_bytes(last.read_bytes()[:cut])
+    r = scan.scan_series(root)[0]
+    assert r.parts[0].drop_last_frame and codes(r)["broken_last_frame"].auto_fixed
+    assert r.parts[0].chunk_frames == [10, 10, 10]
+    assert r.n_frames == 29 and "frames_ts_mismatch" not in codes(r) and not r.excluded
+    frames = np.concatenate(list(SessionReader(root, r).iter_chunks(8)))
+    assert frames[:, 0, 0].tolist() == list(range(29))
+
+
 def test_small_mismatch_trimmed(make_series, tmp_path):
     r = scan.scan_series(make_series(tmp_path / "s", "bonsai", chunk_frames=40, ts_rows=119))[0]
     a = codes(r)["frames_ts_mismatch"]

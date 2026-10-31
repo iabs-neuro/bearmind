@@ -54,6 +54,7 @@ class RawPart:
     metadata_file: str | None
     drop_chunk_tail: bool = False
     drop_last_frame: bool = False
+    chunk_frames: list[int] = field(default_factory=list)  # frames per chunk as the container reports
 
 
 @dataclass

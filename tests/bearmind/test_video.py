@@ -58,6 +58,35 @@ def test_session_reader_rules(tmp_path, make_avi):
     assert np.array_equal(out2, f[:25])
 
 
+def test_session_reader_stops_chunks_at_recorded_counts(tmp_path, make_avi):
+    (tmp_path / "d").mkdir()
+    f = _frames(30)
+    for i in range(3):
+        make_avi(tmp_path / "d" / f"{i}.avi", f[i * 10:(i + 1) * 10])
+    part = _part(["0.avi", "1.avi", "2.avi"], 30, chunk_frames=[10, 10, 10])
+    assert np.array_equal(np.concatenate(list(SessionReader(tmp_path, _rec([part], 30)).iter_chunks(7))), f)
+    # a chunk that decodes fewer frames than the scan counted would shift every later frame
+    part = _part(["0.avi", "1.avi", "2.avi"], 31, chunk_frames=[10, 11, 10])
+    with pytest.raises(ValueError, match="decoded 10 of 11 frames"):
+        list(SessionReader(tmp_path, _rec([part], 31)).iter_chunks(7))
+
+
+def test_session_reader_never_decodes_broken_last_frame(tmp_path, make_avi):
+    import av
+    (tmp_path / "d").mkdir()
+    f = _frames(12)
+    p = make_avi(tmp_path / "d" / "0.avi", f)
+    with av.open(str(p)) as c:
+        pk = [x for x in c.demux(c.streams.video[0]) if x.size][-1]
+    p.write_bytes(p.read_bytes()[:pk.pos + pk.size // 2])
+    with pytest.raises(av.error.InvalidDataError):  # decoding the cut frame itself fails
+        with av.open(str(p)) as c:
+            list(c.decode(c.streams.video[0]))
+    part = _part(["0.avi"], 11, chunk_frames=[12], drop_last_frame=True)
+    out = np.concatenate(list(SessionReader(tmp_path, _rec([part], 11)).iter_chunks(5)))
+    assert np.array_equal(out, f[:11])
+
+
 def test_crop_applied(tmp_path, make_avi):
     (tmp_path / "d").mkdir()
     f = _frames(10)

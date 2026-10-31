@@ -197,7 +197,8 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
                                      auto_fixed=True, data={"surplus": surplus}))
     part = RawPart(folder=where, chunks=names, n_frames=kept, shape=shape, timestamps_file=ts_file,
                    ts_format=ts.fmt if ts else None, start_ms=start_ms, metadata_file=meta_file,
-                   drop_chunk_tail=drop_tail, drop_last_frame=drop_last)
+                   drop_chunk_tail=drop_tail, drop_last_frame=drop_last,
+                   chunk_frames=[int(i[0]) for i in infos])
     return part, ts, ts_error, nominal, anomalies
 
 

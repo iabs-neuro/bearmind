@@ -74,6 +74,19 @@ def test_unknown_keys_ignored(tmp_path):
     assert load_record(paths, "M1_D1") == make_record()
 
 
+def test_chunk_frames_roundtrip_and_old_records(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    rec = make_record()
+    rec.parts[0].chunk_frames = [60, 40]
+    save_record(paths, rec)
+    assert load_record(paths, "M1_D1").parts[0].chunk_frames == [60, 40]
+    f = paths.registry_file("M1_D1")
+    d = json.loads(f.read_text(encoding="utf-8"))
+    del d["parts"][0]["chunk_frames"]  # written before the field existed
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert load_record(paths, "M1_D1").parts[0].chunk_frames == []
+
+
 def test_save_failure_keeps_old_file(tmp_path, monkeypatch):
     paths = SeriesPaths(tmp_path)
     save_record(paths, make_record())
