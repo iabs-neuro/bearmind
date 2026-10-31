@@ -1,0 +1,117 @@
+ ds        sid    fb  n_init  n_proc  exported  exp_rows  exp_del1  exp_from_merge  exp_P_nan  exp_P_lt  delete0  groups  sources  src_all_P_ok  losers  pred_old  pred_del0
+ CC  CC_H01_1D False     363     270       180       180        16               0          0         0      310      53      146          True      16       180        217
+ CC  CC_H01_2D False     227     164       108       108         6               0          0         0      198      33       96          True       6       108        135
+ CC  CC_H02_1D False     598     463       302       302        30               0          0         0      485      78      213          True      30       302        350
+ CC  CC_H02_2D False     629     465       294       294        47               0          0         0      493      82      246          True      47       294        329
+ CC  CC_H03_1D False     447     406       292       292         9               0          0         0      345      21       62          True       9       292        304
+ CC  CC_H03_2D False     291     270       187       187         2               0          0         0      221      15       36          True       2       187        200
+ CC  CC_H04_1D False     446     337       202       202         5               0          0         0      350      44      153          True       5       202        241
+ CC  CC_H04_2D False     246     188        67        67         0               0          0         0      148      23       81          True       0        67         90
+ CC  CC_H05_1D False      37      36        18        18         0               0          0         0       20       1        2          True       0        18         19
+ CC  CC_H05_2D False      40      39        11        11         0               0          0         0       13       1        2          True       0        11         12
+ CC  CC_H06_1D False     127     117        40        40         0               0          0         0       59       9       19          True       0        40         49
+ CC  CC_H06_2D False     237     200       144       144         7               0          0         0      198      24       61          True       7       144        161
+ CC  CC_H07_1D False     185     132        64        64         0               0          0         0      142      25       78          True       0        64         89
+ CC  CC_H07_2D False     182     139        99        99         3               0          0         0      160      21       64          True       3        99        117
+ CC  CC_H08_1D False     436     378       131       131         3               0          0         0      215      29       87          True       3       131        157
+ CC  CC_H09_1D False     646     457       266       266         4               0          0         0      527      76      265          True       4       266        338
+ CC  CC_H09_2D False     420     306       197       197         7               0          0         0      362      58      172          True       7       197        248
+ CC  CC_H10_1D False      34      33         9         9         1               0          0         0       10       1        2          True       1         9          9
+ CC  CC_H10_2D False      53      52        20        20         0               0          0         0       22       1        2          True       0        20         21
+ CC  CC_H11_1D False     361     329        66        66         2               0          0         0      104       8       40          True       2        66         72
+ CC  CC_H11_2D False     296     248       127       127         1               0          0         0      202      28       76          True       1       127        154
+ CC  CC_H13_1D False     571     459       251       251         9               0          0         0      410      56      168          True       9       251        298
+ CC  CC_H13_2D False     551     423       245       245        11               0          0         0      428      66      194          True      11       245        300
+ CC  CC_H14_1D False     851     623       362       362        34               0          0         0      652      96      324          True      34       362        424
+ CC  CC_H14_2D False     608     507       390       390        10               0          0         0      552      71      172          True      10       390        451
+ CC  CC_H17_1D False      73      73        27        27         0               0          0         0       27       0        0          True       0        27         27
+ CC  CC_H17_2D False      56      54        29        29         0               0          0         0       33       2        4          True       0        29         31
+ CC  CC_H19_1D False     698     514       290       290        20               0          0         0      538      84      268          True      20       290        354
+ CC  CC_H19_2D False     707     480       313       313        31               0          0         0      596      87      314          True      31       313        369
+ CC  CC_H22_1D False      63      62        16        16         0               0          0         0       18       1        2          True       0        16         17
+ CC  CC_H22_2D False      48      47        18        18         0               0          0         0       20       1        2          True       0        18         19
+ CC  CC_H23_1D False    1416    1054       616       616        10               0          0         0     1166     198      560          True      10       616        804
+ CC  CC_H23_2D False    1101     786       478       478        20               0          0         0      943     170      485          True      20       478        628
+RFC RFC_F01_1D False     156     133        75        75         0               0          0         0      110      12       35          True       0        75         87
+RFC RFC_F01_3D False     148     138        57        57         1               0          0         0       70       4       14          True       1        57         60
+RFC RFC_F04_1D False     476     277       151       151        32               0          0         0      345      27      226          True      32       151        146
+RFC RFC_F04_3D False     390     275       143       143        14               0          0         0      263      19      134          True      14       143        148
+RFC RFC_F05_1D False     293     231        95        95        12               0          0         0      155      10       72          True      12        95         93
+RFC RFC_F05_3D False     373     267       133       133        27               0          0         0      230      18      124          True      27       133        124
+RFC RFC_F06_1D False     440     325       207       207        49               0          0         0      300      27      142          True      49       207        185
+RFC RFC_F06_3D False     544     379       222       222        24               0          0         0      390      27      192          True      24       222        225
+RFC RFC_F07_1D False      71      59        35        35         0               0          0         0       51       4       16          True       0        35         39
+RFC RFC_F07_3D False     197     170        41        41         2               0          0         0       72       6       33          True       2        41         45
+RFC RFC_F08_1D False     124     120        45        45         0               0          0         0       53       4        8          True       0        45         49
+RFC RFC_F08_3D False     143     141        36        36         0               0          0         0       39       1        3          True       0        36         37
+RFC RFC_F11_1D False     105     105        31        31         0               0          0         0       31       0        0          True       0        31         31
+RFC RFC_F11_3D False     167     167        28        28         1               0          0         0       27       0        0          True       1        28         27
+RFC RFC_F12_1D False     447     297        53        53         8               0          0         0      219      24      174          True       8        53         69
+RFC RFC_F12_3D False     418     289       124       124        25               0          0         0      251      23      152          True      25       124        122
+RFC RFC_F14_1D False     327     279       170       170         5               0          0         0      223      10       58          True       5       170        175
+RFC RFC_F14_3D False     499     372       198       198        39               0          0         0      298      12      139          True      39       198        171
+RFC RFC_F19_1D False     192     115        64        64        15               0          0         0      139      13       90          True      15        64         62
+RFC RFC_F19_3D False     128      91        47        47         3               0          0         0       94      13       50          True       3        47         57
+RFC RFC_F20_1D False     392     291       179       179        49               0          0         0      254      23      124          True      49       179        153
+RFC RFC_F20_3D False     380     292       120       120        14               0          0         0      204      10       98          True      14       120        116
+RFC RFC_F26_1D False    1077     798       310       310        20               0          0         0      585      16      295          True      20       310        306
+RFC RFC_F26_3D False     588     415       252       252        16               0          0         0      429      20      193          True      16       252        256
+RFC RFC_F28_1D False     798     580       340       340        31               0          0         0      567      40      258          True      31       340        349
+RFC RFC_F28_3D False     900     632       412       412        43               0          0         0      684      47      315          True      43       412        416
+RFC RFC_F29_1D False     165     121        49        49         6               0          0         0      104      17       61          True       6        49         60
+RFC RFC_F29_3D False     227     194        68        68         9               0          0         0       98       6       39          True       9        68         65
+RFC RFC_F30_1D False     492     366       141       141         3               0          0         0      272       8      134          True       3       141        146
+RFC RFC_F30_3D False     577     434       174       174         8               0          0         0      316       7      150          True       8       174        173
+RFC RFC_F31_1D False     128     123        26        26         0               0          0         0       34       3        8          True       0        26         29
+RFC RFC_F31_3D False     181     171        40        40         1               0          0         0       56       7       17          True       1        40         46
+RFC RFC_F32_1D False     808     571       205       205        13               0          0         0      439      10      247          True      13       205        202
+RFC RFC_F32_3D False     229     190        64        64         0               0          0         0      108       5       44          True       0        64         69
+RFC RFC_F34_1D False     344     248       156       156        21               0          0         0      241      10      106          True      21       156        145
+RFC RFC_F34_3D False     450     354       176       176         8               0          0         0      273       9      105          True       8       176        177
+RFC RFC_F36_1D False     568     289       179       179        12               0          0         0      484      38      317          True      12       179        205
+RFC RFC_F36_3D False     438     258       160       160        20               0          0         0      342      22      202          True      20       160        162
+RFC RFC_F38_1D False     560     335       101       101        17               0          0         0      313       4      229          True      17       101         88
+RFC RFC_F38_3D False     618     358       148       148        14               0          0         0      414      20      280          True      14       148        154
+RFC RFC_F40_1D False     389     243       114       114         7               0          0         0      265      12      158          True       7       114        119
+RFC RFC_F40_3D False     432     352       174       174        23               0          0         0      245      14       94          True      23       174        165
+RFC RFC_F41_1D False     347     283        79        79        11               0          0         0      138       6       70          True      11        79         74
+RFC RFC_F41_3D False     353     300        72        72         0               0          0         0      128       3       56          True       0        72         75
+RFC RFC_F48_1D False     284     246       146       146         4               0          0         0      195      15       53          True       4       146        157
+RFC RFC_F48_3D False     286     265       142       142         4               0          0         0      165       6       27          True       4       142        144
+RFC RFC_F52_1D False     119     112        17        17         1               0          0         0       27       4       11          True       1        17         20
+RFC RFC_F52_3D False     142     123        33        33         3               0          0         0       56       7       26          True       3        33         37
+RFC RFC_F53_1D False     265     219        83        83         8               0          0         0      133      12       58          True       8        83         87
+RFC RFC_F53_3D False     235     198        72        72         7               0          0         0      113      11       48          True       7        72         76
+RFC RFC_F54_1D False     210     154        74        74         2               0          0         0      150      22       78          True       2        74         94
+RFC RFC_F54_3D False     282     230       118       118        11               0          0         0      185      26       78          True      11       118        133
+FOF FOF_F01_1D False     224     219        77        77         0               0          0         0       87       5       10          True       0        77         82
+FOF FOF_F05_1D False     447     416       152       152         3               0          0         0      183       3       34          True       3       152        152
+FOF FOF_F06_1D False     630     595       455       455        19               0          0         0      494      23       58          True      19       455        459
+FOF FOF_F07_1D False     123     118        42        42         0               0          0         0       51       4        9          True       0        42         46
+FOF FOF_F08_1D False     225     225        59        59         1               0          0         0       58       0        0          True       1        59         58
+FOF FOF_F12_1D False     335     323       243       243         7               0          0         0      257       9       21          True       7       243        245
+FOF FOF_F14_1D False     334     321       265       265         7               0          0         0      279       8       21          True       7       265        266
+FOF FOF_F20_1D False     346     331       239       239         9               0          0         0      259      14       29          True       9       239        244
+FOF FOF_F28_1D False    1150    1054       561       561        14               0          0         0      684      41      137          True      14       561        588
+FOF FOF_F29_1D False     215     193       117       117         3               0          0         0      155      19       41          True       3       117        133
+FOF FOF_F30_1D False    1222    1174       434       434         3               0          0         0      514      35       83          True       3       434        466
+FOF FOF_F31_1D False     103     102        24        24         0               0          0         0       26       1        2          True       0        24         25
+FOF FOF_F34_1D False    1135    1034       395       395        12               0          0         0      523      39      140          True      12       395        422
+FOF FOF_F35_1D False     458     441       148       148         9               0          0         0      169      13       30          True       9       148        152
+FOF FOF_F36_1D False     882     844       373       373        12               0          0         0      422      23       61          True      12       373        384
+FOF FOF_F37_1D False     687     642       242       242         3               0          0         0      313      29       74          True       3       242        268
+FOF FOF_F38_1D False     544     515       358       358         2               0          0         0      411      26       55          True       2       358        382
+FOF FOF_F40_1D False     396     379       247       247         3               0          0         0      278      17       34          True       3       247        261
+FOF FOF_F41_1D False     452     431       178       178         0               0          0         0      214      15       36          True       0       178        193
+FOF FOF_F48_1D False     606     593       245       245         3               0          0         0      260       5       18          True       3       245        247
+FOF FOF_F54_1D False      59      59        49        49         0               0          0         0       49       0        0          True       0        49         49
+
+sessions: 106 | feedback applied: 0
+old rule prediction == actual exported: 106 / 106
+exported rows with delete=1 (SNR losers): 1041 | == losers in csv: 106 / 106
+exported from_merge rows: 0 | exported NaN P: 0 | exported P<thr: 0
+merge groups performed (= merge products dropped by old rule): 2506 | their sources: 10930 | all sources P>=thr: True
+CC: n=33 exported(old) 5859  delete==0 rule 7034  losers leaked 288  merge products dropped 1463 (from 4396 sources)
+FOF: n=21 exported(old) 4903  delete==0 rule 5122  losers leaked 110  merge products dropped 329 (from 893 sources)
+RFC: n=52 exported(old) 6379  delete==0 rule 6450  losers leaked 643  merge products dropped 714 (from 5641 sources)
+ALL: exported(old) 17141  delete==0 rule 18606  losers leaked 1041 (6.1% of exported)  merge products dropped 2506

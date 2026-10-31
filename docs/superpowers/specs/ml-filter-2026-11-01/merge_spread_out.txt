@@ -1,0 +1,4 @@
+CC: groups 1463, members median 2 max 47, not FBD-connected 83 (6%), max centre distance > 30 px: 74, > 100 px: 19
+FOF: groups 329, members median 2 max 53, not FBD-connected 18 (5%), max centre distance > 30 px: 13, > 100 px: 10
+RFC: groups 714, members median 2 max 256, not FBD-connected 93 (13%), max centre distance > 30 px: 97, > 100 px: 56
+ALL: groups 2506, not connected 194 (8%), members in non-connected groups 4936 of 10930
