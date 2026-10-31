@@ -549,6 +549,16 @@ def test_memmap_strips_identical_to_save_memmap(tmp_path): ...  # small FFV1 -> 
   - `reset_from(paths, sid: str, stage: str, who: str) -> None` — переанализ: этап и все ниже → `PENDING`, `Decision("rerun_from", stage, who, now)`. Старые выходы остаются на месте, пока этап не перезапишет их через `.partial` + переименование.
   - `summary(paths) -> pandas.DataFrame` и запись `_bearmind/summary.csv`: по строке на сессию, столбцы — состояние и ключевое число каждого этапа, пороги, худший уровень проверки.
 
+**Решения перед задачей 15 (финальное ревью фаз 0–1, решения R25 и R26 в журнале):**
+- `StageRecord.params: dict` (новое поле, по умолчанию `{}`) — разрешённые параметры, с которыми этап реально считался; `provenance.collect` отдаёт их в `stage_params` вместо хэшей. Одна функция `stage_params(stage, rec, cfg) -> dict` строит их, `stage_hash = params_hash({"params": stage_params(...), "upstream": [хэши предыдущих этапов]})`.
+- Входы хэша по этапам (настройки машины не входят): crop — части сессии (папки, куски, `n_frames`); mc — раздел `mc`, рамка мыши `crop.box`, `crop.box_pos` сессии, `rec.fps`; thresholds — `thresholds.gsig_range`, `cnmf.tsub`; cnmf — `cnmf_params(cfg, rec.fps)`; gate — последнее решение ручной инспекции + размер и mtime файла `manual_result`; autoinspect — раздел `autoinspect`, sha256 модели, `round(rec.fps)`; export — порог ML из processed-pickle (или раздел `autoinspect.ml_threshold`). Запись `crop.box`/`box_pos` и порогов в конфиг не делает устаревшими crop и thresholds.
+- Обязательные выходы по этапам (наличие проверяется перед признанием этапа готовым; превью необязательны): mc — `mc_video`, `mc_shifts`; thresholds — `threshold_maps`; cnmf — `estimates`; autoinspect — `processed`; export — `npz`, `json`, `timestamps`. Отсутствие обязательного выхода → этап пересчитывается.
+- Аномалии этапов помечаются этапом (`data["stage"]`), при пересчёте этапа его старые аномалии заменяются.
+- Запись реестра: перед сохранением запись перечитывается с диска, планировщик меняет только поля этапа (`stages[stage]`, аномалии этого этапа); временный файл — уникальный (`tempfile.mkstemp` в той же папке); короткий замок `<file>.lock` через `O_CREAT|O_EXCL` с ожиданием до 10 с и сносом замка старше 60 с. То же для `config.update_yaml`. `os.replace` повторяется при `PermissionError` (до 20 раз, шаг 0.25 с). Ошибка записи `summary.csv` — предупреждение в лог, не остановка.
+- `all_records` пропускает повреждённый JSON (ошибка в лог серии), а не роняет запуск.
+- `run(..., once: bool = False, poll_s: float = 30)`: пока есть сессии в `WAITING`, процесс ждёт, обновляя пульс («ждёт порогов: N, ждёт ручной инспекции: M»), и подхватывает их, когда человек решил (спека 5.10); `once=True` — выйти, когда готовой работы нет (тесты, `--once` в командной строке).
+- `finalize_mouse` вызывается только с записями, у которых `crop` в состоянии `DONE`. Конфиг перечитывается (`resolve`) перед каждым этапом. Модули этапов импортируются лениво. В замке хранится PID и время создания процесса (`psutil.Process(pid).create_time()`), чтобы не спутать с переиспользованным PID. Рабочая папка процесса — корень репозитория (старый `config.py` создаёт `config.json` в текущей папке).
+
 - [ ] **Step 1: Тесты** (этапы подменяются заглушками через `STAGE_FUNCS`):
 
 ```python
@@ -560,6 +570,11 @@ def test_disk_full_cleans_temp(...): ...                    # stage raises OSErr
 def test_second_runner_refused(...): ...                    # live PID in lock -> RuntimeError
 def test_summary_csv(...): ...                              # one row per session, columns per stage
 def test_reset_from_reruns_only_downstream(...): ...        # reset_from(s1, "cnmf") -> next run re-runs cnmf..export for s1 only
+def test_config_writes_do_not_invalidate_upstream(...): ... # writing crop.box_pos / thresholds after crop/thresholds DONE -> they stay DONE
+def test_missing_required_output_reruns(...): ...           # delete 4_Estimates pickle -> cnmf re-runs; delete a preview -> nothing re-runs
+def test_concurrent_gate_decision_not_lost(...): ...        # gate.decide while the runner holds a stale record -> decision survives the runner's save
+def test_waits_and_picks_up_decision(...): ...              # once=False: WAITING session, decision written from another thread -> runner continues to export
+def test_corrupt_registry_file_skipped(...): ...            # one broken JSON -> other sessions still run
 ```
 
 - [ ] **Step 2–4:** FAIL → реализовать → PASS.
@@ -574,11 +589,11 @@ def test_reset_from_reruns_only_downstream(...): ...        # reset_from(s1, "cn
 **Interfaces:**
 - Produces: `main(argv: list[str] | None = None) -> int`; команды:
   - `scan SERIES`
-  - `run SERIES [--until STAGE] [--sessions SID ...]`
+  - `run SERIES [--until STAGE] [--sessions SID ...] [--once]`
   - `status SERIES` (печать сводки ASCII + `_bearmind/summary.csv`)
   - `thresholds SERIES accept-suggested [--sessions ...]` · `thresholds SERIES set SID --gsig G --min-corr X --min-pnr Y`
   - `gate SERIES (SID ... | --all-waiting) not-needed` · `gate SERIES SID cleaned`
-  - `decide SERIES SID (exclude | include | accept-mismatch)`
+  - `decide SERIES SID (exclude | include | accept-mismatch)` — пишет `Decision("exclude", "true"/"false")` или `Decision("accept_mismatch", "true")` и пересчитывает `excluded` так же, как скан (решение пользователя главнее аномалий)
   - `rerun SERIES SID ... --from STAGE` (вызывает `runner.reset_from`)
   - `who` по умолчанию — имя пользователя Windows; `--who NAME` переопределяет.
 
