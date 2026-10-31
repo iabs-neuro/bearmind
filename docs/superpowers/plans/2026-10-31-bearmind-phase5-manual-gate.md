@@ -55,6 +55,7 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None, *, serve: bool = Fals
     # on_final_save(path: str): вызывается после записи final_path и .mat
 ```
 - Запись `final_path` атомарная: `<final_path>.partial` → `os.replace`.
+- Ручной результат сохраняется **без сжатия** (`compress=False`, независимо от `bkapp_kwargs`). Причина: сжатие (`estimates_compression`) берёт `SNR_comp[:N]` и `r_values[:N]` вместо значений хороших компонент. Тогда признаки `caiman_snr` и `caiman_r_score` ML-модели автоинспекции перепутаются, а этап autoinspect откажется от такого входа (защита задачи 19 ядра; находка 2026-11-01, `docs/superpowers/specs/ml-filter-2026-11-01/findings.md`).
 
 - [ ] **Step 1: Тесты** (фикстура `tiny_estimates`: `caiman.source_extraction.cnmf.estimates.Estimates` с 5 компонентами 32×32 и 200 кадрами; поля `A, C, b, f, YrA, dims, imax`):
 ```python
@@ -62,6 +63,7 @@ def test_import_has_no_notebook_side_effect(monkeypatch): ...   # import bm_exam
 def test_serve_returns_app(tiny_estimates, tmp_path): ...       # ExamineCells(..., serve=True) -> callable; bkapp(Document()) строит корень без ошибок
 def test_time_param_used(tiny_estimates, tmp_path, monkeypatch): ...   # get_timestamps не вызван; длина оси времени == C.shape[1]
 def test_final_save_path_and_callback(tiny_estimates, tmp_path): ...    # вызвать колбэк кнопки "Save results" из документа -> final_path есть, on_final_save(path) вызван
+def test_final_save_uncompressed(tiny_estimates, tmp_path): ...         # bkapp_kwargs={'compress_estimates': True} -> в final_path len(SNR_comp) == A.shape[1], нет idx_components_bad_original
 def test_progress_dir(tiny_estimates, tmp_path): ...
 def test_full_length_traces(tmp_path): ...                      # 100 000 кадров -> данные трейса в ColumnDataSource полной длины
 ```
