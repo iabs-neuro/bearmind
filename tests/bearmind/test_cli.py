@@ -272,3 +272,55 @@ def test_status(series, capsys):
 def test_bat_file_mentions_conda_and_module():
     text = (REPO / "run_bearmind.bat").read_text(encoding="ascii")
     assert "-m bearmind %*" in text and "--no-capture-output" in text and "%~dp0" in text
+
+
+@pytest.mark.parametrize("flag,value", [("--min-corr", "92"), ("--min-corr", "nan"), ("--min-corr", "0"),
+                                        ("--min-pnr", "inf"), ("--min-pnr", "0"), ("--min-pnr", "nan"),
+                                        ("--gsig", "2.5"), ("--gsig", "0")])
+def test_thresholds_set_rejects_bad_values(series, capsys, flag, value):
+    args = {"--gsig": "5", "--min-corr": "0.7", "--min-pnr": "9", flag: value}
+    flat = [x for kv in args.items() for x in kv]
+    assert _main("thresholds", series.root, "set", S1, *flat) == 2
+    assert not series.paths.session_config(S1).exists()
+    assert value in capsys.readouterr().err
+
+
+def test_gsig_message(series, capsys):
+    _main("thresholds", series.root, "set", S1, "--gsig", "2.5", "--min-corr", "0.7", "--min-pnr", "9")
+    assert "--gsig must be a whole number >= 1, got 2.5" in capsys.readouterr().err
+
+
+def test_accept_suggested_invalid_suggestion(series, capsys):
+    _set(series.paths, S1, "thresholds", State.DONE,
+         suggested={"gSig": 4, "min_corr": 92, "min_pnr": 8.0, "method": "auto"})
+    _set(series.paths, S2, "thresholds", State.DONE,
+         suggested={"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "auto"})
+    assert _main("thresholds", series.root, "accept-suggested", "--sessions", S1, S2) == 1
+    out = capsys.readouterr().out
+    assert f"[FAILED] {S1}: suggested thresholds are invalid:" in out and "92" in out
+    assert not series.paths.session_config(S1).exists()
+    assert _yaml(series.paths.session_config(S2))["cnmf"]["gSig"] == 4
+
+
+def test_warn_lines(series, capsys):
+    assert _main("decide", series.root, S1, "accept-mismatch") == 0
+    assert "[WARN]" in capsys.readouterr().out
+    _main("decide", series.root, S2, "exclude")
+    capsys.readouterr()
+    assert _main("gate", series.root, S2, "not-needed") == 0
+    assert "[WARN]" in capsys.readouterr().out
+    _main("thresholds", series.root, "set", S2, "--gsig", "4", "--min-corr", "0.8", "--min-pnr", "8")
+    assert "[WARN]" in capsys.readouterr().out
+
+
+def test_cyrillic_path_not_escaped(tmp_path, capsys):
+    folder = tmp_path / "серия"
+    folder.mkdir()
+    save_record(SeriesPaths(folder), _record(S1, decided=False))
+    assert _main("status", folder) == 0
+    assert "серия" in capsys.readouterr().out
+
+
+def test_bat_setlocal():
+    text = (REPO / "run_bearmind.bat").read_text(encoding="ascii")
+    assert text.lower().splitlines()[1].strip() == "setlocal"

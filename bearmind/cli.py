@@ -8,6 +8,7 @@ import argparse
 import getpass
 import json
 import logging
+import math
 import os
 import sys
 from datetime import datetime
@@ -47,12 +48,18 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="milliseconds")  # same format as gate.decide
 
 
-def _ascii(text) -> str:
-    return str(text).encode("ascii", "backslashreplace").decode("ascii")
-
-
 def _say(text="") -> None:
-    print(_ascii(text))
+    # message text is ASCII; paths keep their letters (Cyrillic folders must stay copyable), and
+    # stdout.reconfigure(errors="backslashreplace") covers what the console cannot encode
+    print(text)
+
+
+def _first_line(text) -> str:
+    return (str(text).splitlines() or [""])[0]
+
+
+def _last_line(text) -> str:
+    return (str(text).splitlines() or [""])[-1]
 
 
 def _stage(value: str) -> str:
@@ -61,14 +68,43 @@ def _stage(value: str) -> str:
     return value
 
 
-def _positive(kind):
+def _number(value: str, name: str) -> float:
+    try:
+        return float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{name} must be a number, got {value}") from None
+
+
+def _gsig_error(x):
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x != int(x) or x < 1:
+        return f"--gsig must be a whole number >= 1, got {x}"
+    return None
+
+
+def _min_corr_error(x):
+    if not isinstance(x, (int, float)) or not math.isfinite(x) or not 0 < x <= 1:
+        return f"--min-corr must be a number above 0 and at most 1, got {x}"
+    return None
+
+
+def _min_pnr_error(x):
+    if not isinstance(x, (int, float)) or not math.isfinite(x) or x <= 0:
+        return f"--min-pnr must be a finite number above 0, got {x}"
+    return None
+
+
+def _threshold_error(gsig, min_corr, min_pnr):
+    return _gsig_error(gsig) or _min_corr_error(min_corr) or _min_pnr_error(min_pnr)
+
+
+def _checked(error_of, name):
     def parse(value):
-        try:
-            x = kind(value)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"{value!r} is not a number") from None
-        if x <= 0:
-            raise argparse.ArgumentTypeError(f"{value!r} must be greater than 0")
+        x = _number(value, name)
+        if name == "--gsig" and math.isfinite(x) and x == int(x):
+            x = int(x)
+        err = error_of(x)
+        if err:
+            raise argparse.ArgumentTypeError(err)
         return x
     return parse
 
@@ -101,6 +137,11 @@ def _waiting_for(rec, stage: str):
     if st is None or st.state is not State.WAITING:
         return None
     return runner._what(st)
+
+
+def _warn_excluded(rec) -> None:
+    if rec.excluded:
+        _say(f"[WARN] {rec.sid} is excluded; the runner ignores it until you run: decide SERIES {rec.sid} include")
 
 
 def _who(args) -> str:
@@ -174,7 +215,7 @@ def _row(rec) -> tuple:
             w = runner._what(st)
             reason = _REASON.get(w, w)
         elif st.state is State.FAILED and not reason:
-            reason = f"failed {s}: {(st.error or '').splitlines()[-1][:60] if st.error else ''}"
+            reason = f"failed {s}: {_last_line(st.error or '')[:60]}"
     return cells, reason
 
 
@@ -214,6 +255,7 @@ def cmd_thresholds(args) -> int:
     recs = _records(paths)
     if args.action == "set":
         _check_sids(recs, [args.sid])
+        _warn_excluded(recs[args.sid])
         _write_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr)
         _say(f"[OK] {args.sid}: gSig={args.gsig} min_corr={args.min_corr} min_pnr={args.min_pnr}")
         _say(_next_hint(paths))
@@ -235,6 +277,12 @@ def cmd_thresholds(args) -> int:
                  f"or set values: thresholds SERIES set {sid} --gsig G --min-corr X --min-pnr Y)")
             code = 1
             continue
+        bad = _threshold_error(sug.get("gSig"), sug.get("min_corr"), sug.get("min_pnr"))
+        if bad:
+            _say(f"[FAILED] {sid}: suggested thresholds are invalid: {bad.replace('--', '')}")
+            code = 1
+            continue
+        _warn_excluded(recs[sid])
         _write_thresholds(paths, sid, sug["gSig"], sug["min_corr"], sug["min_pnr"])
         _say(f"[OK] {sid}: gSig={sug['gSig']} min_corr={sug['min_corr']} min_pnr={sug['min_pnr']}")
     if code != 1 or len(sids) > 1:
@@ -262,12 +310,13 @@ def cmd_gate(args) -> int:
     _check_sids(recs, sids)
     who, code = _who(args), OK
     for sid in sids:
+        _warn_excluded(recs[sid])
         try:
             gate.decide(paths, sid, decision, who)
         except ValueError as e:
             _say(f"[FAILED] {sid}: {e}")
             if decision == "cleaned":
-                _say(f"        save the cleaned file at that place, then repeat the command")
+                _say("        save the cleaned file at that place, then repeat the command")
             code = 1
         else:
             _say(f"[OK] {sid}: manual inspection {decision.replace('_', '-')}")
@@ -283,6 +332,10 @@ _DECIDE = {"exclude": ("exclude", "true"), "include": ("exclude", "false"),
 def cmd_decide(args) -> int:
     paths = _series(args.series)
     _check_sids(_records(paths), [args.sid])
+    recs = _records(paths)
+    if args.action == "accept-mismatch" and not any(
+            a.code == "frames_ts_mismatch" for a in recs[args.sid].anomalies):
+        _say(f"[WARN] {args.sid} has no frames_ts_mismatch anomaly; the decision is recorded but changes nothing")
     what, value = _DECIDE[args.action]
     now, who = _now(), _who(args)
 
@@ -364,9 +417,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--sessions", nargs="+", metavar="SID", help="default: all sessions waiting for thresholds")
     s = ts.add_parser("set", help="set thresholds of one session")
     s.add_argument("sid", metavar="SID")
-    s.add_argument("--gsig", type=_positive(int), required=True)
-    s.add_argument("--min-corr", type=_positive(float), required=True)
-    s.add_argument("--min-pnr", type=_positive(float), required=True)
+    s.add_argument("--gsig", type=_checked(_gsig_error, "--gsig"), required=True)
+    s.add_argument("--min-corr", type=_checked(_min_corr_error, "--min-corr"), required=True)
+    s.add_argument("--min-pnr", type=_checked(_min_pnr_error, "--min-pnr"), required=True)
 
     sp = add("gate", cmd_gate, "manual-inspection decision: gate SERIES SID ... (not-needed | cleaned)")
     sp.add_argument("items", nargs="*", metavar="SID... DECISION", help="session names, then not-needed or cleaned")
@@ -415,7 +468,7 @@ def main(argv=None) -> int:
     except Exception as e:
         log_file = SeriesPaths(args.series).series_log
         _log_traceback(log_file)
-        _say(f"[FAILED] unexpected error: {type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}; "
+        _say(f"[FAILED] unexpected error: {type(e).__name__}: {_first_line(e)}; "
              f"details in {log_file}")
         return 1
     finally:

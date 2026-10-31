@@ -1,4 +1,5 @@
 @echo off
+setlocal
 rem Student launcher: run_bearmind.bat <command> SERIES ...   (run_bearmind.bat --help lists commands)
 set "PYTHONPATH=%~dp0"
 set "CONDA_BAT=%CONDA_EXE%"
