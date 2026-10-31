@@ -64,7 +64,8 @@ def _setup(tmp_path, layout="bonsai", n_frames=T, est_frames=None, model=True):
         decisions=[Decision("thresholds", "4", "viktor", "2026-10-31T00:00:00")], excluded=False,
         stages={"autoinspect": StageRecord(outputs={"processed": paths.rel(proc)},
                                            metrics={"autoinspection_fps": 20},
-                                           params_hash="abc123"),
+                                           params_hash="abc123",
+                                           params={"autoinspect": {"n_iter": 3}, "fps": 20}),
                 "mc": StageRecord()})
     save_record(paths, rec)
     cfg = config.load_defaults()
@@ -97,7 +98,7 @@ def test_export_matches_old_structure(tmp_path):
     prov = meta["provenance"]
     assert prov["mode"] == "bonsai" and prov["fps"]["value"] == 19.76
     assert prov["model"]["path"] == cfg["autoinspect"]["model_path"] and len(prov["model"]["sha256"]) == 64
-    assert prov["stage_params"] == {"autoinspect": "abc123"}
+    assert prov["stage_params"] == {"autoinspect": {"autoinspect": {"n_iter": 3}, "fps": 20}}
     assert prov["decisions"][0]["what"] == "thresholds"
     assert prov["inputs"] == ["1_Raw/x"]
     assert set(prov["packages"]) == {"caiman", "numpy", "driada", "interpret", "python"}

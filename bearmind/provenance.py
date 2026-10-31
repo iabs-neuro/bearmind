@@ -38,23 +38,27 @@ def _sha256(path: Path) -> str | None:
     return h.hexdigest()
 
 
+def model_file(cfg) -> Path:
+    """The ML model file; a relative model_path is relative to the repo root (production_models/)."""
+    f = Path(cfg["autoinspect"]["model_path"])
+    return f if f.is_absolute() else REPO_ROOT / f
+
+
 def collect(paths, rec, cfg) -> dict:
     commit = _git("rev-parse", "HEAD")
     status = _git("status", "--porcelain")
     model = cfg["autoinspect"]["model_path"]
-    model_file = Path(model)
-    if not model_file.is_absolute():
-        model_file = REPO_ROOT / model_file
     info = rec.fps_info or {}
     return {
         "code": {"git_commit": commit.strip() if commit else None,
                  "git_dirty": bool(status.strip()) if status is not None else None},
         "packages": {**{p: _version(p) for p in PACKAGES}, "python": platform.python_version()},
-        "model": {"path": model, "sha256": _sha256(model_file)},
+        "model": {"path": model, "sha256": _sha256(model_file(cfg))},
         "inputs": [p.folder for p in rec.parts],
         "mode": rec.mode,
         "fps": {"value": rec.fps, "source": info.get("source"),
                 "n_outliers": info.get("n_outliers"), "max_gap_ms": info.get("max_gap_ms")},
-        "stage_params": {n: s.params_hash for n, s in rec.stages.items() if s.params_hash},
+        # resolved parameters each stage ran with (runner.stage_params), not their hashes
+        "stage_params": {n: s.params for n, s in rec.stages.items() if s.params},
         "decisions": [asdict(d) for d in rec.decisions],
     }
