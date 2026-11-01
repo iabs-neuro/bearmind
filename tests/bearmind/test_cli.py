@@ -509,3 +509,25 @@ def test_waiting_runner_prints_what_it_waits_for(series, capsys):
         gate.decide(s.paths, sid, "not_needed", "viktor")
     t.join(60)
     assert not t.is_alive()
+
+
+def test_status_marks_the_worst_check(series, capsys):
+    """10f: an error-level check of a done stage is not a clean 'D' row."""
+    from bearmind.registry import Check
+
+    def checked(level):
+        def change(rec):
+            st = rec.stages["mc"]
+            st.state = State.DONE
+            st.checks = [Check("mc", "mc_max_shift_px", level, 1.0, "x"), Check("mc", "mc_template_corr", "ok", 1.0, "y")]
+        return change
+
+    update_record(series.paths, S1, checked("error"))
+    update_record(series.paths, S2, checked("warning"))
+    update_record(series.paths, S3, checked("ok"))
+    out = _status(series, capsys)
+    head = next(ln for ln in out.splitlines() if ln.startswith("session"))
+    col = head.index("chk")
+    rows = {ln.split()[0]: ln for ln in out.splitlines() if ln.split() and ln.split()[0] in SIDS}
+    assert rows[S1][col] == "E" and rows[S2][col] == "W" and rows[S3][col] == " "
+    assert "chk: W warning, E error" in out

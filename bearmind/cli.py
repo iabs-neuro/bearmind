@@ -327,6 +327,12 @@ def _waiting_line(state) -> str:
             + f"; failed: {len(state.failed)}")
 
 
+def _check_mark(rec) -> str:
+    """The worst check level over the done stages: E error, W warning, blank otherwise."""
+    levels = {c.level for st in rec.stages.values() if st.state is State.DONE for c in st.checks}
+    return "E" if "error" in levels else "W" if "warning" in levels else ""
+
+
 def cmd_status(args) -> int:
     paths = _series(args.series)
     state = runner.series_state(paths)
@@ -336,21 +342,24 @@ def cmd_status(args) -> int:
     rows = []
     for r in state.records:
         cells, reason = _row(r)
-        rows.append((r.sid, "yes " if r.excluded else "no  ", cells, _note(r, reason, state)))
-    rows += [(Path(f).stem, "?   ", ["?"] * len(STAGES), _clip(state.problems[Path(f).stem]))
+        rows.append((r.sid, "yes " if r.excluded else "no  ", cells, _check_mark(r), _note(r, reason, state)))
+    rows += [(Path(f).stem, "?   ", ["?"] * len(STAGES), "?", _clip(state.problems[Path(f).stem]))
              for f, _ in state.broken]
     _say(_heartbeat_line(paths))
     _say(_waiting_line(state))
     odd = scan.read_unrecognized(paths)
     if odd:
         _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
-    _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown")
+    _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown; "
+         "chk: W warning, E error in a check of a done stage")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
-    head = "session".ljust(width) + "  excl  " + " ".join(_SHORT[s].ljust(4) for s in STAGES) + "  note"
+    head = ("session".ljust(width) + "  excl  " + " ".join(_SHORT[s].ljust(4) for s in STAGES)
+            + "  chk  note")
     _say(head)
     _say("-" * len(head))
-    for sid, excl, cells, note in sorted(rows):
-        _say(sid.ljust(width) + "  " + excl + "  " + " ".join(c.ljust(4) for c in cells) + "  " + note)
+    for sid, excl, cells, mark, note in sorted(rows):
+        _say(sid.ljust(width) + "  " + excl + "  " + " ".join(c.ljust(4) for c in cells) + "  "
+             + mark.ljust(3) + "  " + note)
     _say(f"summary table: {paths.summary_csv}")
     return OK
 
