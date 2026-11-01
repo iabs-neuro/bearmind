@@ -76,6 +76,7 @@ def pool_worker_killed(paths, rec, cfg):
     workers = [p.pid for p in dview._pool]
     _tree(cfg, [os.getpid(), *workers])
     psutil.Process(workers[0]).kill()
+    (Path(cfg["fake"]["dir"]) / "killed_at.json").write_text(json.dumps(time.time()), encoding="utf-8")
     dview.map_async(time.sleep, [60] * 4).get(4294967)  # as CaImAn waits: forever without the watchdog
 
 

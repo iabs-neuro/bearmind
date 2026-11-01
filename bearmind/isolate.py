@@ -136,12 +136,17 @@ if sys.platform == "win32":
             """Peak commit of all processes of the job together."""
             return self._query(_JOB_EXTENDED_LIMITS, _ExtendedLimits()).PeakJobMemoryUsed / 2 ** 30
 
-        def kill(self, timeout: float) -> int:
-            """Terminate every process of the job; the number still running after `timeout`."""
+        def kill(self, timeout: float) -> int | None:
+            """Terminate every process of the job; the number still running after `timeout` (None: the job
+            could not be asked; the caller still waits for the processes it knows)."""
             _k32.TerminateJobObject(self.handle, 1)
             deadline = time.monotonic() + timeout
             while True:
-                active = self._query(_JOB_BASIC_ACCOUNTING, _Accounting()).ActiveProcesses
+                try:
+                    active = self._query(_JOB_BASIC_ACCOUNTING, _Accounting()).ActiveProcesses
+                except OSError as e:
+                    log.warning("stage job: process count unavailable: %s", e)
+                    return None
                 if not active or time.monotonic() > deadline:
                     return active
                 time.sleep(0.05)
@@ -183,7 +188,7 @@ class _Tree:
     def kill(self) -> None:
         self.track()
         procs = [p for p in [self.root, *self.seen.values()] if p is not None]
-        left = self.job.kill(KILL_WAIT_S) if self.job is not None else 0
+        left = (self.job.kill(KILL_WAIT_S) if self.job is not None else 0) or 0
         for p in procs:
             try:
                 p.kill()  # psutil checks the creation time: a reused pid is not touched
@@ -193,6 +198,16 @@ class _Tree:
         if left or alive:
             log.warning("stage process tree not fully killed: %d in the job, pids %s still running", left,
                         [p.pid for p in alive])
+
+    def peak_gb(self) -> float | None:
+        """Peak commit of the whole tree, when the job can tell; bookkeeping only, never fatal."""
+        if self.job is None:
+            return None
+        try:
+            return self.job.peak_gb()
+        except OSError as e:
+            log.warning("stage job: peak memory unavailable: %s", e)
+            return None
 
     def close(self) -> None:
         if self.job is not None:
@@ -304,7 +319,7 @@ def run_isolated(func_spec: str, paths, rec, cfg, log_path: Path):
         if msg is not None:
             proc.join(EXIT_WAIT_S)
         tree.kill()  # a child stuck on exit, workers a stage did not stop
-        peak = tree.job.peak_gb() if tree.job is not None else None
+        peak = tree.peak_gb()
     except BaseException:  # Ctrl+C, or an error while waiting: the tree must not outlive this call
         tree.kill()
         raise

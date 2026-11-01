@@ -144,17 +144,21 @@ def test_native_crash_is_stage_crashed_and_the_tree_dies(stage):
 
 
 def test_abort_exit_code(stage):
+    t0 = time.monotonic()
     with pytest.raises(isolate.StageCrashed, match=r"^stage process exited with code 0x3$") as ei:
         run(stage, "abort")
     assert ei.value.exit_code == 3
+    assert time.monotonic() - t0 < 10
 
 
 def test_dead_pool_worker_fails_the_stage_instead_of_hanging(stage):
     with Descendants() as d:
         with pytest.raises(isolate.StageCrashed, match=r"^pool worker died$") as ei:
             run(stage, "pool_worker_killed")
+        ended = time.time()
     assert ei.value.exit_code == POOL_WORKER_DIED
-    assert d.elapsed < 15
+    # from the kill, not from the start: CaImAn's import and the pool start come before it
+    assert ended - json.loads((stage.notes / "killed_at.json").read_text(encoding="utf-8")) < 15
     rows = tree(stage)  # the stage process and its two first workers
     assert len(rows) == 3 and survivors(rows) == []
     assert d.alive() == []  # also the replacement worker, if the sampler saw it
@@ -204,3 +208,18 @@ def test_child_exits_right_after_its_result(stage, caplog):
     assert res.metrics == {"ok": True}
     assert d.elapsed < 10 and d.alive() == []
     assert any("exit 0x0" in r.getMessage() for r in caplog.records), [r.getMessage() for r in caplog.records]
+
+
+@pytest.mark.skipif(isolate._Job is None, reason="job objects are Windows only")
+def test_job_accounting_failure_keeps_the_result(stage, monkeypatch, caplog):
+    """Peak memory and the job's process count are bookkeeping: their failure must not discard a result."""
+    def broken(self, cls, info):
+        raise OSError("accounting unavailable")
+
+    monkeypatch.setattr(isolate._Job, "_query", broken)
+    caplog.set_level("INFO", logger="bearmind.isolate")
+    with Descendants() as d:
+        res = run(stage, "ok")
+    assert res.outputs == {"x": "a/b.txt"}
+    assert d.alive() == []
+    assert any("accounting unavailable" in r.getMessage() for r in caplog.records)
