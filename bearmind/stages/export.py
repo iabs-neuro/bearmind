@@ -31,6 +31,37 @@ def _ml_filter(est):
                  "n_after": len(idx)}
 
 
+def rule_counts(est, idx, ml_info) -> dict:
+    """Which rule chose the exported components and what it did with autoinspection's decisions.
+
+    The rule is the old one (ml_keep_probability >= threshold; 'idx_components' when there are no ML
+    probabilities). Autoinspection only marks components: an SNR duplicate keeps its P above the threshold
+    and is exported although marked delete; a merge product has P = NaN and is never exported. The median
+    SNR comes from metrics_df: after a merge, est.SNR_comp is not in the order of the components. None:
+    not known (no metrics_df or no such column).
+    """
+    df = getattr(est, "metrics_df", None)
+    exported = {int(i) for i in idx}
+    out = {"component_rule": "ml_probability" if ml_info["ml_filtered"] else "idx_components",
+           "n_exported": len(exported), "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
+           "median_snr": None}
+    if df is None:
+        return out
+    if df.empty:
+        return {**out, "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0}
+    rows = df[df["component_idx"].isin(exported)]
+    if "delete" in df.columns:
+        out["n_snr_duplicates_exported"] = int((rows["delete"] == 1).sum())
+    if "decision" in df.columns:
+        out["n_merge_products_dropped"] = int(((df["decision"] == "from_merge")
+                                               & ~df["component_idx"].isin(exported)).sum())
+    if "caiman_snr" in df.columns and len(rows):
+        snr = rows["caiman_snr"].to_numpy(dtype=float)
+        # all NaN: NaN, which the export_median_snr check reports as "not a number"
+        out["median_snr"] = float(np.nanmedian(snr)) if np.isfinite(snr).any() else float("nan")
+    return out
+
+
 def _truncate(ts, n):
     return dataclasses.replace(ts, raw=ts.raw[:n], t_ms=ts.t_ms[:n],
                                buffer=None if ts.buffer is None else ts.buffer[:n])
@@ -53,6 +84,7 @@ def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
     est = old.load_estimates(paths.root / rec.stages["autoinspect"].outputs["processed"])
     idx, ml_info = _ml_filter(est)
+    counts = rule_counts(est, idx, ml_info)
     n_frames = int(est.C.shape[1])
     anomalies = []
     ts = _stitched_timestamps(paths, rec)
@@ -70,6 +102,7 @@ def run(paths, rec, cfg) -> StageResult:
     meta["autoinspection_fps"] = rec.stages["autoinspect"].metrics.get("autoinspection_fps")
     meta["provenance"] = provenance.collect(paths, rec, cfg)
     meta["timestamps_file"] = paths.export_timestamps(sid).name
+    meta.update({k: v for k, v in counts.items() if k != "median_snr"})
 
     targets = {"npz": paths.export_npz(sid), "json": paths.export_json(sid),
                "timestamps": paths.export_timestamps(sid), "filters": paths.export_filters(sid)}
@@ -100,9 +133,7 @@ def run(paths, rec, cfg) -> StageResult:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    snr = getattr(est, "SNR_comp", None)
-    median_snr = float(np.median(np.asarray(snr)[idx])) if snr is not None and len(idx) else None
     return StageResult(
         outputs={k: paths.rel(v) for k, v in targets.items() if k in staged},
-        metrics={"n_neurons": int(len(idx)), "median_snr": median_snr},
+        metrics={"n_neurons": int(len(idx)), **counts},
         anomalies=anomalies)

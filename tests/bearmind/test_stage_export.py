@@ -15,7 +15,7 @@ from bearmind.registry import (Decision, RawPart, SessionRecord, StageRecord, lo
 from bearmind.stages import export
 
 SID = "NOF_H01_1D"
-H, W, T, N = 6, 8, 30, 4
+H, W, T, N = 6, 8, 30, 5
 
 
 def _est(n_frames=T):
@@ -26,13 +26,18 @@ def _est(n_frames=T):
         A[(k + 1) * 3 % (H * W) + 1, k] = 0.5
     return SimpleNamespace(
         C=rng.random((N, n_frames)).astype(np.float32), A=A.tocsc(),
-        SNR_comp=np.array([1.0, 2.0, 3.0, 4.0]),
-        idx_components=np.array([0, 1, 2, 3]), idx_components_bad=np.array([]),
+        # after a merge CaImAn leaves SNR_comp in the old order: it must not be read for the exported rows
+        SNR_comp=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+        idx_components=np.array([0, 1, 2, 3, 4]), idx_components_bad=np.array([]),
         imax=np.zeros((W, H)),  # shape[::-1] == (H, W) like A reshape in export_filters_mat
         cnmf_dict={"fr": 19.76, "gSig": (4, 4)},
         autoinspection_config={"ml_threshold": 0.5},
-        metrics_df=pd.DataFrame({"component_idx": [0, 1, 2, 3],
-                                 "ml_keep_probability": [0.9, 0.4, 0.6, 0.1]}),
+        # 0: an SNR duplicate (marked delete, P above threshold), 4: a merge product (P = NaN)
+        metrics_df=pd.DataFrame({"component_idx": [0, 1, 2, 3, 4],
+                                 "ml_keep_probability": [0.9, 0.4, 0.6, 0.1, np.nan],
+                                 "delete": [1, 1, 0, 1, 0],
+                                 "decision": ["delete", "delete", "ok", "delete", "from_merge"],
+                                 "caiman_snr": [5.0, 1.5, 7.0, 0.5, 9.0]}),
     )
 
 
@@ -87,6 +92,7 @@ def test_export_matches_old_structure(tmp_path):
     with np.load(paths.export_npz(SID)) as a, np.load(ref_npz) as b:
         assert set(a.files) == set(b.files)
         assert a["C"].shape == (2, T)
+        assert all(np.array_equal(a[k], b[k]) for k in a.files)  # content as the old export
     meta = json.loads(paths.export_json(SID).read_text())
     ref = json.loads(ref_json.read_text())
     assert set(ref) | {"autoinspection_fps", "provenance", "timestamps_file"} <= set(meta)
@@ -106,7 +112,13 @@ def test_export_matches_old_structure(tmp_path):
     assert len(rows) == T and rows[0] == "0" and rows[-1] == str((T - 1) * 500000)
     mat = scipy.io.loadmat(paths.export_filters(SID))
     assert mat["A"].shape == (2, H, W)
-    assert res.metrics == {"n_neurons": 2, "median_snr": 2.0}
+    ref_mat = scipy.io.loadmat(old.export_filters_mat(est, idx, tmp_path / "ref" / "f.mat"))
+    assert np.array_equal(mat["A"], ref_mat["A"])
+    rule = {"component_rule": "ml_probability", "n_exported": 2, "n_snr_duplicates_exported": 1,
+            "n_merge_products_dropped": 1}
+    assert {k: meta[k] for k in rule} == rule  # json fields only added
+    # median SNR of the exported rows (0, 2) from metrics_df, not SNR_comp[[0, 2]] = 2.0
+    assert res.metrics == {"n_neurons": 2, "median_snr": 6.0, **rule}
     assert set(res.outputs) == {"npz", "json", "timestamps", "filters"}
     assert res.outputs["npz"] == paths.rel(paths.export_npz(SID))
     assert not list((paths.root / "6_Export").rglob("*.partial*"))
@@ -185,3 +197,40 @@ def test_replace_failure_leaves_no_json(tmp_path, monkeypatch):
         export.run(paths, rec, cfg)
     assert not paths.export_json(SID).exists()
     assert not (paths.root / "6_Export" / "npz" / f".partial_{SID}").exists()
+
+
+def _counts(est):
+    idx, info = export._ml_filter(est)
+    return export.rule_counts(est, idx, info)
+
+
+def test_rule_counts_on_series_short_shape():
+    """Counts of the ML-probability rule on rows shaped like NOF_H03_3D (ML-filter findings): 93 kept with
+    P >= 0.72, 1 merge product, 1 SNR duplicate exported, the rest marked delete below the threshold."""
+    n_ok, n_dup, n_low = 93, 1, 116
+    n = n_ok + 1 + n_dup + n_low
+    df = pd.DataFrame({
+        "component_idx": np.arange(n),
+        "ml_keep_probability": [0.9] * n_ok + [np.nan] + [0.8] * n_dup + [0.2] * n_low,
+        "delete": [0] * (n_ok + 1) + [1] * (n_dup + n_low),
+        "decision": ["ok"] * n_ok + ["from_merge"] + ["delete"] * (n_dup + n_low),
+        "caiman_snr": np.r_[np.full(n_ok, 5.0), 99.0, 7.0, np.full(n_low, 1.0)],
+    })
+    est = SimpleNamespace(idx_components=np.arange(n), metrics_df=df, autoinspection_config={"ml_threshold": 0.72})
+    assert _counts(est) == {"component_rule": "ml_probability", "n_exported": 94, "n_snr_duplicates_exported": 1,
+                            "n_merge_products_dropped": 1, "median_snr": 5.0}
+
+
+def test_rule_counts_without_ml_or_components():
+    no_ml = SimpleNamespace(idx_components=np.array([0, 1]), metrics_df=None)
+    assert _counts(no_ml) == {"component_rule": "idx_components", "n_exported": 2,
+                              "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
+                              "median_snr": None}
+    empty = SimpleNamespace(idx_components=np.array([], dtype=int), metrics_df=pd.DataFrame())
+    assert _counts(empty) == {"component_rule": "idx_components", "n_exported": 0,
+                              "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0, "median_snr": None}
+    nan_snr = SimpleNamespace(idx_components=np.array([0]), autoinspection_config={"ml_threshold": 0.5},
+                              metrics_df=pd.DataFrame({"component_idx": [0], "ml_keep_probability": [0.9],
+                                                       "delete": [0], "decision": ["ok"],
+                                                       "caiman_snr": [np.nan]}))
+    assert np.isnan(_counts(nan_snr)["median_snr"])  # the check warns "not a number"
