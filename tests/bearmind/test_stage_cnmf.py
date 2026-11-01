@@ -47,8 +47,8 @@ def _setup(tmp_path, mov=None, thresholds=True):
     return paths, _rec(T), cfg
 
 
-def _temp_empty(tmp_path):
-    t = tmp_path / "tmp" / SID
+def _temp_empty(paths, tmp_path):
+    t = paths.temp_dir(tmp_path / "tmp", SID)
     return not t.exists() or not any(t.iterdir())
 
 
@@ -240,7 +240,7 @@ def test_cnmf_on_synthetic(tmp_path, monkeypatch):
     dist = np.sqrt(((centers[:, None, :] - com[None]) ** 2).sum(-1))
     assert np.sum(dist.min(1) < 4) >= 4
 
-    assert _temp_empty(tmp_path)
+    assert _temp_empty(paths, tmp_path)
     assert {k: os.environ.get(k) for k in env} == env
 
 
@@ -260,7 +260,7 @@ def test_cnmf_failure_cleans_up(tmp_path, monkeypatch, where):
 
     def fit(self, images):
         seen["mmap"] = Path(images.filename)
-        seen["temp"] = sorted(p.name for p in (tmp_path / "tmp" / SID).iterdir())
+        seen["temp"] = sorted(p.name for p in paths.temp_dir(tmp_path / "tmp", SID).iterdir())
         seen["env"] = (os.environ.get("CAIMAN_TEMP"), os.environ.get("OPENBLAS_NUM_THREADS"))
         if where == "fit":
             raise RuntimeError("boom")
@@ -271,11 +271,11 @@ def test_cnmf_failure_cleans_up(tmp_path, monkeypatch, where):
         monkeypatch.setattr(bm_qc, "cnmf_qc", boom)
     with pytest.raises(RuntimeError, match="boom"):
         cnmf.run(paths, rec, cfg)
-    assert seen["mmap"].parent == tmp_path / "tmp" / SID
+    assert seen["mmap"].parent == paths.temp_dir(tmp_path / "tmp", SID)
     assert seen["temp"] == [seen["mmap"].name]  # the uint8 copy is gone before the fit
-    assert seen["env"] == (str(tmp_path / "tmp" / SID), "1")
+    assert seen["env"] == (str(paths.temp_dir(tmp_path / "tmp", SID)), "1")
     assert not seen["mmap"].exists()
-    assert _temp_empty(tmp_path)
+    assert _temp_empty(paths, tmp_path)
     est_dir = paths.estimates(SID).parent
     assert not est_dir.exists() or not any(est_dir.iterdir())  # neither the pickle nor a .partial
     assert {k: os.environ.get(k) for k in env} == env

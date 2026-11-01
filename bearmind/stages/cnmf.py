@@ -162,7 +162,7 @@ def run(paths, rec, cfg) -> StageResult:
     mem_gb = mem_budget_gb(cfg)
     g = params["gSig"][0]
 
-    tmp = Path(cfg["machine"]["temp_dir"]) / sid
+    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a CAIMAN_TEMP folder that does not exist
     saved = {k: os.environ.get(k) for k in _ENV}
     os.environ["CAIMAN_TEMP"] = str(tmp)

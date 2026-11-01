@@ -1,4 +1,6 @@
 """Folder layout of one series (single source of truth for all paths)."""
+import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -101,6 +103,13 @@ class SeriesPaths:
     @property
     def scan_unrecognized_csv(self) -> Path:
         return self._service / "scan_unrecognized.csv"
+
+    # --- machine temp folder ---
+    def temp_dir(self, temp_root, sid: str) -> Path:
+        """The session's folder under the machine temp folder, keyed by the series too: two series with the
+        same session id on one machine never share it, or remove each other's."""
+        key = hashlib.sha1(os.path.normcase(os.path.abspath(self.root)).encode("utf-8")).hexdigest()[:8]
+        return Path(temp_root) / f"{key}_{sid}"
 
     def rel(self, p) -> str:
         """Path relative to the series root, with '/' separators."""

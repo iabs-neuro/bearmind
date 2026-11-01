@@ -4,7 +4,6 @@ import os
 import shutil
 import time
 import traceback
-from pathlib import Path
 
 import numpy as np
 
@@ -49,7 +48,7 @@ def run(paths, rec, cfg) -> StageResult:
     g_sug = 4 if 4 in gsigs else gsigs[len(gsigs) // 2]
     tsub = cfg["cnmf"]["tsub"]
     mem_gb = mem_budget_gb(cfg)
-    tmp_dir = Path(cfg["machine"]["temp_dir"]) / sid
+    tmp_dir = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     tmp_dir.mkdir(parents=True, exist_ok=True)
     u8_path = tmp_dir / "mc_u8.dat"
     movie = None

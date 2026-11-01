@@ -116,7 +116,7 @@ def run(paths, rec, cfg) -> StageResult:
         raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
     n_in = int(rec.n_frames)
-    tmp = Path(cfg["machine"]["temp_dir"]) / sid
+    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a missing CAIMAN_TEMP folder
     saved = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     os.environ["CAIMAN_TEMP"] = str(tmp)

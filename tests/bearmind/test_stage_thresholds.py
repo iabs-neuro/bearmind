@@ -47,7 +47,7 @@ def test_thresholds_stage(tmp_path, monkeypatch):
     res = thresholds.run(paths, rec, cfg)
 
     assert calls == [(True, 2), (True, 2)]  # decoded once; budget clip(0.1 * 16 GB, 2, 32)
-    assert not (tmp_path / "tmp" / SID).exists()
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
 
     out = paths.threshold_maps(SID)
     assert res.outputs == {"threshold_maps": paths.rel(out)}
@@ -111,7 +111,7 @@ def test_thresholds_failure_removes_temp(tmp_path, monkeypatch):
     monkeypatch.setattr(thresholds.bm_qc, "compute_init_maps", boom)
     with pytest.raises(RuntimeError, match="boom"):
         thresholds.run(paths, rec, cfg)
-    assert not (tmp_path / "tmp" / SID).exists()
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
     assert not paths.threshold_maps(SID).exists()
 
 
@@ -121,4 +121,4 @@ def test_thresholds_reports_temp_left_behind(tmp_path, monkeypatch):
     monkeypatch.setattr(thresholds.time, "sleep", lambda s: None)
     res = thresholds.run(paths, rec, cfg)
     assert "temp_not_removed" in [a.code for a in res.anomalies]
-    assert not (tmp_path / "tmp" / SID / "mc_u8.dat").exists()  # the decoded copy itself is deleted
+    assert not (paths.temp_dir(tmp_path / "tmp", SID) / "mc_u8.dat").exists()  # the decoded copy itself is deleted

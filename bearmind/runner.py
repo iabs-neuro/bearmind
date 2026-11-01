@@ -392,11 +392,12 @@ def reset_from(paths, sid: str, stage: str, who: str) -> None:
     registry.update_record(paths, sid, reset)
 
 
-def _clean_temp(temp_root, sid) -> None:
-    """Remove <machine temp>/<sid> after a failed or killed stage (the stages clean it on success)."""
+def _clean_temp(paths, temp_root, sid) -> None:
+    """Remove this series' temp folder of the session after a failed or killed stage (the stages clean it
+    on success)."""
     if not temp_root:
         return
-    d = Path(temp_root) / sid
+    d = paths.temp_dir(temp_root, sid)
     for _ in range(5):
         if not d.exists():
             return
@@ -667,7 +668,7 @@ class _Run:
             log.warning("%s %s: interrupted, set back to pending", sid, stage, extra={"sid": sid})
         except Exception as e:
             log.error("%s %s: could not set back to pending: %s", sid, stage, _last_line(e), extra={"sid": sid})
-        _clean_temp(temp_root, sid)
+        _clean_temp(self.paths, temp_root, sid)
         self.current = None
 
     def close(self):
@@ -701,7 +702,7 @@ def _reset_running(paths) -> None:
             log.warning("%s: registry not writable now, left as running: %s", rec.sid, _last_line(e),
                         extra={"sid": rec.sid})
             continue
-        _clean_temp(temp_root, rec.sid)
+        _clean_temp(paths, temp_root, rec.sid)
         log.warning("%s %s: was running at start (process killed?), set to pending", rec.sid,
                     ",".join(running), extra={"sid": rec.sid})
 
@@ -885,7 +886,7 @@ def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
                 raise
             run_.auto_retries[(sid, stage)] = used + 1
             log.warning("%s %s: %s; automatic retry %d of %d", sid, stage, e, used + 1, limit, extra={"sid": sid})
-            _clean_temp(temp_root, sid)
+            _clean_temp(paths, temp_root, sid)
 
 
 def _run_stage(paths, sid, stage, run_: _Run) -> str:
@@ -974,7 +975,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             last = _last_line(e)
             log.error("%s %s: failed: %s", sid, stage, last, extra={"sid": sid})
             log.error("%s", traceback.format_exc(), extra={"sid": sid, "session_only": True})
-            _clean_temp(temp_root, sid)
+            _clean_temp(paths, temp_root, sid)
             skipped = []
             crash = ([Anomaly("stage_crashed", "error", last,
                               data={"exit_code": e.exit_code, "stage": stage, "cause": e.cause})]

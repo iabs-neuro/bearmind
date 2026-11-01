@@ -74,7 +74,7 @@ def test_mc_stage(tmp_path, make_avi, monkeypatch):
     assert got.shape == ref.shape
     assert np.array_equal(got, ref)
 
-    assert not (tmp_path / "tmp" / SID).exists() or not any((tmp_path / "tmp" / SID).iterdir())
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists() or not any(paths.temp_dir(tmp_path / "tmp", SID).iterdir())
 
 
 @pytest.mark.slow
@@ -88,7 +88,7 @@ def test_mc_stage_failure_cleans_up(tmp_path, make_avi, monkeypatch):
     monkeypatch.setattr(cmc.MotionCorrect, "motion_correct", boom)
     with pytest.raises(RuntimeError, match="boom"):
         mc_stage.run(paths, rec, cfg)
-    assert not (tmp_path / "tmp" / SID).exists() or not any((tmp_path / "tmp" / SID).iterdir())
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists() or not any(paths.temp_dir(tmp_path / "tmp", SID).iterdir())
 
 
 @pytest.mark.slow
@@ -137,7 +137,7 @@ def test_mc_stage_dff_failure_releases_temp_tif(tmp_path, make_avi, monkeypatch)
     monkeypatch.setattr(bm_qc, "make_dff_video", bad_dff)
     with pytest.raises(RuntimeError, match="dff failed"):
         mc_stage.run(paths, rec, cfg)
-    assert not (tmp_path / "tmp" / SID).exists()
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
 
 
 @pytest.mark.slow
@@ -152,7 +152,7 @@ def test_mc_stage_writer_failure_releases_temp(tmp_path, make_avi, monkeypatch):
     monkeypatch.setattr(mc_stage, "write_ffv1", bad_write)
     with pytest.raises(OSError, match="disk full"):
         mc_stage.run(paths, rec, cfg)
-    assert not (tmp_path / "tmp" / SID).exists()
+    assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
 
 
 def test_mc_stage_rejects_pw_rigid(tmp_path, make_avi):

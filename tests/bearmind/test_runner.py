@@ -252,11 +252,11 @@ def test_stale_running_reset(series):
     f.write_text(json.dumps(d), encoding="utf-8")
     est = s.paths.estimates(S1)
     _touch(est.with_name(est.name + ".partial"))
-    _touch(s.temp / S1 / "Yr_d1_16_d2_16_d3_1_order_C_frames_100.mmap")
+    _touch(s.paths.temp_dir(s.temp, S1) / "Yr_d1_16_d2_16_d3_1_order_C_frames_100.mmap")
     _run(s)
     assert s.stubs.calls == _tail(S1, "cnmf")
     assert _states(s.paths, S1) == [State.DONE] * 7
-    assert not (s.temp / S1).exists()  # temp of the killed run removed
+    assert not s.paths.temp_dir(s.temp, S1).exists()  # temp of the killed run removed
     assert "running at start" in s.paths.series_log.read_text(encoding="utf-8")
 
 
@@ -264,7 +264,7 @@ def test_disk_full_cleans_temp(series):
     s = series
 
     def fill(paths, rec, cfg):
-        d = Path(cfg["machine"]["temp_dir"]) / rec.sid
+        d = paths.temp_dir(cfg["machine"]["temp_dir"], rec.sid)
         d.mkdir(parents=True)
         (d / "mc_u8.dat").write_bytes(b"0" * 1000)
 
@@ -1221,3 +1221,21 @@ def test_failed_write_error_does_not_stop_the_batch(series, monkeypatch):
     _run(s)  # does not raise
     assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in (S1, S3))
     assert "failed not recorded" in s.paths.series_log.read_text(encoding="utf-8")
+
+
+def test_temp_folders_belong_to_their_series(series):
+    """10c: two series with the same session id on one machine never remove each other's temp."""
+    s = series
+    other = SeriesPaths(s.tmp / "other series")
+    mine = s.paths.temp_dir(s.temp, S1)
+    assert other.temp_dir(s.temp, S1) != mine and mine.parent == s.temp and mine.name.endswith("_" + S1)
+    theirs = _touch(other.temp_dir(s.temp, S1) / "Yr_frames_100.mmap")
+    _run(s)
+    f = s.paths.registry_file(S1)
+    d = json.loads(f.read_text(encoding="utf-8"))
+    d["stages"]["cnmf"]["state"] = "running"  # killed during CNMF
+    f.write_text(json.dumps(d), encoding="utf-8")
+    _touch(mine / "Yr_frames_100.mmap")
+    s.stubs.fail[(S1, "cnmf")] = OSError(28, "No space left on device")
+    _run(s)  # resets the killed stage (its temp goes), runs it again, it fails (its temp goes again)
+    assert not mine.exists() and theirs.is_file()
