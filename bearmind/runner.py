@@ -5,12 +5,13 @@ what other tools write meanwhile (thresholds, manual-inspection decisions, reset
 up. A stage is up to date when it is DONE, its parameter hash matches the current configuration and its
 required outputs exist; otherwise it and every later stage of that session are recomputed (spec 5.10).
 The runner writes only the fields it owns (the stage record and that stage's anomalies) through
-registry.update_record, so concurrent writers do not lose their changes.
+registry.update_record, so concurrent writers do not lose their changes. Each stage runs in a child
+process of its own (bearmind.isolate): a native crash or a dead CaImAn pool worker fails that stage and the
+batch goes on with the other sessions.
 """
 from __future__ import annotations
 
 import dataclasses
-import importlib
 import json
 import logging
 import os
@@ -30,15 +31,16 @@ except ImportError:  # not Windows
     msvcrt = None
     import fcntl
 
-from bearmind import checks, config, fileio, provenance, registry
+from bearmind import checks, config, fileio, isolate, provenance, registry
 from bearmind.paths import SeriesPaths
-from bearmind.registry import STAGES, Decision, StageRecord, State
+from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
 from bearmind.stages import WaitingForInput
 
 log = logging.getLogger("bearmind.runner")
 
-# "module:function" strings: stage modules import CaImAn and friends, so they load only when a stage runs.
-# Tests replace entries with callables.
+# "module:function" strings: stage modules import CaImAn and friends, so they load only when a stage runs,
+# in the stage's own process (runner.isolate_stages). Tests replace entries with callables, which run in
+# this process (isolate_stages: false).
 STAGE_FUNCS = {
     "crop": "bearmind.stages.crop:detect",
     "mc": "bearmind.stages.mc:run",
@@ -49,6 +51,15 @@ STAGE_FUNCS = {
     "export": "bearmind.stages.export:run",
 }
 FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
+
+# Checks run in this process before a stage process is started. They raise WaitingForInput without heavy
+# imports or work: a stage waiting for a person is retried every poll_s, maybe for days, and must not
+# cost a stage process (0.5-12 s of start-up and imports) per poll. The gate is all check.
+WAIT_CHECKS = {
+    "mc": "bearmind.stages.mc:check",
+    "cnmf": "bearmind.stages.cnmf:check",
+    "gate": "bearmind.stages.gate:run",
+}
 
 # Outputs that must exist for a DONE stage to count as done; previews are optional.
 REQUIRED = {
@@ -75,10 +86,7 @@ def _now() -> str:
 
 
 def _func(spec):
-    if callable(spec):
-        return spec
-    module, name = spec.split(":")
-    return getattr(importlib.import_module(module), name)
+    return spec if callable(spec) else isolate.resolve(spec)
 
 
 def _stages_until(until) -> tuple:
@@ -531,6 +539,7 @@ class _Run:
         self.current = None  # (sid, stage, started, params_hash, temp_root)
         self.logs = self.hb = None
         self.waiting_logged = set()
+        self.auto_retries = {}  # (sid, stage) -> automatic retries after a crash used in this run
 
     def open(self):
         self.logs = _Logs(self.paths)
@@ -678,6 +687,31 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
     return True
 
 
+def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
+    """The stage's StageResult, from its own process unless runner.isolate_stages is false.
+
+    A stage process that crashed (StageCrashed) is started again up to runner.max_auto_retries times per
+    run; any other failure is final (spec 5.10: FAILED, retried after a reset or a parameter change).
+    """
+    rc = cfg.get("runner") or {}
+    spec = STAGE_FUNCS[stage]
+    if not rc.get("isolate_stages", True):
+        return _func(spec)(paths, rec, cfg)
+    if stage in WAIT_CHECKS:
+        _func(WAIT_CHECKS[stage])(paths, rec, cfg)
+    limit = int(rc.get("max_auto_retries", 0))
+    while True:
+        try:
+            return isolate.run_isolated(spec, paths, rec, cfg, paths.session_log(sid))
+        except isolate.StageCrashed as e:
+            used = run_.auto_retries.get((sid, stage), 0)
+            if used >= limit:
+                raise
+            run_.auto_retries[(sid, stage)] = used + 1
+            log.warning("%s %s: %s; automatic retry %d of %d", sid, stage, e, used + 1, limit, extra={"sid": sid})
+            _clean_temp(temp_root, sid)
+
+
 def _run_stage(paths, sid, stage, run_: _Run) -> str:
     """Run one stage of one session.
 
@@ -720,7 +754,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             log.info("%s %s: started", sid, stage, extra={"sid": sid})
         applied = []  # the result was written: nobody changed the stage while it ran
         try:
-            res = _func(STAGE_FUNCS[stage])(paths, rec, cfg)
+            res = _call_stage(paths, sid, stage, rec, cfg, temp_root, run_)
             missing = [k for k in REQUIRED[stage] if not _output_ok(paths, res.outputs, k)]
             if missing:
                 raise FileNotFoundError(f"required output missing: {', '.join(missing)}")
@@ -759,12 +793,15 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             log.error("%s", traceback.format_exc(), extra={"sid": sid, "session_only": True})
             _clean_temp(temp_root, sid)
             skipped = []
+            crash = ([Anomaly("stage_crashed", "error", last, data={"exit_code": e.exit_code, "stage": stage})]
+                     if isinstance(e, isolate.StageCrashed) else [])
 
             def failed(d):
                 if ours(d):
                     applied.append(True)
                     st = d.stages[stage]
                     st.state, st.error, st.finished = State.FAILED, last, _now()
+                    d.anomalies.extend(crash)
                     skipped.append(_skip_downstream(d, stage))
 
             outcome = _record_outcome(paths, sid, stage, failed, "failed", applied)

@@ -83,6 +83,12 @@ checks:
   export_n_neurons: {warn: 30, error: 5}
   export_median_snr: {warn: 3.0}
   min_sessions_for_relative: 3
+# How the runner runs stages; not stage parameters (no stage hash includes them).
+runner:
+  # each stage in a child process: a crash or a dead CaImAn pool worker fails the stage, not the batch
+  isolate_stages: true
+  # automatic re-runs per run of a stage whose process crashed (0: none); other failures are not re-run
+  max_auto_retries: 1
 preview:
   crf: 23
   speed: 4

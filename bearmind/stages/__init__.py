@@ -16,4 +16,8 @@ class WaitingForInput(Exception):
 
     def __init__(self, what: str, detail: str | None = None):
         super().__init__(f"waiting for {what}" + (f": {detail}" if detail else ""))
-        self.what = what
+        self.what, self.detail = what, detail
+
+    def __reduce__(self):
+        # pickled from an isolated stage process: the default would call WaitingForInput(<message>)
+        return type(self), (self.what, self.detail)

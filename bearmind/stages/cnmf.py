@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 import bm_qc
+from bearmind import pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput
 from bearmind.video import decode_to_memmap, video_info
@@ -44,6 +45,11 @@ def cnmf_params(cfg, fps) -> dict:
     p.update(gSig=(g, g), gSiz=(4 * g + 1, 4 * g + 1), min_corr=float(base["min_corr"]),
              min_pnr=float(base["min_pnr"]), fr=float(fps))
     return p
+
+
+def check(paths, rec, cfg) -> None:
+    """Raises WaitingForInput while the thresholds are not set (the runner calls it before the stage)."""
+    cnmf_params(cfg, rec.fps)
 
 
 def patch_workers(T, tsub, cfg) -> int:
@@ -135,23 +141,10 @@ def _unlink(path) -> None:
         pass
 
 
-def _stop(dview) -> None:
-    import caiman as cm
-    try:
-        cm.stop_server(dview=dview)
-    except Exception:
-        pass
-    try:
-        dview.terminate()
-    except Exception:
-        pass
-
-
 def run(paths, rec, cfg) -> StageResult:
     params = cnmf_params(cfg, rec.fps)  # WaitingForInput before any heavy work
 
     import caiman as cm
-    from caiman.cluster import setup_cluster
     from caiman.source_extraction.cnmf.cnmf import CNMF
     from caiman.source_extraction.cnmf.params import CNMFParams
 
@@ -183,13 +176,13 @@ def run(paths, rec, cfg) -> StageResult:
         Yr, dims, T = cm.load_memmap(str(mmap))
         images = Yr.T.reshape((T,) + dims, order="F")
 
-        _, dview, _ = setup_cluster(backend="multiprocessing", n_processes=n_workers, single_thread=False)
+        dview = pool.start_pool(n_workers)
         opts = CNMFParams(params_dict=params)
         cnm = CNMF(n_workers, dview=dview, params=opts)
         cnm.fit(images)
         est = cnm.estimates
         est.evaluate_components(images, opts, dview=dview)
-        _stop(dview)  # QC does not use the pool; free the workers early
+        pool.stop_pool(dview)  # QC does not use the pool; free the workers early
         dview = None
 
         est.imax = imax
@@ -242,7 +235,7 @@ def run(paths, rec, cfg) -> StageResult:
         raise
     finally:
         if dview is not None:
-            _stop(dview)
+            pool.stop_pool(dview)
         for k, v in saved.items():
             if v is None:
                 os.environ.pop(k, None)

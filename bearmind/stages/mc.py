@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+from bearmind import pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
@@ -29,6 +30,11 @@ def _crop(cfg) -> CropBox | None:
     if pos is None or box is None:
         return None
     return CropBox(int(pos[0]), int(pos[1]), int(box[0]), int(box[1]))
+
+
+def check(paths, rec, cfg) -> None:
+    """Raises WaitingForInput while the crop box is not placed (the runner calls it before the stage)."""
+    _crop(cfg)
 
 
 def _write_tif(reader: SessionReader, path: Path) -> None:
@@ -88,9 +94,7 @@ def _mean_template_corr(video: VideoArray, template: np.ndarray, gSig_filt=None)
 def run(paths, rec, cfg) -> StageResult:
     crop = _crop(cfg)  # WaitingForInput before any heavy work
 
-    import caiman as cm
     import caiman.motion_correction as cmc
-    from caiman.cluster import setup_cluster
 
     import bm_qc
 
@@ -113,9 +117,7 @@ def run(paths, rec, cfg) -> StageResult:
         tif = tmp / f"{sid}_crop.tif"
         _write_tif(SessionReader(paths.root, rec, crop=crop), tif)
 
-        _, dview, _ = setup_cluster(backend="multiprocessing",
-                                    n_processes=max(1, int(cfg["machine"]["n_cpus"]) - 1),
-                                    single_thread=False)
+        dview = pool.start_pool(max(1, int(cfg["machine"]["n_cpus"]) - 1))
         mc = cmc.MotionCorrect([str(tif)], dview=dview, **{
             **mcfg, "splits_rig": math.ceil(n_in / 500), "shifts_opencv": True})
         mc.motion_correct(save_movie=False)
@@ -160,14 +162,7 @@ def run(paths, rec, cfg) -> StageResult:
         if gen is not None:
             gen.close()  # releases the tif memmap even after a writer error (Windows locks open files)
         if dview is not None:
-            try:
-                cm.stop_server(dview=dview)
-            except Exception:
-                pass
-            try:
-                dview.terminate()
-            except Exception:
-                pass
+            pool.stop_pool(dview)
         for k, v in saved.items():
             if v is None:
                 os.environ.pop(k, None)

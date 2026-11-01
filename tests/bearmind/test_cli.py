@@ -27,7 +27,9 @@ def series(tmp_path, monkeypatch):
     paths = SeriesPaths(tmp_path / "series")
     model = tmp_path / "model.pkl"
     model.write_bytes(b"model")
-    config.update_yaml(paths.series_config, {"autoinspect": {"model_path": str(model)}})
+    # the stubs are closures: they run in this process, not in stage processes
+    config.update_yaml(paths.series_config, {"autoinspect": {"model_path": str(model)},
+                                             "runner": {"isolate_stages": False}})
     for sid in SIDS:
         save_record(paths, _record(sid, decided=False))
     stubs = Stubs()

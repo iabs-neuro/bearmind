@@ -134,7 +134,9 @@ def series(tmp_path, monkeypatch):
                                                "cnmf_ram_budget_gb": 12.8})
     paths = SeriesPaths(tmp_path / "series")
     model = _touch(tmp_path / "model.pkl", b"model")
-    config.update_yaml(paths.series_config, {"autoinspect": {"model_path": str(model)}})
+    # the stubs are closures: they run in this process (the isolation is tested below and in test_isolate.py)
+    config.update_yaml(paths.series_config, {"autoinspect": {"model_path": str(model)},
+                                             "runner": {"isolate_stages": False}})
     for sid in SIDS:
         save_record(paths, _record(sid))
         config.update_yaml(paths.session_config(sid), THRESH)
@@ -868,3 +870,68 @@ def test_finalize_error_is_retried_not_failed(series, monkeypatch):
     assert res["failed"] == 0
     _run(s)
     assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)
+
+
+# --- stages in their own processes (runner.isolate_stages: true, the default) ---
+
+FAKES = "tests.bearmind.isolate_fakes:{}"
+
+
+@pytest.mark.parametrize("how, retries, attempts", [("crash", 1, 2), ("crash", 0, 1), ("fail", 1, 1)])
+def test_crashed_stage_retried_once_then_failed(series, monkeypatch, how, retries, attempts):
+    """Two sessions of two mice; S1's MC process crashes (or raises): FAILED after `attempts` runs, an
+    automatic retry only for a crash; the other session is done and run() returns."""
+    s = series
+    save_record(s.paths, _record(S2, excluded=True))
+    notes = s.tmp / "notes"
+    config.update_yaml(s.paths.series_config, {"runner": {"isolate_stages": True, "max_auto_retries": retries},
+                                               "fake": {"dir": str(notes), how: [S1]}})
+    monkeypatch.setitem(runner.STAGE_FUNCS, "crop", FAKES.format("crop"))
+    monkeypatch.setitem(runner.STAGE_FUNCS, "mc", FAKES.format("mc"))
+    t0 = time.monotonic()
+    res = _run(s, until="mc")
+    assert time.monotonic() - t0 < 60
+    calls = (notes / "calls.txt").read_text(encoding="utf-8").splitlines()
+    assert calls.count(f"{S1} mc") == attempts and calls.count(f"{S3} mc") == 1
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc"].state is State.FAILED
+    assert all(rec.stages[st].state is State.SKIPPED for st in STAGES[2:])
+    assert _states(s.paths, S3)[:2] == [State.DONE, State.DONE]
+    assert res["failed"] == 1 and res["done"] == 3
+    text = s.paths.session_log(S1).read_text(encoding="utf-8")
+    crashed = [a for a in rec.anomalies if a.code == "stage_crashed"]
+    if how == "crash":
+        assert "stage process exited with code 0xc0000005" in rec.stages["mc"].error
+        assert [(a.level, a.data) for a in crashed] == [("error", {"exit_code": 0xC0000005, "stage": "mc"})]
+        assert "Windows fatal exception: access violation" in text  # faulthandler of the stage process
+    else:
+        assert "ValueError: boom" in rec.stages["mc"].error and crashed == []
+        assert "isolate_fakes.py" in text  # the child's traceback, logged by the runner
+    assert text.count("automatic retry") == (attempts - 1)
+    if attempts == 2:
+        assert "automatic retry 1 of 1" in text
+    assert "automatic retry" not in s.paths.session_log(S3).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("stage, cfg_patch, what", [
+    ("cnmf", {"cnmf": {"gSig": None}}, "waiting for thresholds"),
+    ("mc", {}, "waiting for crop_finalize"),
+    ("gate", {}, "waiting for manual_inspection"),
+])
+def test_waiting_stage_does_not_start_a_stage_process(series, monkeypatch, stage, cfg_patch, what):
+    """A stage polled while it waits for a person must not cost a process start (0.5-12 s) per poll."""
+    s = series
+    rec = _record(S1, decided=False)
+    cfg = config.deep_merge(config.resolve(s.paths, sid=S1), {"runner": {"isolate_stages": True}, **cfg_patch})
+    cfg["crop"].pop("box_pos", None)
+    monkeypatch.setitem(runner.STAGE_FUNCS, stage, f"bearmind.stages.{stage}:run")
+    started = []
+    monkeypatch.setattr(runner.isolate, "run_isolated", lambda *a, **k: started.append(a))
+    with pytest.raises(WaitingForInput, match=f"^{what}$"):
+        runner._call_stage(s.paths, S1, stage, rec, cfg, None, runner._Run(s.paths, None, None, True, 1))
+    assert started == []
+    # inputs present: the stage process is started
+    rec.decisions = _record(S1).decisions
+    cfg = config.deep_merge(cfg, {"cnmf": THRESH["cnmf"], "crop": {"box_pos": [0, 0], "box": [16, 16]}})
+    runner._call_stage(s.paths, S1, stage, rec, cfg, None, runner._Run(s.paths, None, None, True, 1))
+    assert len(started) == 1 and started[0][0] == f"bearmind.stages.{stage}:run"
