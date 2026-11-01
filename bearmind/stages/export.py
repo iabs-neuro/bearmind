@@ -9,6 +9,7 @@ import numpy as np
 from scipy.io import savemat
 
 import export_estimates_data as old
+import bearmind.stages
 from bearmind import checks, provenance
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
@@ -43,7 +44,7 @@ def rule_counts(est, idx, ml_info) -> dict:
     """
     df = getattr(est, "metrics_df", None)
     exported = {int(i) for i in idx}
-    out = {"component_rule": "ml_probability" if ml_info["ml_filtered"] else "idx_components",
+    out = {"component_rule": bearmind.stages.COMPONENT_RULE if ml_info["ml_filtered"] else "idx_components",
            "n_exported": len(exported), "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
            "median_snr": None}
     if df is None:

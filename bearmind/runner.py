@@ -37,6 +37,7 @@ from bearmind import checks, config, fileio, isolate, naming, provenance, regist
 from bearmind.crop import fitted_size, mouse_frame_shape
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
+import bearmind.stages
 from bearmind.stages import WaitingForInput
 
 log = logging.getLogger("bearmind.runner")
@@ -190,6 +191,7 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
                   "file": _file_stat(paths.root / p.timestamps_file) if p.timestamps_file else None}
                  for p in rec.parts]
         return {"ml_threshold": ran.get("ml_threshold", cfg["autoinspect"].get("ml_threshold")),
+                "component_rule": bearmind.stages.COMPONENT_RULE,
                 "timestamps": parts}
     raise ValueError(f"unknown stage {stage!r}")
 

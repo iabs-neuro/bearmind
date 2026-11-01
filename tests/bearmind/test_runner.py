@@ -1239,3 +1239,16 @@ def test_temp_folders_belong_to_their_series(series):
     s.stubs.fail[(S1, "cnmf")] = OSError(28, "No space left on device")
     _run(s)  # resets the killed stage (its temp goes), runs it again, it fails (its temp goes again)
     assert not mine.exists() and theirs.is_file()
+
+
+def test_export_rule_is_an_export_input(series, monkeypatch):
+    """10g: when the author switches the export rule, existing exports run again, and only they."""
+    import bearmind.stages
+
+    s = series
+    _run(s)
+    assert load_record(s.paths, S1).stages["export"].params["component_rule"] == "ml_probability"
+    s.stubs.calls.clear()
+    monkeypatch.setattr(bearmind.stages, "COMPONENT_RULE", "another_rule")
+    _run(s)
+    assert s.stubs.calls == [(sid, "export") for sid in SIDS]

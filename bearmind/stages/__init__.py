@@ -6,6 +6,10 @@ from pathlib import Path
 from bearmind import config
 from bearmind.registry import Anomaly
 
+# The rule that chooses the exported components (export.rule_counts): ml_keep_probability >= the
+# autoinspection threshold. It is in the export stage's parameters, so a new rule name re-runs every export.
+COMPONENT_RULE = "ml_probability"
+
 
 @dataclass
 class StageResult:
