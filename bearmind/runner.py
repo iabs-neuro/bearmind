@@ -869,7 +869,8 @@ def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
     limit = int(rc["max_auto_retries"])
     while True:
         try:
-            return isolate.run_isolated(spec, paths, rec, cfg, paths.session_log(sid))
+            return isolate.run_isolated(spec, paths, rec, cfg, paths.session_log(sid),
+                                        stall_timeout_min=rc["stall_timeout_min"])
         except isolate.StageCrashed as e:
             used = run_.auto_retries.get((sid, stage), 0)
             if used >= limit:
@@ -962,7 +963,8 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             log.error("%s", traceback.format_exc(), extra={"sid": sid, "session_only": True})
             _clean_temp(temp_root, sid)
             skipped = []
-            crash = ([Anomaly("stage_crashed", "error", last, data={"exit_code": e.exit_code, "stage": stage})]
+            crash = ([Anomaly("stage_crashed", "error", last,
+                              data={"exit_code": e.exit_code, "stage": stage, "cause": e.cause})]
                      if isinstance(e, isolate.StageCrashed) else [])
 
             def failed(d):

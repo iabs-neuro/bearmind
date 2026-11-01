@@ -89,6 +89,10 @@ runner:
   isolate_stages: true
   # automatic re-runs per run of a stage whose process crashed (0: none); other failures are not re-run
   max_auto_retries: 1
+  # minutes without CPU progress of the stage process tree after which the stage is killed and counts as
+  # crashed (0: no limit). CPU time, not output: a stage that computes silently is healthy; a deadlock or
+  # a wait on stuck I/O uses no CPU.
+  stall_timeout_min: 30
 preview:
   crf: 23
   speed: 4

@@ -92,6 +92,23 @@ def pool_normal(paths, rec, cfg):
     return StageResult(metrics={"map": res})
 
 
+def blocked(paths, rec, cfg):
+    """A deadlock: no CPU and no output, forever; a grandchild that sleeps as well."""
+    import threading
+
+    g = subprocess.Popen(SLEEPER)
+    _tree(cfg, [os.getpid(), g.pid])
+    threading.Event().wait()
+
+
+def busy(paths, rec, cfg):
+    """Computes without any output for cfg["fake"]["busy_s"] seconds."""
+    t0, n = time.monotonic(), 0
+    while time.monotonic() - t0 < cfg["fake"]["busy_s"]:
+        n += 1
+    return StageResult(metrics={"busy_s": time.monotonic() - t0, "n": n})
+
+
 def hang(paths, rec, cfg):
     g = subprocess.Popen(SLEEPER)
     _tree(cfg, [os.getpid(), g.pid])
@@ -111,6 +128,9 @@ def mc(paths, rec, cfg):
         faulthandler._read_null()
     if rec.sid in cfg["fake"].get("fail", []):
         raise ValueError("boom")
+    if rec.sid in cfg["fake"].get("stall", []):
+        import threading
+        threading.Event().wait()
     s = rec.sid
     out = {}
     for k, p in (("mc_video", paths.mc_video(s)), ("mc_shifts", paths.mc_shifts(s))):

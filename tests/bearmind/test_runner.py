@@ -916,7 +916,8 @@ def test_crashed_stage_retried_once_then_failed(series, monkeypatch, how, retrie
     crashed = [a for a in rec.anomalies if a.code == "stage_crashed"]
     if how == "crash":
         assert "stage process exited with code 0xc0000005" in rec.stages["mc"].error
-        assert [(a.level, a.data) for a in crashed] == [("error", {"exit_code": 0xC0000005, "stage": "mc"})]
+        assert [(a.level, a.data) for a in crashed] == [("error", {"exit_code": 0xC0000005, "stage": "mc",
+                                                                    "cause": "crash"})]
         assert "Windows fatal exception: access violation" in text  # faulthandler of the stage process
     else:
         assert "ValueError: boom" in rec.stages["mc"].error and crashed == []
@@ -1130,3 +1131,27 @@ def test_detection_parameter_change_recomputes_an_automatic_box(series, source, 
     assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"]["box"] == box
     for sid in (S1, S2):
         assert load_record(s.paths, sid).stages["mc"].metrics["crop"][2:] == box
+
+
+def test_stalled_stage_is_killed_and_retried_once(series, monkeypatch):
+    """I6: a stage process tree without CPU progress for runner.stall_timeout_min is a crashed stage: one
+    automatic retry, then FAILED with the anomaly naming the cause."""
+    s = series
+    save_record(s.paths, _record(S2, excluded=True))
+    notes = s.tmp / "notes"
+    config.update_yaml(s.paths.series_config, {
+        "runner": {"isolate_stages": True, "max_auto_retries": 1, "stall_timeout_min": 2},
+        "fake": {"dir": str(notes), "stall": [S1]}})
+    monkeypatch.setattr(runner.isolate, "MINUTE_S", 1.0)
+    monkeypatch.setitem(runner.STAGE_FUNCS, "crop", FAKES.format("crop"))
+    monkeypatch.setitem(runner.STAGE_FUNCS, "mc", FAKES.format("mc"))
+    t0 = time.monotonic()
+    res = _run(s, until="mc")
+    print(f"two stalled attempts and the other session: {time.monotonic() - t0:.1f} s")
+    calls = (notes / "calls.txt").read_text(encoding="utf-8").splitlines()
+    assert calls.count(f"{S1} mc") == 2 and calls.count(f"{S3} mc") == 1
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc"].state is State.FAILED and "no progress for 2 min" in rec.stages["mc"].error
+    crashed = [a for a in rec.anomalies if a.code == "stage_crashed"]
+    assert [(a.level, a.data["cause"]) for a in crashed] == [("error", "no_progress")]
+    assert res["failed"] == 1 and _states(s.paths, S3)[:2] == [State.DONE, State.DONE]

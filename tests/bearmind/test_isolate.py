@@ -223,3 +223,34 @@ def test_job_accounting_failure_keeps_the_result(stage, monkeypatch, caplog):
     assert res.outputs == {"x": "a/b.txt"}
     assert d.alive() == []
     assert any("accounting unavailable" in r.getMessage() for r in caplog.records)
+
+
+# --- I6: stall watchdog ---
+
+def test_stage_without_cpu_progress_is_killed(stage, monkeypatch):
+    """A stage whose process tree uses no CPU (deadlock, stuck I/O) is killed after stall_timeout_min."""
+    monkeypatch.setattr(isolate, "MINUTE_S", 1.0)  # minutes of the setting become seconds
+    with Descendants() as d:
+        with pytest.raises(isolate.StageCrashed, match=r"^no progress for 2 min") as ei:
+            isolate.run_isolated(spec("blocked"), stage.paths, stage.rec, stage.cfg, stage.log, stall_timeout_min=2)
+    assert ei.value.cause == "no_progress"
+    print(f"blocked stage killed after {d.elapsed:.1f} s (timeout 2 s)")
+    assert d.elapsed < 2 + 15  # the timeout, plus the stage process start and the kill
+    assert survivors(tree(stage)) == [] and d.alive() == []
+
+
+def test_stage_computing_without_output_is_not_killed(stage, monkeypatch):
+    monkeypatch.setattr(isolate, "MINUTE_S", 1.0)
+    stage.cfg["fake"]["busy_s"] = 4.0
+    with Descendants() as d:
+        res = isolate.run_isolated(spec("busy"), stage.paths, stage.rec, stage.cfg, stage.log, stall_timeout_min=1)
+    print(f"busy stage finished after {d.elapsed:.1f} s (busy 4 s, timeout 1 s)")
+    assert res.metrics["busy_s"] >= 4.0 and d.alive() == []
+
+
+def test_stall_timeout_zero_disables_the_watchdog(stage, monkeypatch):
+    monkeypatch.setattr(isolate, "MINUTE_S", 0.001)
+    stage.cfg["fake"]["busy_s"] = 0.5
+    # a stage process start alone takes longer than 0.001 s; with the watchdog off nothing is killed
+    res = isolate.run_isolated(spec("busy"), stage.paths, stage.rec, stage.cfg, stage.log, stall_timeout_min=0)
+    assert res.metrics["busy_s"] >= 0.5

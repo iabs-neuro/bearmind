@@ -35,19 +35,24 @@ from bearmind.stages import WaitingForInput
 POLL_S = 1.0
 EXIT_WAIT_S = 30.0  # after sending its result the child gets this long to exit on its own
 KILL_WAIT_S = 10.0
+MINUTE_S = 60.0  # seconds per minute of runner.stall_timeout_min (tests shrink it)
+STALL_MIN_CPU_FRAC = 0.01  # less CPU than 1% of one core over the stall timeout counts as no progress
 
 log = logging.getLogger("bearmind.isolate")
 
 
 class StageCrashed(RuntimeError):
-    """The stage process ended without a result: a native crash, a kill, or a dead pool worker."""
+    """The stage process ended without a result: a native crash, a kill, a dead pool worker, or no progress.
 
-    def __init__(self, message: str, exit_code: int | None = None):
+    cause: "crash" | "pool_worker_died" | "no_progress".
+    """
+
+    def __init__(self, message: str, exit_code: int | None = None, cause: str = "crash"):
         super().__init__(message)
-        self.exit_code = exit_code
+        self.exit_code, self.cause = exit_code, cause
 
     def __reduce__(self):
-        return type(self), (str(self), self.exit_code)
+        return type(self), (str(self), self.exit_code, self.cause)
 
 
 class _RemoteTraceback(Exception):
@@ -136,6 +141,11 @@ if sys.platform == "win32":
             """Peak commit of all processes of the job together."""
             return self._query(_JOB_EXTENDED_LIMITS, _ExtendedLimits()).PeakJobMemoryUsed / 2 ** 30
 
+        def cpu_s(self) -> float:
+            """User + kernel CPU seconds of every process the job has had, the exited ones included."""
+            a = self._query(_JOB_BASIC_ACCOUNTING, _Accounting())
+            return (a.TotalUserTime + a.TotalKernelTime) / 1e7  # 100 ns units
+
         def kill(self, timeout: float) -> int | None:
             """Terminate every process of the job; the number still running after `timeout` (None: the job
             could not be asked; the caller still waits for the processes it knows)."""
@@ -169,6 +179,8 @@ class _Tree:
             self.root = None
         self.seen: dict[int, psutil.Process] = {}
         self.job = None
+        self._cpu: dict[int, float] = {}  # pid -> last CPU seconds seen (fallback without job accounting)
+        self._job_cpu = True
         if _Job is not None and self.root is not None:
             try:
                 self.job = _Job(pid)
@@ -198,6 +210,25 @@ class _Tree:
         if left or alive:
             log.warning("stage process tree not fully killed: %d in the job, pids %s still running", left,
                         [p.pid for p in alive])
+
+    def cpu_s(self) -> float:
+        """CPU seconds of every process the tree has had: from the job object, which also counts the
+        processes that have exited; else the last known times of the processes seen."""
+        if self.job is not None and self._job_cpu:
+            try:
+                return self.job.cpu_s()
+            except OSError as e:
+                self._job_cpu = False
+                log.warning("stage job: CPU time unavailable (%s); summed over the processes seen", e)
+        for p in [self.root, *self.seen.values()]:
+            if p is None:
+                continue
+            try:
+                t = p.cpu_times()
+            except psutil.Error:
+                continue  # exited: its last known time stays in the sum
+            self._cpu[p.pid] = t.user + t.system
+        return sum(self._cpu.values())
 
     def peak_gb(self) -> float | None:
         """Peak commit of the whole tree, when the job can tell; bookkeeping only, never fatal."""
@@ -281,25 +312,56 @@ def _unpack(data, name, text, tb) -> tuple[BaseException, str]:
     return exc, tb
 
 
-def _wait(proc, conn, tree):
-    """The child's message, or None when it ended without sending one."""
+class _StallWatch:
+    """No progress: the CPU time of the stage process tree advanced by less than STALL_MIN_CPU_FRAC of one
+    core during `timeout_s`.
+
+    CPU time, not output, is the signal: a stage that computes but prints nothing (CNMF-E patches, the
+    memmap writer) is healthy, while a deadlock, a wait on stuck I/O or on a joblib/loky task that will never
+    come back uses no CPU at all. Some threads tick even then (the pool watchdog wakes every 0.5 s), so a
+    small floor is used instead of any increase.
+    """
+
+    def __init__(self, tree, timeout_s: float):
+        self.tree, self.timeout_s = tree, timeout_s
+        self.need = STALL_MIN_CPU_FRAC * timeout_s
+        self.mark = (time.monotonic(), tree.cpu_s())  # the last time enough CPU had been used
+
+    def stalled(self) -> bool:
+        now, cpu = time.monotonic(), self.tree.cpu_s()
+        if cpu - self.mark[1] >= self.need:
+            self.mark = (now, cpu)
+            return False
+        return now - self.mark[0] >= self.timeout_s
+
+
+_STALLED = object()
+
+
+def _wait(proc, conn, tree, stall_s: float = 0):
+    """The child's message; None when it ended without sending one; _STALLED when its process tree made no
+    CPU progress for stall_s seconds (0: never)."""
     try:
         conn.send("go")
+        watch = _StallWatch(tree, stall_s) if stall_s > 0 else None
         while True:
             if conn.poll(POLL_S):
                 return conn.recv()
             if not proc.is_alive():
                 return conn.recv() if conn.poll(0) else None  # a message sent just before it exited
             tree.track()
+            if watch is not None and watch.stalled():
+                return _STALLED
     except (EOFError, OSError):  # the child closed its end of the pipe: it is gone
         return None
 
 
-def run_isolated(func_spec: str, paths, rec, cfg, log_path: Path):
+def run_isolated(func_spec: str, paths, rec, cfg, log_path: Path, stall_timeout_min: float = 0):
     """Run `func_spec(paths, rec, cfg)` in a child process and return its StageResult.
 
     An exception of the stage is raised here with the same type and message (the child's traceback is its
-    __cause__); a child that ends without a result raises StageCrashed with its exit code.
+    __cause__); a child that ends without a result raises StageCrashed with its exit code. A process tree
+    that makes no CPU progress for stall_timeout_min minutes (0: no limit) is killed: StageCrashed too.
     """
     if not isinstance(func_spec, str):
         raise TypeError(f"an isolated stage is named by a 'module:function' string, not {func_spec!r}")
@@ -315,8 +377,8 @@ def run_isolated(func_spec: str, paths, rec, cfg, log_path: Path):
     there.close()  # else the parent's copy keeps the pipe open and a dead child is never noticed
     tree = _Tree(proc.pid)
     try:
-        msg = _wait(proc, here, tree)
-        if msg is not None:
+        msg = _wait(proc, here, tree, float(stall_timeout_min) * MINUTE_S)
+        if msg is not None and msg is not _STALLED:
             proc.join(EXIT_WAIT_S)
         tree.kill()  # a child stuck on exit, workers a stage did not stop
         peak = tree.peak_gb()
@@ -334,10 +396,15 @@ def run_isolated(func_spec: str, paths, rec, cfg, log_path: Path):
         log.info("stage process %s: exit %s after %.0f s%s", func_spec, exit_text, time.monotonic() - t0,
                  "" if peak is None else f", peak commit of its process tree {peak:.1f} GB")
 
+    if msg is _STALLED:
+        report()
+        raise StageCrashed(f"no progress for {stall_timeout_min:g} min: the CPU time of the stage processes did "
+                           f"not advance; killed", code, cause="no_progress")
     if msg is None:
         report()
-        raise StageCrashed("pool worker died" if code == POOL_WORKER_DIED
-                           else f"stage process exited with code {exit_text}", code)
+        if code == POOL_WORKER_DIED:
+            raise StageCrashed("pool worker died", code, cause="pool_worker_died")
+        raise StageCrashed(f"stage process exited with code {exit_text}", code)
     kind, *rest = msg
     if kind == "ok":
         report()

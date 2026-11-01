@@ -35,7 +35,8 @@ def test_defaults_int_keys_and_values():
     assert d["autoinspect"]["ml_threshold"] == 0.72 and d["gate"]["enabled"] is True
     assert d["checks"]["mc_max_shift_px"] == {"warn": 10, "error": 30}  # task 17 calibration
     assert d["checks"]["mc_template_corr"] == {"warn": 0.7}  # task 17 calibration
-    assert d["runner"] == {"isolate_stages": True, "max_auto_retries": 1}  # the runner reads only these
+    assert d["runner"] == {"isolate_stages": True, "max_auto_retries": 1,
+                           "stall_timeout_min": 30}  # the runner reads only these
 
 
 def test_lists_replace_and_missing_files_empty(tmp_path):
