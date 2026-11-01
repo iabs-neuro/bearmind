@@ -13,12 +13,14 @@ import logging
 import os
 import sys
 import threading
-from multiprocessing.pool import RUN
+from multiprocessing.pool import RUN, TERMINATE
 
 import psutil
 
 POOL_WORKER_DIED = 75  # exit code of a stage process whose pool lost a worker (EX_TEMPFAIL)
 WATCH_S = 0.5
+TERMINATE_S = 30.0  # Pool.terminate() normally returns in about a second; longer means it is stuck
+KILL_WAIT_S = 10.0
 
 log = logging.getLogger("bearmind.pool")
 
@@ -48,25 +50,41 @@ class _Watchdog:
     death; the watch ends as soon as the state leaves RUN.
     """
 
-    def __init__(self, pool, on_death=_die, every_s: float = WATCH_S):
-        self.pool, self.on_death, self.every_s = pool, on_death, every_s
+    def __init__(self, pool, on_death=None, every_s: float | None = None):
+        # resolved here, not in the signature: tests replace the module's _die / WATCH_S
+        self.pool = pool
+        self.on_death = _die if on_death is None else on_death
+        self.every_s = WATCH_S if every_s is None else every_s
         self.pids = {p.pid for p in pool._pool}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="bearmind-pool-watchdog", daemon=True)
         self._thread.start()
 
-    def _dead(self) -> set:
+    def gone(self) -> set:
+        """Recorded workers no longer in the pool or already exited, whatever the pool state."""
         workers = list(self.pool._pool)  # a copy: the pool's worker handler thread edits the list
         gone = self.pids - {p.pid for p in workers}
-        gone |= {p.pid for p in workers if p.pid in self.pids and p.exitcode is not None}
+        return gone | {p.pid for p in workers if p.pid in self.pids and p.exitcode is not None}
+
+    def _dead(self) -> set:
+        gone = self.gone()
         # read again after the workers: a close/terminate that started meanwhile is not a death
         return gone if self.pool._state == RUN and not self._stop.is_set() else set()
 
     def _loop(self):
+        logged = set()
         while not self._stop.wait(self.every_s):
-            if self.pool._state != RUN:
-                return
-            dead = self._dead()
+            try:
+                if self.pool._state != RUN:
+                    return
+                dead = self._dead()
+            except Exception as e:
+                # Keep watching: a bookkeeping error must not end a healthy hour-long stage, and a thread
+                # that stops here would bring the silent hang back. Logged once per kind of error.
+                if repr(e) not in logged:
+                    logged.add(repr(e))
+                    log.exception("pool watchdog: could not read the pool's workers; still watching")
+                continue
             if dead:
                 self.on_death(sorted(dead))
                 return
@@ -86,17 +104,73 @@ def start_pool(n_processes: int):
     return dview
 
 
-def stop_pool(dview) -> None:
-    """Stop the watchdog, then terminate the pool and wait for its workers.
+def _terminate(dview, timeout: float) -> bool:
+    """Pool.terminate() in a daemon thread; True when it returned without error within `timeout`."""
+    errors = []
 
-    cm.stop_server(dview=pool) only calls pool.terminate() for a multiprocessing pool, so this is the
-    same shutdown. Errors are logged, not raised: this runs in finally blocks and must not hide the
-    stage's own exception.
+    def target():
+        try:
+            dview.terminate()
+        except Exception as e:
+            errors.append(e)
+
+    t = threading.Thread(target=target, name="bearmind-pool-terminate", daemon=True)
+    t.start()
+    t.join(timeout)
+    for e in errors:
+        log.warning("pool not terminated cleanly: %s: %s", type(e).__name__, e)
+    return not t.is_alive() and not errors
+
+
+def _kill(dview) -> None:
+    """Kill the pool's workers without Pool.terminate().
+
+    Pool.terminate() first takes the task queue's read lock (Pool._help_stuff_finish), which an idle worker
+    holds while it waits for a task; if that worker was killed, the lock is never released and terminate
+    waits forever. So: stop the worker handler first (it would start replacements), kill and reap the
+    workers, and cancel the pool's exit-time finalizer, which would call terminate() again and block the
+    interpreter's exit. Private attributes used for that: Pool._worker_handler, _change_notifier, _pool,
+    _terminate (a multiprocessing.util.Finalize). The task and result handler threads are daemons and are
+    left to end with the process.
+    """
+    dview._state = TERMINATE
+    handler = dview._worker_handler
+    handler._state = TERMINATE
+    dview._change_notifier.put(None)  # wakes the handler, which then sees TERMINATE and returns
+    handler.join(KILL_WAIT_S)
+    workers = list(dview._pool)
+    for p in workers:
+        if p.exitcode is None:
+            p.kill()
+    for p in workers:
+        p.join(KILL_WAIT_S)
+    alive = [p.pid for p in workers if p.exitcode is None]
+    if alive:
+        log.warning("pool workers still running after kill: %s", alive)
+    dview._terminate.cancel()
+
+
+def stop_pool(dview) -> None:
+    """Stop the watchdog, then terminate the pool and wait for its workers; never hangs.
+
+    cm.stop_server(dview=pool) only calls pool.terminate() for a multiprocessing pool, so the normal path is
+    the same shutdown. A worker that died in the last watchdog period (not reported yet) may hold the task
+    queue's lock that terminate() needs, so then the workers are killed instead; a terminate() that does
+    not return within TERMINATE_S is abandoned the same way. Errors are logged, not raised: this runs in
+    finally blocks and must not hide the stage's own exception.
     """
     watch = getattr(dview, "_bearmind_watchdog", None)
+    dead = set()
     if watch is not None:
         watch.stop()  # first: the workers leaving below are not deaths
-    try:
-        dview.terminate()
-    except Exception as e:
-        log.warning("pool not terminated cleanly: %s: %s", type(e).__name__, e)
+        try:
+            dead = watch.gone() if dview._state == RUN else set()
+        except Exception as e:
+            log.warning("pool workers not checked before shutdown: %s: %s", type(e).__name__, e)
+    if dead:
+        log.warning("pool worker died before the pool was stopped: pid %s; workers killed instead of "
+                    "Pool.terminate()", ", ".join(map(str, sorted(dead))))
+        _kill(dview)
+    elif not _terminate(dview, TERMINATE_S):
+        log.warning("Pool.terminate() did not finish within %.0f s; workers killed", TERMINATE_S)
+        _kill(dview)
