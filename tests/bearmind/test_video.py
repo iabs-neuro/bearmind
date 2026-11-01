@@ -203,3 +203,49 @@ def test_decode_to_memmap_rejects_short_decode(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="decoded 5 frames"):
         decode_to_memmap(tmp_path / "x.avi", tmp_path / "x_u8.dat")
     assert not (tmp_path / "x_u8.dat").exists()
+
+
+def _deny_first_replace(monkeypatch):
+    """os.replace refuses once (a player or a GUI holds the target), as on Windows; then works."""
+    import os
+
+    from bearmind import fileio
+
+    monkeypatch.setattr(fileio, "REPLACE_STEP_S", 0.0)
+    real, denied = os.replace, []
+
+    def replace(src, dst):
+        if not denied:
+            denied.append(str(dst))
+            raise PermissionError(13, "the target is open in another program")
+        return real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    return denied
+
+
+@pytest.mark.parametrize("writer", ["ffv1", "mp4"])
+def test_writers_retry_a_refused_rename(tmp_path, monkeypatch, writer):
+    """10b: the final rename of the .partial file goes through fileio.replace (retried on PermissionError)."""
+    denied = _deny_first_replace(monkeypatch)
+    out = tmp_path / ("v.avi" if writer == "ffv1" else "v.mp4")
+    if writer == "ffv1":
+        write_ffv1([_frames(4)], out, 20.0)
+    else:
+        write_preview_mp4([_frames(4)], out, 20.0)
+    assert denied == [str(out)] and out.is_file()
+    assert not list(tmp_path.glob("*.partial*"))
+
+
+def test_mc_shifts_written_through_partial(tmp_path, monkeypatch):
+    from bearmind.stages import mc as mc_stage
+
+    denied = _deny_first_replace(monkeypatch)
+    out = tmp_path / "s_MC_shifts.npy"
+    mc_stage._save_shifts(out, np.ones((5, 2), np.float32))
+    assert denied == [str(out)] and np.load(out).shape == (5, 2)
+    monkeypatch.setattr(np, "save", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    out.unlink()
+    with pytest.raises(OSError, match="disk full"):
+        mc_stage._save_shifts(out, np.ones((5, 2), np.float32))
+    assert not out.exists() and not list(tmp_path.glob("*.partial*"))

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from bearmind import pool
+from bearmind import fileio, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
@@ -37,6 +37,17 @@ def _crop(cfg) -> CropBox | None:
 def check(paths, rec, cfg) -> None:
     """Raises WaitingForInput while the crop box is not placed (the runner calls it before the stage)."""
     _crop(cfg)
+
+
+def _save_shifts(path: Path, shifts: np.ndarray) -> None:
+    """np.save to <name>.partial.npy, then fileio.replace: a killed stage never leaves a valid-looking file."""
+    path = Path(path)
+    part = path.with_name(path.stem + ".partial.npy")
+    try:
+        np.save(part, shifts)
+        fileio.replace(part, path)
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def _write_tif(reader: SessionReader, path: Path) -> None:
@@ -129,7 +140,7 @@ def run(paths, rec, cfg) -> StageResult:
         dview = None
 
         paths.mc_video(sid).parent.mkdir(parents=True, exist_ok=True)
-        np.save(paths.mc_shifts(sid), shifts)
+        _save_shifts(paths.mc_shifts(sid), shifts)
         gen = _corrected_chunks(tif, shifts, mcfg["border_nan"])
         n = write_ffv1(gen, paths.mc_video(sid), fps)
         gen.close()

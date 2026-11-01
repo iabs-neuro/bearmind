@@ -9,6 +9,7 @@ from typing import Iterable, Iterator
 import av
 import numpy as np
 
+from . import fileio
 from .registry import SessionRecord
 
 
@@ -198,7 +199,7 @@ def write_ffv1(chunks: Iterable[np.ndarray], path: Path, fps: float) -> int:
                 raise ValueError("no frames to write")
             for p in s.encode():
                 c.mux(p)
-        tmp.replace(path)
+        fileio.replace(tmp, path)  # retried while a player or a GUI holds the old file
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -212,7 +213,7 @@ def write_preview_mp4(chunks: Iterable[np.ndarray], path: Path, fps: float, crf:
     tmp = path.with_suffix(".partial.mp4")
     try:
         _write_mp4(chunks, tmp, fps, crf, speed, tbin)
-        tmp.replace(path)
+        fileio.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
