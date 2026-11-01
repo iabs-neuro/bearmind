@@ -238,3 +238,33 @@ def test_rule_counts_without_ml_or_components():
     assert _counts(no_idx) == {"component_rule": "idx_components", "n_exported": 2,
                                "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
                                "median_snr": None}
+
+
+def test_export_metadata_carries_checks_and_anomalies(tmp_path):
+    """I7 (spec 5.11): every check result and anomaly of the session goes to the export json."""
+    from bearmind.registry import Anomaly, Check, State
+
+    paths, rec, cfg = _setup(tmp_path, n_frames=30, est_frames=25)
+    rec.stages["mc"] = StageRecord(state=State.DONE, checks=[
+        Check("mc", "mc_max_shift_px", "warning", 12.0, "max shift 12.0 px (warn > 10, error > 30)"),
+        Check("mc", "mc_template_corr", "ok", 0.9, "template corr 0.9 (warn < 0.7)")])
+    rec.anomalies = [Anomaly("dropped_frames", "warning", "3 gaps in timestamps", data={"n_gaps": 3}),
+                     Anomaly("fov_not_found", "warning", "no field of view", data={"stage": "crop"})]
+    prov = provenance.collect(paths, rec, cfg)
+    assert prov["checks"] == {"mc": [
+        {"name": "mc_max_shift_px", "value": 12.0, "level": "warning",
+         "message": "max shift 12.0 px (warn > 10, error > 30)"},
+        {"name": "mc_template_corr", "value": 0.9, "level": "ok", "message": "template corr 0.9 (warn < 0.7)"}]}
+    assert prov["anomalies"] == [
+        {"code": "dropped_frames", "level": "warning", "stage": None, "message": "3 gaps in timestamps",
+         "auto_fixed": False, "data": {"n_gaps": 3}},
+        {"code": "fov_not_found", "level": "warning", "stage": "crop", "message": "no field of view",
+         "auto_fixed": False, "data": {"stage": "crop"}}]
+    export.run(paths, rec, cfg)
+    meta = json.loads(paths.export_json(SID).read_text())["provenance"]
+    assert meta["checks"]["mc"] == prov["checks"]["mc"]
+    # the export's own checks and anomalies are in its json too (2 neurons: below the error threshold 5)
+    assert {c["name"]: c["level"] for c in meta["checks"]["export"]} == {"export_n_neurons": "error",
+                                                                         "export_median_snr": "ok"}
+    assert [(a["code"], a["stage"]) for a in meta["anomalies"]] == [
+        ("dropped_frames", None), ("fov_not_found", "crop"), ("export_frames_mismatch", "export")]

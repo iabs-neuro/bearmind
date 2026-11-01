@@ -8,7 +8,7 @@ import shutil
 import numpy as np
 
 import export_estimates_data as old
-from bearmind import provenance
+from bearmind import checks, provenance
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
 from bearmind.timestamps import read_timestamps, stitch, write_timestamps
@@ -82,6 +82,18 @@ def _stitched_timestamps(paths, rec):
     return stitch(parts)
 
 
+def _provenance(paths, rec, cfg, metrics, anomalies) -> dict:
+    """provenance.collect plus this stage's own check results and anomalies, which reach the registry only
+    after the stage returns (the runner evaluates the same checks then)."""
+    prov = provenance.collect(paths, rec, cfg)
+    own = checks.evaluate("export", metrics, [metrics], cfg)
+    if own:
+        prov["checks"]["export"] = provenance.check_list(own)
+    prov["anomalies"] += provenance.anomaly_list(
+        [dataclasses.replace(a, data={**a.data, "stage": "export"}) for a in anomalies])
+    return prov
+
+
 def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
     est = old.load_estimates(paths.root / rec.stages["autoinspect"].outputs["processed"])
@@ -102,9 +114,9 @@ def run(paths, rec, cfg) -> StageResult:
     meta = old.build_metadata(est, rec.fps, sid, False, None, ml_info, idx)
     meta["fps"] = rec.fps
     meta["autoinspection_fps"] = rec.stages["autoinspect"].metrics.get("autoinspection_fps")
-    meta["provenance"] = provenance.collect(paths, rec, cfg)
     meta["timestamps_file"] = paths.export_timestamps(sid).name
     meta.update({k: v for k, v in counts.items() if k != "median_snr"})
+    metrics = {"n_neurons": int(len(idx)), **counts}
 
     targets = {"npz": paths.export_npz(sid), "json": paths.export_json(sid),
                "timestamps": paths.export_timestamps(sid), "filters": paths.export_filters(sid)}
@@ -114,16 +126,19 @@ def run(paths, rec, cfg) -> StageResult:
     shutil.rmtree(tmp, ignore_errors=True)
     try:
         tmp.mkdir(parents=True)
-        npz, js = old.export(data, meta, sid, tmp)
         write_timestamps(ts, np.arange(n_ts), tmp / targets["timestamps"].name)
         mat = old.export_filters_mat(est, idx, tmp / targets["filters"].name)
+        if mat is None:
+            anomalies.append(Anomaly("no_filters", "warning",
+                                     "estimates have no A matrix or imax; no filters file written"))
+        # the json goes last into the staging folder: it carries this stage's own checks and anomalies too
+        meta["provenance"] = _provenance(paths, rec, cfg, metrics, anomalies)
+        npz, js = old.export(data, meta, sid, tmp)
         staged = {"timestamps": tmp / targets["timestamps"].name, "npz": npz, "json": js}
         if mat is not None:
             staged["filters"] = mat
         else:
             targets["filters"].unlink(missing_ok=True)
-            anomalies.append(Anomaly("no_filters", "warning",
-                                     "estimates have no A matrix or imax; no filters file written"))
         # json goes last: it marks the export as complete
         try:
             for k in ("timestamps", "filters", "npz", "json"):
@@ -137,5 +152,5 @@ def run(paths, rec, cfg) -> StageResult:
 
     return StageResult(
         outputs={k: paths.rel(v) for k, v in targets.items() if k in staged},
-        metrics={"n_neurons": int(len(idx)), **counts},
+        metrics=metrics,
         anomalies=anomalies)

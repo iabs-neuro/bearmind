@@ -1,4 +1,5 @@
-"""Provenance block written into the export json: code version, packages, model, inputs, decisions."""
+"""Provenance block written into the export json: code version, packages, model, inputs, decisions, check
+results and anomalies."""
 from __future__ import annotations
 
 import hashlib
@@ -44,6 +45,16 @@ def model_file(cfg) -> Path:
     return f if f.is_absolute() else REPO_ROOT / f
 
 
+def check_list(checks) -> list[dict]:
+    return [{"name": c.name, "value": c.value, "level": c.level, "message": c.message} for c in checks]
+
+
+def anomaly_list(anomalies) -> list[dict]:
+    """The registry fields of each anomaly, and the stage it belongs to (None: the scan's)."""
+    return [{"code": a.code, "level": a.level, "stage": a.data.get("stage"), "message": a.message,
+             "auto_fixed": a.auto_fixed, "data": a.data} for a in anomalies]
+
+
 def collect(paths, rec, cfg) -> dict:
     commit = _git("rev-parse", "HEAD")
     status = _git("status", "--porcelain")
@@ -61,4 +72,7 @@ def collect(paths, rec, cfg) -> dict:
         # resolved parameters each stage ran with (runner.stage_params), not their hashes
         "stage_params": {n: s.params for n, s in rec.stages.items() if s.params},
         "decisions": [asdict(d) for d in rec.decisions],
+        # spec 5.11: every check result and anomaly of the session goes to the export metadata
+        "checks": {n: check_list(s.checks) for n, s in rec.stages.items() if s.checks},
+        "anomalies": anomaly_list(rec.anomalies),
     }
