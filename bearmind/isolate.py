@@ -246,6 +246,10 @@ def _child(func_spec: str, blob: bytes, log_path: str, conn) -> None:
     sys.stdout.flush()
     sys.stderr.flush()
     conn.close()
+    # The stage has written its outputs and the parent has its result. Interpreter shutdown after a stage
+    # can hang (joblib's worker processes held the autoinspection child for 30 s) and only risks an
+    # exit-time crash; what the stage left running is killed with the job.
+    os._exit(0)
 
 
 # --- the parent ---

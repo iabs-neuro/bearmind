@@ -117,3 +117,11 @@ def mc(paths, rec, cfg):
         p.write_bytes(b"x")
         out[k] = paths.rel(p)
     return StageResult(outputs=out, metrics={"max_shift_px": 2.0, "mean_template_corr": 0.9})
+
+
+def lingering(paths, rec, cfg):
+    """A result, and a non-daemon thread that would keep the interpreter from exiting (as loky's did)."""
+    import threading
+
+    threading.Thread(target=time.sleep, args=(600,), daemon=False).start()
+    return StageResult(metrics={"ok": True})

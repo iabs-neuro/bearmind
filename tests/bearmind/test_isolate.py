@@ -193,3 +193,14 @@ def test_only_dotted_specs(stage):
     with pytest.raises(TypeError, match="module:function"):
         isolate.run_isolated(lambda *a: None, stage.paths, stage.rec, stage.cfg, stage.log)
     assert not Path(stage.log).exists()
+
+
+def test_child_exits_right_after_its_result(stage, caplog):
+    """Interpreter shutdown of a finished stage can hang (seen with joblib's workers): the child ends at once
+    after sending its result instead of being killed EXIT_WAIT_S later."""
+    caplog.set_level("INFO", logger="bearmind.isolate")
+    with Descendants() as d:
+        res = run(stage, "lingering")
+    assert res.metrics == {"ok": True}
+    assert d.elapsed < 10 and d.alive() == []
+    assert any("exit 0x0" in r.getMessage() for r in caplog.records), [r.getMessage() for r in caplog.records]
