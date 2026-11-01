@@ -55,6 +55,11 @@ def _say(text="") -> None:
     print(text)
 
 
+def _ascii(text) -> str:
+    """A stage error for the console: it may carry a localized system message (the logs keep the original)."""
+    return str(text).encode("ascii", "backslashreplace").decode("ascii")
+
+
 def _first_line(text) -> str:
     return (str(text).splitlines() or [""])[0]
 
@@ -215,7 +220,7 @@ def cmd_run(args) -> int:
     recs = _records(paths)
     _check_sids(recs, args.sessions or ())
     try:
-        res = runner.run(paths.root, until=args.until, sids=args.sessions, once=args.once)
+        res = runner.run(paths.root, until=args.until, sids=args.sessions, once=args.once, console=True)
     except KeyboardInterrupt:
         _say("[WARN] stopped by Ctrl+C; run the same command to resume where it stopped")
         return INTERRUPTED
@@ -238,7 +243,7 @@ def _report_run(paths, res) -> int:
          + f"failed {len(st.failed)}, waiting for a person {len(waiting)}, cannot be scheduled {len(st.problems)}, "
          + f"excluded {len(st.excluded)}")
     for sid, (stage, error) in sorted(st.failed.items())[:_MAX_LISTED]:
-        _say(f"         {sid} failed at {stage}: {_clip(_last_line(error or ''))}")
+        _say(f"         {sid} failed at {stage}: {_clip(_ascii(_last_line(error or '')))}")
     if st.failed:
         _say(f"         after fixing the cause: retry {paths.root} --all-failed")
     for sid, why in sorted(st.problems.items())[:_MAX_LISTED]:
@@ -280,7 +285,7 @@ def _row(rec) -> tuple:
             w = runner._what(st)
             reason = _REASON.get(w, w)
         elif st.state is State.FAILED and not reason:
-            reason = f"failed {s}: {_last_line(st.error or '')[:60]}"
+            reason = f"failed {s}: {_ascii(_last_line(st.error or ''))[:60]}"
     return cells, reason
 
 

@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -433,10 +434,24 @@ class _SessionFilter(logging.Filter):
         return sid == self.sid or (sid is None and record.thread == self.thread)
 
 
-class _Logs:
-    """File handlers on the 'bearmind' logger; the root logger is left alone."""
+class _ConsoleFilter(logging.Filter):
+    def filter(self, record):
+        return getattr(record, "console", False)  # the events of the run, not everything the stages log
 
-    def __init__(self, paths):
+
+class _AsciiFormatter(logging.Formatter):
+    """'HH:MM:SS message', ASCII only: students read it in a Windows console, and a stage error can carry
+    a localized system message (the logs keep the original text)."""
+
+    def format(self, record):
+        return super().format(record).encode("ascii", "backslashreplace").decode("ascii")
+
+
+class _Logs:
+    """File handlers on the 'bearmind' logger, and with console=True one line on stdout per event of the
+    run (stage started / done / failed, waits); the root logger is left alone."""
+
+    def __init__(self, paths, console=False):
         self.paths = paths
         self.logger = logging.getLogger("bearmind")
         paths.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -444,6 +459,12 @@ class _Logs:
         self.handler.setFormatter(_FMT)
         self.handler.addFilter(_SeriesFilter())
         self.logger.addHandler(self.handler)
+        self.console = None
+        if console:
+            self.console = logging.StreamHandler(sys.stdout)
+            self.console.setFormatter(_AsciiFormatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
+            self.console.addFilter(_ConsoleFilter())
+            self.logger.addHandler(self.console)
         self.level = self.logger.level
         if self.logger.getEffectiveLevel() > logging.INFO:
             self.logger.setLevel(logging.INFO)
@@ -463,6 +484,8 @@ class _Logs:
     def close(self):
         self.logger.removeHandler(self.handler)
         self.handler.close()
+        if self.console is not None:
+            self.logger.removeHandler(self.console)
         self.logger.setLevel(self.level)
 
 
@@ -626,8 +649,8 @@ class ResultNotRecorded(RuntimeError):
 class _Run:
     """State of one run: outcome counts, the stage being run, logs and heartbeat."""
 
-    def __init__(self, paths, until, sids, once, poll_s):
-        self.paths, self.sids, self.once, self.poll_s = paths, sids, once, poll_s
+    def __init__(self, paths, until, sids, once, poll_s, console=False):
+        self.paths, self.sids, self.once, self.poll_s, self.console = paths, sids, once, poll_s, console
         self.until, self.stages = until, _stages_until(until)
         self.result = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0}
         self.current = None  # (sid, stage, started, params_hash, temp_root)
@@ -636,7 +659,7 @@ class _Run:
         self.auto_retries = {}  # (sid, stage) -> automatic retries after a crash used in this run
 
     def open(self):
-        self.logs = _Logs(self.paths)
+        self.logs = _Logs(self.paths, self.console)
         self.hb = _Heartbeat(self.paths)
         self.hb.update(status="running")
         self.hb.start()
@@ -857,7 +880,7 @@ def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
         return "retry"
     run_.waiting_logged.add((sid, stage))
     with run_.logs.session(sid):
-        log.info("%s %s: %s", sid, stage, w, extra={"sid": sid})
+        log.info("%s %s: %s", sid, stage, w, extra={"sid": sid, "console": True})
     run_.refresh()
     return "waiting"
 
@@ -885,7 +908,8 @@ def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
             if used >= limit:
                 raise
             run_.auto_retries[(sid, stage)] = used + 1
-            log.warning("%s %s: %s; automatic retry %d of %d", sid, stage, e, used + 1, limit, extra={"sid": sid})
+            log.warning("%s %s: %s; automatic retry %d of %d", sid, stage, e, used + 1, limit,
+                        extra={"sid": sid, "console": True})
             _clean_temp(paths, temp_root, sid)
 
 
@@ -934,7 +958,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
     run_.refresh()
     with run_.logs.session(sid):
         if (sid, stage) not in run_.waiting_logged:
-            log.info("%s %s: started", sid, stage, extra={"sid": sid})
+            log.info("%s %s: started", sid, stage, extra={"sid": sid, "console": True})
         applied = []  # the result was written: nobody changed the stage while it ran
         try:
             res = _call_stage(paths, sid, stage, rec, cfg, temp_root, run_)
@@ -970,10 +994,10 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             outcome = _record_outcome(paths, sid, stage, waiting, "waiting", applied)
             if outcome == "waiting" and (sid, stage) not in run_.waiting_logged:  # retried every poll
                 run_.waiting_logged.add((sid, stage))
-                log.info("%s %s: %s", sid, stage, w, extra={"sid": sid})
+                log.info("%s %s: %s", sid, stage, w, extra={"sid": sid, "console": True})
         except Exception as e:
             last = _last_line(e)
-            log.error("%s %s: failed: %s", sid, stage, last, extra={"sid": sid})
+            log.error("%s %s: failed: %s", sid, stage, last, extra={"sid": sid, "console": True})
             log.error("%s", traceback.format_exc(), extra={"sid": sid, "session_only": True})
             _clean_temp(paths, temp_root, sid)
             skipped = []
@@ -997,7 +1021,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             run_.waiting_logged.discard((sid, stage))
             if applied:
                 worst = max((c.level for c in found), key=_LEVEL.get, default="ok")
-                log.info("%s %s: done (checks: %s)", sid, stage, worst, extra={"sid": sid})
+                log.info("%s %s: done (checks: %s)", sid, stage, worst, extra={"sid": sid, "console": True})
                 run_.result["done"] += 1
                 outcome = "done"
             else:
@@ -1114,15 +1138,16 @@ def _wait_message(person, blocked) -> str:
 
 
 def run(series_root: Path, until: str | None = None, sids: list[str] | None = None, once: bool = False,
-        poll_s: float = 30) -> dict:
+        poll_s: float = 30, console: bool = False) -> dict:
     """Process the series until no stage is ready; returns {"done", "failed", "waiting", "skipped"}.
 
     done / failed / skipped count stage outcomes of this run; waiting counts stages left WAITING at exit.
     While sessions wait for a person (thresholds, manual inspection) the process polls every `poll_s`
-    and continues when the decision arrives; once=True returns as soon as no stage is ready.
+    and continues when the decision arrives; once=True returns as soon as no stage is ready. console=True
+    prints one ASCII line per event (stage started / done / failed, waits) on stdout.
     """
     paths = SeriesPaths(Path(series_root).resolve())  # absolute before the chdir below
-    run_ = _Run(paths, until, sids, once, poll_s)
+    run_ = _Run(paths, until, sids, once, poll_s, console)
     config.resolve(paths)  # a broken series config stops here, before any state changes
     lock = _acquire_lock(paths)
     cwd = os.getcwd()

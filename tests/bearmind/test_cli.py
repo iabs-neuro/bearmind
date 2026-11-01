@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -474,3 +475,37 @@ def test_scan_and_status_report_unrecognized_folders(tmp_path, make_series, caps
 
 def test_status_without_unrecognized_folders_says_nothing(series, capsys):
     assert "unrecognized" not in _status(series, capsys)
+
+
+def test_run_prints_progress_lines(series, capsys):
+    """10e: one ASCII console line per stage start / done / failure; tracebacks stay in the logs."""
+    series.stubs.fail[(S1, "crop")] = RuntimeError("доступ запрещён")  # a localized Windows error text
+    assert _main("run", series.root, "--once", "--until", "mc") == 1
+    out = capsys.readouterr().out
+    assert out.isascii()
+    lines = out.splitlines()
+    assert any(ln.endswith(f"{S2} crop: started") for ln in lines)
+    assert any(ln.endswith(f"{S2} crop: done (checks: ok)") for ln in lines)
+    assert any(f"{S1} crop: failed: RuntimeError: " in ln and r"\u0434" in ln for ln in lines)
+    assert "Traceback" not in out
+    assert len(lines) < 20  # events only
+
+
+def test_waiting_runner_prints_what_it_waits_for(series, capsys):
+    s = series
+    for sid in SIDS:
+        config.update_yaml(s.paths.session_config(sid), THRESH)
+    out = {}
+    # poll 1 s: three in-process re-checks of a waiting gate take longer than a 0.05 s poll
+    t = threading.Thread(target=lambda: out.update(res=runner.run(s.root, poll_s=1, console=True)), daemon=True)
+    t.start()
+    deadline = time.time() + 60
+    text = ""
+    while time.time() < deadline and "waiting: thresholds 0, manual inspection 3" not in text:
+        text += capsys.readouterr().out
+        time.sleep(0.05)
+    assert "waiting: thresholds 0, manual inspection 3" in text and text.isascii()
+    for sid in SIDS:
+        gate.decide(s.paths, sid, "not_needed", "viktor")
+    t.join(60)
+    assert not t.is_alive()
