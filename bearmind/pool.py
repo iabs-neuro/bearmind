@@ -150,6 +150,42 @@ def _kill(dview) -> None:
     dview._terminate.cancel()
 
 
+def _kill_pids(pids) -> None:
+    """Kill the given worker pids that are still children of this process (a pid may have been reused)."""
+    me, procs = os.getpid(), []
+    for pid in pids:
+        try:
+            p = psutil.Process(pid)
+            if p.ppid() == me:
+                p.kill()
+                procs.append(p)
+        except psutil.Error:
+            pass  # gone already
+    _, alive = psutil.wait_procs(procs, timeout=KILL_WAIT_S)
+    if alive:
+        log.warning("pool workers still running after kill by pid: %s", [p.pid for p in alive])
+
+
+def _kill_safely(dview, pids) -> None:
+    """_kill, which reads private Pool attributes; if that fails, the workers recorded at start are killed by
+    pid. Logged, never raised: stop_pool runs in finally blocks."""
+    try:
+        _kill(dview)
+    except Exception as e:
+        log.warning("pool not stopped through its private attributes (%s: %s); killing its workers by pid",
+                    type(e).__name__, e)
+        _kill_pids(pids)
+
+
+def _recorded_pids(dview, watch) -> set:
+    if watch is not None:
+        return set(watch.pids)
+    try:
+        return {p.pid for p in dview._pool}
+    except Exception:
+        return set()
+
+
 def stop_pool(dview) -> None:
     """Stop the watchdog, then terminate the pool and wait for its workers; never hangs.
 
@@ -170,7 +206,7 @@ def stop_pool(dview) -> None:
     if dead:
         log.warning("pool worker died before the pool was stopped: pid %s; workers killed instead of "
                     "Pool.terminate()", ", ".join(map(str, sorted(dead))))
-        _kill(dview)
+        _kill_safely(dview, _recorded_pids(dview, watch))
     elif not _terminate(dview, TERMINATE_S):
         log.warning("Pool.terminate() did not finish within %.0f s; workers killed", TERMINATE_S)
-        _kill(dview)
+        _kill_safely(dview, _recorded_pids(dview, watch))

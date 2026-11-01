@@ -178,3 +178,29 @@ def test_watchdog_survives_an_error_and_still_reports_the_death(caplog):
                    for r in caplog.records)
     finally:
         w.stop()
+
+
+def test_stop_pool_kills_recorded_workers_when_the_private_attributes_fail(caplog):
+    """10i: stop_pool runs in finally blocks: an error on the pool's private attributes is logged, not
+    raised, and the workers recorded at start are still killed by pid."""
+    import subprocess
+    import sys
+    from types import SimpleNamespace
+
+    from multiprocessing.pool import RUN
+
+    workers = [subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) for _ in range(2)]
+    try:
+        pids = {w.pid for w in workers}
+        watch = SimpleNamespace(pids=pids, stop=lambda: None, gone=lambda: {min(pids)})  # one worker "died"
+        dview = SimpleNamespace(_state=RUN, _bearmind_watchdog=watch)  # no _worker_handler, _change_notifier
+        with caplog.at_level("WARNING", logger="bearmind.pool"):
+            pool.stop_pool(dview)  # must not raise
+        for w in workers:
+            w.wait(WAIT_S)
+        assert all(w.poll() is not None for w in workers)
+        assert "killing its workers by pid" in caplog.text and "AttributeError" in caplog.text
+    finally:
+        for w in workers:
+            if w.poll() is None:
+                w.kill()
