@@ -349,3 +349,42 @@ def test_warn_accept_mismatch_on_warning_level_mismatch(series, capsys):
         Anomaly("frames_ts_mismatch", "warning", "small mismatch")))
     assert _main("decide", series.root, S1, "accept-mismatch") == 0
     assert "[WARN]" in capsys.readouterr().out
+
+
+def test_status_shows_sessions_that_cannot_be_scheduled(series, capsys):
+    """I2: a broken session config, the mouse-mate it blocks and a corrupt registry file are on screen."""
+    series.paths.session_config(S2).parent.mkdir(parents=True, exist_ok=True)
+    series.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    _set(series.paths, S1, "crop", State.DONE)
+    _set(series.paths, S1, "mc", State.WAITING, error="waiting for crop_finalize")
+    bad = series.paths.registry_file("NOF_H09_1D")
+    bad.write_text("{not json", encoding="utf-8")
+    out = _status(series, capsys)
+    lines = {ln.split()[0]: ln for ln in out.splitlines() if ln.split() and ln.split()[0] in SIDS + ["NOF_H09_1D"]}
+    assert "cannot be scheduled: config: " in lines[S2]
+    assert f"blocked by {S2}" in lines[S1]
+    assert "broken registry file" in lines["NOF_H09_1D"] and "run scan" in lines["NOF_H09_1D"]
+    head = out.splitlines()[1]
+    assert "cannot be scheduled: 2" in head and "blocked: 1" in head
+
+
+def test_decide_include_without_fps_warns(tmp_path, make_series, capsys):
+    root = make_series(tmp_path / "noTS", with_ts=False)
+    assert _main("scan", root) == 0
+    capsys.readouterr()
+    assert _main("decide", root, "NOF_H01_1D", "include") == 0
+    out = capsys.readouterr().out
+    assert "[WARN]" in out and "frame rate" in out and "stays excluded" in out
+    assert load_record(SeriesPaths(root), "NOF_H01_1D").excluded is True
+    status = _status(SimpleNamespace(root=root), capsys)
+    assert "excluded: no_timestamps, fps_unavailable" in status
+
+
+def test_scan_reports_a_recreated_registry_file(tmp_path, make_series, capsys):
+    root = make_series(tmp_path / "re")
+    assert _main("scan", root) == 0
+    SeriesPaths(root).registry_file("NOF_H01_1D").write_text("{not json", encoding="utf-8")
+    capsys.readouterr()
+    assert _main("scan", root) == 0
+    out = capsys.readouterr().out
+    assert "[WARN] NOF_H01_1D: registry file was unreadable" in out and ".broken" in out

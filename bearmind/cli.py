@@ -178,6 +178,10 @@ def cmd_scan(args) -> int:
     records = scan.scan_series(paths.root)
     excluded = [r for r in records if r.excluded]
     _say(f"[OK] {len(records)} sessions found, {len(excluded)} excluded")
+    for r in records:
+        for a in r.anomalies:
+            if a.code == "registry_recreated":
+                _say(f"[WARN] {r.sid}: {a.message}")
     for r in excluded:
         why = "; ".join(a.message for a in r.anomalies if a.level == "error") or "excluded by a decision"
         _say(f"[WARN] {r.sid}: excluded - {why}")
@@ -238,28 +242,65 @@ def _row(rec) -> tuple:
     return cells, reason
 
 
+_NOTE_MAX = 160  # characters of a reason in a status row; summary.csv has it whole
+
+
+def _clip(text) -> str:
+    text = str(text)
+    return text if len(text) <= _NOTE_MAX else text[:_NOTE_MAX - 3] + "..."
+
+
+def _excluded_note(rec) -> str:
+    codes = list(dict.fromkeys(a.code for a in rec.anomalies if a.level == "error" and not a.data.get("stage")))
+    decided = [d for d in rec.decisions if d.what == "exclude"]
+    if decided and decided[-1].value == "true" and rec.fps is not None:
+        return "excluded by a decision"
+    return "excluded: " + ", ".join(codes) if codes else "excluded"
+
+
+def _note(rec, reason, state) -> str:
+    """What the operator must know about the session: why it cannot be scheduled comes first."""
+    if rec.sid in state.problems:
+        return f"cannot be scheduled: {_clip(state.problems[rec.sid])}"
+    by = next((b for sid, _, _, b in state.blocked if sid == rec.sid), None)
+    if by:
+        return f"{reason}: blocked by {', '.join(by)} (cannot be scheduled)"
+    if rec.excluded and not reason:
+        return _excluded_note(rec)
+    return reason
+
+
+def _waiting_line(state) -> str:
+    waits = {}
+    for _sid, _stage, what in state.waiting:
+        name = _REASON.get(what, what)
+        waits[name] = waits.get(name, 0) + 1
+    return ("waiting: " + (", ".join(f"{k} {v}" for k, v in sorted(waits.items())) or "nobody")
+            + f"; blocked: {len(state.blocked)}; cannot be scheduled: {len(state.problems)}"
+            + f"; failed: {len(state.failed)}")
+
+
 def cmd_status(args) -> int:
     paths = _series(args.series)
-    recs = list(_records(paths).values())
-    runner.summary(paths, recs)
-    rows = [(r, *_row(r)) for r in recs]
-    waits = {}
-    for r, _cells, reason in rows:
-        if not r.excluded and reason and not reason.startswith("failed"):
-            waits[reason] = waits.get(reason, 0) + 1
-    failed = sum(1 for r, _c, reason in rows if not r.excluded and reason.startswith("failed"))
+    state = runner.series_state(paths)
+    if not state.records and not state.broken:
+        raise CliError(f"no sessions registered in {paths.root}; run first: scan {paths.root}")
+    runner.summary(paths, state.records, problems=state.problems, broken=state.broken)
+    rows = []
+    for r in state.records:
+        cells, reason = _row(r)
+        rows.append((r.sid, "yes " if r.excluded else "no  ", cells, _note(r, reason, state)))
+    rows += [(Path(f).stem, "?   ", ["?"] * len(STAGES), _clip(state.problems[Path(f).stem]))
+             for f, _ in state.broken]
     _say(_heartbeat_line(paths))
-    _say("waiting: " + (", ".join(f"{k} {v}" for k, v in sorted(waits.items())) or "nobody")
-         + f"; failed: {failed}")
-    _say("D done, R running, W waiting, F failed, S skipped, . not started")
-    width = max(len("session"), *(len(r.sid) for r in recs))
+    _say(_waiting_line(state))
+    _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown")
+    width = max(len("session"), *(len(sid) for sid, *_ in rows))
     head = "session".ljust(width) + "  excl  " + " ".join(_SHORT[s].ljust(4) for s in STAGES) + "  note"
     _say(head)
     _say("-" * len(head))
-    for r, cells, reason in rows:
-        note = "excluded" if r.excluded and not reason else reason
-        _say(r.sid.ljust(width) + "  " + ("yes " if r.excluded else "no  ") + "  "
-             + " ".join(c.ljust(4) for c in cells) + "  " + note)
+    for sid, excl, cells, note in sorted(rows):
+        _say(sid.ljust(width) + "  " + excl + "  " + " ".join(c.ljust(4) for c in cells) + "  " + note)
     _say(f"summary table: {paths.summary_csv}")
     return OK
 
@@ -354,6 +395,9 @@ def cmd_decide(args) -> int:
     if args.action == "accept-mismatch" and not any(
             a.code == "frames_ts_mismatch" and a.level == "error" for a in recs[args.sid].anomalies):
         _say(f"[WARN] {args.sid} has no frames_ts_mismatch error; the decision is recorded but changes nothing")
+    if args.action == "include" and recs[args.sid].fps is None:
+        _say(f"[WARN] {args.sid} has no frame rate (timestamps missing or unusable): it stays excluded, the "
+             f"stages need the frame rate; the decision is recorded and counts once a rescan finds the rate")
     what, value = _DECIDE[args.action]
     now, who = _now(), _who(args)
 

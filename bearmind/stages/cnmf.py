@@ -1,4 +1,8 @@
-"""CNMF-E stage: FFV1 MC video -> CaImAn C-order memmap in the temp folder -> CNMF-E -> estimates + QC previews."""
+"""CNMF-E stage: FFV1 MC video -> CaImAn C-order memmap in the temp folder -> CNMF-E -> estimates + QC previews.
+
+bm_qc (CaImAn, cv2, matplotlib: about 7 s) is imported inside the functions that use it: the runner and
+`status` import this module for cnmf_params on every stage-parameter check.
+"""
 from __future__ import annotations
 
 import errno
@@ -15,7 +19,6 @@ from pathlib import Path
 
 import numpy as np
 
-import bm_qc
 from bearmind import pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput
@@ -96,6 +99,8 @@ def _imax(paths, sid, gSig, tsub, dims, movie, mem_gb) -> np.ndarray:
 
     Otherwise the PNR is computed on `movie` (the decoded uint8 memmap) in row strips.
     """
+    import bm_qc
+
     pnr = None
     maps = paths.threshold_maps(sid)
     if maps.exists():
@@ -147,6 +152,8 @@ def run(paths, rec, cfg) -> StageResult:
     import caiman as cm
     from caiman.source_extraction.cnmf.cnmf import CNMF
     from caiman.source_extraction.cnmf.params import CNMFParams
+
+    import bm_qc
 
     sid = rec.sid
     mc_path = paths.mc_video(sid)

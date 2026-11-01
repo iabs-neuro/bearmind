@@ -8,6 +8,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
+from pathlib import Path
 
 from bearmind import fileio
 
@@ -164,25 +165,48 @@ def update_record(paths, sid: str, change) -> SessionRecord:
     return rec
 
 
+def replace_broken(paths, rec: SessionRecord, kept) -> bool:
+    """Save `rec` in place of its registry file that cannot be read, which is renamed to `kept` (a name that
+    is not globbed as a record). False, and nothing changed, when the file reads fine by now."""
+    f = paths.registry_file(rec.sid)
+    with fileio.file_lock(f):
+        try:
+            _read(f)
+            return False
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass
+        fileio.replace(f, kept)
+        _write(f, rec)
+    return True
+
+
 _reported: set = set()  # broken files already logged: the runner calls all_records every loop
 
 
-def all_records(paths) -> list[SessionRecord]:
-    """All readable records, sorted by sid; a broken file is logged (once per file version) and skipped."""
+def read_all(paths) -> tuple[list[SessionRecord], list[tuple[Path, str]]]:
+    """All readable records sorted by sid, and every registry file that cannot be read with the reason."""
     folder = paths.registry_file("x").parent
     if not folder.is_dir():
-        return []
-    out = []
+        return [], []
+    out, broken = [], []
     for p in sorted(folder.glob("*.json")):
         try:
             out.append(_read(p))
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            try:
-                st = p.stat()
-                key = (str(p), st.st_size, st.st_mtime_ns)
-            except OSError:
-                key = (str(p), None, None)
-            if key not in _reported:
-                _reported.add(key)
-                log.error("registry file skipped, cannot read %s: %s: %s", p.name, type(e).__name__, e)
-    return sorted(out, key=lambda r: r.sid)
+            broken.append((p, " ".join(f"{type(e).__name__}: {e}".split())))
+    return sorted(out, key=lambda r: r.sid), broken
+
+
+def all_records(paths) -> list[SessionRecord]:
+    """All readable records, sorted by sid; a broken file is logged (once per file version) and skipped."""
+    out, broken = read_all(paths)
+    for p, why in broken:
+        try:
+            st = p.stat()
+            key = (str(p), st.st_size, st.st_mtime_ns)
+        except OSError:
+            key = (str(p), None, None)
+        if key not in _reported:
+            _reported.add(key)
+            log.error("registry file skipped, cannot read %s: %s", p.name, why)
+    return out

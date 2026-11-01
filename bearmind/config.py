@@ -14,6 +14,10 @@ from . import fileio, naming
 _DEFAULTS = Path(__file__).with_name("defaults.yaml")
 
 
+class ConfigError(ValueError):
+    """A config file that cannot be parsed; the message starts with the file."""
+
+
 _PARSED: dict = {}  # path -> (text, parsed): the runner resolves every session's config each loop
 
 
@@ -27,7 +31,11 @@ def _read_yaml(path) -> dict:
     key = str(path)
     hit = _PARSED.get(key)
     if hit is None or hit[0] != text:  # content, not mtime: an edit may keep size and mtime
-        hit = (text, yaml.safe_load(text) or {})
+        try:
+            parsed = yaml.safe_load(text) or {}
+        except yaml.YAMLError as e:  # the parser names only "<unicode string>": the operator needs the file
+            raise ConfigError(f"{path}: {' '.join(str(e).split())}") from e
+        hit = (text, parsed)
         _PARSED[key] = hit
     return copy.deepcopy(hit[1])
 

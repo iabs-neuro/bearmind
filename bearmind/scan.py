@@ -7,12 +7,13 @@ import json
 import os
 import re
 import statistics
+from datetime import datetime
 from pathlib import Path
 
 from . import config
 from .naming import mouse_id, session_id
 from .paths import SeriesPaths
-from .registry import (STAGES, Anomaly, RawPart, SessionRecord, StageRecord, save_record,
+from .registry import (STAGES, Anomaly, RawPart, SessionRecord, StageRecord, replace_broken, save_record,
                        update_record)
 from .timestamps import read_timestamps, robust_fps, stitch
 from .video import last_frame_readable, video_info
@@ -287,7 +288,7 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
             est = robust_fps(st.t_ms, cfg_scan["gap_factor"])
         except ValueError as e:
             est = None
-            anomalies.append(Anomaly("fps_unavailable", "warning", str(e)))
+            anomalies.append(Anomaly("fps_unavailable", "error", f"{e}; {NO_FPS_MESSAGE}"))
         if est is not None:
             fps = est.fps
             fps_info = {**dataclasses.asdict(est), "source": "timestamps"}
@@ -304,16 +305,33 @@ def _latest_decision(rec: SessionRecord, what: str):
     return found[-1].value if found else None
 
 
+NO_FPS_MESSAGE = "no frame rate: the stages need it (MC video rate, CNMF-E fr); the session stays excluded"
+
+
+def _mark_no_fps(rec: SessionRecord) -> None:
+    """One error-level scan anomaly fps_unavailable (a warning from the fps estimate is raised to error)."""
+    found = [a for a in rec.anomalies if a.code == "fps_unavailable" and not a.data.get("stage")]
+    if found:
+        found[0].level = "error"
+    else:
+        rec.anomalies.append(Anomaly("fps_unavailable", "error", NO_FPS_MESSAGE))
+
+
 def evaluate_excluded(rec: SessionRecord) -> bool:
     """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly of the scan.
 
-    An accepted mismatch stays in the record as a warning; n_frames is already the common length.
-    Anomalies tagged with a stage (data["stage"]) belong to that stage and do not exclude the session.
+    A session without a frame rate is always excluded (fps_unavailable): no stage can run without it, so an
+    include decision cannot help. An accepted mismatch stays in the record as a warning; n_frames is
+    already the common length. Anomalies tagged with a stage (data["stage"]) belong to that stage and do
+    not exclude the session.
     """
     if _latest_decision(rec, "accept_mismatch") == "true":
         for a in rec.anomalies:
             if a.code == "frames_ts_mismatch" and a.level == "error":
                 a.level, a.auto_fixed = "warning", True
+    if rec.fps is None:
+        _mark_no_fps(rec)
+        return True
     exclude = _latest_decision(rec, "exclude")
     if exclude is not None:
         return exclude == "true"
@@ -321,6 +339,23 @@ def evaluate_excluded(rec: SessionRecord) -> bool:
 
 
 _excluded = evaluate_excluded  # old name
+
+
+UNREADABLE = (ValueError, KeyError, TypeError, AttributeError)  # a registry file that is not a record
+
+
+def _recreate(paths: SeriesPaths, f: Path, error: Exception, new_record):
+    """A fresh record in place of a registry file that cannot be read; the old file is kept beside it.
+
+    Its decisions and stage states are lost with the file, so every stage of the session runs again.
+    Returns None when the file became readable meanwhile (it is then rescanned as usual).
+    """
+    kept = f.with_name(f"{f.name}.broken-{datetime.now():%Y%m%d-%H%M%S}")
+    why = " ".join(f"{type(error).__name__}: {error}".split())
+    rec = new_record([Anomaly("registry_recreated", "warning",
+                              f"registry file was unreadable ({why}); recreated, the old file kept as {kept}; "
+                              f"all its stages run again")])
+    return rec if replace_broken(paths, rec, kept) else None
 
 
 def scan_series(series_root: Path) -> list[SessionRecord]:
@@ -353,6 +388,15 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
     records = []
     for sid, (parts, mode, n, fps, info, anomalies, _nominal) in built.items():
         f = paths.registry_file(sid)
+
+        def new_record(extra=(), anomalies=anomalies, sid=sid, mode=mode, parts=parts, n=n, fps=fps, info=info):
+            rec = SessionRecord(
+                sid=sid, mouse=mouse_id(sid), mode=mode, parts=parts, n_frames=n, fps=fps,
+                fps_info=info, anomalies=[*anomalies, *extra], decisions=[], excluded=False,
+                stages={s: StageRecord() for s in STAGES})
+            rec.excluded = evaluate_excluded(rec)
+            return rec
+
         if f.is_file():
             # under the record lock: the runner or a person may be writing this record meanwhile
             def rescan(rec, parts=parts, n=n, fps=fps, info=info, anomalies=anomalies, mode=mode):
@@ -361,13 +405,12 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
                 rec.anomalies = [a for a in rec.anomalies if a.data.get("stage")] + anomalies
                 rec.excluded = evaluate_excluded(rec)
 
-            rec = update_record(paths, sid, rescan)
+            try:
+                rec = update_record(paths, sid, rescan)
+            except UNREADABLE as e:
+                rec = _recreate(paths, f, e, new_record) or update_record(paths, sid, rescan)
         else:
-            rec = SessionRecord(
-                sid=sid, mouse=mouse_id(sid), mode=mode, parts=parts, n_frames=n, fps=fps,
-                fps_info=info, anomalies=anomalies, decisions=[], excluded=False,
-                stages={s: StageRecord() for s in STAGES})
-            rec.excluded = evaluate_excluded(rec)
+            rec = new_record()
             save_record(paths, rec)
         records.append(rec)
 

@@ -718,6 +718,14 @@ def test_broken_session_config_holds_its_mouse_finalize(series):
     assert s1.stages["mc"].error == "waiting for crop_finalize"
     assert _states(s.paths, S3) == [State.DONE] * 7
     assert f"{S2}: cannot be scheduled: config" in s.paths.series_log.read_text(encoding="utf-8")
+    # I2: visible where the operator looks, not only in the log
+    row = pd.read_csv(s.paths.summary_csv).set_index("sid")
+    assert row.loc[S2, "error"].startswith("cannot be scheduled: config: ")
+    assert f"{S2}.yaml" in row.loc[S2, "error"]
+    assert _heartbeat(s.paths)["unschedulable"][S2].startswith("config: ")
+    state = runner.series_state(s.paths)
+    assert state.waiting == [] and state.blocked == [(S1, "mc", "crop_finalize", [S2])]
+    assert set(state.problems) == {S2}
     s.paths.session_config(S2).write_text(good, encoding="utf-8")
     s.stubs.calls.clear()
     _run(s)
@@ -727,6 +735,7 @@ def test_broken_session_config_holds_its_mouse_finalize(series):
 def test_waiting_session_that_cannot_be_scheduled_does_not_spin(series, monkeypatch):
     s = series
     save_record(s.paths, _record(S1, decided=False))
+    save_record(s.paths, _record(S3, decided=False))  # a wait a person can resolve keeps the runner polling
     clock = [1000.0]
     sleeps = []
 
@@ -979,3 +988,67 @@ def test_waiting_recheck_writes_nothing(series, monkeypatch):
     _run(s)
     assert _states(s.paths, S1) == [State.DONE] * 7
     assert f"{S1} gate: started" in s.paths.session_log(S1).read_text(encoding="utf-8")
+
+
+def _run_bounded(s, **kw):
+    """runner.run(once=False) in a daemon thread; (thread, result holder): a runner that never returns
+    fails the test instead of hanging it."""
+    out = {}
+    t = threading.Thread(target=lambda: out.update(res=runner.run(s.paths.root, **kw)), daemon=True)
+    t.start()
+    return t, out
+
+
+def test_wait_blocked_by_unschedulable_session_ends_the_run(series):
+    """I2: once=False returns when every remaining wait needs a config fix, naming the blocking session."""
+    s = series
+    s.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    t, out = _run_bounded(s, poll_s=0.05)
+    t.join(60)
+    assert not t.is_alive(), "the runner waits for a session that only a config fix can unblock"
+    assert out["res"]["waiting"] == 1  # S1 mc, blocked
+    log_text = s.paths.series_log.read_text(encoding="utf-8")
+    assert "nothing can progress" in log_text
+    assert f"{S1} mc waits for crop_finalize, blocked by {S2}" in log_text
+    assert "waiting: thresholds 0, manual inspection 0" not in log_text  # never counted as a person's wait
+
+
+def test_run_keeps_waiting_while_a_person_can_act(series):
+    """I2: a blocked wait next to a wait a person can resolve keeps the runner polling."""
+    s = series
+    s.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    save_record(s.paths, _record(S3, decided=False))
+    t, out = _run_bounded(s, poll_s=0.05)
+    deadline = time.time() + 60
+    while time.time() < deadline and load_record(s.paths, S3).stages["gate"].state is not State.WAITING:
+        time.sleep(0.05)
+    time.sleep(0.5)
+    assert t.is_alive()
+    msg = "waiting: thresholds 0, manual inspection 1; blocked by a session that cannot be scheduled: "
+    assert msg + f"{S1} mc <- {S2}" in s.paths.series_log.read_text(encoding="utf-8")
+    gate.decide(s.paths, S3, "not_needed", "viktor")
+    t.join(60)
+    assert not t.is_alive() and _states(s.paths, S3) == [State.DONE] * 7
+
+
+def test_session_without_fps_is_visible(series):
+    """I2: a record scanned before fps-less sessions were excluded is shown as not schedulable."""
+    s = series
+    rec = _record(S3)
+    rec.fps = None
+    save_record(s.paths, rec)
+    _run(s)
+    assert _states(s.paths, S3) == [State.PENDING] * 7
+    err = pd.read_csv(s.paths.summary_csv).set_index("sid").loc[S3, "error"]
+    assert "fps_unavailable" in err and "scan" in err
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in (S1, S2))
+
+
+def test_corrupt_registry_file_is_a_visible_row(series):
+    s = series
+    bad = s.paths.registry_file("NOF_H09_1D")
+    bad.write_text("{not json", encoding="utf-8")
+    _run(s)
+    row = pd.read_csv(s.paths.summary_csv).set_index("sid").loc["NOF_H09_1D"]
+    assert str(bad) in row["error"] and "JSONDecodeError" in row["error"] and "scan" in row["error"]
+    assert "NOF_H09_1D" in _heartbeat(s.paths)["unschedulable"]

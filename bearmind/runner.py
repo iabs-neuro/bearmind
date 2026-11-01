@@ -32,7 +32,7 @@ except ImportError:  # not Windows
     msvcrt = None
     import fcntl
 
-from bearmind import checks, config, fileio, isolate, provenance, registry
+from bearmind import checks, config, fileio, isolate, naming, provenance, registry
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
 from bearmind.stages import WaitingForInput
@@ -56,9 +56,7 @@ FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
 # Checks run in this process before a stage process is started, and before the stage is written RUNNING.
 # They raise WaitingForInput without heavy work: a stage waiting for a person is retried every poll_s, maybe
 # for days, and must not cost a stage process (0.5-12 s of start-up and imports) or a registry write per
-# poll. The gate is all check. Their modules load once per runner: mc and gate are light; cnmf imports
-# bm_qc (CaImAn, cv2, matplotlib), which stage_params already imports in this process for the CNMF
-# parameters.
+# poll. The gate is all check. Their modules are light (cnmf imports bm_qc only inside its functions).
 WAIT_CHECKS = {
     "mc": "bearmind.stages.mc:check",
     "cnmf": "bearmind.stages.cnmf:check",
@@ -211,6 +209,13 @@ def _output_ok(paths, outputs: dict, key: str) -> bool:
     return key in outputs and (paths.root / outputs[key]).is_file()
 
 
+def _one_line(e: BaseException) -> str:
+    return " ".join(f"{type(e).__name__}: {e}".split())  # YAML errors span several lines
+
+
+NO_FPS = "no frame rate (fps_unavailable); run scan again: it excludes the session"
+
+
 class _View:
     """Resolved configs and stage hashes of one registry snapshot (one loop iteration)."""
 
@@ -225,17 +230,19 @@ class _View:
                 self._cfg[rec.sid] = config.resolve(self.paths, sid=rec.sid, mouse=rec.mouse)
             except Exception as e:  # a broken session config holds this session only, its states stay
                 self._cfg[rec.sid] = None
-                self.errors[rec.sid] = f"config: {type(e).__name__}: {e}"
+                self.errors[rec.sid] = f"config: {_one_line(e)}"
         return self._cfg[rec.sid]
 
     def hashes(self, rec):
         if rec.sid not in self._hashes:
             h, cfg = None, self.cfg(rec)
-            if cfg is not None:
+            if cfg is not None and rec.fps is None:  # a record scanned before such sessions were excluded
+                self.errors[rec.sid] = NO_FPS
+            elif cfg is not None:
                 try:
                     h = _chain(rec, cfg, self.paths)[1]
                 except Exception as e:
-                    self.errors[rec.sid] = f"stage parameters: {type(e).__name__}: {e}"
+                    self.errors[rec.sid] = f"stage parameters: {_one_line(e)}"
             self._hashes[rec.sid] = h
         return self._hashes[rec.sid]
 
@@ -283,6 +290,78 @@ def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
                     and not view.blocked(r, stage)):
                 return r.sid, stage
     return None
+
+
+# --- what the series needs ---
+
+def schedule_problems(paths, records, view=None, broken=()) -> dict:
+    """sid -> why the session cannot be scheduled now: its config or stage parameters cannot be resolved
+    (non-excluded sessions), or its registry file cannot be read (under the file name)."""
+    view = view or _View(paths)
+    active = [r for r in records if not r.excluded]
+    for r in active:
+        view.hashes(r)
+    out = {r.sid: view.errors[r.sid] for r in active if r.sid in view.errors}
+    for f, why in broken:
+        out[Path(f).stem] = f"broken registry file (run scan to recreate it): {f}: {why}"
+    return out
+
+
+def _waiting(records, scope, stages) -> list:
+    return [(r.sid, s, _what(r.stages[s])) for r in records if not r.excluded for s in stages
+            if scope.has(r, s) and s in r.stages and r.stages[s].state is State.WAITING]
+
+
+def _split_waits(waiting, records, problems) -> tuple[list, list]:
+    """(waits a person can resolve, waits blocked by a session that cannot be scheduled).
+
+    A wait is blocked when its own session cannot be scheduled, or when it waits for the crop box of a mouse
+    with such a session: the box is placed once every session of the mouse is detected. Blocked waits are
+    (sid, stage, what, [blocking sids]); only a config fix moves them.
+    """
+    mouse = {r.sid: r.mouse for r in records}
+    stuck = {}
+    for r in records:
+        if not r.excluded and r.sid in problems:
+            stuck.setdefault(r.mouse, []).append(r.sid)
+    person, blocked = [], []
+    for sid, stage, what in waiting:
+        if sid in problems:
+            blocked.append((sid, stage, what, [sid]))
+        elif what == "crop_finalize" and stuck.get(mouse.get(sid)):
+            blocked.append((sid, stage, what, stuck[mouse[sid]]))
+        else:
+            person.append((sid, stage, what))
+    return person, blocked
+
+
+def _blocked_text(blocked, problems) -> str:
+    return "; ".join(f"{sid} {stage} waits for {what}, blocked by "
+                     + ", ".join(f"{b} ({problems[b]})" for b in by) for sid, stage, what, by in blocked)
+
+
+@dataclasses.dataclass
+class SeriesState:
+    """What the series needs now, over all its sessions (not the counts of one run)."""
+    records: list
+    broken: list  # (registry file, why it cannot be read)
+    problems: dict  # sid -> why it cannot be scheduled; broken registry files under their file name
+    waiting: list  # (sid, stage, what): waits a person can resolve
+    blocked: list  # (sid, stage, what, [blocking sids]): waits only a config fix moves
+    failed: dict  # sid -> (stage, error) of its first FAILED stage, non-excluded sessions
+    excluded: list
+
+
+def series_state(paths) -> SeriesState:
+    records, broken = registry.read_all(paths)
+    problems = schedule_problems(paths, records, broken=broken)
+    person, blocked = _split_waits(_waiting(records, _Scope(records, None), STAGES), records, problems)
+    failed = {}
+    for r in records:
+        first = next((s for s in STAGES if s in r.stages and r.stages[s].state is State.FAILED), None)
+        if first is not None and not r.excluded:
+            failed[r.sid] = (first, r.stages[first].error)
+    return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded])
 
 
 # --- registry changes made by the runner ---
@@ -391,7 +470,8 @@ class _Heartbeat:
         self.paths = paths
         self.lock = threading.Lock()
         self.payload = {"pid": os.getpid(), "time": None, "current": None,
-                        "counts": dict.fromkeys(COUNT_KEYS, 0), "by_stage": {}, "status": "running"}
+                        "counts": dict.fromkeys(COUNT_KEYS, 0), "by_stage": {}, "status": "running",
+                        "unschedulable": {}}
         self._stop = threading.Event()
         self._thread = None
 
@@ -551,13 +631,16 @@ class _Run:
         self.hb.update(status="running")
         self.hb.start()
 
-    def refresh(self, status="running", records=None):
+    def refresh(self, status="running", records=None, broken=None, problems=None):
         """Heartbeat counts and summary.csv from the registry as it is now."""
-        records = registry.all_records(self.paths) if records is None else records
+        if records is None:
+            records, broken = registry.read_all(self.paths)
+        if problems is None:
+            problems = schedule_problems(self.paths, records, broken=broken or ())
         cur = None if self.current is None else {"sid": self.current[0], "stage": self.current[1]}
         counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages)
-        self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur)
-        summary(self.paths, records)
+        self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur, unschedulable=problems)
+        summary(self.paths, records, problems=problems, broken=broken)
 
     def abort(self):
         """KeyboardInterrupt or an error outside a stage: the stage being run goes back to PENDING."""
@@ -904,11 +987,6 @@ def _superseded(sid, stage) -> str:
     return "retry"
 
 
-def _waiting(records, scope, stages) -> list:
-    return [(r.sid, s, _what(r.stages[s])) for r in records if not r.excluded for s in stages
-            if scope.has(r, s) and s in r.stages and r.stages[s].state is State.WAITING]
-
-
 def _skip(tried, not_started, records, once, poll_s) -> set:
     """(sid, stage) pairs not to offer now.
 
@@ -934,21 +1012,26 @@ def _loop(paths, run_: _Run) -> dict:
         return next_ready(records, paths, until=run_.until, sids=run_.sids,
                           skip=_skip(tried, not_started, records, once, poll_s), _view=view)
 
+    def person_waits(records, broken, view=None):
+        problems = schedule_problems(paths, records, view, broken)
+        waiting = _waiting(records, _Scope(records, run_.sids), run_.stages)
+        return (*_split_waits(waiting, records, problems), problems)
+
     while True:
-        records = registry.all_records(paths)
-        scope = _Scope(records, run_.sids)
+        records, broken = registry.read_all(paths)
         view = _View(paths)
-        due = _finalize_due(records, view, scope, attempted, once, poll_s)
+        due = _finalize_due(records, view, _Scope(records, run_.sids), attempted, once, poll_s)
         if due:
             for mouse, done, key in due:
                 attempted[key] = (_run_finalize(paths, mouse, done, run_), time.monotonic())
             run_.refresh()
             continue
         job = ready(records, view)
-        for sid, err in view.errors.items():
+        person, blocked, problems = person_waits(records, broken, view)
+        for sid, err in problems.items():
             if (sid, err) not in reported:
                 reported.add((sid, err))
-                log.error("%s: cannot be scheduled: %s", sid, err, extra={"sid": sid})
+                log.error("%s: cannot be scheduled: %s", sid, err, extra={"sid": sid, "console": True})
         if job is not None:
             outcome = _run_stage(paths, *job, run_)
             tried.pop(job, None)
@@ -958,17 +1041,12 @@ def _loop(paths, run_: _Run) -> dict:
             elif outcome == "none":
                 not_started[job] = time.monotonic()
             continue  # 'retry': offered again on the next loop
-        waiting = _waiting(records, scope, run_.stages)
-        if not once and waiting:
-            whats = [w for _, _, w in waiting]
-            msg = (f"waiting: thresholds {whats.count('thresholds')}, "
-                   f"manual inspection {sum(w not in _WAIT_KIND for w in whats)}")
-            if whats.count("crop_finalize"):
-                msg += f", crop finalize {whats.count('crop_finalize')}"
+        if not once and person:  # only a wait a person can resolve keeps the runner polling
+            msg = _wait_message(person, blocked)
             if msg != last_msg:
-                log.info(msg)
+                log.info(msg, extra={"console": True})
                 last_msg = msg
-            run_.refresh(status="waiting", records=records)
+            run_.refresh(status="waiting", records=records, broken=broken, problems=problems)
             now = time.monotonic()
             # next retry of a waiting stage; one that is due but was not offered (its session cannot be
             # scheduled now) must not turn this into a busy loop, so it waits a full poll
@@ -976,11 +1054,26 @@ def _loop(paths, run_: _Run) -> dict:
             time.sleep(max(0.01, min(due_at) - now if due_at else poll_s))
             continue
         # about to return: a decision may have landed after this snapshot was read (C1)
-        fresh = registry.all_records(paths)
-        if ready(fresh) is not None or (not once and _waiting(fresh, _Scope(fresh, run_.sids), run_.stages)):
+        fresh, fresh_broken = registry.read_all(paths)
+        if ready(fresh) is not None or (not once and person_waits(fresh, fresh_broken)[0]):
             continue
+        if blocked and not person:
+            log.error("nothing can progress until a config is fixed: %s", _blocked_text(blocked, problems),
+                      extra={"console": True})
         run_.result["waiting"] = len(_waiting(fresh, _Scope(fresh, run_.sids), run_.stages))
         return dict(run_.result)
+
+
+def _wait_message(person, blocked) -> str:
+    whats = [w for _, _, w in person]
+    msg = (f"waiting: thresholds {whats.count('thresholds')}, "
+           f"manual inspection {sum(w not in _WAIT_KIND for w in whats)}")
+    if whats.count("crop_finalize"):
+        msg += f", crop finalize {whats.count('crop_finalize')}"
+    if blocked:
+        msg += "; blocked by a session that cannot be scheduled: " + ", ".join(
+            f"{sid} {stage} <- {','.join(by)}" for sid, stage, _, by in blocked)
+    return msg
 
 
 def run(series_root: Path, until: str | None = None, sids: list[str] | None = None, once: bool = False,
@@ -1042,7 +1135,7 @@ SUMMARY_COLUMNS = (["sid", "mouse", "excluded"]
                    + ["gSig", "min_corr", "min_pnr", "worst_check", "waiting_for", "error", "anomalies"])
 
 
-def _summary_row(paths, rec) -> dict:
+def _summary_row(paths, rec, problem=None) -> dict:
     row = {"sid": rec.sid, "mouse": rec.mouse, "excluded": rec.excluded}
     levels, waiting_for, error = [], None, None
     for s in STAGES:
@@ -1064,17 +1157,27 @@ def _summary_row(paths, rec) -> dict:
         c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
     except Exception:
         c = (rec.stages.get("cnmf") or StageRecord()).metrics
+    if problem is not None:  # what holds the session now goes before the error of an earlier failure
+        error = f"cannot be scheduled: {problem}"
     row.update(gSig=c.get("gSig"), min_corr=c.get("min_corr"), min_pnr=c.get("min_pnr"),
                worst_check=max(levels, key=_LEVEL.get) if levels else "", waiting_for=waiting_for,
                error=error, anomalies=",".join(a.code for a in rec.anomalies))
     return row
 
 
+def _broken_row(f, problem) -> dict:
+    sid = Path(f).stem
+    return {"sid": sid, "mouse": naming.mouse_id(sid) or None, "error": problem}
+
+
 _SUMMARY_WARNED: set = set()  # summary files whose last write failed (warned once until a write works)
 
 
-def summary(paths, records=None):
+def summary(paths, records=None, problems=None, broken=None):
     """One row per session (state and key number of each stage, thresholds, worst check); writes summary.csv.
+
+    A session that cannot be scheduled has the reason in `error`; a registry file that cannot be read gets a
+    row of its own with the file and the parse error.
 
     Written only when its content changes (a waiting runner refreshes it every poll). One write attempt, no
     retry loop (it runs after every transition and must not hold the batch); a failure (file open in Excel)
@@ -1082,8 +1185,15 @@ def summary(paths, records=None):
     """
     import pandas as pd
 
-    records = registry.all_records(paths) if records is None else records
-    df = pd.DataFrame([_summary_row(paths, r) for r in records], columns=SUMMARY_COLUMNS)
+    if records is None or broken is None:
+        everything, found = registry.read_all(paths)
+        records = everything if records is None else records
+        broken = found if broken is None else broken
+    if problems is None:
+        problems = schedule_problems(paths, records, broken=broken)
+    rows = ([_summary_row(paths, r, problems.get(r.sid)) for r in records]
+            + [_broken_row(f, problems[Path(f).stem]) for f, _ in broken])
+    df = pd.DataFrame(sorted(rows, key=lambda x: x["sid"]), columns=SUMMARY_COLUMNS)
     text = df.to_csv(index=False, lineterminator="\n")
     key = str(paths.summary_csv)
     try:

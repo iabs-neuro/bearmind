@@ -189,14 +189,17 @@ def test_rescan_reevaluates_exclusion(make_series, tmp_path):
 
 
 def test_latest_user_exclude_decision_wins(make_series, tmp_path):
-    root = make_series(tmp_path / "s", "bonsai", with_ts=False)
+    # an error the stages can live with (a large frames/timestamps mismatch, the session still has its
+    # frame rate); a session without one stays excluded (test_include_decision_cannot_include_...)
+    root = make_series(tmp_path / "s", "bonsai", ts_rows=25)
     paths = SeriesPaths(root)
     r = scan.scan_series(root)[0]
+    assert r.excluded
     r.decisions.append(Decision("exclude", "true", "me", "2026-01-01"))
     r.decisions.append(Decision("exclude", "false", "me", "2026-01-02"))
     save_record(paths, r)
     r = scan.scan_series(root)[0]
-    assert codes(r)["no_timestamps"].level == "error" and not r.excluded
+    assert codes(r)["frames_ts_mismatch"].level == "error" and not r.excluded
 
 
 def test_accept_mismatch_keeps_large_mismatch_included(make_series, tmp_path):
@@ -276,10 +279,37 @@ def test_corrupt_chunk_does_not_abort_series(make_series, tmp_path):
     assert recs["NOF_H02_1D"].excluded
 
 
-def test_fps_unavailable_reported(make_series, tmp_path):
+def test_fps_unavailable_excludes(make_series, tmp_path):
+    """I2: the stages need the frame rate (MC video rate, CNMF-E fr): a session without one is excluded."""
     root = make_series(tmp_path / "s", "bonsai", chunk_frames=1, n_chunks=2, ts_rows=2)
     r = scan.scan_series(root)[0]
-    assert r.fps is None and codes(r)["fps_unavailable"].level == "warning"
+    assert r.fps is None and r.excluded and codes(r)["fps_unavailable"].level == "error"
+
+
+def test_include_decision_cannot_include_a_session_without_fps(make_series, tmp_path):
+    r = scan.scan_series(make_series(tmp_path / "s", "bonsai", with_ts=False))[0]
+    r.decisions.append(Decision("exclude", "false", "viktor", "2026-11-01T00:00:00"))
+    assert scan.evaluate_excluded(r) is True
+    a = codes(r)["fps_unavailable"]
+    assert a.level == "error" and not a.data.get("stage")
+    assert [x.code for x in r.anomalies].count("fps_unavailable") == 1
+    assert scan.evaluate_excluded(r) is True and [x.code for x in r.anomalies].count("fps_unavailable") == 1
+
+
+def test_scan_recreates_an_unreadable_registry_file(make_series, tmp_path):
+    """I2: a corrupt registry json does not crash the scan; the record is made again, the old file kept."""
+    root = make_series(tmp_path / "s", "bonsai")
+    paths = SeriesPaths(root)
+    scan.scan_series(root)
+    f = paths.registry_file("NOF_H01_1D")
+    f.write_text("{not json", encoding="utf-8")
+    r = scan.scan_series(root)[0]
+    assert load_record(paths, "NOF_H01_1D").stages["crop"].state is State.PENDING
+    kept = list(f.parent.glob("NOF_H01_1D.json.broken*"))
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == "{not json"
+    a = codes(r)["registry_recreated"]
+    assert a.level == "warning" and str(kept[0]) in a.message and "JSONDecodeError" in a.message
+    assert not r.excluded
 
 
 @pytest.mark.parametrize("rate,expect_outlier", [("30FPS", True), ("20.0 FPS", False), ("fast", False)])

@@ -11,6 +11,8 @@ import tifffile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_bm_qc import synthetic_movie  # noqa: E402
 
+import bm_qc  # noqa: E402  (the stage imports it inside its functions)
+
 from bearmind import config  # noqa: E402
 from bearmind.config import load_defaults  # noqa: E402
 from bearmind.paths import SeriesPaths  # noqa: E402
@@ -143,7 +145,7 @@ def test_imax_from_threshold_maps(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise AssertionError("must not recompute maps when the threshold maps have pnr_<gSig>")
 
-    monkeypatch.setattr(cnmf.bm_qc, "compute_init_maps", boom)
+    monkeypatch.setattr(bm_qc, "compute_init_maps", boom)
     imax = cnmf._imax(paths, SID, gSig=4, tsub=1, dims=(6, 7), movie=None, mem_gb=2)
     c = np.clip(pnr, 0, 70)
     np.testing.assert_array_equal(imax, (c * 255 / c.max()).astype(np.uint8))
@@ -165,7 +167,7 @@ def test_imax_fallback_uses_decoded_movie(tmp_path, monkeypatch):
         calls.append((movie is mov, gSig, tsub, max_mem_gb))
         return {"pnr": pnr, "cn": np.zeros_like(pnr)}
 
-    monkeypatch.setattr(cnmf.bm_qc, "compute_init_maps", fake)
+    monkeypatch.setattr(bm_qc, "compute_init_maps", fake)
     imax = cnmf._imax(paths, SID, gSig=4, tsub=2, dims=(6, 7), movie=mov, mem_gb=3.5)
     assert calls == [(True, 4, 2, 3.5)]
     assert imax[0, 0] == 255 and imax[1, 1] == 127
@@ -266,7 +268,7 @@ def test_cnmf_failure_cleans_up(tmp_path, monkeypatch, where):
     monkeypatch.setattr(CNMF, "fit", fit)
     if where == "qc":  # CNMF "succeeds", the QC step fails: no estimates file may be left
         monkeypatch.setattr(Estimates, "evaluate_components", lambda self, *a, **k: None)
-        monkeypatch.setattr(cnmf.bm_qc, "cnmf_qc", boom)
+        monkeypatch.setattr(bm_qc, "cnmf_qc", boom)
     with pytest.raises(RuntimeError, match="boom"):
         cnmf.run(paths, rec, cfg)
     assert seen["mmap"].parent == tmp_path / "tmp" / SID
