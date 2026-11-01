@@ -53,8 +53,10 @@ STAGE_FUNCS = {
 FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
 
 # Checks run in this process before a stage process is started. They raise WaitingForInput without heavy
-# imports or work: a stage waiting for a person is retried every poll_s, maybe for days, and must not
-# cost a stage process (0.5-12 s of start-up and imports) per poll. The gate is all check.
+# work: a stage waiting for a person is retried every poll_s, maybe for days, and must not cost a stage
+# process (0.5-12 s of start-up and imports) per poll. The gate is all check. Their modules load once per
+# runner: mc and gate are light; cnmf imports bm_qc (CaImAn, cv2, matplotlib), which stage_params
+# already imports in this process for the CNMF parameters.
 WAIT_CHECKS = {
     "mc": "bearmind.stages.mc:check",
     "cnmf": "bearmind.stages.cnmf:check",
@@ -693,13 +695,13 @@ def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
     A stage process that crashed (StageCrashed) is started again up to runner.max_auto_retries times per
     run; any other failure is final (spec 5.10: FAILED, retried after a reset or a parameter change).
     """
-    rc = cfg.get("runner") or {}
+    rc = cfg["runner"]  # defaults.yaml has both keys: no second set of defaults here
     spec = STAGE_FUNCS[stage]
-    if not rc.get("isolate_stages", True):
+    if not rc["isolate_stages"]:
         return _func(spec)(paths, rec, cfg)
     if stage in WAIT_CHECKS:
         _func(WAIT_CHECKS[stage])(paths, rec, cfg)
-    limit = int(rc.get("max_auto_retries", 0))
+    limit = int(rc["max_auto_retries"])
     while True:
         try:
             return isolate.run_isolated(spec, paths, rec, cfg, paths.session_log(sid))
