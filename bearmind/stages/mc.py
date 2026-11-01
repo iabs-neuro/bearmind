@@ -123,6 +123,8 @@ def run(paths, rec, cfg) -> StageResult:
         mc.motion_correct(save_movie=False)
         shifts = np.asarray(mc.shifts_rig, dtype=np.float32)
         template = np.asarray(mc.total_template_rig)
+        pool.stop_pool(dview)  # only motion_correct uses the pool; free the workers before the writing
+        dview = None
 
         paths.mc_video(sid).parent.mkdir(parents=True, exist_ok=True)
         np.save(paths.mc_shifts(sid), shifts)

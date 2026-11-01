@@ -91,6 +91,18 @@ def test_mc_stage_failure_cleans_up(tmp_path, make_avi, monkeypatch):
     assert not (tmp_path / "tmp" / SID).exists() or not any((tmp_path / "tmp" / SID).iterdir())
 
 
+@pytest.mark.slow
+def test_mc_stage_frees_the_pool_before_writing(tmp_path, make_avi, monkeypatch):
+    """The pool is needed only for motion_correct; its workers go before the FFV1 and preview writing."""
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    events = []
+    real_stop, real_write = mc_stage.pool.stop_pool, mc_stage.write_ffv1
+    monkeypatch.setattr(mc_stage.pool, "stop_pool", lambda d: (events.append("stop_pool"), real_stop(d)))
+    monkeypatch.setattr(mc_stage, "write_ffv1", lambda *a, **k: (events.append("write_ffv1"), real_write(*a, **k))[1])
+    mc_stage.run(paths, rec, cfg)
+    assert events == ["stop_pool", "write_ffv1"]
+
+
 def test_crop_from_config():
     cfg = {"crop": {"box": [10, 12], "box_pos": [1, 2]}}
     assert mc_stage._crop(cfg) == CropBox(1, 2, 10, 12)
