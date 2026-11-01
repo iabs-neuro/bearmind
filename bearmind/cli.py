@@ -202,14 +202,34 @@ def cmd_run(args) -> int:
             _say(f"[FAILED] {e}")
             return BUSY
         raise
-    line = ", ".join(f"{k} {v}" for k, v in res.items())
-    if res.get("failed"):
-        _say(f"[FAILED] {line}; see: status {paths.root}; after fixing the cause: retry {paths.root} --all-failed")
-        return 1
-    _say(f"[OK] {line}")
-    if res.get("waiting"):
-        _say(f"[WARN] {res['waiting']} stages wait for a person; see: status {paths.root}")
-    return OK
+    return _report_run(paths, res)
+
+
+def _report_run(paths, res) -> int:
+    """This run's outcome and the series state at exit, labelled so the two cannot be confused; 1 while any
+    session of the series has a FAILED stage or cannot be scheduled."""
+    st = runner.series_state(paths)
+    waiting = sorted({sid for sid, _, _ in st.waiting})
+    bad = bool(st.failed or st.problems)
+    _say(("[FAILED] " if bad else "[OK] ")
+         + f"this run: done {res['done']}, failed {res['failed']}, skipped {res['skipped']} | series now: "
+         + f"failed {len(st.failed)}, waiting for a person {len(waiting)}, cannot be scheduled {len(st.problems)}, "
+         + f"excluded {len(st.excluded)}")
+    for sid, (stage, error) in sorted(st.failed.items())[:_MAX_LISTED]:
+        _say(f"         {sid} failed at {stage}: {_clip(_last_line(error or ''))}")
+    if st.failed:
+        _say(f"         after fixing the cause: retry {paths.root} --all-failed")
+    for sid, why in sorted(st.problems.items())[:_MAX_LISTED]:
+        _say(f"[FAILED] {sid} cannot be scheduled: {_clip(why)}")
+    for sid, stage, what, by in st.blocked[:_MAX_LISTED]:
+        _say(f"         {sid} {stage} waits for {_REASON.get(what, what)}: blocked by {', '.join(by)}")
+    if st.problems:
+        _say("         fix the named config file (or rescan), then run again")
+    if len(st.failed) > _MAX_LISTED or len(st.problems) > _MAX_LISTED:
+        _say(f"         more in: status {paths.root}")
+    if waiting:
+        _say(f"[WARN] {len(waiting)} sessions wait for a person; see: status {paths.root}")
+    return 1 if bad else OK
 
 
 def _heartbeat_line(paths) -> str:

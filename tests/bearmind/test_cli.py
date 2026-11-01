@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from bearmind import cli, config, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, State, load_record, save_record, update_record
 from bearmind.stages import gate
-from tests.bearmind.test_runner import SIDS, Stubs, _record
+from tests.bearmind.test_runner import SIDS, THRESH, Stubs, _record
 
 S1, S2, S3 = SIDS
 REPO = Path(__file__).resolve().parents[2]
@@ -388,3 +389,47 @@ def test_scan_reports_a_recreated_registry_file(tmp_path, make_series, capsys):
     assert _main("scan", root) == 0
     out = capsys.readouterr().out
     assert "[WARN] NOF_H01_1D: registry file was unreadable" in out and ".broken" in out
+
+
+def test_resumed_run_reports_the_failed_sessions(series, capsys):
+    """I3: a run with nothing left to do still reports the series state, and exits 1 while sessions fail."""
+    series.stubs.fail[(S1, "crop")] = RuntimeError("boom")
+    assert _main("run", series.root, "--once") == 1
+    capsys.readouterr()
+    assert _main("run", series.root, "--once") == 1
+    out = capsys.readouterr().out
+    assert out.isascii()
+    # S2 and S3 wait for thresholds
+    assert "[FAILED] this run: done 0, failed 0, skipped 0 | series now: failed 1, waiting for a person 2" in out
+    assert f"{S1} failed at crop: RuntimeError: boom" in out
+    assert f"after fixing the cause: retry {series.root} --all-failed" in out
+    assert "[WARN] 2 sessions wait for a person" in out
+
+
+def test_run_ends_when_only_a_config_fix_helps(series, capsys):
+    """I2/I3: once=False returns (exit 1, the blocking session named) when every wait needs a config fix."""
+    for sid in (S1, S3):
+        save_record(series.paths, _record(sid))  # decided and thresholds set: no wait for a person
+        config.update_yaml(series.paths.session_config(sid), THRESH)
+    series.paths.session_config(S2).parent.mkdir(parents=True, exist_ok=True)
+    series.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    out = {}
+    t = threading.Thread(target=lambda: out.update(code=_main("run", series.root)), daemon=True)
+    t.start()
+    t.join(60)
+    assert not t.is_alive(), "run waits for a session only a config fix can unblock"
+    text = capsys.readouterr().out
+    assert out["code"] == 1
+    assert "series now: failed 0, waiting for a person 0, cannot be scheduled 1" in text
+    assert f"[FAILED] {S2} cannot be scheduled: config: ConfigError: " in text
+    assert f"{S1} mc waits for crop box: blocked by {S2}" in text
+
+
+def test_finished_series_is_ok(series, capsys):
+    for sid in SIDS:
+        save_record(series.paths, _record(sid))
+        config.update_yaml(series.paths.session_config(sid), THRESH)
+    assert _main("run", series.root, "--once") == 0
+    out = capsys.readouterr().out
+    assert ("[OK] this run: done 21, failed 0, skipped 0 | series now: failed 0, waiting for a person 0, "
+            "cannot be scheduled 0, excluded 0") in out
