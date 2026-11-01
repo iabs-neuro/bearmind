@@ -856,8 +856,9 @@ def _reset_downstream(d, stage) -> None:
 def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
     """A stage whose check says it waits. Its record is written only when it changes (first wait, another
     reason, other parameters): a waiting stage is checked every poll_s, maybe for days, and a write per
-    check rewrote every record and summary.csv on each pass. Returns 'waiting', or 'retry' when a
-    decision or a reset landed after the check (checked again on the next loop)."""
+    check rewrote every record and summary.csv on each pass. Returns 'waiting'; 'retry' when a decision or
+    a reset landed after the check (checked again on the next loop); 'none' when the registry cannot be
+    written (checked again after poll_s)."""
     st = rec.stages.get(stage)
     if st is not None and st.state is State.WAITING and st.error == str(w) and st.params_hash == h:
         return "waiting"
