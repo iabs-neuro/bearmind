@@ -25,8 +25,12 @@ N_CORR_FRAMES = 200
 TEMP_BYTES_PER_PX_FRAME = 1
 
 
-def _crop(cfg) -> CropBox | None:
-    """Crop box of the session; None (explicit box_pos: null) means no FOV was found: uncropped."""
+def _crop(cfg, frame_shape=None) -> CropBox | None:
+    """Crop box of the session; None (explicit box_pos: null) means no FOV was found: uncropped.
+
+    With `frame_shape` the box is clipped to the frame as SessionReader slices it, so the recorded crop is
+    the size of the frames MC works on (a box set by hand may pass the frame edge).
+    """
     c = cfg.get("crop") or {}
     if "box_pos" not in c:  # written by crop.finalize_mouse once every session of the mouse is detected
         raise WaitingForInput("crop_finalize")
@@ -35,12 +39,26 @@ def _crop(cfg) -> CropBox | None:
         return None
     if box is None:  # the mouse box was removed: finalize places one again, MC never runs uncropped
         raise WaitingForInput("crop_finalize", "the mouse crop box is missing")
-    return CropBox(int(pos[0]), int(pos[1]), int(box[0]), int(box[1]))
+    top, left, h, w = int(pos[0]), int(pos[1]), int(box[0]), int(box[1])
+    if frame_shape is not None:
+        h, w = min(h, int(frame_shape[0]) - top), min(w, int(frame_shape[1]) - left)
+    return CropBox(top, left, h, w)
+
+
+def _placed_since_detection(rec) -> None:
+    """Raises WaitingForInput while the latest crop detection has no placed box yet: a crop re-run drops
+    metrics['box'] and the positions in the config are from before it (a stale null position would run MC
+    uncropped, a stale one on the old box). A record without a detection (no frame_shape) is not judged."""
+    crop = (getattr(rec, "stages", None) or {}).get("crop")
+    m = getattr(crop, "metrics", None) or {}
+    if "frame_shape" in m and "box" not in m:
+        raise WaitingForInput("crop_finalize", "crop was detected again; its box is not placed yet")
 
 
 def check(paths, rec, cfg) -> None:
     """Raises WaitingForInput while the crop box is not placed (the runner calls it before the stage)."""
     _crop(cfg)
+    _placed_since_detection(rec)
 
 
 def _save_shifts(path: Path, shifts: np.ndarray) -> None:
@@ -109,7 +127,8 @@ def _mean_template_corr(video: VideoArray, template: np.ndarray, gSig_filt=None)
 
 
 def run(paths, rec, cfg) -> StageResult:
-    crop = _crop(cfg)  # WaitingForInput before any heavy work
+    crop = _crop(cfg, rec.parts[0].shape)  # WaitingForInput before any heavy work
+    _placed_since_detection(rec)
     h, w = (crop.height, crop.width) if crop is not None else rec.parts[0].shape
     tmp = paths.temp_dir(cfg["machine"]["temp_dir"], rec.sid)
     require_temp_space(tmp, TEMP_BYTES_PER_PX_FRAME * int(rec.n_frames) * int(h) * int(w), "MC")

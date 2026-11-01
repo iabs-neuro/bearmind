@@ -113,6 +113,25 @@ def test_crop_from_config():
     with pytest.raises(WaitingForInput) as e:  # I4: the mouse box was removed: never uncropped
         mc_stage._crop({"crop": {"box_pos": [1, 2]}})
     assert e.value.what == "crop_finalize"
+    # R4: clipped to the frame as SessionReader slices it
+    assert mc_stage._crop({"crop": {"box": [20, 20], "box_pos": [4, 6]}}, (16, 16)) == CropBox(4, 6, 12, 10)
+
+
+def test_check_waits_until_the_box_is_placed_for_the_latest_detection():
+    """R1: crop metrics with a detection (frame_shape) and no placed box: finalize is due, MC waits."""
+    from types import SimpleNamespace
+
+    from bearmind.registry import StageRecord
+
+    cfg = {"crop": {"box": [10, 12], "box_pos": None}}
+    rec = SimpleNamespace(stages={"crop": StageRecord(metrics={"fov": [1, 2, 8, 8], "frame_shape": [16, 16]})})
+    with pytest.raises(WaitingForInput) as e:
+        mc_stage.check(None, rec, cfg)
+    assert e.value.what == "crop_finalize"
+    rec.stages["crop"].metrics["box"] = None  # finalize found no FOV: the explicit uncropped case
+    mc_stage.check(None, rec, cfg)
+    rec.stages["crop"].metrics.update(box=[1, 2, 10, 12])
+    mc_stage.check(None, rec, {"crop": {"box": [10, 12], "box_pos": [1, 2]}})
 
 
 def test_mc_waits_for_crop_finalize_before_heavy_work(tmp_path, make_avi, monkeypatch):
