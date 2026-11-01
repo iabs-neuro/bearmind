@@ -234,3 +234,7 @@ def test_rule_counts_without_ml_or_components():
                                                        "delete": [0], "decision": ["ok"],
                                                        "caiman_snr": [np.nan]}))
     assert np.isnan(_counts(nan_snr)["median_snr"])  # the check warns "not a number"
+    no_idx = SimpleNamespace(idx_components=np.array([0, 1]), metrics_df=pd.DataFrame({"caiman_snr": [1.0, 2.0]}))
+    assert _counts(no_idx) == {"component_rule": "idx_components", "n_exported": 2,
+                               "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
+                               "median_snr": None}

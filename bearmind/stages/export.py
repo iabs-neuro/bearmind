@@ -49,6 +49,8 @@ def rule_counts(est, idx, ml_info) -> dict:
         return out
     if df.empty:
         return {**out, "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0}
+    if "component_idx" not in df.columns:  # rows cannot be matched to components (only without ML)
+        return out
     rows = df[df["component_idx"].isin(exported)]
     if "delete" in df.columns:
         out["n_snr_duplicates_exported"] = int((rows["delete"] == 1).sum())
