@@ -682,6 +682,7 @@ def test_summary_write_failure_is_warning(series, monkeypatch, caplog):
         return real(src, dst)
 
     monkeypatch.setattr(os, "replace", replace)
+    s.paths.summary_csv.unlink()  # unchanged content is not written again: each call below has to write
     with caplog.at_level(logging.WARNING, logger="bearmind"):
         assert len(runner.summary(s.paths)) == 3
         runner.summary(s.paths)
@@ -690,6 +691,7 @@ def test_summary_write_failure_is_warning(series, monkeypatch, caplog):
         calls["deny"] = False
         runner.summary(s.paths)
         calls["deny"] = True
+        registry.update_record(s.paths, S1, lambda r: r.anomalies.append(Anomaly("note", "warning", "new row")))
         runner.summary(s.paths)
         assert caplog.text.count("summary.csv not written") == 2
     assert not list(s.paths.summary_csv.parent.glob("*.tmp"))
@@ -937,3 +939,43 @@ def test_waiting_stage_does_not_start_a_stage_process(series, monkeypatch, stage
     cfg = config.deep_merge(cfg, {"cnmf": THRESH["cnmf"], "crop": {"box_pos": [0, 0], "box": [16, 16]}})
     runner._call_stage(s.paths, S1, stage, rec, cfg, None, runner._Run(s.paths, None, None, True, 1))
     assert len(started) == 1 and started[0][0] == f"bearmind.stages.{stage}:run"
+
+
+# --- final fix wave 2 ---
+
+def _isolated_in_process(s, monkeypatch):
+    """runner.isolate_stages: true, as in production (the wait checks run in the runner), but the stage
+    functions run in this process instead of a stage process."""
+    config.update_yaml(s.paths.series_config, {"runner": {"isolate_stages": True}})
+    monkeypatch.setattr(runner.isolate, "run_isolated",
+                        lambda spec, paths, rec, cfg, log, **kw: spec(paths, rec, cfg))
+
+
+def _snapshot(paths):
+    files = sorted(paths.registry_file("x").parent.glob("*.json")) + [paths.summary_csv]
+    return {f.name: (f.stat().st_mtime_ns, f.read_bytes()) for f in files}
+
+
+def test_waiting_recheck_writes_nothing(series, monkeypatch):
+    """I1: a stage still waiting for the same thing is checked again without any registry or summary write
+    (no RUNNING on disk while it is checked, no rewrite of every record and of summary.csv per poll)."""
+    s = series
+    save_record(s.paths, _record(S1, decided=False))
+    _isolated_in_process(s, monkeypatch)
+    _run(s)
+    st = load_record(s.paths, S1).stages["gate"]
+    assert st.state is State.WAITING and st.error == "waiting for manual_inspection"
+    before = _snapshot(s.paths)
+    writes = []
+    real = registry.update_record
+    monkeypatch.setattr(registry, "update_record", lambda p, sid, change: (writes.append((sid, change)),
+                                                                          real(p, sid, change))[1])
+    s.stubs.calls.clear()
+    _run(s)
+    assert writes == [] and s.stubs.calls == []
+    assert _snapshot(s.paths) == before
+    # a decision makes the same check pass: the gate starts and the session finishes
+    gate.decide(s.paths, S1, "not_needed", "viktor")
+    _run(s)
+    assert _states(s.paths, S1) == [State.DONE] * 7
+    assert f"{S1} gate: started" in s.paths.session_log(S1).read_text(encoding="utf-8")

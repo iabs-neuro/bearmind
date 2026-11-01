@@ -13,6 +13,7 @@ import yaml
 from bearmind import cli, config, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, State, load_record, save_record, update_record
+from bearmind.stages import gate
 from tests.bearmind.test_runner import SIDS, Stubs, _record
 
 S1, S2, S3 = SIDS
@@ -169,6 +170,20 @@ def test_gate_not_needed_and_all_waiting(series):
     assert not [d for d in load_record(series.paths, S3).decisions if d.what == "manual_inspection"]
     assert _main("gate", series.root, S3, "not-needed") == 0
     assert load_record(series.paths, S3).decisions[-1].who  # default: the Windows user name
+
+
+def test_gate_all_waiting_takes_a_gate_being_checked(series, capsys):
+    """I1: --all-waiting also takes a session whose CNMF is done and whose gate is being checked right now
+    (not WAITING on disk at that moment); a passed gate and a decision that already counts are left alone."""
+    for sid in SIDS:
+        _set(series.paths, sid, "cnmf", State.DONE)
+    _set(series.paths, S1, "gate", State.RUNNING)  # the runner's check of the gate in progress
+    _set(series.paths, S2, "gate", State.DONE)  # passed
+    gate.decide(series.paths, S3, "not_needed", "earlier")  # counts already
+    assert _main("gate", series.root, "--all-waiting", "not-needed", "--who", "tester") == 0
+    assert [d.who for d in load_record(series.paths, S1).decisions] == ["tester"]
+    assert load_record(series.paths, S2).decisions == []
+    assert [d.who for d in load_record(series.paths, S3).decisions] == ["earlier"]
 
 
 def test_gate_cleaned(series, capsys):

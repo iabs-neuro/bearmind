@@ -17,7 +17,7 @@ from pathlib import Path
 from bearmind import config, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Decision, State
-from bearmind.stages import gate
+from bearmind.stages import WaitingForInput, gate
 
 OK, BAD_INPUT, BUSY, INTERRUPTED = 0, 2, 3, 130
 HEARTBEAT_MAX_AGE_S = 120
@@ -137,6 +137,25 @@ def _waiting_for(rec, stage: str):
     if st is None or st.state is not State.WAITING:
         return None
     return runner._what(st)
+
+
+def _gate_waits(paths, rec) -> bool:
+    """The gate waits for a person now: WAITING, or (CNMF done) any state but DONE, since the runner may be
+    checking it at this moment. A passed gate, or one holding a decision that counts, is not taken."""
+    cnmf, g = rec.stages.get("cnmf"), rec.stages.get("gate")
+    if rec.excluded or (g is not None and g.state is State.DONE):
+        return False
+    if (g is None or g.state is not State.WAITING) and (cnmf is None or cnmf.state is not State.DONE):
+        return False
+    try:
+        cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
+    except Exception:  # a broken session config is shown by status; the decision counts once it is fixed
+        cfg = {"gate": {"enabled": True}}
+    try:
+        gate.run(paths, rec, cfg)
+    except WaitingForInput as w:
+        return w.what == "manual_inspection"
+    return False
 
 
 def _warn_excluded(rec) -> None:
@@ -302,8 +321,7 @@ def cmd_gate(args) -> int:
     if args.all_waiting == bool(sids):
         raise CliError("give session names or --all-waiting, not both and not neither")
     if args.all_waiting:
-        sids = [s for s, r in sorted(recs.items())
-                if not r.excluded and _waiting_for(r, "gate") == "manual_inspection"]
+        sids = [s for s, r in sorted(recs.items()) if _gate_waits(paths, r)]
         if not sids:
             _say("[WARN] no session waits for manual inspection")
             return OK

@@ -11,6 +11,7 @@ batch goes on with the other sessions.
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import logging
@@ -52,11 +53,12 @@ STAGE_FUNCS = {
 }
 FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
 
-# Checks run in this process before a stage process is started. They raise WaitingForInput without heavy
-# work: a stage waiting for a person is retried every poll_s, maybe for days, and must not cost a stage
-# process (0.5-12 s of start-up and imports) per poll. The gate is all check. Their modules load once per
-# runner: mc and gate are light; cnmf imports bm_qc (CaImAn, cv2, matplotlib), which stage_params
-# already imports in this process for the CNMF parameters.
+# Checks run in this process before a stage process is started, and before the stage is written RUNNING.
+# They raise WaitingForInput without heavy work: a stage waiting for a person is retried every poll_s, maybe
+# for days, and must not cost a stage process (0.5-12 s of start-up and imports) or a registry write per
+# poll. The gate is all check. Their modules load once per runner: mc and gate are light; cnmf imports
+# bm_qc (CaImAn, cv2, matplotlib), which stage_params already imports in this process for the CNMF
+# parameters.
 WAIT_CHECKS = {
     "mc": "bearmind.stages.mc:check",
     "cnmf": "bearmind.stages.cnmf:check",
@@ -689,6 +691,64 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
     return True
 
 
+def _wait_check(paths, stage, rec, cfg):
+    """(checked, WaitingForInput or None): the stage's wait check, run before anything is written.
+
+    Only for isolated stages (an in-process stage raises WaitingForInput itself). Another error of the
+    check is not handled here: _call_stage runs the check again where the stage's failures are recorded.
+    """
+    if not cfg["runner"]["isolate_stages"] or stage not in WAIT_CHECKS:
+        return False, None
+    try:
+        _func(WAIT_CHECKS[stage])(paths, rec, cfg)
+    except WaitingForInput as w:
+        return True, w
+    except Exception:
+        return False, None
+    return True, None
+
+
+def _reset_downstream(d, stage) -> None:
+    for s in STAGES[STAGES.index(stage) + 1:]:  # recomputed after this stage, whatever their hash
+        st = d.stages.setdefault(s, StageRecord())
+        if st.state is not State.PENDING:
+            st.state, st.error = State.PENDING, None
+
+
+def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
+    """A stage whose check says it waits. Its record is written only when it changes (first wait, another
+    reason, other parameters): a waiting stage is checked every poll_s, maybe for days, and a write per
+    check rewrote every record and summary.csv on each pass. Returns 'waiting', or 'retry' when a
+    decision or a reset landed after the check (checked again on the next loop)."""
+    st = rec.stages.get(stage)
+    if st is not None and st.state is State.WAITING and st.error == str(w) and st.params_hash == h:
+        return "waiting"
+    seen, decisions = copy.deepcopy(st), copy.deepcopy(rec.decisions)
+    applied = []
+
+    def waiting(d):
+        if d.stages.get(stage) != seen or d.decisions != decisions:
+            return
+        applied.append(True)
+        d.stages[stage] = StageRecord(state=State.WAITING, params_hash=h, params=params, error=str(w))
+        d.anomalies = [a for a in d.anomalies if a.data.get("stage") != stage]
+        _reset_downstream(d, stage)
+
+    try:
+        _update(paths, sid, waiting, RESULT_WRITE_TRIES)
+    except OSError as e:
+        log.warning("%s %s: wait not recorded, registry not writable now: %s", sid, stage, _last_line(e),
+                    extra={"sid": sid})
+        return "retry"
+    if not applied:
+        return "retry"
+    run_.waiting_logged.add((sid, stage))
+    with run_.logs.session(sid):
+        log.info("%s %s: %s", sid, stage, w, extra={"sid": sid})
+    run_.refresh()
+    return "waiting"
+
+
 def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
     """The stage's StageResult, from its own process unless runner.isolate_stages is false.
 
@@ -700,6 +760,7 @@ def _call_stage(paths, sid, stage, rec, cfg, temp_root, run_: _Run):
     if not rc["isolate_stages"]:
         return _func(spec)(paths, rec, cfg)
     if stage in WAIT_CHECKS:
+        # again, on the record as written with RUNNING: a decision may have changed since _wait_check
         _func(WAIT_CHECKS[stage])(paths, rec, cfg)
     limit = int(rc["max_auto_retries"])
     while True:
@@ -728,16 +789,18 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
         log.error("%s %s: not started: %s", sid, stage, _last_line(e), extra={"sid": sid})
         return "none"
     h = hashes[stage]
+    checked, w = _wait_check(paths, stage, rec, cfg)
+    if w is not None:
+        return _record_wait(paths, sid, stage, rec, h, params[stage], w, run_)
+    if checked:
+        run_.waiting_logged.discard((sid, stage))  # its check passed: this is a real start
     started = _now()
     temp_root = (cfg.get("machine") or {}).get("temp_dir")
 
     def running(d):
         d.stages[stage] = StageRecord(state=State.RUNNING, params_hash=h, params=params[stage], started=started)
         d.anomalies = [a for a in d.anomalies if a.data.get("stage") != stage]
-        for s in STAGES[STAGES.index(stage) + 1:]:  # recomputed after this stage, whatever their hash
-            st = d.stages.setdefault(s, StageRecord())
-            if st.state is not State.PENDING:
-                st.state, st.error = State.PENDING, None
+        _reset_downstream(d, stage)
 
     def ours(d):
         st = d.stages.get(stage)
@@ -1013,17 +1076,24 @@ _SUMMARY_WARNED: set = set()  # summary files whose last write failed (warned on
 def summary(paths, records=None):
     """One row per session (state and key number of each stage, thresholds, worst check); writes summary.csv.
 
-    One write attempt, no retry loop (it runs after every transition and must not hold the batch); a
-    failure (file open in Excel) is a warning, given once until a write succeeds again.
+    Written only when its content changes (a waiting runner refreshes it every poll). One write attempt, no
+    retry loop (it runs after every transition and must not hold the batch); a failure (file open in Excel)
+    is a warning, given once until a write succeeds again.
     """
     import pandas as pd
 
     records = registry.all_records(paths) if records is None else records
     df = pd.DataFrame([_summary_row(paths, r) for r in records], columns=SUMMARY_COLUMNS)
+    text = df.to_csv(index=False, lineterminator="\n")
     key = str(paths.summary_csv)
     try:
-        fileio.write_atomic(paths.summary_csv, lambda fh: df.to_csv(fh, index=False, lineterminator="\n"),
-                            newline="", replace_tries=1)
+        if fileio.read_text(paths.summary_csv) == text:
+            _SUMMARY_WARNED.discard(key)
+            return df
+    except (OSError, UnicodeDecodeError):
+        pass  # absent or unreadable now: written below
+    try:
+        fileio.write_atomic(paths.summary_csv, lambda fh: fh.write(text), newline="", replace_tries=1)
     except Exception as e:
         if key not in _SUMMARY_WARNED:
             _SUMMARY_WARNED.add(key)
