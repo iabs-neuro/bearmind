@@ -1155,3 +1155,69 @@ def test_stalled_stage_is_killed_and_retried_once(series, monkeypatch):
     crashed = [a for a in rec.anomalies if a.code == "stage_crashed"]
     assert [(a.level, a.data["cause"]) for a in crashed] == [("error", "no_progress")]
     assert res["failed"] == 1 and _states(s.paths, S3)[:2] == [State.DONE, State.DONE]
+
+
+# --- 10a: registry write errors ---
+
+def _deny_writes(monkeypatch, s, sid, stage, change_name, times=None):
+    """registry.update_record raises PermissionError for `change_name` writes of (sid, stage), `times` times
+    (None: always), as fileio.replace does after its own retries."""
+    real = registry.update_record
+    hits = []
+
+    def touches(paths, rsid, change):
+        before = load_record(paths, rsid)
+        if change_name != "running":  # done / failed: written while the stage is RUNNING
+            return before.stages[stage].state is State.RUNNING
+        after = copy.deepcopy(before)
+        change(after)  # a RUNNING write only changes the record it gets: which stage does it start?
+        return before.stages[stage].state is not State.RUNNING and after.stages[stage].state is State.RUNNING
+
+    def flaky(paths, rsid, change):
+        if (rsid == sid and getattr(change, "__name__", "") == change_name
+                and (times is None or len(hits) < times) and touches(paths, rsid, change)):
+            hits.append(1)
+            raise PermissionError(13, "registry file open in another program")
+        return real(paths, rsid, change)
+
+    monkeypatch.setattr(registry, "update_record", flaky)
+    return hits
+
+
+def test_result_write_error_is_retried(series, monkeypatch):
+    s = series
+    hits = _deny_writes(monkeypatch, s, S2, "mc", "done", times=2)
+    res = _run(s)
+    assert len(hits) == 2 and res["failed"] == 0
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)
+
+
+def test_result_that_cannot_be_recorded_fails_the_stage_only(series, monkeypatch):
+    s = series
+    hits = _deny_writes(monkeypatch, s, S2, "mc", "done")
+    res = _run(s)
+    assert len(hits) == runner.RESULT_WRITE_TRIES
+    st = load_record(s.paths, S2).stages["mc"]
+    assert st.state is State.FAILED and "result not recorded in the registry" in st.error
+    assert "PermissionError" in st.error and "outputs are on disk" in st.error
+    assert s.paths.mc_video(S2).is_file()  # the stage's outputs stay
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in (S1, S3))
+    assert res["failed"] == 1
+
+
+def test_running_write_error_does_not_stop_the_batch(series, monkeypatch):
+    s = series
+    _deny_writes(monkeypatch, s, S2, "mc", "running")
+    _run(s)  # does not raise
+    assert _states(s.paths, S2)[1] is State.PENDING  # not started
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in (S1, S3))
+    assert f"{S2} mc: not started, registry not writable" in s.paths.series_log.read_text(encoding="utf-8")
+
+
+def test_failed_write_error_does_not_stop_the_batch(series, monkeypatch):
+    s = series
+    s.stubs.fail[(S2, "mc")] = ValueError("boom")
+    _deny_writes(monkeypatch, s, S2, "mc", "failed")
+    _run(s)  # does not raise
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in (S1, S3))
+    assert "failed not recorded" in s.paths.series_log.read_text(encoding="utf-8")

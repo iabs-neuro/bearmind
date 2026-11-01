@@ -570,6 +570,7 @@ def _release_lock(paths, fh) -> None:
 # --- the run ---
 
 RESULT_WRITE_TRIES = 7  # x LOCK_TIMEOUT_S: longer than LOCK_STALE_S, so a stuck lock is broken meanwhile
+RUNNING_WRITE_TRIES = 2  # nothing has run yet: a stage that cannot start is offered again later
 
 
 def _session_status(r, scope, stages) -> str | None:
@@ -605,14 +606,20 @@ def _counts(records, scope, stages):
 
 
 def _update(paths, sid, change, tries=1):
-    """registry.update_record, retried on LockTimeout (each try waits up to fileio.LOCK_TIMEOUT_S)."""
+    """registry.update_record, retried on OSError: a LockTimeout (each try waits up to fileio.LOCK_TIMEOUT_S)
+    or a write error such as PermissionError (fileio.replace has retried it for a few seconds already)."""
     for i in range(tries):
         try:
             return registry.update_record(paths, sid, change)
-        except fileio.LockTimeout as e:
+        except OSError as e:
             if i == tries - 1:
                 raise
-            log.warning("%s: registry busy, retrying: %s", sid, e, extra={"sid": sid})
+            log.warning("%s: registry not writable now, retrying: %s", sid, _last_line(e), extra={"sid": sid})
+
+
+class ResultNotRecorded(RuntimeError):
+    """A finished stage whose result the registry would not take: the stage is recorded FAILED, its outputs
+    stay on disk."""
 
 
 class _Run:
@@ -690,8 +697,9 @@ def _reset_running(paths) -> None:
 
         try:
             _update(paths, rec.sid, back)
-        except fileio.LockTimeout as e:  # a RUNNING stage is not up to date anyway: it runs again
-            log.warning("%s: registry busy, left as running: %s", rec.sid, e, extra={"sid": rec.sid})
+        except OSError as e:  # a RUNNING stage is not up to date anyway: it runs again
+            log.warning("%s: registry not writable now, left as running: %s", rec.sid, _last_line(e),
+                        extra={"sid": rec.sid})
             continue
         _clean_temp(temp_root, rec.sid)
         log.warning("%s %s: was running at start (process killed?), set to pending", rec.sid,
@@ -840,10 +848,10 @@ def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
 
     try:
         _update(paths, sid, waiting, RESULT_WRITE_TRIES)
-    except OSError as e:
-        log.warning("%s %s: wait not recorded, registry not writable now: %s", sid, stage, _last_line(e),
-                    extra={"sid": sid})
-        return "retry"
+    except OSError as e:  # checked again after poll_s
+        log.error("%s %s: wait not recorded, registry not writable: %s", sid, stage, _last_line(e),
+                  extra={"sid": sid})
+        return "none"
     if not applied:
         return "retry"
     run_.waiting_logged.add((sid, stage))
@@ -913,10 +921,14 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
         return st is not None and st.state is State.RUNNING and st.started == started and st.params_hash == h
 
     try:
-        rec = _update(paths, sid, running)
+        rec = _update(paths, sid, running, RUNNING_WRITE_TRIES)
     except fileio.LockTimeout as e:
         log.warning("%s %s: not started, registry lock busy: %s", sid, stage, e, extra={"sid": sid})
         return "retry"
+    except OSError as e:  # offered again after poll_s; nothing ran, nothing is lost
+        log.error("%s %s: not started, registry not writable: %s", sid, stage, _last_line(e),
+                  extra={"sid": sid, "console": True})
+        return "none"
     run_.current = (sid, stage, started, h, temp_root)
     run_.refresh()
     with run_.logs.session(sid):
@@ -943,7 +955,11 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
                     d.anomalies = [a for a in d.anomalies if a.data.get("stage") != stage] + anomalies
 
             # inside the try: metrics the registry cannot store fail this stage, not the batch
-            _update(paths, sid, done, RESULT_WRITE_TRIES)
+            try:
+                _update(paths, sid, done, RESULT_WRITE_TRIES)
+            except OSError as e:
+                raise ResultNotRecorded(f"result not recorded in the registry: {_last_line(e)}; its outputs "
+                                        f"are on disk") from e
         except WaitingForInput as w:
             def waiting(d):
                 if ours(d):
@@ -954,9 +970,6 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             if outcome == "waiting" and (sid, stage) not in run_.waiting_logged:  # retried every poll
                 run_.waiting_logged.add((sid, stage))
                 log.info("%s %s: %s", sid, stage, w, extra={"sid": sid})
-        except fileio.LockTimeout as e:  # registry or config lock held too long: run it again later
-            log.warning("%s %s: registry lock busy, the stage runs again: %s", sid, stage, e, extra={"sid": sid})
-            outcome = "retry"
         except Exception as e:
             last = _last_line(e)
             log.error("%s %s: failed: %s", sid, stage, last, extra={"sid": sid})
@@ -996,10 +1009,10 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
 def _record_outcome(paths, sid, stage, change, outcome, applied) -> str:
     try:
         _update(paths, sid, change, RESULT_WRITE_TRIES)
-    except fileio.LockTimeout as e:
-        log.error("%s %s: %s not recorded, registry lock busy; the stage runs again: %s", sid, stage, outcome,
-                  e, extra={"sid": sid})
-        return "retry"
+    except OSError as e:  # the batch goes on; the stage stays RUNNING on disk and is offered after poll_s
+        log.error("%s %s: %s not recorded, registry not writable: %s", sid, stage, outcome, _last_line(e),
+                  extra={"sid": sid})
+        return "none"
     return outcome if applied else _superseded(sid, stage)
 
 
