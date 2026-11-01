@@ -268,3 +268,51 @@ def test_export_metadata_carries_checks_and_anomalies(tmp_path):
                                                                          "export_median_snr": "ok"}
     assert [(a["code"], a["stage"]) for a in meta["anomalies"]] == [
         ("dropped_frames", None), ("fov_not_found", "crop"), ("export_frames_mismatch", "export")]
+
+
+def _no_components_est():
+    """What autoinspection leaves for a session without accepted components: an empty metrics_df."""
+    est = _est()
+    est.idx_components, est.idx_components_bad = np.array([], dtype=int), np.arange(N)
+    est.metrics_df = pd.DataFrame()
+    est.asp_cache, est.reconstructions = {}, {}
+    return est
+
+
+def _check_empty_export(paths, res, n_components):
+    assert res.metrics["n_neurons"] == 0 and res.metrics["n_exported"] == 0
+    a = [x for x in res.anomalies if x.code == "no_components"]
+    assert len(a) == 1 and a[0].level == "warning"
+    assert a[0].data == {"n_components": n_components, "n_exported": 0}
+    meta = json.loads(paths.export_json(SID).read_text())
+    assert meta["n_exported"] == 0 and meta["component_rule"] in ("ml_probability", "idx_components")
+    assert [x["code"] for x in meta["provenance"]["anomalies"]] == ["no_components"]
+    with np.load(paths.export_npz(SID)) as d:
+        assert d["C"].shape == (0, T) and d["component_indices"].shape == (0,)
+        return set(d.files)
+
+
+def test_session_without_components_exports_empty(tmp_path):
+    """9: zero components finish the export (old build_metadata raised KeyError 'component_idx')."""
+    paths, rec, cfg = _setup(tmp_path)
+    proc = paths.root / rec.stages["autoinspect"].outputs["processed"]
+    with open(proc, "wb") as fh:
+        pickle.dump(_no_components_est(), fh)
+    res = export.run(paths, rec, cfg)
+    keys = _check_empty_export(paths, res, 0)
+    assert keys == {"C", "component_indices", "asp", "reconstructions"}  # the keys of an inspected session
+    mat = scipy.io.loadmat(paths.export_filters(SID))
+    assert mat["A"].shape == (0, H, W) and mat["A"].dtype == np.uint8
+    assert set(res.outputs) == {"npz", "json", "timestamps", "filters"}
+
+
+def test_components_none_of_which_pass_the_rule(tmp_path):
+    paths, rec, cfg = _setup(tmp_path)
+    proc = paths.root / rec.stages["autoinspect"].outputs["processed"]
+    est = _est()
+    est.autoinspection_config = {"ml_threshold": 0.99}
+    with open(proc, "wb") as fh:
+        pickle.dump(est, fh)
+    res = export.run(paths, rec, cfg)
+    assert _check_empty_export(paths, res, N) == {"C", "component_indices"}  # as with components: no caches
+    assert scipy.io.loadmat(paths.export_filters(SID))["A"].shape == (0, H, W)

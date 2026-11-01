@@ -6,6 +6,7 @@ import os
 import shutil
 
 import numpy as np
+from scipy.io import savemat
 
 import export_estimates_data as old
 from bearmind import checks, provenance
@@ -64,6 +65,45 @@ def rule_counts(est, idx, ml_info) -> dict:
     return out
 
 
+class _WithMetrics:
+    """The estimates with another metrics_df; every other attribute is the estimates' own."""
+
+    def __init__(self, est, df):
+        self._est, self.metrics_df = est, df
+
+    def __getattr__(self, name):
+        return getattr(self._est, name)
+
+
+def _metadata_input(est):
+    """The estimates for old.build_metadata, which selects metrics_df rows by 'component_idx' and raises
+    KeyError without that column: autoinspection leaves an empty metrics_df for a session without
+    components. The column is added empty, so no row is listed for an exported neuron it cannot be matched
+    to (the old function prints that warning to the session log)."""
+    df = getattr(est, "metrics_df", None)
+    if df is None or "component_idx" in df.columns:
+        return est
+    return _WithMetrics(est, df.assign(component_idx=np.nan))
+
+
+def _empty_data(est, data) -> dict:
+    """No neuron exported: the npz keeps the keys of an export with neurons, as arrays of length 0."""
+    n_frames = int(est.C.shape[1])
+    for key, attr in (("asp", "asp_cache"), ("reconstructions", "reconstructions")):
+        if key not in data and hasattr(est, attr):  # the old extract_data adds them only for listed neurons
+            data[key] = np.zeros((0, n_frames), np.float32)
+    return data
+
+
+def _filters(est, idx, path):
+    """old.export_filters_mat; for no neuron an empty (0, h, w) uint8 stack, the layout of a non-empty one
+    (the old function saves an empty float array there)."""
+    if len(idx) or getattr(est, "A", None) is None or getattr(est, "imax", None) is None:
+        return old.export_filters_mat(est, idx, path)
+    savemat(path, {"A": np.zeros((0, *est.imax.shape[::-1]), np.uint8)})
+    return path
+
+
 def _truncate(ts, n):
     return dataclasses.replace(ts, raw=ts.raw[:n], t_ms=ts.t_ms[:n],
                                buffer=None if ts.buffer is None else ts.buffer[:n])
@@ -110,8 +150,17 @@ def run(paths, rec, cfg) -> StageResult:
             f"timestamps have {len(ts.raw)}; timestamps written for {n_ts}",
             data={"estimates": n_frames, "registry": rec.n_frames, "timestamps": len(ts.raw)}))
 
+    if not len(idx):
+        n = int(len(est.idx_components))
+        why = (f"none of {n} components passes the export rule ({counts['component_rule']})" if n
+               else "the estimates have no components")
+        anomalies.append(Anomaly("no_components", "warning", f"no neurons exported: {why}",
+                                 data={"n_components": n, "n_exported": 0}))
+
     data = old.extract_data(est, idx)
-    meta = old.build_metadata(est, rec.fps, sid, False, None, ml_info, idx)
+    if not len(idx):
+        data = _empty_data(est, data)
+    meta = old.build_metadata(_metadata_input(est), rec.fps, sid, False, None, ml_info, idx)
     meta["fps"] = rec.fps
     meta["autoinspection_fps"] = rec.stages["autoinspect"].metrics.get("autoinspection_fps")
     meta["timestamps_file"] = paths.export_timestamps(sid).name
@@ -127,7 +176,7 @@ def run(paths, rec, cfg) -> StageResult:
     try:
         tmp.mkdir(parents=True)
         write_timestamps(ts, np.arange(n_ts), tmp / targets["timestamps"].name)
-        mat = old.export_filters_mat(est, idx, tmp / targets["filters"].name)
+        mat = _filters(est, idx, tmp / targets["filters"].name)
         if mat is None:
             anomalies.append(Anomaly("no_filters", "warning",
                                      "estimates have no A matrix or imax; no filters file written"))
