@@ -21,6 +21,7 @@ from bearmind.paths import SeriesPaths
 from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, State,
                                load_record, save_record)
 from bearmind.stages import StageResult, WaitingForInput, gate
+from bearmind.stages import mc as mc_stage
 
 SIDS = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
 S1, S2, S3 = SIDS
@@ -90,13 +91,13 @@ class Stubs:
         return StageResult(metrics={"fov": self.fov.get(rec.sid, [2, 3, 10, 9]), "frame_shape": [16, 16]})
 
     def _mc(self, paths, rec, cfg):
-        if "box_pos" not in (cfg.get("crop") or {}):  # as the real stage
-            raise WaitingForInput("crop_finalize")
+        crop = mc_stage._crop(cfg)  # the real stage's crop rule: waits for the box, uncropped only without FOV
         s = rec.sid
         return StageResult(
             outputs=self._out(paths, mc_video=paths.mc_video(s), mc_shifts=paths.mc_shifts(s),
                               preview_mc=paths.preview(s, "mc")),
-            metrics={"max_shift_px": 2.0, "mean_template_corr": 0.9})
+            metrics={"max_shift_px": 2.0, "mean_template_corr": 0.9,
+                     "crop": None if crop is None else [crop.top, crop.left, crop.height, crop.width]})
 
     def _thresholds(self, paths, rec, cfg):
         return StageResult(outputs=self._out(paths, threshold_maps=paths.threshold_maps(rec.sid)),
@@ -1052,3 +1053,80 @@ def test_corrupt_registry_file_is_a_visible_row(series):
     row = pd.read_csv(s.paths.summary_csv).set_index("sid").loc["NOF_H09_1D"]
     assert str(bad) in row["error"] and "JSONDecodeError" in row["error"] and "scan" in row["error"]
     assert "NOF_H09_1D" in _heartbeat(s.paths)["unschedulable"]
+
+
+# --- I4: the mouse crop box ---
+
+def _set_box(paths, mouse, **crop):
+    """Edit the mouse config as a person does (keys set to None are removed)."""
+    f = paths.mouse_config(mouse)
+    y = _yaml(f)
+    c = y.setdefault("crop", {})
+    for k, v in crop.items():
+        if v is None:
+            c.pop(k, None)
+        else:
+            c[k] = v
+    f.write_text(yaml.safe_dump(y), encoding="utf-8")
+
+
+def test_removed_mouse_box_is_placed_again_never_uncropped(series):
+    s = series
+    _run(s)
+    s.stubs.calls.clear()
+    _set_box(s.paths, "NOF_H01", box=None)
+    _run(s)
+    assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"]["box"] == [16, 16]
+    assert s.stubs.calls == []  # the same box again: MC is up to date, it never ran uncropped
+    assert load_record(s.paths, S1).stages["mc"].metrics["crop"] == [0, 0, 16, 16]
+
+
+def test_removed_mouse_box_waits_while_finalize_cannot_run(series):
+    """box_pos without box: MC waits for crop_finalize (here finalize waits for an unschedulable mate)."""
+    s = series
+    _run(s)
+    s.stubs.calls.clear()
+    _set_box(s.paths, "NOF_H01", box=None)
+    s.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    _run(s)
+    assert (S1, "mc") in s.stubs.calls  # tried, and it waits
+    st = load_record(s.paths, S1).stages["mc"]
+    assert st.state is State.WAITING and st.error.startswith("waiting for crop_finalize")
+    assert not st.outputs and "crop" not in st.metrics
+
+
+def test_resized_mouse_box_places_the_sessions_again(series):
+    """A resized box: positions re-centred inside the frame, MC re-runs cropped; the box is kept (manual)."""
+    s = series
+    config.update_yaml(s.paths.series_config, {"crop": {"margin_px": 1}})
+    _run(s)
+    assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"] == {"box": [12, 11], "box_source": "auto"}
+    assert _yaml(s.paths.session_config(S1))["crop"]["box_pos"] == [1, 2]  # +15 would pass the 16 px edge
+    s.stubs.calls.clear()
+    _set_box(s.paths, "NOF_H01", box=[15, 15])
+    _run(s)
+    assert s.stubs.calls == _tail(S1, "mc")[:1] + _tail(S2, "mc")[:1] + [
+        (sid, st) for st in STAGES[2:] for sid in (S1, S2)]
+    for sid in (S1, S2):
+        top, left = _yaml(s.paths.session_config(sid))["crop"]["box_pos"]
+        assert 0 <= top and top + 15 <= 16 and 0 <= left and left + 15 <= 16
+        assert load_record(s.paths, sid).stages["mc"].metrics["crop"] == [top, left, 15, 15]
+    assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"] == {"box": [15, 15], "box_source": "manual"}
+    assert runner.summary(s.paths).set_index("sid").loc[S1, "crop_box"] == "15x15@0,0"
+
+
+@pytest.mark.parametrize("source, box", [("auto", [8, 8]), ("manual", [12, 11])])
+def test_detection_parameter_change_recomputes_an_automatic_box(series, source, box):
+    s = series
+    config.update_yaml(s.paths.series_config, {"crop": {"margin_px": 1}})
+    _run(s)
+    if source == "manual":
+        _set_box(s.paths, "NOF_H01", box_source="manual")
+    s.stubs.fov.update({S1: [4, 4, 6, 6], S2: [5, 5, 6, 6]})  # what the new threshold finds
+    config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    s.stubs.calls.clear()
+    _run(s)
+    assert (S1, "crop") in s.stubs.calls and (S2, "crop") in s.stubs.calls
+    assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"]["box"] == box
+    for sid in (S1, S2):
+        assert load_record(s.paths, sid).stages["mc"].metrics["crop"][2:] == box

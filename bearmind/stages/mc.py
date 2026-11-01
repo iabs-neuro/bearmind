@@ -27,8 +27,10 @@ def _crop(cfg) -> CropBox | None:
     if "box_pos" not in c:  # written by crop.finalize_mouse once every session of the mouse is detected
         raise WaitingForInput("crop_finalize")
     pos, box = c.get("box_pos"), c.get("box")
-    if pos is None or box is None:
+    if pos is None:  # finalize found no field of view (anomaly fov_not_found)
         return None
+    if box is None:  # the mouse box was removed: finalize places one again, MC never runs uncropped
+        raise WaitingForInput("crop_finalize", "the mouse crop box is missing")
     return CropBox(int(pos[0]), int(pos[1]), int(box[0]), int(box[1]))
 
 

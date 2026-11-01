@@ -1,6 +1,5 @@
 """Rough automatic crop: find the lit field of view, keep one box size per mouse."""
 import numpy as np
-from scipy import ndimage
 
 from bearmind.video import CropBox
 
@@ -13,6 +12,8 @@ def detect_fov(frames: np.ndarray, min_fov_frac: float = 0.05, threshold_frac: f
     Threshold sits at threshold_frac of the p1..p99 range of the smoothed mean image:
     Otsu would keep only the brightest part and cut dim but live tissue at the edges.
     """
+    from scipy import ndimage  # here, not at the top: the runner imports this module for the box helpers
+
     mean = frames.astype(np.float32).mean(axis=0)
     smooth = ndimage.gaussian_filter(mean, sigma=5)
     p1, p99 = np.percentile(smooth, [1, 99])
@@ -36,6 +37,19 @@ def mouse_box_size(fovs, frame_shape, margin: int) -> tuple[int, int]:
     h = max(f[2] for f in fovs) + 2 * margin
     w = max(f[3] for f in fovs) + 2 * margin
     return min(h, int(frame_shape[0])), min(w, int(frame_shape[1]))
+
+
+def fitted_size(size, frame_shape) -> list[int]:
+    """(h, w) of a box of `size` as place_box puts it into a frame of `frame_shape`."""
+    return [min(int(size[0]), int(frame_shape[0])), min(int(size[1]), int(frame_shape[1]))]
+
+
+def mouse_frame_shape(metrics) -> tuple[int, int] | None:
+    """Smallest frame over the sessions' crop metrics (the frame every box of the mouse must fit)."""
+    shapes = [m["frame_shape"] for m in metrics if m.get("frame_shape")]
+    if not shapes:
+        return None
+    return min(int(s[0]) for s in shapes), min(int(s[1]) for s in shapes)
 
 
 def place_box(fov, size, frame_shape) -> CropBox:

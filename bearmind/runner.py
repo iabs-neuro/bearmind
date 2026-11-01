@@ -33,6 +33,7 @@ except ImportError:  # not Windows
     import fcntl
 
 from bearmind import checks, config, fileio, isolate, naming, provenance, registry
+from bearmind.crop import fitted_size, mouse_frame_shape
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
 from bearmind.stages import WaitingForInput
@@ -136,7 +137,8 @@ def _file_stat(f) -> dict | None:
     return {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
 
 
-_CROP_WRITTEN = ("box", "box_pos")  # written by finalize after crop is done: inputs of MC, not of crop
+# written by finalize after crop is done: box and box_pos are inputs of MC, box_source of finalize only
+_CROP_WRITTEN = ("box", "box_pos", "box_source")
 
 
 def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
@@ -704,14 +706,30 @@ def _box_list(box):
     return [int(x) for x in box]
 
 
+def _placed(r, cfg, frame_shape) -> bool:
+    """The session's box is placed for the current mouse box (a session without FOV has none to place)."""
+    m, c = r.stages["crop"].metrics, cfg.get("crop") or {}
+    if "box" not in m or "box_pos" not in c:
+        return False
+    if m["box"] is None:
+        return True
+    return c.get("box") is not None and list(m["box"][2:]) == fitted_size(c["box"], frame_shape)
+
+
+def _tuple(x):
+    return tuple(x) if isinstance(x, list) else x
+
+
 def _finalize_due(records, view, scope, attempted, once, poll_s) -> list:
-    """Mice whose crop detection is settled for every session and whose box is not placed yet.
+    """Mice whose crop detection is settled for every session and whose boxes are not placed for the
+    current mouse box: never placed, crop detected again, or the mouse box removed or changed by hand.
 
     Settled = up to date, or FAILED with unchanged parameters (one bad session does not hold its mouse).
     A session that cannot be scheduled (unreadable config) is not settled: its mouse waits (M1). Only
     sessions with crop DONE are passed to finalize_mouse. A crop re-run drops metrics['box'], so the box is
     placed again. `attempted` maps a key to (ok, time): a key that worked is not run again; one that failed
-    is retried after poll_s (once=True: by the next run).
+    is retried after poll_s (once=True: by the next run). The key holds the mouse box and the positions, so
+    an edit of either during a run is seen.
     """
     by_mouse = {}
     for r in records:
@@ -723,10 +741,13 @@ def _finalize_due(records, view, scope, attempted, once, poll_s) -> list:
         done = [r for r in recs if view.current(r, "crop")]
         if not done or any(not (view.current(r, "crop") or view.blocked(r, "crop")) for r in recs):
             continue
-        if all("box" in r.stages["crop"].metrics and "box_pos" in (view.cfg(r).get("crop") or {})
-               for r in done):
+        frame_shape = mouse_frame_shape(r.stages["crop"].metrics for r in done)
+        if all(_placed(r, view.cfg(r), frame_shape) for r in done):
             continue
-        key = (mouse, tuple((r.sid, r.stages["crop"].params_hash, r.stages["crop"].finished) for r in done))
+        crops = [view.cfg(r).get("crop") or {} for r in done]
+        key = (mouse, _tuple(crops[0].get("box")),
+               tuple((r.sid, r.stages["crop"].params_hash, r.stages["crop"].finished, _tuple(c.get("box_pos")))
+                     for r, c in zip(done, crops)))
         tried = attempted.get(key)
         if tried is None or (not tried[0] and not once and now - tried[1] >= poll_s):
             due.append((mouse, done, key))
@@ -1114,15 +1135,17 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
 
 # --- summary table ---
 
-def _box_text(metrics) -> str | None:
-    if "box" not in metrics:
+def _crop_box(rec) -> str | None:
+    """The box MC used (its metrics), not the one finalize placed: a box changed since shows once MC re-ran."""
+    mc = rec.stages.get("mc")
+    if mc is None or mc.state is not State.DONE or "crop" not in mc.metrics:
         return None
-    b = metrics["box"]
+    b = mc.metrics["crop"]
     return "uncropped" if b is None else f"{b[2]}x{b[3]}@{b[0]},{b[1]}"
 
 
-_KEYS = {  # stage -> [(column, metric)]; spec 5.11 key numbers
-    "crop": [("crop_box", _box_text)],
+_KEYS = {  # stage -> [(column, metric of that stage, or a function of the record)]; spec 5.11 key numbers
+    "crop": [("crop_box", _crop_box)],
     "mc": [("mc_max_shift_px", "max_shift_px")],
     "thresholds": [],
     "cnmf": [("cnmf_n_components", "n_components")],
@@ -1142,10 +1165,10 @@ def _summary_row(paths, rec, problem=None) -> dict:
         st = rec.stages.get(s) or StageRecord()
         row[s] = st.state.value
         for col, key in _KEYS[s]:
-            if st.state is not State.DONE:
-                row[col] = None
+            if callable(key):
+                row[col] = key(rec)
             else:
-                row[col] = key(st.metrics) if callable(key) else st.metrics.get(key)
+                row[col] = st.metrics.get(key) if st.state is State.DONE else None
         if st.state is State.DONE:
             levels += [c.level for c in st.checks]
         elif st.state is State.FAILED:

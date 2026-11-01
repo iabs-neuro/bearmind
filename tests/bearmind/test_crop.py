@@ -57,9 +57,11 @@ def test_finalize_keeps_existing_mouse_size(tmp_path):
     r1 = _rec("M1_d1", [100, 120, 300, 310])
     out = finalize_mouse(paths, m, [r1], config.resolve(paths, mouse=m))
     cfg = config.resolve(paths, mouse=m)
-    assert cfg["crop"]["box"] == [320, 330]
+    assert cfg["crop"]["box"] == [320, 330] and cfg["crop"]["box_source"] == "auto"
     assert (out["M1_d1"].height, out["M1_d1"].width) == (320, 330)
-    r2 = _rec("M1_d2", [10, 10, 500, 500])
+    b = out["M1_d1"]
+    r1.stages["crop"].metrics["box"] = [b.top, b.left, b.height, b.width]  # what the runner records
+    r2 = _rec("M1_d2", [10, 10, 500, 500])  # a session added later gets the same box size
     r3 = _rec("M1_d3", None)
     out = finalize_mouse(paths, m, [r1, r2, r3], config.resolve(paths, mouse=m))
     assert config.resolve(paths, mouse=m)["crop"]["box"] == [320, 330]

@@ -110,6 +110,9 @@ def test_crop_from_config():
     with pytest.raises(WaitingForInput) as e:  # crop not finalized for the mouse yet
         mc_stage._crop({"crop": {"box": [10, 12]}})
     assert e.value.what == "crop_finalize"
+    with pytest.raises(WaitingForInput) as e:  # I4: the mouse box was removed: never uncropped
+        mc_stage._crop({"crop": {"box_pos": [1, 2]}})
+    assert e.value.what == "crop_finalize"
 
 
 def test_mc_waits_for_crop_finalize_before_heavy_work(tmp_path, make_avi, monkeypatch):
