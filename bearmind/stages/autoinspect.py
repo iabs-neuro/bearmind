@@ -12,6 +12,37 @@ from bearmind.stages import StageResult, gate
 _REPO_ROOT = Path(bearmind.__file__).resolve().parent.parent
 
 
+def check_aligned(path: Path) -> None:
+    """Refuse estimates whose per-component arrays are not in the order of A's columns.
+
+    The model features caiman_snr and caiman_r_score are read by position from est.SNR_comp and
+    est.r_values (auto_inspector.estimates_to_metrics). CaImAn's manual_merge does not update them, and
+    estimates_compression keeps arr[:N] instead of the arrays of the kept components (its output carries
+    idx_components_bad_original); on such input every component would be scored with another one's values.
+    """
+    with open(path, "rb") as f:
+        est = pickle.load(f)
+    n = est.A.shape[1]
+    problems = []
+    if hasattr(est, "idx_components_bad_original"):
+        problems.append("compressed by estimates_compression (has idx_components_bad_original)")
+    for attr in ("SNR_comp", "r_values"):
+        values = getattr(est, attr, None)
+        if values is None:
+            problems.append(f"no {attr}")
+        elif len(values) != n:
+            problems.append(f"len({attr}) = {len(values)} but A has {n} components")
+    if problems:
+        raise ValueError(f"{path}: per-component arrays not aligned with the components, autoinspection "
+                         f"refused: {'; '.join(problems)}")
+
+
+def _count(df, column, value) -> int:
+    if df is None or column not in df.columns:
+        return 0
+    return int((df[column] == value).sum())
+
+
 def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
     params = dict(cfg["autoinspect"])
@@ -20,13 +51,13 @@ def run(paths, rec, cfg) -> StageResult:
     # Integer fps on purpose: the ML model features and the paper data were built with integer fps.
     fps = round(rec.fps)
     processed = out_dir / f"{sid}_processed.pickle"
+    source = gate.input_estimates(paths, rec)
+    check_aligned(source)  # its copy of the estimates is freed on return, before the file is loaded again
     # a pickle from an earlier run would hide that this run saved nothing
     processed.unlink(missing_ok=True)
     result = ae_launch.run_auto_inspection(
-        str(gate.input_estimates(paths, rec)), fps=fps, session_name=sid,
+        str(source), fps=fps, session_name=sid,
         artifacts_dir=str(out_dir), ml_model_path=str(model), **params)
-    s = result["summary"]
-    n0, n1 = s["n_initial"], s["n_final"]
     anomalies = []
     if not processed.exists():
         # run_auto_inspection returns early without saving when there are no components
@@ -42,9 +73,18 @@ def run(paths, rec, cfg) -> StageResult:
             part.unlink(missing_ok=True)
         anomalies.append(Anomaly("no_components", "warning",
                                  "no components to inspect; estimates saved without autoinspection"))
+    # Autoinspection marks components delete and keeps them in the estimates (the export rule decides
+    # what leaves); merges replace their sources by one 'from_merge' row each.
+    s = result["summary"]
+    df = result["estimates"].metrics_df
+    n0, n_deleted = int(s["n_initial"]), int(s["n_deleted"])
     return StageResult(
         outputs={"processed": paths.rel(processed)},
-        metrics={"n_initial": n0, "n_final": n1,
-                 "deleted_frac": 1 - n1 / n0 if n0 > 0 else 0.0,
+        metrics={"n_initial": n0,
+                 "n_after_merge": int(s["n_final"]),
+                 "n_deleted": n_deleted,
+                 "n_merge_groups": _count(df, "decision", "from_merge"),
+                 "n_kept": _count(df, "delete", 0),
+                 "deleted_frac": n_deleted / n0 if n0 > 0 else 0.0,
                  "autoinspection_fps": fps},
         anomalies=anomalies)

@@ -969,7 +969,7 @@ _KEYS = {  # stage -> [(column, metric)]; spec 5.11 key numbers
     "thresholds": [],
     "cnmf": [("cnmf_n_components", "n_components")],
     "gate": [("gate_decision", "gate")],
-    "autoinspect": [("autoinspect_n_final", "n_final"), ("autoinspect_deleted_frac", "deleted_frac")],
+    "autoinspect": [("autoinspect_n_kept", "n_kept"), ("autoinspect_deleted_frac", "deleted_frac")],
     "export": [("export_n_neurons", "n_neurons"), ("export_median_snr", "median_snr")],
 }
 SUMMARY_COLUMNS = (["sid", "mouse", "excluded"]

@@ -117,7 +117,8 @@ class Stubs:
     def _autoinspect(self, paths, rec, cfg):
         f = paths.inspection_dir(rec.sid) / f"{rec.sid}_processed.pickle"
         return StageResult(outputs=self._out(paths, processed=f),
-                           metrics={"n_initial": 100, "n_final": 80, "deleted_frac": 0.2})
+                           metrics={"n_initial": 100, "n_after_merge": 90, "n_deleted": 20, "n_merge_groups": 2,
+                                    "n_kept": 70, "deleted_frac": 0.2})
 
     def _export(self, paths, rec, cfg):
         s = rec.sid
@@ -325,7 +326,7 @@ def test_summary_csv(series):
     assert list(df["sid"]) == SIDS
     assert set(STAGES) <= set(df.columns)
     assert {"mouse", "excluded", "crop_box", "mc_max_shift_px", "cnmf_n_components", "gate_decision",
-            "autoinspect_n_final", "autoinspect_deleted_frac", "export_n_neurons", "export_median_snr",
+            "autoinspect_n_kept", "autoinspect_deleted_frac", "export_n_neurons", "export_median_snr",
             "gSig", "min_corr", "min_pnr", "worst_check", "waiting_for", "error"} <= set(df.columns)
     row = df.set_index("sid")
     assert row.loc[S1, "export"] == "done" and row.loc[S2, "cnmf"] == "failed"
@@ -334,6 +335,7 @@ def test_summary_csv(series):
     assert row.loc[S1, "crop_box"] == "16x16@0,0"
     assert row.loc[S1, "gSig"] == 4 and row.loc[S1, "min_corr"] == 0.8 and row.loc[S1, "min_pnr"] == 8.0
     assert row.loc[S1, "gate_decision"] == "not_needed" and row.loc[S1, "export_n_neurons"] == 80
+    assert row.loc[S1, "autoinspect_n_kept"] == 70 and row.loc[S1, "autoinspect_deleted_frac"] == 0.2
     assert row.loc[S1, "worst_check"] == "ok"
     assert row.loc[S3, "worst_check"] == "error"  # max shift 31 px > error threshold 30
     assert row.loc[S2, "worst_check"] == "error"  # a failed stage
