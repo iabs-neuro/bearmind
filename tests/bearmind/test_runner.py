@@ -27,7 +27,7 @@ SIDS = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
 S1, S2, S3 = SIDS
 THRESH = {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}}
 ALL = [(sid, st) for st in STAGES for sid in SIDS]
-ZERO = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0}
+ZERO = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
 
 
 def _tail(sid, first):
@@ -91,7 +91,8 @@ class Stubs:
         return StageResult(metrics={"fov": self.fov.get(rec.sid, [2, 3, 10, 9]), "frame_shape": [16, 16]})
 
     def _mc(self, paths, rec, cfg):
-        crop = mc_stage._crop(cfg)  # the real stage's crop rule: waits for the box, uncropped only without FOV
+        mc_stage.check(paths, rec, cfg)  # the real stage's waits: box placed since the latest detection
+        crop = mc_stage._crop(cfg, rec.parts[0].shape)  # uncropped only without FOV, clipped to the frame
         s = rec.sid
         return StageResult(
             outputs=self._out(paths, mc_video=paths.mc_video(s), mc_shifts=paths.mc_shifts(s),
@@ -175,7 +176,7 @@ def test_order_and_resume(series):
     s = series
     res = _run(s)
     assert s.stubs.calls == ALL  # lowest stage first across sessions, then sid order
-    assert res == {"done": 21, "failed": 0, "waiting": 0, "skipped": 0}
+    assert res == {"done": 21, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
     for sid in SIDS:
         rec = load_record(s.paths, sid)
         assert _states(s.paths, sid) == [State.DONE] * 7
@@ -206,7 +207,7 @@ def test_failure_isolated(series):
     assert [rec.stages[x].state for x in STAGES[2:]] == [State.SKIPPED] * 5
     for sid in (S1, S3):
         assert _states(s.paths, sid) == [State.DONE] * 7
-    assert res == {"done": 15, "failed": 1, "waiting": 0, "skipped": 5}
+    assert res == {"done": 15, "failed": 1, "waiting": 0, "skipped": 5, "not_recorded": []}
     log = s.paths.session_log(S2).read_text(encoding="utf-8")
     assert "Traceback" in log and "boom" in log
     assert "Traceback" not in s.paths.session_log(S1).read_text(encoding="utf-8")
@@ -1252,3 +1253,132 @@ def test_export_rule_is_an_export_input(series, monkeypatch):
     monkeypatch.setattr(bearmind.stages, "COMPONENT_RULE", "another_rule")
     _run(s)
     assert s.stubs.calls == [(sid, "export") for sid in SIDS]
+
+
+# --- residual fix: stale crop positions, finalize errors, unrecorded stages, clipped box ---
+
+BROKEN_YAML = "cnmf: [unclosed" + chr(10)
+
+
+def test_mc_waits_for_finalize_after_crop_is_detected_again(series):
+    """R1: MC never starts on positions placed before the latest crop detection. S1 had no field of view
+    (box_pos: null, MC uncropped by design); the detection runs again and finds one; finalize cannot run yet
+    (S2's config is broken), so MC waits instead of running on the stale null position."""
+    s = series
+    s.stubs.fov[S1] = None
+    _run(s)
+    r1 = load_record(s.paths, S1)
+    assert _yaml(s.paths.session_config(S1))["crop"]["box_pos"] is None
+    assert "fov_not_found" in [a.code for a in r1.anomalies]
+    assert r1.stages["mc"].state is State.DONE and r1.stages["mc"].metrics["crop"] is None  # the no-FOV case
+    s.stubs.fov[S1] = [2, 3, 10, 9]
+    config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    good = s.paths.session_config(S2).read_text(encoding="utf-8")
+    s.paths.session_config(S2).write_text(BROKEN_YAML, encoding="utf-8")
+    s.stubs.calls.clear()
+    _run(s)
+    r1 = load_record(s.paths, S1)
+    assert (S1, "crop") in s.stubs.calls
+    st = r1.stages["mc"]
+    assert st.state is State.WAITING and st.error.startswith("waiting for crop_finalize") and not st.outputs
+    assert [r1.stages[x].state for x in STAGES[2:]] == [State.PENDING] * 5
+    s.paths.session_config(S2).write_text(good, encoding="utf-8")
+    _run(s)
+    assert load_record(s.paths, S1).stages["mc"].metrics["crop"] == [0, 0, 16, 16]
+    assert _states(s.paths, S1) == [State.DONE] * 7
+
+
+def test_stale_positions_wait_with_isolated_stages(series, monkeypatch):
+    """R1 through the runner's wait check (production mode): no stage process, no RUNNING write."""
+    s = series
+    _run(s)
+    _isolated_in_process(s, monkeypatch)
+    s.stubs.fov[S1] = [4, 4, 6, 6]
+    config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    s.paths.session_config(S2).write_text(BROKEN_YAML, encoding="utf-8")
+    s.stubs.calls.clear()
+    _run(s)
+    assert (S1, "crop") in s.stubs.calls and (S1, "mc") not in s.stubs.calls
+    st = load_record(s.paths, S1).stages["mc"]
+    assert st.state is State.WAITING and st.error.startswith("waiting for crop_finalize")
+
+
+def _failing_finalize(monkeypatch):
+    calls = []
+
+    def finalize(paths, mouse, records, cfg):
+        calls.append(mouse)
+        if mouse == "NOF_H01":
+            raise RuntimeError("mouse config is read-only")
+        from bearmind.stages import crop as crop_stage
+        return crop_stage.finalize_mouse(paths, mouse, records, cfg)
+
+    monkeypatch.setattr(runner, "FINALIZE_FUNC", finalize)
+    return calls
+
+
+def test_finalize_failure_is_visible(series, monkeypatch):
+    """R2: the sessions of the mouse show why their crop box is missing (summary error, series state, a
+    console line), and the failure is a problem for the run's exit, not a wait for a person."""
+    s = series
+    _failing_finalize(monkeypatch)
+    _run(s)
+    df = pd.read_csv(s.paths.summary_csv).set_index("sid")
+    for sid in (S1, S2):
+        assert load_record(s.paths, sid).stages["mc"].state is State.WAITING
+        assert "finalize of mouse NOF_H01 failed" in df.loc[sid, "error"]
+        assert "mouse config is read-only" in df.loc[sid, "error"]
+    state = runner.series_state(s.paths)
+    assert set(state.finalize_failed) == {S1, S2} and state.waiting == []
+    assert "crop finalize of mouse NOF_H01 failed" in s.paths.series_log.read_text(encoding="utf-8")
+    # a later success removes the reason
+    monkeypatch.setattr(runner, "FINALIZE_FUNC", "bearmind.stages.crop:finalize_mouse")
+    _run(s)
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)
+    assert not any(a.code == "crop_finalize_failed" for a in load_record(s.paths, S1).anomalies)
+    assert runner.series_state(s.paths).finalize_failed == {}
+
+
+def test_finalize_that_keeps_failing_ends_a_waiting_run(series, monkeypatch):
+    """R2: once=False retries a failed finalize after poll_s; when it keeps failing and nothing else can be
+    done by a person, the run ends instead of polling forever."""
+    s = series
+    calls = _failing_finalize(monkeypatch)
+    t, out = _run_bounded(s, poll_s=0.05)
+    t.join(60)
+    assert not t.is_alive(), "the runner polls forever for a finalize that keeps failing"
+    assert calls.count("NOF_H01") >= runner.FINALIZE_TRIES
+    assert "nothing can progress" in s.paths.series_log.read_text(encoding="utf-8")
+    assert _states(s.paths, S3) == [State.DONE] * 7
+
+
+def test_unrecorded_stages_are_reported(series, monkeypatch):
+    """R3: stages left not started or not recorded by registry write failures, and stages left RUNNING on
+    disk, are in the run's result."""
+    s = series
+    _deny_writes(monkeypatch, s, S2, "mc", "running")
+    res = _run(s)
+    assert [(sid, stage) for sid, stage, _ in res["not_recorded"]] == [(S2, "mc")]
+    assert "not started" in res["not_recorded"][0][2] and "PermissionError" in res["not_recorded"][0][2]
+
+
+def test_stage_left_running_on_disk_is_reported(series, monkeypatch):
+    s = series
+    s.stubs.fail[(S2, "mc")] = ValueError("boom")
+    _deny_writes(monkeypatch, s, S2, "mc", "failed")
+    res = _run(s)
+    assert [(sid, stage) for sid, stage, _ in res["not_recorded"]] == [(S2, "mc")]
+    assert load_record(s.paths, S2).stages["mc"].state is State.RUNNING
+
+
+def test_oversized_box_is_clipped_to_the_frame(series):
+    """R4: MC metrics and summary crop_box show the frames MC used, not a box past the frame edge."""
+    s = series
+    _run(s)
+    _set_box(s.paths, "NOF_H01", box=[20, 20], box_source="manual")
+    _run(s)
+    assert load_record(s.paths, S1).stages["mc"].metrics["crop"] == [0, 0, 16, 16]
+    assert runner.summary(s.paths).set_index("sid").loc[S1, "crop_box"] == "16x16@0,0"
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == []  # the clipped placement is up to date: no finalize loop

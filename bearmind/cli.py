@@ -244,7 +244,8 @@ def _report_run(paths, res) -> int:
     session of the series has a FAILED stage or cannot be scheduled."""
     st = runner.series_state(paths)
     waiting = sorted({sid for sid, _, _ in st.waiting})
-    bad = bool(st.failed or st.problems)
+    unrecorded = res.get("not_recorded") or []
+    bad = bool(st.failed or st.problems or st.finalize_failed or unrecorded)
     _say(("[FAILED] " if bad else "[OK] ")
          + f"this run: done {res['done']}, failed {res['failed']}, skipped {res['skipped']} | series now: "
          + f"failed {len(st.failed)}, waiting for a person {len(waiting)}, cannot be scheduled {len(st.problems)}, "
@@ -259,6 +260,15 @@ def _report_run(paths, res) -> int:
         _say(f"         {sid} {stage} waits for {_REASON.get(what, what)}: blocked by {', '.join(by)}")
     if st.problems:
         _say("         fix the named config file (or rescan), then run again")
+    late = sorted(sid for sid in st.finalize_failed if sid not in st.problems)
+    if late:
+        _say(f"[FAILED] crop box not placed for {', '.join(late)}: {_clip(_ascii(st.finalize_failed[late[0]]))}")
+        _say("         the runner tries again on the next run; see the session log for the traceback")
+    if unrecorded:
+        _say(f"[FAILED] {len(unrecorded)} stages not started or not recorded (registry not writable):")
+        for sid, stage, why in unrecorded[:_MAX_LISTED]:
+            _say(f"         {sid} {stage}: {_clip(_ascii(why))}")
+        _say(f"         close the program that holds files in {paths.registry_file('x').parent}, then run again")
     if len(st.failed) > _MAX_LISTED or len(st.problems) > _MAX_LISTED:
         _say(f"         more in: status {paths.root}")
     if waiting:
@@ -316,6 +326,8 @@ def _note(rec, reason, state) -> str:
     """What the operator must know about the session: why it cannot be scheduled comes first."""
     if rec.sid in state.problems:
         return f"cannot be scheduled: {_clip(state.problems[rec.sid])}"
+    if rec.sid in state.finalize_failed and reason:
+        return f"{reason}: {_clip(state.finalize_failed[rec.sid])}"
     by = next((b for sid, _, _, b in state.blocked if sid == rec.sid), None)
     if by:
         return f"{reason}: blocked by {', '.join(by)} (cannot be scheduled)"
@@ -331,6 +343,7 @@ def _waiting_line(state) -> str:
         waits[name] = waits.get(name, 0) + 1
     return ("waiting: " + (", ".join(f"{k} {v}" for k, v in sorted(waits.items())) or "nobody")
             + f"; blocked: {len(state.blocked)}; cannot be scheduled: {len(state.problems)}"
+            + (f"; crop finalize failed: {len(state.finalize_failed)}" if state.finalize_failed else "")
             + f"; failed: {len(state.failed)}")
 
 

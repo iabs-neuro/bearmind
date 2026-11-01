@@ -552,3 +552,32 @@ def test_not_needed_on_a_passed_gate_asks_for_force(series, capsys):
     assert load_record(series.paths, S2).decisions[-1].value == "not_needed"  # the others are decided
     assert _main("gate", series.root, S1, "not-needed", "--force") == 0
     assert load_record(series.paths, S1).decisions[-1].value == "not_needed"
+
+
+def test_run_reports_finalize_failure_and_unrecorded_stages(series, capsys, monkeypatch):
+    """R2 / R3: a failed crop finalize and a stage the registry did not take make run exit 1 with a line
+    each; status shows the finalize reason in the note of the waiting sessions."""
+    from tests.bearmind.test_runner import _failing_finalize
+
+    for sid in SIDS:
+        save_record(series.paths, _record(sid))
+        config.update_yaml(series.paths.session_config(sid), THRESH)
+    _failing_finalize(monkeypatch)
+    assert _main("run", series.root, "--once") == 1
+    out = capsys.readouterr().out
+    assert "[FAILED] crop box not placed" in out and "mouse config is read-only" in out
+    lines = {ln.split()[0]: ln for ln in _status(series, capsys).splitlines() if ln.split() and ln.split()[0] in SIDS}
+    assert "finalize of mouse NOF_H01 failed" in lines[S1] and "finalize of mouse NOF_H01 failed" in lines[S2]
+
+
+def test_run_exit_code_for_a_stage_not_recorded(series, capsys, monkeypatch):
+    from tests.bearmind.test_runner import _deny_writes
+
+    for sid in SIDS:
+        save_record(series.paths, _record(sid))
+        config.update_yaml(series.paths.session_config(sid), THRESH)
+    _deny_writes(monkeypatch, series, S2, "mc", "running")
+    assert _main("run", series.root, "--once") == 1
+    out = capsys.readouterr().out
+    assert "[FAILED] 1 stages not started or not recorded (registry not writable)" in out
+    assert f"{S2} mc: not started" in out

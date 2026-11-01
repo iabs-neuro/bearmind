@@ -82,6 +82,8 @@ COUNT_KEYS = ("done", "running", "waiting_thresholds", "waiting_manual", "waitin
               "pending")
 _WAIT_KIND = {"thresholds": "waiting_thresholds", "crop_finalize": "waiting_crop"}  # other waits: a person
 _UNSET = "<unset>"  # crop.box_pos not written yet (finalize pending), distinct from null (no FOV: uncropped)
+FINALIZE_FAILED = "crop_finalize_failed"  # crop anomaly of the sessions whose mouse box could not be placed
+FINALIZE_TRIES = 2  # failed finalize attempts after which the mouse's sessions cannot progress (retried before)
 _LEVEL = {"ok": 0, "warning": 1, "error": 2}
 
 
@@ -299,14 +301,23 @@ def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
 
 # --- what the series needs ---
 
+def _finalize_failure(rec):
+    return next((a for a in rec.anomalies if a.code == FINALIZE_FAILED), None)
+
+
 def schedule_problems(paths, records, view=None, broken=()) -> dict:
-    """sid -> why the session cannot be scheduled now: its config or stage parameters cannot be resolved
-    (non-excluded sessions), or its registry file cannot be read (under the file name)."""
+    """sid -> why the session cannot be scheduled now: its config or stage parameters cannot be resolved,
+    or the box of its mouse could not be placed FINALIZE_TRIES times (non-excluded sessions); or its registry
+    file cannot be read (under the file name)."""
     view = view or _View(paths)
     active = [r for r in records if not r.excluded]
     for r in active:
         view.hashes(r)
     out = {r.sid: view.errors[r.sid] for r in active if r.sid in view.errors}
+    for r in active:
+        a = _finalize_failure(r)
+        if a is not None and a.data.get("attempts", 1) >= FINALIZE_TRIES and r.sid not in out:
+            out[r.sid] = f"{a.message} ({a.data['attempts']} attempts)"
     for f, why in broken:
         out[Path(f).stem] = f"broken registry file (run scan to recreate it): {f}: {why}"
     return out
@@ -355,6 +366,7 @@ class SeriesState:
     blocked: list  # (sid, stage, what, [blocking sids]): waits only a config fix moves
     failed: dict  # sid -> (stage, error) of its first FAILED stage, non-excluded sessions
     excluded: list
+    finalize_failed: dict  # sid -> why the box of its mouse is not placed (the last finalize failed)
 
 
 def series_state(paths) -> SeriesState:
@@ -366,7 +378,11 @@ def series_state(paths) -> SeriesState:
         first = next((s for s in STAGES if s in r.stages and r.stages[s].state is State.FAILED), None)
         if first is not None and not r.excluded:
             failed[r.sid] = (first, r.stages[first].error)
-    return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded])
+    finalize_failed = {r.sid: _finalize_failure(r).message for r in records
+                       if not r.excluded and _finalize_failure(r) is not None}
+    person = [w for w in person if w[0] not in finalize_failed]  # waiting for a retry, not for a person
+    return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded],
+                       finalize_failed)
 
 
 # --- registry changes made by the runner ---
@@ -654,7 +670,8 @@ class _Run:
     def __init__(self, paths, until, sids, once, poll_s, console=False):
         self.paths, self.sids, self.once, self.poll_s, self.console = paths, sids, once, poll_s, console
         self.until, self.stages = until, _stages_until(until)
-        self.result = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0}
+        self.result = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
+        self.not_recorded = {}  # (sid, stage) -> why its start or outcome is not in the registry
         self.current = None  # (sid, stage, started, params_hash, temp_root)
         self.logs = self.hb = None
         self.waiting_logged = set()
@@ -761,9 +778,9 @@ def _finalize_due(records, view, scope, attempted, once, poll_s) -> list:
     Settled = up to date, or FAILED with unchanged parameters (one bad session does not hold its mouse).
     A session that cannot be scheduled (unreadable config) is not settled: its mouse waits (M1). Only
     sessions with crop DONE are passed to finalize_mouse. A crop re-run drops metrics['box'], so the box is
-    placed again. `attempted` maps a key to (ok, time): a key that worked is not run again; one that failed
-    is retried after poll_s (once=True: by the next run). The key holds the mouse box and the positions, so
-    an edit of either during a run is seen.
+    placed again. `attempted` maps a key to (ok, time, failures): a key that worked is not run again; one that
+    failed is retried after poll_s, up to FINALIZE_TRIES times per run (once=True: by the next run). The key
+    holds the mouse box and the positions, so an edit of either during a run is seen.
     """
     by_mouse = {}
     for r in records:
@@ -782,8 +799,8 @@ def _finalize_due(records, view, scope, attempted, once, poll_s) -> list:
         key = (mouse, _tuple(crops[0].get("box")),
                tuple((r.sid, r.stages["crop"].params_hash, r.stages["crop"].finished, _tuple(c.get("box_pos")))
                      for r, c in zip(done, crops)))
-        tried = attempted.get(key)
-        if tried is None or (not tried[0] and not once and now - tried[1] >= poll_s):
+        tried = attempted.get(key)  # (ok, time, failures in this run)
+        if tried is None or (not tried[0] and not once and tried[2] < FINALIZE_TRIES and now - tried[1] >= poll_s):
             due.append((mouse, done, key))
     return due
 
@@ -808,6 +825,7 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
                     return
                 if r.sid in boxes:
                     d.stages["crop"].metrics["box"] = _box_list(boxes[r.sid])
+                d.anomalies = [a for a in d.anomalies if a.code != FINALIZE_FAILED]
                 have = {a.code for a in d.anomalies if a.data.get("stage") == "crop"}
                 d.anomalies.extend(a for a in new if a.code not in have)
 
@@ -820,13 +838,35 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
                     log.warning("%s crop: finalize placed no box (no crop metrics)", r.sid, extra={"sid": r.sid})
     except Exception as e:
         last, tb = _last_line(e), traceback.format_exc()
+        log.error("crop finalize of mouse %s failed (MC of %s waits): %s", mouse, ", ".join(r.sid for r in done),
+                  last, extra={"console": True})
         for r in done:
             with run_.logs.session(r.sid):
                 log.error("%s crop: finalize of mouse %s failed, retried later (MC waits): %s", r.sid, mouse,
                           last, extra={"sid": r.sid})
                 log.error("%s", tb, extra={"sid": r.sid, "session_only": True})
+            _record_finalize_failure(paths, r.sid, mouse, last, ours)
         return False
     return True
+
+
+def _record_finalize_failure(paths, sid, mouse, why, ours) -> None:
+    """The reason the session's box is missing, for status and summary.csv (a crop anomaly with the number
+    of failed attempts); a later finalize that works removes it, a crop re-run drops it."""
+    def note(d):
+        if not ours(d):
+            return
+        old = _finalize_failure(d)
+        attempts = (old.data.get("attempts", 1) if old is not None else 0) + 1
+        d.anomalies = [a for a in d.anomalies if a.code != FINALIZE_FAILED]
+        d.anomalies.append(Anomaly(FINALIZE_FAILED, "error", f"crop box not placed: finalize of mouse {mouse} "
+                                   f"failed: {why}", data={"stage": "crop", "attempts": attempts}))
+
+    try:
+        _update(paths, sid, note, RESULT_WRITE_TRIES)
+    except OSError as e:
+        log.error("%s crop: finalize failure not recorded, registry not writable: %s", sid, _last_line(e),
+                  extra={"sid": sid})
 
 
 def _wait_check(paths, stage, rec, cfg):
@@ -878,7 +918,9 @@ def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
     except OSError as e:  # checked again after poll_s
         log.error("%s %s: wait not recorded, registry not writable: %s", sid, stage, _last_line(e),
                   extra={"sid": sid})
+        run_.not_recorded[(sid, stage)] = f"wait not recorded: {_last_line(e)}"
         return "none"
+    run_.not_recorded.pop((sid, stage), None)
     if not applied:
         return "retry"
     run_.waiting_logged.add((sid, stage))
@@ -956,7 +998,9 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
     except OSError as e:  # offered again after poll_s; nothing ran, nothing is lost
         log.error("%s %s: not started, registry not writable: %s", sid, stage, _last_line(e),
                   extra={"sid": sid, "console": True})
+        run_.not_recorded[(sid, stage)] = f"not started, registry not writable: {_last_line(e)}"
         return "none"
+    run_.not_recorded.pop((sid, stage), None)
     run_.current = (sid, stage, started, h, temp_root)
     run_.refresh()
     with run_.logs.session(sid):
@@ -994,7 +1038,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
                     applied.append(True)
                     d.stages[stage].state, d.stages[stage].error = State.WAITING, str(w)
 
-            outcome = _record_outcome(paths, sid, stage, waiting, "waiting", applied)
+            outcome = _record_outcome(paths, sid, stage, waiting, "waiting", applied, run_)
             if outcome == "waiting" and (sid, stage) not in run_.waiting_logged:  # retried every poll
                 run_.waiting_logged.add((sid, stage))
                 log.info("%s %s: %s", sid, stage, w, extra={"sid": sid, "console": True})
@@ -1016,7 +1060,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
                     d.anomalies.extend(crash)
                     skipped.append(_skip_downstream(d, stage))
 
-            outcome = _record_outcome(paths, sid, stage, failed, "failed", applied)
+            outcome = _record_outcome(paths, sid, stage, failed, "failed", applied, run_)
             if outcome == "failed":
                 run_.result["failed"] += 1
                 run_.result["skipped"] += sum(skipped)
@@ -1034,12 +1078,13 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
     return outcome
 
 
-def _record_outcome(paths, sid, stage, change, outcome, applied) -> str:
+def _record_outcome(paths, sid, stage, change, outcome, applied, run_: _Run) -> str:
     try:
         _update(paths, sid, change, RESULT_WRITE_TRIES)
     except OSError as e:  # the batch goes on; the stage stays RUNNING on disk and is offered after poll_s
         log.error("%s %s: %s not recorded, registry not writable: %s", sid, stage, outcome, _last_line(e),
-                  extra={"sid": sid})
+                  extra={"sid": sid, "console": True})
+        run_.not_recorded[(sid, stage)] = f"{outcome} not recorded, registry not writable: {_last_line(e)}"
         return "none"
     return outcome if applied else _superseded(sid, stage)
 
@@ -1072,9 +1117,10 @@ def _loop(paths, run_: _Run) -> dict:
     last_msg = None
     once, poll_s = run_.once, run_.poll_s
 
-    def ready(records, view=None):
-        return next_ready(records, paths, until=run_.until, sids=run_.sids,
-                          skip=_skip(tried, not_started, records, once, poll_s), _view=view)
+    def ready(records, blocked, view=None):
+        # a blocked wait is not checked again: only a config fix (or a working finalize) moves it
+        skip = _skip(tried, not_started, records, once, poll_s) | {(sid, stage) for sid, stage, _, _ in blocked}
+        return next_ready(records, paths, until=run_.until, sids=run_.sids, skip=skip, _view=view)
 
     def person_waits(records, broken, view=None):
         problems = schedule_problems(paths, records, view, broken)
@@ -1087,11 +1133,13 @@ def _loop(paths, run_: _Run) -> dict:
         due = _finalize_due(records, view, _Scope(records, run_.sids), attempted, once, poll_s)
         if due:
             for mouse, done, key in due:
-                attempted[key] = (_run_finalize(paths, mouse, done, run_), time.monotonic())
+                ok = _run_finalize(paths, mouse, done, run_)
+                fails = 0 if ok else (attempted[key][2] if key in attempted else 0) + 1
+                attempted[key] = (ok, time.monotonic(), fails)
             run_.refresh()
             continue
-        job = ready(records, view)
         person, blocked, problems = person_waits(records, broken, view)
+        job = ready(records, blocked, view)
         for sid, err in problems.items():
             if (sid, err) not in reported:
                 reported.add((sid, err))
@@ -1119,13 +1167,26 @@ def _loop(paths, run_: _Run) -> dict:
             continue
         # about to return: a decision may have landed after this snapshot was read (C1)
         fresh, fresh_broken = registry.read_all(paths)
-        if ready(fresh) is not None or (not once and person_waits(fresh, fresh_broken)[0]):
+        fresh_person, fresh_blocked, _ = person_waits(fresh, fresh_broken)
+        if ready(fresh, fresh_blocked) is not None or (not once and fresh_person):
             continue
         if blocked and not person:
             log.error("nothing can progress until a config is fixed: %s", _blocked_text(blocked, problems),
                       extra={"console": True})
         run_.result["waiting"] = len(_waiting(fresh, _Scope(fresh, run_.sids), run_.stages))
+        run_.result["not_recorded"] = _not_recorded(fresh, run_)
         return dict(run_.result)
+
+
+def _not_recorded(records, run_: _Run) -> list:
+    """(sid, stage, why) of the stages whose start or outcome the registry did not take in this run, and of
+    any stage left RUNNING on disk (no stage runs when the loop returns)."""
+    out = dict(run_.not_recorded)
+    for r in records:
+        for s, st in r.stages.items():
+            if st.state is State.RUNNING:
+                out.setdefault((r.sid, s), "left RUNNING in the registry: its outcome was not recorded")
+    return [(sid, stage, why) for (sid, stage), why in sorted(out.items())]
 
 
 def _wait_message(person, blocked) -> str:
@@ -1142,9 +1203,12 @@ def _wait_message(person, blocked) -> str:
 
 def run(series_root: Path, until: str | None = None, sids: list[str] | None = None, once: bool = False,
         poll_s: float = 30, console: bool = False) -> dict:
-    """Process the series until no stage is ready; returns {"done", "failed", "waiting", "skipped"}.
+    """Process the series until no stage is ready; returns {"done", "failed", "waiting", "skipped",
+    "not_recorded"}.
 
-    done / failed / skipped count stage outcomes of this run; waiting counts stages left WAITING at exit.
+    done / failed / skipped count stage outcomes of this run; waiting counts stages left WAITING at exit;
+    not_recorded lists (sid, stage, why) of stages the registry did not take (start or outcome) or left
+    RUNNING.
     While sessions wait for a person (thresholds, manual inspection) the process polls every `poll_s`
     and continues when the decision arrives; once=True returns as soon as no stage is ready. console=True
     prints one ASCII line per event (stage started / done / failed, waits) on stdout.
@@ -1226,6 +1290,8 @@ def _summary_row(paths, rec, problem=None) -> dict:
         c = (rec.stages.get("cnmf") or StageRecord()).metrics
     if problem is not None:  # what holds the session now goes before the error of an earlier failure
         error = f"cannot be scheduled: {problem}"
+    elif error is None and _finalize_failure(rec) is not None:
+        error = _finalize_failure(rec).message
     row.update(gSig=c.get("gSig"), min_corr=c.get("min_corr"), min_pnr=c.get("min_pnr"),
                worst_check=max(levels, key=_LEVEL.get) if levels else "", waiting_for=waiting_for,
                error=error, anomalies=",".join(a.code for a in rec.anomalies))
