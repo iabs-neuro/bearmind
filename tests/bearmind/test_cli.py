@@ -433,3 +433,19 @@ def test_finished_series_is_ok(series, capsys):
     out = capsys.readouterr().out
     assert ("[OK] this run: done 21, failed 0, skipped 0 | series now: failed 0, waiting for a person 0, "
             "cannot be scheduled 0, excluded 0") in out
+
+
+def test_accept_suggested_after_run_until_thresholds(series, capsys):
+    """I5: the documented workflow run --until thresholds -> thresholds accept-suggested sets the thresholds of
+    every session that has a suggestion and none in its config (CNMF is PENDING then, not WAITING)."""
+    _write = config.update_yaml
+    _write(series.paths.session_config(S3), {"cnmf": {"gSig": 5, "min_corr": 0.7, "min_pnr": 9.0}})  # set before
+    assert _main("run", series.root, "--once", "--until", "thresholds") == 0
+    assert load_record(series.paths, S1).stages["cnmf"].state is State.PENDING
+    capsys.readouterr()
+    assert _main("thresholds", series.root, "accept-suggested") == 0
+    out = capsys.readouterr().out
+    for sid in (S1, S2):
+        assert _yaml(series.paths.session_config(sid))["cnmf"] == {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
+        assert f"[OK] {sid}: gSig=4" in out
+    assert _yaml(series.paths.session_config(S3))["cnmf"]["gSig"] == 5 and S3 not in out

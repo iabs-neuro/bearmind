@@ -139,6 +139,19 @@ def _waiting_for(rec, stage: str):
     return runner._what(st)
 
 
+def _suggested_unset(paths, rec) -> bool:
+    """The thresholds stage is done with a suggestion and the session has no thresholds yet: after
+    run --until thresholds CNMF is PENDING, not WAITING."""
+    th = rec.stages.get("thresholds")
+    if th is None or th.state is not State.DONE or not th.metrics.get("suggested"):
+        return False
+    try:
+        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
+    except Exception:  # a broken config is shown by status as "cannot be scheduled"
+        return False
+    return any(c.get(k) is None for k in ("gSig", "min_corr", "min_pnr"))
+
+
 def _gate_waits(paths, rec) -> bool:
     """The gate waits for a person now: WAITING, or (CNMF done) any state but DONE, since the runner may be
     checking it at this moment. A passed gate, or one holding a decision that counts, is not taken."""
@@ -344,7 +357,8 @@ def cmd_thresholds(args) -> int:
         _check_sids(recs, args.sessions)
         sids = list(args.sessions)
     else:
-        sids = [s for s, r in sorted(recs.items()) if not r.excluded and _waiting_for(r, "cnmf") == "thresholds"]
+        sids = [s for s, r in sorted(recs.items()) if not r.excluded
+                and (_waiting_for(r, "cnmf") == "thresholds" or _suggested_unset(paths, r))]
         if not sids:
             _say("[WARN] no session waits for thresholds")
             return OK
@@ -496,7 +510,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("thresholds", cmd_thresholds, "set CNMF-E thresholds", who=False)
     ts = sp.add_subparsers(dest="action", required=True, parser_class=_Parser, metavar="action")
     a = ts.add_parser("accept-suggested", help="use the suggested thresholds")
-    a.add_argument("--sessions", nargs="+", metavar="SID", help="default: all sessions waiting for thresholds")
+    a.add_argument("--sessions", nargs="+", metavar="SID",
+                   help="default: every session waiting for thresholds, or with a suggestion and none set")
     s = ts.add_parser("set", help="set thresholds of one session")
     s.add_argument("sid", metavar="SID")
     s.add_argument("--gsig", type=_checked(_gsig_error, "--gsig"), required=True)
