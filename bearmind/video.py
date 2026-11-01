@@ -21,7 +21,12 @@ class CropBox:
 
 
 def _grey(frame) -> np.ndarray:
-    """uint8 2-D grey frame; miniscope frames are grey replicated, so the gray conversion equals channel 0."""
+    """uint8 2-D grey frame: the Y (luma) plane, the grey signal the camera wrote (PyAV format "gray").
+
+    Legacy UCLA files (FFV1 gray): the same values as the old moviepy path, which kept channel 0 of an rgb24
+    decode. Bonsai files (mpeg4 yuv420p): the old path is 2-3 grey levels lower in every pixel, because the
+    rgb24 conversion mixes the chroma into channel 0 (Task 18, NOF_H01_1D: +2.5 on average).
+    """
     return frame.to_ndarray(format="gray")
 
 
