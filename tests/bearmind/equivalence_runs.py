@@ -5,10 +5,11 @@ get the same BLAS and pool settings, and OPENBLAS_CORETYPE is in place before nu
 `ensure_*`; a run is repeated only when its cache key changes. The key of every cached run (MC old side,
 CNMF-E old and new side) = the input clip (file sizes and mtimes), the resolved crop/mc/cnmf config, the
 CaImAn and NumPy versions, the pool and BLAS settings, and a hash of all code it may run: every *.py under
-bearmind/, every root-level *.py and this file (`code_files`). So the cache is invalidated by any change to
-the package or the root modules; over-invalidation is accepted. The autoinspection run (new env on the
-input of an old-env run) is keyed the same way on its two files, the stored autoinspection_config, the
-model file and the code. By hand, to rebuild one side:
+bearmind/ and ml/, every root-level *.py and this file (`code_files`). So the cache is invalidated by any
+change to the package, ml/ or the root modules; over-invalidation is accepted. The autoinspection run (new
+env on the input of an old-env run) is keyed the same way on its two files, the stored
+autoinspection_config, the model file, the code and the versions of what it runs (`autoinspect_versions`).
+By hand, to rebuild one side:
 
     python tests/bearmind/equivalence_runs.py mc|cnmf-old|cnmf-new SERIES SID OUT_DIR N_PROCESSES
     python tests/bearmind/equivalence_runs.py autoinspect INPUT_ESTIMATES OLD_PROCESSED OUT_DIR 0
@@ -64,13 +65,14 @@ def _file_sig(path) -> list:
 
 
 def code_files(root: Path = REPO) -> list[Path]:
-    """The code a cached run may execute: every module of the package, every root-level module, this helper.
+    """The code a cached run may execute: every module of the package, every root-level module, the ml
+    package (auto_inspector imports ml.data_utils), this helper.
 
     Deliberately wide: the stages import bm_qc, registry, config and more, and the old functions import half of
     the root modules; any change to one of them recomputes the cache (a recompute is ~10 min on the clip).
     """
     root = Path(root)
-    files = set(root.glob("bearmind/**/*.py")) | set(root.glob("*.py"))
+    files = set(root.glob("bearmind/**/*.py")) | set(root.glob("*.py")) | set(root.glob("ml/**/*.py"))
     files.add(root / "tests" / "bearmind" / "equivalence_runs.py")
     return sorted(f for f in files if f.is_file())
 
@@ -156,9 +158,16 @@ def autoinspect_args(config: dict) -> tuple[dict, int]:
     return kw, int(config["fps"])
 
 
-def autoinspect_key(input_pickle, old_processed) -> dict:
+def autoinspect_versions() -> dict:
+    """Versions of what autoinspection runs: driada computes the event features and kinetics_opt, with numba
+    and ssqueezepy (wavelets) under it; interpret scores the model."""
     from importlib.metadata import version
 
+    return {**_versions(), **{p: version(p) for p in ("pandas", "scipy", "interpret", "joblib", "driada",
+                                                       "numba", "ssqueezepy")}}
+
+
+def autoinspect_key(input_pickle, old_processed) -> dict:
     config = load_pickle(old_processed).autoinspection_config
     kw, fps = autoinspect_args(config)
     model = Path(kw["ml_model_path"])
@@ -166,8 +175,7 @@ def autoinspect_key(input_pickle, old_processed) -> dict:
             "input": [str(input_pickle), *_file_sig(input_pickle)],
             "old": [str(old_processed), *_file_sig(old_processed)],
             "args": kw, "fps": fps, "model": [model.name, hashlib.sha256(model.read_bytes()).hexdigest()],
-            "code": code_sig(), **_versions(),
-            **{p: version(p) for p in ("pandas", "scipy", "interpret", "joblib")}}
+            "code": code_sig(), **autoinspect_versions()}
 
 
 def stage_pool(series_root, sid, n_processes) -> int:
