@@ -414,7 +414,7 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
             save_record(paths, rec)
         records.append(rec)
 
-    out = paths._service / "scan_unrecognized.csv"
+    out = paths.scan_unrecognized_csv
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh, lineterminator="\n")
@@ -422,3 +422,12 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
         for d, reason in unrecognized:
             w.writerow([paths.rel(d), reason])
     return sorted(records, key=lambda r: r.sid)
+
+
+def read_unrecognized(paths: SeriesPaths) -> list[tuple[str, str]]:
+    """(path, reason) of every folder the last scan could not read as a session ([] before any scan)."""
+    try:
+        with open(paths.scan_unrecognized_csv, encoding="utf-8", newline="") as fh:
+            return [(row["path"], row["reason"]) for row in csv.DictReader(fh)]
+    except FileNotFoundError:
+        return []

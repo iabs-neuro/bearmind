@@ -98,6 +98,10 @@ class SeriesPaths:
     def summary_csv(self) -> Path:
         return self._service / "summary.csv"
 
+    @property
+    def scan_unrecognized_csv(self) -> Path:
+        return self._service / "scan_unrecognized.csv"
+
     def rel(self, p) -> str:
         """Path relative to the series root, with '/' separators."""
         return Path(p).relative_to(self.root).as_posix()

@@ -27,6 +27,7 @@ _LETTER = {State.DONE: "D", State.RUNNING: "R", State.WAITING: "W", State.FAILED
            State.PENDING: "."}
 _REASON = {"thresholds": "thresholds", "manual_inspection": "manual inspection", "crop_finalize": "crop box"}
 _MAX_LISTED = 12
+_MAX_UNRECOGNIZED = 10
 
 
 class CliError(Exception):
@@ -198,6 +199,14 @@ def cmd_scan(args) -> int:
     for r in excluded:
         why = "; ".join(a.message for a in r.anomalies if a.level == "error") or "excluded by a decision"
         _say(f"[WARN] {r.sid}: excluded - {why}")
+    odd = scan.read_unrecognized(paths)
+    if odd:
+        _say(f"[WARN] {len(odd)} folders not recognized (not scanned as sessions):")
+        for path, reason in odd[:_MAX_UNRECOGNIZED]:
+            _say(f"         {path} - {reason}")
+        if len(odd) > _MAX_UNRECOGNIZED:
+            _say(f"         ... and {len(odd) - _MAX_UNRECOGNIZED} more")
+        _say(f"         list: {paths.scan_unrecognized_csv}")
     return OK
 
 
@@ -327,6 +336,9 @@ def cmd_status(args) -> int:
              for f, _ in state.broken]
     _say(_heartbeat_line(paths))
     _say(_waiting_line(state))
+    odd = scan.read_unrecognized(paths)
+    if odd:
+        _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
     _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
     head = "session".ljust(width) + "  excl  " + " ".join(_SHORT[s].ljust(4) for s in STAGES) + "  note"

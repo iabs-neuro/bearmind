@@ -449,3 +449,28 @@ def test_accept_suggested_after_run_until_thresholds(series, capsys):
         assert _yaml(series.paths.session_config(sid))["cnmf"] == {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
         assert f"[OK] {sid}: gSig=4" in out
     assert _yaml(series.paths.session_config(S3))["cnmf"]["gSig"] == 5 and S3 not in out
+
+
+def test_scan_and_status_report_unrecognized_folders(tmp_path, make_series, capsys):
+    """I8: a folder the scan cannot read as a session does not vanish from the operator's view."""
+    root = make_series(tmp_path / "un")
+    odd = root / "1_Raw" / "HM_NOF_1D" / "NOF_H01_1D_part2"
+    odd.mkdir()
+    (odd / "NOF_H01_1D_part2_0.avi").write_bytes(b"x")
+    for i in range(11):
+        junk = root / "1_Raw" / f"junk_{i:02d}"
+        junk.mkdir()
+        (junk / "0.avi").write_bytes(b"x")
+    assert _main("scan", root) == 0
+    out = capsys.readouterr().out
+    csv_path = root / "_bearmind" / "scan_unrecognized.csv"
+    assert "[WARN] 12 folders not recognized" in out
+    assert "1_Raw/HM_NOF_1D/NOF_H01_1D_part2 - AVI names do not match <SID>_<n>.avi" in out
+    assert sum(" - folder name is not a session id" in ln for ln in out.splitlines()) == 9  # 10 lines at most
+    assert str(csv_path) in out
+    status = _status(SimpleNamespace(root=root), capsys)
+    assert f"unrecognized folders: 12; list: {csv_path}" in status
+
+
+def test_status_without_unrecognized_folders_says_nothing(series, capsys):
+    assert "unrecognized" not in _status(series, capsys)
