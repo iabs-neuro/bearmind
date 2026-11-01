@@ -177,6 +177,11 @@ def _gate_waits(paths, rec) -> bool:
     return False
 
 
+def _gate_passed(rec) -> bool:
+    g = rec.stages.get("gate")
+    return g is not None and g.state is State.DONE
+
+
 def _warn_excluded(rec) -> None:
     if rec.excluded:
         _say(f"[WARN] {rec.sid} is excluded; the runner ignores it until you run: decide SERIES {rec.sid} include")
@@ -219,6 +224,8 @@ def cmd_run(args) -> int:
     paths = _series(args.series)
     recs = _records(paths)
     _check_sids(recs, args.sessions or ())
+    for sid in args.sessions or ():
+        _warn_excluded(recs[sid])
     try:
         res = runner.run(paths.root, until=args.until, sids=args.sessions, once=args.once, console=True)
     except KeyboardInterrupt:
@@ -430,6 +437,12 @@ def cmd_gate(args) -> int:
     who, code = _who(args), OK
     for sid in sids:
         _warn_excluded(recs[sid])
+        if decision == "not_needed" and _gate_passed(recs[sid]) and not args.force:
+            _say(f"[WARN] {sid}: manual inspection already passed; a new decision makes autoinspection and "
+                 f"export run again, and autoinspection is not reproducible run to run (driada adds unseeded "
+                 f"noise), so the exported neurons can change. Not recorded; to proceed add --force")
+            code = 1
+            continue
         try:
             gate.decide(paths, sid, decision, who)
         except ValueError as e:
@@ -547,6 +560,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("gate", cmd_gate, "manual-inspection decision: gate SERIES SID ... (not-needed | cleaned)")
     sp.add_argument("items", nargs="*", metavar="SID... DECISION", help="session names, then not-needed or cleaned")
     sp.add_argument("--all-waiting", action="store_true", help="all sessions waiting for manual inspection")
+    sp.add_argument("--force", action="store_true",
+                    help="record not-needed also for a session whose manual inspection already passed")
 
     sp = add("decide", cmd_decide, "exclude or include a session, or accept a frames/timestamps mismatch")
     sp.add_argument("sid", metavar="SID")

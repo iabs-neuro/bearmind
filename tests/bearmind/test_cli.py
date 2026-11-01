@@ -531,3 +531,24 @@ def test_status_marks_the_worst_check(series, capsys):
     rows = {ln.split()[0]: ln for ln in out.splitlines() if ln.split() and ln.split()[0] in SIDS}
     assert rows[S1][col] == "E" and rows[S2][col] == "W" and rows[S3][col] == " "
     assert "chk: W warning, E error" in out
+
+
+def test_run_sessions_warns_for_an_excluded_session(series, capsys):
+    """10h"""
+    update_record(series.paths, S1, lambda r: setattr(r, "excluded", True))
+    _main("run", series.root, "--once", "--until", "crop", "--sessions", S1)
+    out = capsys.readouterr().out
+    assert f"[WARN] {S1} is excluded; the runner ignores it" in out
+
+
+def test_not_needed_on_a_passed_gate_asks_for_force(series, capsys):
+    """10h: re-deciding a passed gate re-runs autoinspection, which does not reproduce run to run."""
+    _set(series.paths, S1, "gate", State.DONE)
+    assert _main("gate", series.root, S1, S2, "not-needed") == 1
+    out = capsys.readouterr().out
+    assert f"[WARN] {S1}: manual inspection already passed" in out
+    assert "autoinspection and export run again" in out and "not reproducible" in out and "--force" in out
+    assert load_record(series.paths, S1).decisions == []
+    assert load_record(series.paths, S2).decisions[-1].value == "not_needed"  # the others are decided
+    assert _main("gate", series.root, S1, "not-needed", "--force") == 0
+    assert load_record(series.paths, S1).decisions[-1].value == "not_needed"
