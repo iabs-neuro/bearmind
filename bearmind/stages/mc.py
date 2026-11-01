@@ -14,11 +14,15 @@ import tifffile
 
 from bearmind import fileio, pool
 from bearmind.registry import Anomaly
-from bearmind.stages import StageResult, WaitingForInput
+from bearmind.stages import StageResult, WaitingForInput, require_temp_space
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
 
 CHUNK = 1000
 N_CORR_FRAMES = 200
+# Temp disk per pixel-frame: _write_tif stores the cropped movie as a uint8 BigTIFF (plus a few hundred
+# bytes of tags per frame); CaImAn 1.13.2 motion_correct(save_movie=False) on a file writes nothing to
+# CAIMAN_TEMP (motion_correction_piecewise makes a memmap only when it saves the movie).
+TEMP_BYTES_PER_PX_FRAME = 1
 
 
 def _crop(cfg) -> CropBox | None:
@@ -106,6 +110,9 @@ def _mean_template_corr(video: VideoArray, template: np.ndarray, gSig_filt=None)
 
 def run(paths, rec, cfg) -> StageResult:
     crop = _crop(cfg)  # WaitingForInput before any heavy work
+    h, w = (crop.height, crop.width) if crop is not None else rec.parts[0].shape
+    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], rec.sid)
+    require_temp_space(tmp, TEMP_BYTES_PER_PX_FRAME * int(rec.n_frames) * int(h) * int(w), "MC")
 
     import caiman.motion_correction as cmc
 
@@ -116,7 +123,6 @@ def run(paths, rec, cfg) -> StageResult:
         raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
     n_in = int(rec.n_frames)
-    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a missing CAIMAN_TEMP folder
     saved = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     os.environ["CAIMAN_TEMP"] = str(tmp)

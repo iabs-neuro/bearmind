@@ -21,7 +21,7 @@ import numpy as np
 
 from bearmind import pool
 from bearmind.registry import Anomaly
-from bearmind.stages import StageResult, WaitingForInput
+from bearmind.stages import StageResult, WaitingForInput, require_temp_space
 from bearmind.video import decode_to_memmap, video_info
 
 # Frames per tile of the memmap writer's transpose: (TILE, h, cols) uint8 tiles stay cache-resident,
@@ -30,6 +30,10 @@ TILE = 64
 # save_memmap in CaImAn 1.13.2 adds exactly np.float32(add_to_movie), default 0.0001, in one addition.
 ADD_TO_MOVIE = np.float32(1e-4)
 IMAX_PNR_CLIP = 70  # display image for manual inspection: PNR clipped as in the notebook DoCNMF
+# Temp disk per pixel-frame at the peak: the uint8 copy (1, decode_to_memmap) and the float32 C-order memmap
+# (4, write_memmap) exist together until _imax; after that the memmap (4) and cnmf_qc's float16 residual at
+# its tsub 2 (2 bytes per 2 frames: 1) do. 567 x 520 x 108 000 frames (an hour at 30 fps): 159 GB.
+TEMP_BYTES_PER_PX_FRAME = 5
 _ENV = ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")
 
 
@@ -148,6 +152,11 @@ def _unlink(path) -> None:
 
 def run(paths, rec, cfg) -> StageResult:
     params = cnmf_params(cfg, rec.fps)  # WaitingForInput before any heavy work
+    sid = rec.sid
+    mc_path = paths.mc_video(sid)
+    T, h, w, _ = video_info(mc_path)
+    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
+    require_temp_space(tmp, TEMP_BYTES_PER_PX_FRAME * T * h * w, "CNMF-E")
 
     import caiman as cm
     from caiman.source_extraction.cnmf.cnmf import CNMF
@@ -155,14 +164,10 @@ def run(paths, rec, cfg) -> StageResult:
 
     import bm_qc
 
-    sid = rec.sid
-    mc_path = paths.mc_video(sid)
-    T = video_info(mc_path)[0]
     n_workers = patch_workers(T, params["tsub"], cfg)
     mem_gb = mem_budget_gb(cfg)
     g = params["gSig"][0]
 
-    tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a CAIMAN_TEMP folder that does not exist
     saved = {k: os.environ.get(k) for k in _ENV}
     os.environ["CAIMAN_TEMP"] = str(tmp)

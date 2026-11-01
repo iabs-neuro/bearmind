@@ -60,8 +60,13 @@ def _home() -> Path:
     return Path(os.environ.get("BEARMIND_HOME") or Path.home() / ".bearmind")
 
 
+def machine_file() -> Path:
+    """machine.yaml: temp folder, cores, memory of this computer."""
+    return _home() / "machine.yaml"
+
+
 def machine_config() -> dict:
-    f = _home() / "machine.yaml"
+    f = machine_file()
     if not f.exists():
         ram_gb = round(psutil.virtual_memory().total / 1024 ** 3, 1)
         update_yaml(f, {

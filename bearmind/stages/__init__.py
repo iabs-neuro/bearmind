@@ -1,6 +1,9 @@
 """Pipeline stages; each returns a StageResult."""
+import shutil
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from bearmind import config
 from bearmind.registry import Anomaly
 
 
@@ -21,3 +24,22 @@ class WaitingForInput(Exception):
     def __reduce__(self):
         # pickled from an isolated stage process: the default would call WaitingForInput(<message>)
         return type(self), (self.what, self.detail)
+
+
+class NotEnoughTempSpace(RuntimeError):
+    """The temp folder's disk has less free space than the stage's temp files need."""
+
+
+def require_temp_space(folder, need_bytes: float, stage: str) -> None:
+    """Fail the stage at once, before any heavy work, when the disk of the temp folder has less free space
+    than `need_bytes`: a disk that fills up in the middle of an hour-long CNMF-E costs the hour."""
+    folder = Path(folder)
+    probe = folder
+    while not probe.exists() and probe.parent != probe:  # the session's folder is made only later
+        probe = probe.parent
+    free = shutil.disk_usage(probe).free
+    if free < need_bytes:
+        raise NotEnoughTempSpace(
+            f"not enough free space for the {stage} temp files in {folder}: about {need_bytes / 1e9:.1f} GB "
+            f"needed, {free / 1e9:.1f} GB free; set temp_dir in {config.machine_file()} to a folder on a "
+            f"disk with more free space")

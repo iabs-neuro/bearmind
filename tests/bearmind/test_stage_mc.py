@@ -189,3 +189,32 @@ def test_template_corr_compares_in_the_template_domain():
     template = high_pass_filter_space(frames.astype(np.float32).mean(0), (3, 3))
     corr = mc_stage._mean_template_corr(_Frames(frames), template, gSig_filt=(3, 3))
     assert corr > 0.8
+
+
+def _little_free_space(monkeypatch, free=1000):
+    """shutil.disk_usage reports `free` bytes on any disk: a temp folder on a full drive."""
+    import shutil
+    from collections import namedtuple
+
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: usage(10 ** 12, 10 ** 12 - free, free))
+
+
+def _check_space_error(err, folder, need_gb):
+    text = str(err)
+    assert str(folder) in text and "temp_dir" in text and "machine.yaml" in text
+    assert f"about {need_gb} GB needed" in text and "0.0 GB free" in text
+
+
+def test_mc_fails_at_once_without_temp_space(tmp_path, make_avi, monkeypatch):
+    """10d: MC needs 1 byte per pixel-frame of the cropped movie in the temp folder (its uint8 BigTIFF)."""
+    from bearmind.stages import NotEnoughTempSpace
+
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    _little_free_space(monkeypatch)
+    rec.n_frames = 1_000_000  # 64 x 64 x 1e6 bytes = 4.1 GB
+    monkeypatch.setattr(mc_stage, "SessionReader", None)  # any video work would fail differently
+    with pytest.raises(NotEnoughTempSpace) as e:
+        mc_stage.run(paths, rec, cfg)
+    _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), 4.1)
+    assert not (tmp_path / "tmp").exists()

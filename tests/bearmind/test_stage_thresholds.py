@@ -122,3 +122,19 @@ def test_thresholds_reports_temp_left_behind(tmp_path, monkeypatch):
     res = thresholds.run(paths, rec, cfg)
     assert "temp_not_removed" in [a.code for a in res.anomalies]
     assert not (paths.temp_dir(tmp_path / "tmp", SID) / "mc_u8.dat").exists()  # the decoded copy itself is deleted
+
+
+def test_thresholds_fail_at_once_without_temp_space(tmp_path, monkeypatch):
+    """10d: the decoded uint8 copy of the MC movie, 1 byte per pixel-frame."""
+    from tests.bearmind.test_stage_mc import _check_space_error, _little_free_space
+
+    from bearmind.stages import NotEnoughTempSpace
+
+    paths, rec, cfg = _setup(tmp_path)
+    _little_free_space(monkeypatch)
+    monkeypatch.setattr(thresholds, "decode_to_memmap", None)  # any decoding would fail differently
+    with pytest.raises(NotEnoughTempSpace) as e:
+        thresholds.run(paths, rec, cfg)
+    T, h, w = 200, *VideoArray(paths.mc_video(SID)).shape[1:]
+    _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), round(T * h * w / 1e9, 1))
+    assert not (tmp_path / "tmp").exists()

@@ -279,3 +279,21 @@ def test_cnmf_failure_cleans_up(tmp_path, monkeypatch, where):
     est_dir = paths.estimates(SID).parent
     assert not est_dir.exists() or not any(est_dir.iterdir())  # neither the pickle nor a .partial
     assert {k: os.environ.get(k) for k in env} == env
+
+
+def test_cnmf_fails_at_once_without_temp_space(tmp_path, monkeypatch):
+    """10d: CNMF needs about 5 bytes per pixel-frame (uint8 copy + float32 memmap); 159 GB for an hour
+    of 567 x 520 at 30 fps."""
+    from tests.bearmind.test_stage_mc import _check_space_error, _little_free_space
+
+    from bearmind.stages import NotEnoughTempSpace
+
+    mov, _ = synthetic_movie(T=200, n_cells=2)
+    paths, rec, cfg = _setup(tmp_path, mov)
+    _little_free_space(monkeypatch)
+    monkeypatch.setattr(cnmf, "decode_to_memmap", None)  # any decoding would fail differently
+    monkeypatch.setattr(cnmf, "video_info", lambda p: (108_000, 567, 520, 30.0))
+    with pytest.raises(NotEnoughTempSpace) as e:
+        cnmf.run(paths, rec, cfg)
+    _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), 159.2)
+    assert not (tmp_path / "tmp").exists()

@@ -9,11 +9,14 @@ import numpy as np
 
 import bm_qc
 from bearmind.registry import Anomaly
-from bearmind.stages import StageResult
+from bearmind.stages import StageResult, require_temp_space
 from bearmind.stages.cnmf import mem_budget_gb
-from bearmind.video import decode_to_memmap
+from bearmind.video import decode_to_memmap, video_info
 
 BLOCK = 1000  # frames per streamed block for mean/max projections
+# Temp disk per pixel-frame of the MC movie: decode_to_memmap's uint8 copy; compute_init_maps works on row
+# strips in RAM (max_mem_gb).
+TEMP_BYTES_PER_PX_FRAME = 1
 
 
 def _projections(movie):
@@ -49,6 +52,8 @@ def run(paths, rec, cfg) -> StageResult:
     tsub = cfg["cnmf"]["tsub"]
     mem_gb = mem_budget_gb(cfg)
     tmp_dir = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
+    T, h, w, _ = video_info(paths.mc_video(sid))
+    require_temp_space(tmp_dir, TEMP_BYTES_PER_PX_FRAME * T * h * w, "thresholds")
     tmp_dir.mkdir(parents=True, exist_ok=True)
     u8_path = tmp_dir / "mc_u8.dat"
     movie = None
