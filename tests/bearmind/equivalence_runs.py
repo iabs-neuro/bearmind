@@ -6,9 +6,12 @@ get the same BLAS and pool settings, and OPENBLAS_CORETYPE is in place before nu
 CNMF-E old and new side) = the input clip (file sizes and mtimes), the resolved crop/mc/cnmf config, the
 CaImAn and NumPy versions, the pool and BLAS settings, and a hash of all code it may run: every *.py under
 bearmind/, every root-level *.py and this file (`code_files`). So the cache is invalidated by any change to
-the package or the root modules; over-invalidation is accepted. By hand, to rebuild one side:
+the package or the root modules; over-invalidation is accepted. The autoinspection run (new env on the
+input of an old-env run) is keyed the same way on its two files, the stored autoinspection_config, the
+model file and the code. By hand, to rebuild one side:
 
     python tests/bearmind/equivalence_runs.py mc|cnmf-old|cnmf-new SERIES SID OUT_DIR N_PROCESSES
+    python tests/bearmind/equivalence_runs.py autoinspect INPUT_ESTIMATES OLD_PROCESSED OUT_DIR 0
 
 The cache root is BEARMIND_EQUIV_CACHE, or <system temp>/bearmind_equiv; delete a folder to recompute it.
 """
@@ -22,6 +25,7 @@ import gc  # noqa: E402
 import hashlib  # noqa: E402
 import json  # noqa: E402
 import math  # noqa: E402
+import pickle  # noqa: E402
 import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
@@ -46,9 +50,12 @@ RUN_TIMEOUT_S = 2 * 3600
 
 # ----------------------------------------------------------------------------------------------- cache
 
+def cache_root() -> Path:
+    return Path(os.environ.get("BEARMIND_EQUIV_CACHE") or Path(tempfile.gettempdir()) / "bearmind_equiv")
+
+
 def cache_dir(series_root, sid) -> Path:
-    root = os.environ.get("BEARMIND_EQUIV_CACHE") or Path(tempfile.gettempdir()) / "bearmind_equiv"
-    return Path(root) / f"{Path(series_root).name}_{sid}"
+    return cache_root() / f"{Path(series_root).name}_{sid}"
 
 
 def _file_sig(path) -> list:
@@ -121,6 +128,48 @@ def cnmf_key(series_root, sid, side, n_processes) -> dict:
             "code": code_sig(), **_versions()}
 
 
+# Arguments of run_auto_inspection that the old run stored in est.autoinspection_config (ae_launch).
+AI_ARGS = ("brain", "ml_threshold", "event_method", "n_iter", "hybrid_kinetics", "cthr", "corr_thr",
+           "include_event_based", "include_heavy", "detect_corner_artifacts", "correlation_method",
+           "wavelet_backend", "enable_merge", "pxlthr_distance_boundary", "d_snr_thr")
+
+
+def load_pickle(path):
+    with open(path, "rb") as fh:  # read only: nothing is written next to the source data
+        return pickle.load(fh)
+
+
+def model_file(stored) -> Path:
+    """The repo's copy of the model an old run used (it stored a path on its own machine)."""
+    from pathlib import PureWindowsPath
+
+    return REPO / "production_models" / PureWindowsPath(str(stored)).name
+
+
+def autoinspect_args(config: dict) -> tuple[dict, int]:
+    """run_auto_inspection keyword arguments and fps from an old run's autoinspection_config."""
+    kw = {k: config[k] for k in AI_ARGS if k in config}
+    rules = config.get("deletion_rules")
+    if rules not in (None, "DEFAULT_DELETION_RULES"):
+        kw["deletion_rules"] = rules
+    kw["ml_model_path"] = str(model_file(config["ml_model_path"]))
+    return kw, int(config["fps"])
+
+
+def autoinspect_key(input_pickle, old_processed) -> dict:
+    from importlib.metadata import version
+
+    config = load_pickle(old_processed).autoinspection_config
+    kw, fps = autoinspect_args(config)
+    model = Path(kw["ml_model_path"])
+    return {"version": CACHE_VERSION, "kind": "autoinspect",
+            "input": [str(input_pickle), *_file_sig(input_pickle)],
+            "old": [str(old_processed), *_file_sig(old_processed)],
+            "args": kw, "fps": fps, "model": [model.name, hashlib.sha256(model.read_bytes()).hexdigest()],
+            "code": code_sig(), **_versions(),
+            **{p: version(p) for p in ("pandas", "scipy", "interpret", "joblib")}}
+
+
 def stage_pool(series_root, sid, n_processes) -> int:
     """Pool size the CNMF stage picks with n_cpus = n_processes + 1; smaller when the RAM budget limits it."""
     from bearmind.stages.cnmf import cnmf_params, patch_workers
@@ -160,6 +209,13 @@ def ensure_mc(series_root, sid) -> Path:
     out = cache_dir(series_root, sid) / "mc"
     if not _cached(out, mc_key(series_root, sid)):
         _launch("mc", series_root, sid, out, 0)
+    return out
+
+
+def ensure_autoinspect(input_pickle, old_processed) -> Path:
+    out = cache_root() / f"autoinspect_{Path(old_processed).parent.name}"
+    if not _cached(out, autoinspect_key(input_pickle, old_processed)):
+        _launch("autoinspect", input_pickle, str(old_processed), out, 0)
     return out
 
 
@@ -315,8 +371,8 @@ class PeakMemory:
     timeout.
     """
 
-    def __init__(self, every_s: float = 1.0):
-        self.every_s = every_s
+    def __init__(self, every_s: float = 1.0, watch: bool = True):
+        self.every_s, self.watch = every_s, watch
         self.peak_rss_gb = self.peak_private_gb = 0.0
         self._watch = PoolWatch()
         self._cmd: dict[int, bool] = {}
@@ -348,7 +404,7 @@ class PeakMemory:
             priv += getattr(mi, "private", 0)
         self.peak_rss_gb = max(self.peak_rss_gb, rss / 2 ** 30)
         self.peak_private_gb = max(self.peak_private_gb, priv / 2 ** 30)
-        dead = self._watch.update(p.pid for p in kids if self._is_worker(p))
+        dead = self._watch.update(p.pid for p in kids if self._is_worker(p)) if self.watch else set()
         if dead:
             print(f"[FAILED] pool worker(s) died: {sorted(dead)}; aborting", file=sys.stderr, flush=True)
             for p in kids:
@@ -518,6 +574,68 @@ def run_cnmf_new(series_root, sid, out: Path, n_processes: int) -> None:
                 blas=_blas_now(), metrics=res.metrics, params=params)
 
 
+def run_autoinspect_new(input_pickle, old_processed, out: Path) -> None:
+    """ae_launch.run_auto_inspection in this env on an old run's input, with the arguments it stored.
+
+    Artifacts go to the cache folder; the source data are only read.
+    """
+    import ae_launch
+
+    key = autoinspect_key(input_pickle, old_processed)
+    kw, fps = autoinspect_args(load_pickle(old_processed).autoinspection_config)
+    art = out / "artifacts"
+    t0 = time.time()
+    # watch=False: joblib's worker processes come and go between calls; that is not a dead pool worker
+    with PeakMemory(watch=False) as pm:
+        res = ae_launch.run_auto_inspection(str(input_pickle), fps=fps, artifacts_dir=str(art), **kw)
+    wall = time.time() - t0
+    res["metrics_df"].to_pickle(out / "decision_df.pkl")  # before merging: one row per input component
+    res["estimates"].metrics_df.to_pickle(out / "processed_df.pkl")  # what the processed pickle carries
+    shutil.rmtree(art, ignore_errors=True)
+    _write_meta(out, key, wall_s=wall, peak_rss_gb=pm.peak_rss_gb, peak_private_gb=pm.peak_private_gb,
+                summary={k: int(v) for k, v in res["summary"].items()}, args=kw, fps=fps)
+
+
+def compare_metrics(old, new, features) -> dict:
+    """Row-by-row comparison of two metrics DataFrames (rows matched by component_idx).
+
+    Per model feature: max |old - new| over rows where both are finite, rows where only one is NaN, and
+    whether np.allclose(rtol=1e-6, atol=1e-9, equal_nan=True) holds; ml_keep_probability within 1e-6; the
+    delete / merge / decision columns equal.
+    """
+    o = old.sort_values("component_idx").reset_index(drop=True)
+    n = new.sort_values("component_idx").reset_index(drop=True)
+    out = {"rows_old": len(o), "rows_new": len(n),
+           "same_rows": o["component_idx"].tolist() == n["component_idx"].tolist(), "features": {},
+           "missing": sorted(f for f in features if f not in o.columns or f not in n.columns)}
+    if not out["same_rows"]:
+        return out
+
+    def num(df, c):
+        return df[c].to_numpy(dtype=float)
+
+    for f in features:
+        if f in out["missing"]:
+            continue
+        a, b = num(o, f), num(n, f)
+        both = np.isfinite(a) & np.isfinite(b)
+        out["features"][f] = {
+            "max_abs_diff": float(np.max(np.abs(a[both] - b[both]))) if both.any() else 0.0,
+            "nan_mismatch": int((np.isnan(a) != np.isnan(b)).sum()),
+            "allclose": bool(np.allclose(a, b, rtol=1e-6, atol=1e-9, equal_nan=True))}
+    if "ml_keep_probability" in o.columns and "ml_keep_probability" in n.columns:
+        a, b = num(o, "ml_keep_probability"), num(n, "ml_keep_probability")
+        both = np.isfinite(a) & np.isfinite(b)
+        out["ml_keep_probability"] = {
+            "max_abs_diff": float(np.max(np.abs(a[both] - b[both]))) if both.any() else 0.0,
+            "allclose": bool(np.allclose(a, b, rtol=0, atol=1e-6, equal_nan=True))}
+    for c in ("delete", "merge", "decision"):
+        if c in o.columns and c in n.columns:
+            out[f"{c}_equal"] = o[c].tolist() == n[c].tolist()
+            out[f"{c}_n_differ"] = int(sum(a != b for a, b in zip(o[c].tolist(), n[c].tolist())))
+    return out
+
+
 def main(argv) -> int:
     kind, series_root, sid, out = argv[1], Path(argv[2]), argv[3], Path(argv[4])
     n = int(argv[5]) if len(argv) > 5 else 0
@@ -528,6 +646,8 @@ def main(argv) -> int:
         run_cnmf_old(series_root, sid, out, n)
     elif kind == "cnmf-new":
         run_cnmf_new(series_root, sid, out, n)
+    elif kind == "autoinspect":  # here SERIES is the input estimates and SID the old processed pickle
+        run_autoinspect_new(series_root, Path(sid), out)
     else:
         raise SystemExit(f"unknown run {kind}")
     print("[OK]", kind, sid)

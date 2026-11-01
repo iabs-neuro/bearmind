@@ -5,6 +5,9 @@ Data:
   MAX_CLIP_FRAMES frames, all stages done; BEARMIND_EQUIV_SESSION picks one by sid). CNMF-E is never run
   on a full session here.
 - BEARMIND_EQUIV_ML: folders or files (os.pathsep) with *_processed.pickle files made by the old code.
+- BEARMIND_EQUIV_AI: one *_processed.pickle of the old env (CaImAn 1.11.3 / NumPy 1.26), and
+  BEARMIND_EQUIV_AI_INPUT: the estimates it was made from. Autoinspection is run again on that input here
+  (read only; artifacts go to the cache) and its metrics are compared with the old ones row by row.
 Without them the tests are skipped.
 
 The old MC run and both CNMF-E runs take minutes; equivalence_runs.py runs them in fresh processes once and
@@ -30,6 +33,8 @@ from bearmind.registry import State, all_records  # noqa: E402
 
 SERIES = [Path(p) for p in os.environ.get("BEARMIND_TEST_SERIES", "").split(os.pathsep) if p.strip()]
 ML_ROOTS = [Path(p) for p in os.environ.get("BEARMIND_EQUIV_ML", "").split(os.pathsep) if p.strip()]
+AI_OLD = os.environ.get("BEARMIND_EQUIV_AI") or None
+AI_INPUT = os.environ.get("BEARMIND_EQUIV_AI_INPUT") or None
 WANT_SID = os.environ.get("BEARMIND_EQUIV_SESSION") or None
 MAX_CLIP_FRAMES = 3000  # author's rule: CNMF-E equivalence on a short clip only
 STAGES_DONE = ("crop", "mc", "cnmf", "autoinspect", "export")
@@ -136,6 +141,57 @@ def test_ml_probabilities_match_old_env():
     print(f"\nML: {n_files} files, {n_rows} scored rows, max |diff| = {worst:.3g}; "
           f"{len(other_model)} files of another model skipped")
     assert not bad, bad
+
+
+# Model features that do not reproduce across the environments, for causes measured in Task 19 on
+# RFC_F01_1D (.superpowers/sdd/2026-10-31-bearmind-batch-core/task-19-report.md):
+# - contour shape: CaImAn 1.13 get_contours gives pixels of equal value one cumulative energy
+#   (caiman.base.rois.norm_nrg); 1.11.3 broke such ties by sort order, so the contour at cthr moves. On
+#   the same input, 1.11.3 contours give the old areas exactly and 1.13.2 contours the new ones.
+CONTOUR_FEATURES = ("area", "circularity", "aspect_ratio", "convexity", "max_edge", "footprint_compactness")
+# - events and the reconstruction from them: driada's Neuron adds unseeded noise of 1e-8 to every trace
+#   (calcium_preprocessing(seed=None)); two runs in one environment differ as much as old vs new, and are
+#   bit-identical when that noise is seeded. With the noise seeded the old and the new environment still
+#   differ (events_per_min in 14 of 156 components): event detection is sensitive to the last digits.
+EVENT_FEATURES = ("events_per_min", "events_fraction", "t_rise", "t_off", "event_snr", "peak_amplitude_cv",
+                  "event_r2_score", "r2_score", "nrmse", "nmae", "snr_recon")
+
+
+@pytest.mark.skipif(not (AI_OLD and AI_INPUT), reason="BEARMIND_EQUIV_AI / BEARMIND_EQUIV_AI_INPUT not set")
+def test_autoinspection_features_against_old_env():
+    """Autoinspection recomputed in this env from the input of an old-env run, row by row against the old run.
+
+    Every model feature outside CONTOUR_FEATURES and EVENT_FEATURES must be equal (rtol 1e-6, atol 1e-9).
+    Those two groups, the probabilities and the decisions are printed, not asserted (see above). Rows are
+    the components before merging (the old run's <session>_metrics_with_decisions.csv); without that file,
+    the processed metrics_df, whose rows correspond only when the merges are the same.
+    """
+    import pandas as pd
+
+    old_file, inp = Path(AI_OLD), Path(AI_INPUT)
+    out = er.ensure_autoinspect(inp, old_file)
+    meta = er.read_meta(out)
+    old_est = er.load_pickle(old_file)
+    model = er.load_pickle(er.model_file(old_est.autoinspection_config["ml_model_path"]))
+    features = list(model.feature_names_in_)
+    csv = sorted(old_file.parent.glob("*_metrics_with_decisions.csv"))
+    if len(csv) == 1:
+        level, old, new = "before merging", pd.read_csv(csv[0]), pd.read_pickle(out / "decision_df.pkl")
+    else:
+        level, old, new = "processed", old_est.metrics_df, pd.read_pickle(out / "processed_df.pkl")
+    r = er.compare_metrics(old, new, features)
+    print(f"\nautoinspection in this env: {meta['wall_s']:.0f} s, peak RSS {meta['peak_rss_gb']:.1f} GB, "
+          f"summary {meta['summary']}")
+    print(f"{level}: rows {r['rows_old']} / {r['rows_new']}, same rows {r['same_rows']}, missing {r['missing']}")
+    assert r["same_rows"] and not r["missing"], r
+    for name, group in (("contour", CONTOUR_FEATURES), ("events", EVENT_FEATURES),
+                        ("other", [x for x in features if x not in CONTOUR_FEATURES + EVENT_FEATURES])):
+        print(f"  {name}: " + ", ".join(f"{k} {r['features'][k]['max_abs_diff']:.3g}" for k in group))
+    print(f"  ml_keep_probability {r['ml_keep_probability']}; rows that differ in delete "
+          f"{r.get('delete_n_differ')}, merge {r.get('merge_n_differ')}, decision {r.get('decision_n_differ')}")
+    unexplained = {k: v for k, v in r["features"].items()
+                   if k not in CONTOUR_FEATURES + EVENT_FEATURES and not v["allclose"]}
+    assert not unexplained, unexplained
 
 
 def test_export_schema_matches_old_export(clip, tmp_path):
