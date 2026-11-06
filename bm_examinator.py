@@ -1041,6 +1041,12 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
 
 
         def del_callback(event, storage=None):
+            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
+                src_partial.selected.indices)
+            sel_inds = np.array(sel_inds)
+            if len(sel_inds) == 0:
+                # Before the snapshot: an empty click must not overwrite what Revert change restores.
+                return
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
 
@@ -1052,9 +1058,6 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
 
             if verbose:
                 print('               Delete in progress...')
-            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-                src_partial.selected.indices)
-            sel_inds = np.array(sel_inds)
             sel_comps = np.array([ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
             if verbose:
                 print('sel_inds:', sel_inds)
@@ -1083,6 +1086,12 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
             storage.estimates_partial = copy.deepcopy(estimates)
 
         def merge_callback(event, storage=None):
+            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
+                src_partial.selected.indices)
+            sel_inds = np.array(sel_inds)
+            if len(sel_inds) == 0:
+                # Before the snapshot: an empty click must not overwrite what Revert change restores.
+                return
             estimates = copy.deepcopy(storage.estimates)
             estimates_partial = copy.deepcopy(storage.estimates_partial)
 
@@ -1094,9 +1103,6 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
 
             if verbose:
                 print('               Merge in progress...')
-            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-                src_partial.selected.indices)
-            sel_inds = np.array(sel_inds)
             sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds]
             not_sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i not in sel_inds]
             if verbose:

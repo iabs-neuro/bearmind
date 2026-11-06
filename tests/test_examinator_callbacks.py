@@ -143,10 +143,17 @@ def test_no_selection_after_a_change(tmp_path):
     assert list(app.src.selected.indices) == []
     app.click("Delete sel.")
     assert app.shown() == [0, 1, 3, 4, 5, 6, 7]
+    # the empty click must not overwrite the snapshot that Revert change restores
+    app.click("Revert change")
+    assert app.shown() == [0, 1, 2, 3, 4, 5, 6, 7]
+    app.select([2]); app.click("Delete sel.")
+    assert app.shown() == [0, 1, 3, 4, 5, 6, 7]
     app.select([0, 1]); app.click("Merge sel.")
     assert list(app.src.selected.indices) == []
     app.click("Merge sel.")
     assert app.shown() == [1, 2, 3, 4, 5, 6]
+    app.click("Revert change")
+    assert app.shown() == [0, 1, 3, 4, 5, 6, 7]
 
 
 def test_examine_cells_shows_the_app(tmp_path, monkeypatch):
