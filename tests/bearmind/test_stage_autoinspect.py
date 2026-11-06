@@ -1,3 +1,4 @@
+import copy
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -85,6 +86,7 @@ def test_passes_production_parameters(tmp_path, monkeypatch):
     assert fps == 20 and isinstance(fps, int)
     assert kw["pxlthr_distance_boundary"] == 15 and kw["brain"] == "hybrid"
     assert kw["session_name"] == SID
+    assert kw["seed"] == 0
     assert kw["artifacts_dir"] == str(paths.inspection_dir(SID))
     assert Path(kw["ml_model_path"]).is_absolute() and Path(kw["ml_model_path"]).exists()
     assert "model_path" not in kw
@@ -212,3 +214,13 @@ def test_refuses_missing_snr(tmp_path, monkeypatch):
     est = _input_est()
     del est.SNR_comp
     _refused(tmp_path, monkeypatch, est, "no SNR_comp")
+
+
+def test_seed_is_an_autoinspect_input(tmp_path):
+    from bearmind import runner
+    paths, rec, cfg = _setup(tmp_path)
+    p0 = runner.stage_params("autoinspect", rec, cfg, paths)
+    cfg1 = copy.deepcopy(cfg); cfg1["autoinspect"]["seed"] = 1
+    p1 = runner.stage_params("autoinspect", rec, cfg1, paths)
+    assert p0["autoinspect"]["seed"] == 0
+    assert config.params_hash(p0) != config.params_hash(p1)

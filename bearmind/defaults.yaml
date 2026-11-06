@@ -69,6 +69,8 @@ autoinspect:
   include_heavy: true
   event_method: wavelet
   hybrid_kinetics: true
+  # seed of driada's tie-breaking noise (1e-8 per frame): with a fixed seed two runs give the same decisions; null: unseeded
+  seed: 0
 gate:
   enabled: true
 # MC checks: provisional, from 6 real sessions (task 17, docs/superpowers/specs/2026-11-01-e2e-report.md):

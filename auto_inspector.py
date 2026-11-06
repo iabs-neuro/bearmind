@@ -130,7 +130,7 @@ def get_hvals(traces):
 
 
 def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_method='threshold', n_iter=2, hybrid_kinetics=True,
-                          wavelet_shared=None, rel_wvt_times_shared=None):
+                          wavelet_shared=None, rel_wvt_times_shared=None, seed=0):
     """
     Create a Neuron object and detect events using specified method.
 
@@ -144,13 +144,17 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
             1. wavelet standard -> 2. wavelet relaxed -> 3. threshold standard -> 4. threshold relaxed -> 5. defaults
         wavelet_shared: Pre-computed wavelet object (for batch optimization)
         rel_wvt_times_shared: Pre-computed time resolutions (for batch optimization)
+        seed: Seed of driada's tie-breaking noise (None: unseeded)
     """
-    # Create Neuron object
+    # driada adds 1e-8 noise to the trace to break ties; without a seed the event features and
+    # the ML probability change from run to run. The same seed for every trace keeps a trace's
+    # result independent of its place in the list.
     neuron = Neuron(
         cell_id="",
         ca=trace,
         sp=None,
-        fps=fps
+        fps=fps,
+        seed=seed
     )
 
     # Stage 1: Initial single-pass detection with default kinetics (conservative)
@@ -174,7 +178,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
     # Stage 2: Measure kinetics from initial events
     if hybrid_kinetics:
         # Cascading kinetics optimization
-        kinetics_result = _optimize_kinetics_hybrid(neuron, trace, fps)
+        kinetics_result = _optimize_kinetics_hybrid(neuron, trace, fps, seed=seed)
     else:
         # Standard kinetics optimization
         kinetics_result = neuron.get_kinetics(
@@ -200,7 +204,7 @@ def get_neuron_with_spikes(trace, fps=DEFAULT_FPS, lightweight=True, event_metho
     return neuron, kinetics_result
 
 
-def _optimize_kinetics_hybrid(neuron, trace, fps):
+def _optimize_kinetics_hybrid(neuron, trace, fps, seed=0):
     """
     Cascading kinetics optimization:
     1. Wavelet standard
@@ -242,7 +246,7 @@ def _optimize_kinetics_hybrid(neuron, trace, fps):
     # 3. Threshold standard - need threshold events
     neuron_thr = None
     try:
-        neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps)
+        neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps, seed=seed)
         neuron_thr.reconstruct_spikes(
             method='threshold', n_mad=4.0, min_duration_frames=2,
             iterative=False, create_event_regions=True, fps=fps
@@ -262,7 +266,7 @@ def _optimize_kinetics_hybrid(neuron, trace, fps):
     # 4. Threshold relaxed
     try:
         if neuron_thr is None:
-            neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps)
+            neuron_thr = Neuron(cell_id="", ca=trace, sp=None, fps=fps, seed=seed)
             neuron_thr.reconstruct_spikes(
                 method='threshold', n_mad=4.0, min_duration_frames=2,
                 iterative=False, create_event_regions=True, fps=fps
@@ -395,7 +399,7 @@ def get_reconstruction_quality_metrics(neuron):
 
 
 def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True,
-                             wavelet_shared=None, rel_wvt_times_shared=None):
+                             wavelet_shared=None, rel_wvt_times_shared=None, seed=0):
     """
     Extract metrics from a single neuron trace.
 
@@ -410,11 +414,12 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
         hybrid_kinetics: If True, use cascading kinetics optimization (default: True)
         wavelet_shared: Pre-computed wavelet object (for batch optimization)
         rel_wvt_times_shared: Pre-computed time resolutions (for batch optimization)
+        seed: Seed of driada's tie-breaking noise (None: unseeded)
     """
     try:
         neuron, kinetics_result = get_neuron_with_spikes(
             trace, fps=fps, lightweight=not include_heavy, event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics,
-            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared
+            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared, seed=seed
         )
         signal_metrics = get_signal_metrics(neuron, kinetics_result=kinetics_result)
         if include_heavy:
@@ -451,7 +456,8 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
             return nan_signal_metrics
 
 
-def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True, wavelet_backend='auto'):
+def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_method='threshold', n_iter=2, hybrid_kinetics=True, wavelet_backend='auto',
+                           seed=0):
     all_metrics = {}
     reconstructions = {}
     n = traces.shape[0]
@@ -490,7 +496,8 @@ def get_multineuron_metrics(traces, fps=DEFAULT_FPS, include_heavy=False, event_
         delayed(get_single_neuron_metrics)(
             traces[i], fps=fps, include_heavy=include_heavy,
             event_method=event_method, n_iter=n_iter, hybrid_kinetics=hybrid_kinetics,
-            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared
+            wavelet_shared=wavelet_shared, rel_wvt_times_shared=rel_wvt_times_shared,
+            seed=seed
         )
         for i in range(traces.shape[0])
     )
@@ -1024,7 +1031,7 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                          sf=None, ef=None, ds=1, include_event_based=True, include_heavy=False,
                          detect_corner_artifacts_flag=True, corner_artifact_params=None,
                          event_method='threshold', correlation_method='spearman', n_iter=2,
-                         hybrid_kinetics=True, wavelet_backend='auto'):
+                         hybrid_kinetics=True, wavelet_backend='auto', seed=0):
 
     match_threshold = min(match_threshold, num_sessions)
 
@@ -1184,7 +1191,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
                                                       event_method=event_method,
                                                       n_iter=n_iter,
                                                       hybrid_kinetics=hybrid_kinetics,
-                                                      wavelet_backend=wavelet_backend)
+                                                      wavelet_backend=wavelet_backend,
+                                                      seed=seed)
         t2 = time.time()
         etime = np.round(t2-t1, 2)
         print(f'      Event metrics completed in {etime}s ({np.round(etime/n_cells, 3)}s/neuron)')
@@ -2083,7 +2091,7 @@ def implement_decision(est, df, return_index_mapping=False):
 
 
 def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
-                                  include_event_based=True, event_method='threshold'):
+                                  include_event_based=True, event_method='threshold', seed=0):
     """
     Transform metrics_df indices to match post-merge estimates.
 
@@ -2103,6 +2111,7 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
         cthr: Contour threshold for spatial metrics
         include_event_based: Whether to compute event-based metrics
         event_method: Method for event detection ('threshold' or 'cascade')
+        seed: Seed of driada's tie-breaking noise, as in estimates_to_metrics (None: unseeded)
 
     Returns:
         Transformed DataFrame with updated component_idx values
@@ -2155,7 +2164,8 @@ def transform_metrics_df_indices(df, mapping_info, est_processed, fps, cthr=0.3,
             comps_to_select=merged_indices,
             cthr=cthr,
             include_event_based=include_event_based,
-            event_method=event_method
+            event_method=event_method,
+            seed=seed
         )
 
         # Set proper columns for merged components

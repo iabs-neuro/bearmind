@@ -32,6 +32,7 @@ def test_defaults_int_keys_and_values():
     assert d["memory"]["patch_gb_per_mframe"] == {1: 245, 2: 163}
     assert all(isinstance(k, int) for k in d["memory"]["patch_gb_per_mframe"])
     assert d["mc"]["max_shifts"] == [35, 35] and "write_mp4" not in d["mc"]
+    assert d["autoinspect"]["seed"] == 0
     assert d["autoinspect"]["ml_threshold"] == 0.72 and d["gate"]["enabled"] is True
     assert d["checks"]["mc_max_shift_px"] == {"warn": 10, "error": 30}  # task 17 calibration
     assert d["checks"]["mc_template_corr"] == {"warn": 0.7}  # task 17 calibration

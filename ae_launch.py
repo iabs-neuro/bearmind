@@ -193,6 +193,7 @@ def run_auto_inspection(
     n_iter: int = 2,
     hybrid_kinetics: bool = True,
     wavelet_backend: str = 'auto',
+    seed: int | None = 0,
 
     # --- Decision parameters ---
     deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
@@ -249,6 +250,8 @@ def run_auto_inspection(
         detect_corner_artifacts: Enable corner artifact detection
         corner_artifact_params: Parameters for corner detection (None = defaults)
         event_method: Event detection method ('threshold' or 'wavelet')
+        seed: Seed of driada's tie-breaking noise (1e-8 per frame); the same seed gives the same
+            decisions on the same data (None: unseeded, results vary from run to run)
 
         circ_thr: Maximum circularity (elongation) threshold
         maxedge_thr: Maximum edge length threshold
@@ -376,6 +379,7 @@ def run_auto_inspection(
             'ml_model_path': str(ml_model_path) if ml_model_path else None,
             'ml_threshold': ml_threshold,
             'deletion_rules': deletion_rules if deletion_rules else 'DEFAULT_DELETION_RULES',
+            'seed': seed,
         }
         return {
             'estimates': est,
@@ -417,7 +421,8 @@ def run_auto_inspection(
         correlation_method=correlation_method,
         n_iter=n_iter,
         hybrid_kinetics=hybrid_kinetics,
-        wavelet_backend=wavelet_backend
+        wavelet_backend=wavelet_backend,
+        seed=seed
     )
 
     if verbose:
@@ -496,7 +501,8 @@ def run_auto_inspection(
         fps=fps,
         cthr=cthr,
         include_event_based=include_event_based,
-        event_method=event_method
+        event_method=event_method,
+        seed=seed
     )
 
     est_processed.metrics_df = transformed_df
@@ -553,6 +559,7 @@ def run_auto_inspection(
         'enable_merge': enable_merge,
         'pxlthr_distance_boundary': pxlthr_distance_boundary,
         'd_snr_thr': d_snr_thr,
+        'seed': seed,
     }
 
     # Verify metrics_df was attached and indices are valid
