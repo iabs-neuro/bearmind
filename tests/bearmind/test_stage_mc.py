@@ -237,3 +237,36 @@ def test_mc_fails_at_once_without_temp_space(tmp_path, make_avi, monkeypatch):
         mc_stage.run(paths, rec, cfg)
     _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), 4.1)
     assert not (tmp_path / "tmp").exists()
+
+
+def test_mc_pool_size():
+    assert config.load_defaults()["pool"]["mc_processes"] == 16
+    size = lambda n_cpus: mc_stage.mc_pool_size({"pool": {"mc_processes": 16}, "machine": {"n_cpus": n_cpus}})
+    assert (size(32), size(8), size(1)) == (16, 7, 1)
+
+
+def test_mc_starts_the_pool_with_the_configured_size(tmp_path, make_avi, monkeypatch):
+    class Stop(Exception):
+        pass
+
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    cfg["machine"]["n_cpus"] = 32
+    sizes = []
+
+    def start_pool(n):
+        sizes.append(n)
+        raise Stop
+
+    monkeypatch.setattr(mc_stage, "_write_tif", lambda *a, **k: None)
+    monkeypatch.setattr(mc_stage.pool, "start_pool", start_pool)
+    with pytest.raises(Stop):
+        mc_stage.run(paths, rec, cfg)
+    assert sizes == [16]
+    assert not (tmp_path / "tmp").exists() or not any((tmp_path / "tmp").iterdir())
+
+
+def test_pool_size_is_not_an_mc_input(tmp_path, make_avi):
+    from bearmind import runner
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    other = {**cfg, "pool": {"mc_processes": 4}}
+    assert runner.stage_params("mc", rec, cfg, paths) == runner.stage_params("mc", rec, other, paths)

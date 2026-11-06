@@ -45,6 +45,11 @@ def _crop(cfg, frame_shape=None) -> CropBox | None:
     return CropBox(top, left, h, w)
 
 
+def mc_pool_size(cfg: dict) -> int:
+    """Workers of the MC pool: pool.mc_processes, but never more than one per core left for the main process."""
+    return max(1, min(int(cfg["pool"]["mc_processes"]), int(cfg["machine"]["n_cpus"]) - 1))
+
+
 def _placed_since_detection(rec) -> None:
     """Raises WaitingForInput while the latest crop detection has no placed box yet: a crop re-run drops
     metrics['box'] and the positions in the config are from before it (a stale null position would run MC
@@ -155,7 +160,7 @@ def run(paths, rec, cfg) -> StageResult:
         tif = tmp / f"{sid}_crop.tif"
         _write_tif(SessionReader(paths.root, rec, crop=crop), tif)
 
-        dview = pool.start_pool(max(1, int(cfg["machine"]["n_cpus"]) - 1))
+        dview = pool.start_pool(mc_pool_size(cfg))
         mc = cmc.MotionCorrect([str(tif)], dview=dview, **{
             **mcfg, "splits_rig": math.ceil(n_in / 500), "shifts_opencv": True})
         mc.motion_correct(save_movie=False)

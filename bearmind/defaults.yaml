@@ -85,6 +85,11 @@ checks:
   export_n_neurons: {warn: 30, error: 5}
   export_median_snr: {warn: 3.0}
   min_sessions_for_relative: 3
+# Worker processes of CaImAn pools. Not stage parameters (no stage hash includes them): rigid MC corrects
+# each of its ceil(T/500) splits on its own, and pools of 31, 16 and 8 gave the same shifts (to 0.000 px);
+# 16 ran as fast as 31 with less memory (docs/superpowers/specs/2026-11-01-e2e-report.md). At most n_cpus - 1.
+pool:
+  mc_processes: 16
 # How the runner runs stages; not stage parameters (no stage hash includes them).
 runner:
   # each stage in a child process: a crash or a dead CaImAn pool worker fails the stage, not the batch
