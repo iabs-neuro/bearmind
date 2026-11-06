@@ -47,7 +47,12 @@ def _crop(cfg, frame_shape=None) -> CropBox | None:
 
 def mc_pool_size(cfg: dict) -> int:
     """Workers of the MC pool: pool.mc_processes, but never more than one per core left for the main process."""
-    return max(1, min(int(cfg["pool"]["mc_processes"]), int(cfg["machine"]["n_cpus"]) - 1))
+    n = (cfg.get("pool") or {}).get("mc_processes")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        # int() on a null or a float would turn a config typo into a silent pool of another size
+        raise ValueError(f"pool.mc_processes must be an integer >= 1, got {n!r}; fix it in "
+                         f"_bearmind/config/series.yaml (the default is in bearmind/defaults.yaml)")
+    return max(1, min(n, int(cfg["machine"]["n_cpus"]) - 1))
 
 
 def _placed_since_detection(rec) -> None:

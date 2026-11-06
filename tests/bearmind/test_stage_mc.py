@@ -239,6 +239,14 @@ def test_mc_fails_at_once_without_temp_space(tmp_path, make_avi, monkeypatch):
     assert not (tmp_path / "tmp").exists()
 
 
+@pytest.mark.parametrize("bad", [None, 0, -2, 4.5, "8", True])
+def test_mc_pool_size_rejects_a_bad_value(bad):
+    with pytest.raises(ValueError, match=r"pool\.mc_processes.*series\.yaml"):
+        mc_stage.mc_pool_size({"pool": {"mc_processes": bad}, "machine": {"n_cpus": 8}})
+    with pytest.raises(ValueError, match=r"pool\.mc_processes"):
+        mc_stage.mc_pool_size({"machine": {"n_cpus": 8}})
+
+
 def test_mc_pool_size():
     assert config.load_defaults()["pool"]["mc_processes"] == 16
     size = lambda n_cpus: mc_stage.mc_pool_size({"pool": {"mc_processes": 16}, "machine": {"n_cpus": n_cpus}})
