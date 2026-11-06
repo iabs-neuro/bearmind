@@ -42,7 +42,9 @@ def test_killed_worker_is_reported():
         assert died == [[victim]]
     finally:
         w.stop()
-        p.terminate()
+        # not p.terminate(): it waits forever when the victim died holding the task queue's lock, which
+        # depends on whether that worker had started waiting for a task before the kill (see pool._kill)
+        pool._kill(p)
 
 
 def test_stop_then_terminate_is_not_a_death():
