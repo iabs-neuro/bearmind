@@ -42,7 +42,8 @@ from export_estimates_data import (
     get_fps,
     load_estimates,
     load_feedback,
-    ml_approved_components,
+    approved_components,
+    warn_merge_products_left_out,
 )
 
 
@@ -102,7 +103,8 @@ def export_one(est_path: Path, ml_threshold_override=None):
                         'ml_threshold', DEFAULT_ML_THRESHOLD
                     )
 
-            ml_approved_indices = ml_approved_components(df, threshold)
+            ml_approved_indices, group_info = approved_components(est, threshold)
+            warn_merge_products_left_out(session_name, group_info)
             component_indices = np.array(
                 [i for i in component_indices if i in ml_approved_indices]
             )

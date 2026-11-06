@@ -18,7 +18,7 @@ SID = "NOF_H01_1D"
 H, W, T, N = 6, 8, 30, 5
 
 
-def _est(n_frames=T):
+def _est(n_frames=T, old_grouping=False):
     rng = np.random.default_rng(1)
     A = sp.lil_matrix((H * W, N), dtype=np.float32)
     for k in range(N):
@@ -31,7 +31,8 @@ def _est(n_frames=T):
         idx_components=np.array([0, 1, 2, 3, 4]), idx_components_bad=np.array([]),
         imax=np.zeros((W, H)),  # shape[::-1] == (H, W) like A reshape in export_filters_mat
         cnmf_dict={"fr": 19.76, "gSig": (4, 4)},
-        autoinspection_config={"ml_threshold": 0.5},
+        # processed files made since 28a1b4c carry the merge-grouping marker; older ones do not
+        autoinspection_config={"ml_threshold": 0.5, **({} if old_grouping else {"merge_grouping": old.MERGE_GROUPING})},
         # row 0: an SNR duplicate (delete, P above threshold), not exported; row 4: a merge product (P = NaN), exported
         metrics_df=pd.DataFrame({"component_idx": [0, 1, 2, 3, 4],
                                  "ml_keep_probability": [0.9, 0.4, 0.6, 0.1, np.nan],
@@ -217,7 +218,8 @@ def test_rule_counts_on_series_short_shape():
         "decision": ["ok"] * n_ok + ["from_merge"] + ["delete"] * (n_dup + n_low),
         "caiman_snr": np.r_[np.full(n_ok, 5.0), 99.0, 7.0, np.full(n_low, 1.0)],
     })
-    est = SimpleNamespace(idx_components=np.arange(n), metrics_df=df, autoinspection_config={"ml_threshold": 0.72})
+    est = SimpleNamespace(idx_components=np.arange(n), metrics_df=df,
+                          autoinspection_config={"ml_threshold": 0.72, "merge_grouping": old.MERGE_GROUPING})
     assert _counts(est) == {"component_rule": "ml_or_merged_not_deleted", "n_exported": 94,
                             "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0, "median_snr": 5.0}
 
@@ -347,3 +349,62 @@ def test_all_three_export_paths_use_one_rule(tmp_path, monkeypatch):
     assert batch_export.export_one(path)["neurons"] == 2
     with np.load(folder / f"{SID}_data.npz") as d:
         assert sorted(d["component_indices"].tolist()) == [2, 4]
+
+
+def _put_pickle(paths, rec, est):
+    with open(paths.root / rec.stages["autoinspect"].outputs["processed"], "wb") as fh:
+        pickle.dump(est, fh)
+
+
+def test_old_processed_file_exports_no_merge_products(tmp_path):
+    """A pickle made before the merge-grouping fix (no marker) keeps its merge products out of the export."""
+    paths, rec, cfg = _setup(tmp_path)
+    _put_pickle(paths, rec, _est(old_grouping=True))
+    res = export.run(paths, rec, cfg)
+    with np.load(paths.export_npz(SID)) as d:
+        assert d["component_indices"].tolist() == [2]
+    anomaly = [a for a in res.anomalies if a.code == "old_merge_grouping"]
+    assert len(anomaly) == 1 and anomaly[0].level == "warning"
+    assert anomaly[0].data == {"merge_products_excluded": 1}
+    assert not [a for a in res.anomalies if a.code == "export_rule_counters"]  # reported once, above
+    meta = json.loads(paths.export_json(SID).read_text())
+    assert meta["merge_grouping"] == "whole_cluster" and meta["merge_products_excluded"] == 1
+
+
+def test_new_processed_file_exports_merge_products(tmp_path):
+    paths, rec, cfg = _setup(tmp_path)
+    res = export.run(paths, rec, cfg)
+    with np.load(paths.export_npz(SID)) as d:
+        assert d["component_indices"].tolist() == [2, 4]
+    assert not [a for a in res.anomalies if a.code in ("old_merge_grouping", "export_rule_counters")]
+    meta = json.loads(paths.export_json(SID).read_text())
+    assert meta["merge_grouping"] == old.MERGE_GROUPING and meta["merge_products_excluded"] == 0
+
+
+def test_batch_export_warns_for_old_processed_file_and_matches_stage(tmp_path, monkeypatch, capsys):
+    import batch_export
+    est = _est(old_grouping=True)
+    est.name = SID
+    folder = tmp_path / "a" / "b"
+    folder.mkdir(parents=True)
+    path = folder / f"{SID}_processed.pickle"
+    path.write_bytes(pickle.dumps(est))
+    monkeypatch.setattr(batch_export, "get_fps", lambda name: 19.76)
+    batch_export.export_one(path)
+    out = capsys.readouterr().out
+    assert (f"[WARN] {SID}: processed before the merge-grouping fix; 1 merge products not exported; "
+            f"re-run autoinspection to export them") in out
+    with np.load(folder / f"{SID}_data.npz") as d:
+        assert d["component_indices"].tolist() == export._ml_filter(est)[0].tolist() == [2]
+
+
+def test_export_rule_counters_anomaly(tmp_path):
+    """A merge product dropped (its row is in metrics_df, its component is not in idx_components) is shown."""
+    paths, rec, cfg = _setup(tmp_path)
+    est = _est()
+    est.idx_components = np.array([0, 1, 2, 3])  # component 4 is a from_merge row that cannot be exported
+    _put_pickle(paths, rec, est)
+    res = export.run(paths, rec, cfg)
+    a = [a for a in res.anomalies if a.code == "export_rule_counters"]
+    assert len(a) == 1 and a[0].level == "warning"
+    assert a[0].data == {"n_snr_duplicates_exported": 0, "n_merge_products_dropped": 1}

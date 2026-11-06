@@ -34,6 +34,11 @@ from naming import extract_session_id, extract_base_session
 # Default ML threshold for legacy files without autoinspection_config
 DEFAULT_ML_THRESHOLD = 0.72
 
+# Merge groups are connected sets of close pairs (auto_inspector.assign_merge_groups since 28a1b4c);
+# run_auto_inspection stores this value in autoinspection_config['merge_grouping']. Older processed files
+# have no such key: their merge groups were whole correlation clusters that glued distant cells.
+MERGE_GROUPING = "fbd_pairs"
+
 # FPS lookup - avoid heavy import chain from ae_launch
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
 
@@ -210,6 +215,38 @@ def ml_approved_components(metrics_df: pd.DataFrame, threshold: float) -> set:
     if 'delete' in metrics_df.columns:
         approved &= metrics_df['delete'] != 1
     return set(metrics_df.loc[approved, 'component_idx'].tolist())
+
+
+def approved_components(est, threshold: float) -> tuple:
+    """
+    Exported component indices of a processed estimates object, and what was left out.
+
+    Returns (indices, info). For a file whose autoinspection_config names the current merge grouping this is
+    ml_approved_components. A file made before that grouping (no marker) holds merge products built from
+    whole correlation clusters, which glued cells that are far apart, so its merge products are not exported:
+    the rule is then `delete == 0 and not from_merge` for the scored rows. Run autoinspection again to
+    export the merges. info: {"merge_grouping": value or "whole_cluster", "merge_products_excluded": n}.
+    """
+    df = est.metrics_df
+    cfg = getattr(est, 'autoinspection_config', None) or {}
+    grouping = cfg.get('merge_grouping')
+    approved = ml_approved_components(df, threshold)
+    if grouping == MERGE_GROUPING:
+        return approved, {'merge_grouping': grouping, 'merge_products_excluded': 0}
+    n_excluded = 0
+    if 'decision' in df.columns and 'component_idx' in df.columns:
+        merged = set(df.loc[df['decision'] == 'from_merge', 'component_idx'].tolist())
+        n_excluded = len(approved & merged)
+        approved = approved - merged
+    return approved, {'merge_grouping': grouping or 'whole_cluster', 'merge_products_excluded': n_excluded}
+
+
+def warn_merge_products_left_out(session_name: str, info: dict) -> None:
+    """Print the one-line warning when approved_components left merge products out."""
+    if info.get('merge_products_excluded'):
+        print(f"[WARN] {session_name}: processed before the merge-grouping fix; "
+              f"{info['merge_products_excluded']} merge products not exported; "
+              f"re-run autoinspection to export them")
 
 
 def extract_data(est, component_indices: np.ndarray) -> dict:
@@ -481,7 +518,8 @@ def main():
                 threshold = est.autoinspection_config.get('ml_threshold', DEFAULT_ML_THRESHOLD)
 
             # Filter by ml_keep_probability
-            ml_approved_indices = ml_approved_components(df, threshold)
+            ml_approved_indices, group_info = approved_components(est, threshold)
+            warn_merge_products_left_out(session_name, group_info)
             component_indices = np.array([i for i in component_indices if i in ml_approved_indices])
 
             ml_filtered = True

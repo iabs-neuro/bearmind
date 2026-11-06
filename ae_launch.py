@@ -93,6 +93,7 @@ from auto_inspector import (
     transform_metrics_df_indices
 )
 from ae_utils import visualize_corner_artifacts
+from export_estimates_data import MERGE_GROUPING
 
 
 def _save_inspection_artifacts(
@@ -380,6 +381,7 @@ def run_auto_inspection(
             'ml_threshold': ml_threshold,
             'deletion_rules': deletion_rules if deletion_rules else 'DEFAULT_DELETION_RULES',
             'seed': seed,
+            'merge_grouping': MERGE_GROUPING,
         }
         return {
             'estimates': est,
@@ -560,6 +562,7 @@ def run_auto_inspection(
         'pxlthr_distance_boundary': pxlthr_distance_boundary,
         'd_snr_thr': d_snr_thr,
         'seed': seed,
+        'merge_grouping': MERGE_GROUPING,
     }
 
     # Verify metrics_df was attached and indices are valid

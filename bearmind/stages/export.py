@@ -17,20 +17,23 @@ from bearmind.timestamps import read_timestamps, stitch, write_timestamps
 
 
 def _ml_filter(est):
-    """export_estimates_data.ml_approved_components, the rule of all three export paths; without feedback."""
+    """export_estimates_data.approved_components, the rule of all three export paths; without feedback.
+
+    The second value carries merge_grouping and merge_products_excluded (a processed file made before the
+    merge-grouping fix keeps its merge products out of the export)."""
     idx = np.array(list(est.idx_components), dtype=int)
     n_before = len(idx)
     df = getattr(est, "metrics_df", None)
     if df is None or "ml_keep_probability" not in df.columns:
         return idx, {"ml_filtered": False, "threshold_used": None, "n_before": n_before,
-                     "n_after": None}
+                     "n_after": None, "merge_grouping": None, "merge_products_excluded": 0}
     threshold = old.DEFAULT_ML_THRESHOLD
     if getattr(est, "autoinspection_config", None):
         threshold = est.autoinspection_config.get("ml_threshold", threshold)
-    ok = old.ml_approved_components(df, threshold)
+    ok, group_info = old.approved_components(est, threshold)
     idx = np.array([i for i in idx if i in ok], dtype=int)
     return idx, {"ml_filtered": True, "threshold_used": threshold, "n_before": n_before,
-                 "n_after": len(idx)}
+                 "n_after": len(idx), **group_info}
 
 
 def rule_counts(est, idx, ml_info) -> dict:
@@ -142,6 +145,23 @@ def run(paths, rec, cfg) -> StageResult:
     counts = rule_counts(est, idx, ml_info)
     n_frames = int(est.C.shape[1])
     anomalies = []
+    if ml_info["merge_products_excluded"]:
+        # autoinspect re-runs before export when its code changes, so this is a guard
+        anomalies.append(Anomaly(
+            "old_merge_grouping", "warning",
+            f"processed before the merge-grouping fix; {ml_info['merge_products_excluded']} merge products "
+            f"not exported; re-run autoinspection to export them",
+            data={"merge_products_excluded": ml_info["merge_products_excluded"]}))
+    # merge products left out of an old file are reported above, not here
+    unexpected_dropped = (counts["n_merge_products_dropped"] or 0) - ml_info["merge_products_excluded"]
+    if counts["n_snr_duplicates_exported"] or unexpected_dropped > 0:
+        anomalies.append(Anomaly(
+            "export_rule_counters", "warning",
+            f"the processed file breaks the export rule's assumptions: "
+            f"{counts['n_snr_duplicates_exported'] or 0} SNR duplicates exported, "
+            f"{counts['n_merge_products_dropped'] or 0} merge products dropped (rule: {counts['component_rule']})",
+            data={"n_snr_duplicates_exported": counts["n_snr_duplicates_exported"] or 0,
+                  "n_merge_products_dropped": counts["n_merge_products_dropped"] or 0}))
     ts = _stitched_timestamps(paths, rec)
     n_ts = min(n_frames, rec.n_frames, len(ts.raw))
     if n_frames != rec.n_frames or n_ts < n_frames:
@@ -166,6 +186,8 @@ def run(paths, rec, cfg) -> StageResult:
     meta["autoinspection_fps"] = rec.stages["autoinspect"].metrics.get("autoinspection_fps")
     meta["timestamps_file"] = paths.export_timestamps(sid).name
     meta.update({k: v for k, v in counts.items() if k != "median_snr"})
+    meta["merge_grouping"] = ml_info["merge_grouping"]
+    meta["merge_products_excluded"] = ml_info["merge_products_excluded"]
     metrics = {"n_neurons": int(len(idx)), **counts}
 
     targets = {"npz": paths.export_npz(sid), "json": paths.export_json(sid),
