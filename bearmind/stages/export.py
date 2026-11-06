@@ -17,7 +17,7 @@ from bearmind.timestamps import read_timestamps, stitch, write_timestamps
 
 
 def _ml_filter(est):
-    """Same rule as batch_export.export_one, without feedback."""
+    """export_estimates_data.ml_approved_components, the rule of all three export paths; without feedback."""
     idx = np.array(list(est.idx_components), dtype=int)
     n_before = len(idx)
     df = getattr(est, "metrics_df", None)
@@ -27,7 +27,7 @@ def _ml_filter(est):
     threshold = old.DEFAULT_ML_THRESHOLD
     if getattr(est, "autoinspection_config", None):
         threshold = est.autoinspection_config.get("ml_threshold", threshold)
-    ok = set(df.loc[df["ml_keep_probability"] >= threshold, "component_idx"].tolist())
+    ok = old.ml_approved_components(df, threshold)
     idx = np.array([i for i in idx if i in ok], dtype=int)
     return idx, {"ml_filtered": True, "threshold_used": threshold, "n_before": n_before,
                  "n_after": len(idx)}
@@ -36,9 +36,9 @@ def _ml_filter(est):
 def rule_counts(est, idx, ml_info) -> dict:
     """Which rule chose the exported components and what it did with autoinspection's decisions.
 
-    The rule is the old one (ml_keep_probability >= threshold; 'idx_components' when there are no ML
-    probabilities). Autoinspection only marks components: an SNR duplicate keeps its P above the threshold
-    and is exported although marked delete; a merge product has P = NaN and is never exported. The median
+    The rule is ml_approved_components ('idx_components' when there are no ML probabilities). With it
+    n_snr_duplicates_exported and n_merge_products_dropped are 0; the counters stay as a check: a non-zero
+    value means the processed file breaks the rule's assumptions. The median
     SNR comes from metrics_df: in processed files made before main's fbd1ad3 (2026-11-01), est.SNR_comp is
     not in the order of the components after a merge. None: not known (no metrics_df or no such column).
     """

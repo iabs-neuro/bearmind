@@ -1248,7 +1248,7 @@ def test_export_rule_is_an_export_input(series, monkeypatch):
 
     s = series
     _run(s)
-    assert load_record(s.paths, S1).stages["export"].params["component_rule"] == "ml_probability"
+    assert load_record(s.paths, S1).stages["export"].params["component_rule"] == "ml_or_merged_not_deleted"
     s.stubs.calls.clear()
     monkeypatch.setattr(bearmind.stages, "COMPONENT_RULE", "another_rule")
     _run(s)

@@ -32,7 +32,7 @@ def _est(n_frames=T):
         imax=np.zeros((W, H)),  # shape[::-1] == (H, W) like A reshape in export_filters_mat
         cnmf_dict={"fr": 19.76, "gSig": (4, 4)},
         autoinspection_config={"ml_threshold": 0.5},
-        # 0: an SNR duplicate (marked delete, P above threshold), 4: a merge product (P = NaN)
+        # row 0: an SNR duplicate (delete, P above threshold), not exported; row 4: a merge product (P = NaN), exported
         metrics_df=pd.DataFrame({"component_idx": [0, 1, 2, 3, 4],
                                  "ml_keep_probability": [0.9, 0.4, 0.6, 0.1, np.nan],
                                  "delete": [1, 1, 0, 1, 0],
@@ -86,7 +86,7 @@ def test_export_matches_old_structure(tmp_path):
     res = export.run(paths, rec, cfg)
     # reference: old export() on the same object with the same ML filter and the registry's fps
     est = pickle.loads((paths.root / rec.stages["autoinspect"].outputs["processed"]).read_bytes())
-    idx = np.array([0, 2])
+    idx = np.array([2, 4])
     ref_npz, ref_json = old.export(old.extract_data(est, idx), old.build_metadata(
         est, rec.fps, SID, component_indices=idx), SID, tmp_path / "ref")
     with np.load(paths.export_npz(SID)) as a, np.load(ref_npz) as b:
@@ -115,11 +115,11 @@ def test_export_matches_old_structure(tmp_path):
     assert mat["A"].shape == (2, H, W)
     ref_mat = scipy.io.loadmat(old.export_filters_mat(est, idx, tmp_path / "ref" / "f.mat"))
     assert np.array_equal(mat["A"], ref_mat["A"])
-    rule = {"component_rule": "ml_probability", "n_exported": 2, "n_snr_duplicates_exported": 1,
-            "n_merge_products_dropped": 1}
+    rule = {"component_rule": "ml_or_merged_not_deleted", "n_exported": 2, "n_snr_duplicates_exported": 0,
+            "n_merge_products_dropped": 0}
     assert {k: meta[k] for k in rule} == rule  # json fields only added
-    # median SNR of the exported rows (0, 2) from metrics_df, not SNR_comp[[0, 2]] = 2.0
-    assert res.metrics == {"n_neurons": 2, "median_snr": 6.0, **rule}
+    # median SNR of the exported rows (2, 4) from metrics_df: 7.0 and 9.0, not SNR_comp[[2, 4]]
+    assert res.metrics == {"n_neurons": 2, "median_snr": 8.0, **rule}
     assert set(res.outputs) == {"npz", "json", "timestamps", "filters"}
     assert res.outputs["npz"] == paths.rel(paths.export_npz(SID))
     assert not list((paths.root / "6_Export").rglob("*.partial*"))
@@ -206,8 +206,8 @@ def _counts(est):
 
 
 def test_rule_counts_on_series_short_shape():
-    """Counts of the ML-probability rule on rows shaped like NOF_H03_3D (ML-filter findings): 93 kept with
-    P >= 0.72, 1 merge product, 1 SNR duplicate exported, the rest marked delete below the threshold."""
+    """Counts of the export rule on rows shaped like NOF_H03_3D (ML-filter findings): 93 kept with
+    P >= 0.72 and 1 merge product are exported; the SNR duplicate (delete, P above threshold) is not."""
     n_ok, n_dup, n_low = 93, 1, 116
     n = n_ok + 1 + n_dup + n_low
     df = pd.DataFrame({
@@ -218,8 +218,8 @@ def test_rule_counts_on_series_short_shape():
         "caiman_snr": np.r_[np.full(n_ok, 5.0), 99.0, 7.0, np.full(n_low, 1.0)],
     })
     est = SimpleNamespace(idx_components=np.arange(n), metrics_df=df, autoinspection_config={"ml_threshold": 0.72})
-    assert _counts(est) == {"component_rule": "ml_probability", "n_exported": 94, "n_snr_duplicates_exported": 1,
-                            "n_merge_products_dropped": 1, "median_snr": 5.0}
+    assert _counts(est) == {"component_rule": "ml_or_merged_not_deleted", "n_exported": 94,
+                            "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0, "median_snr": 5.0}
 
 
 def test_rule_counts_without_ml_or_components():
@@ -286,7 +286,7 @@ def _check_empty_export(paths, res, n_components):
     assert len(a) == 1 and a[0].level == "warning"
     assert a[0].data == {"n_components": n_components, "n_exported": 0}
     meta = json.loads(paths.export_json(SID).read_text())
-    assert meta["n_exported"] == 0 and meta["component_rule"] in ("ml_probability", "idx_components")
+    assert meta["n_exported"] == 0 and meta["component_rule"] in ("ml_or_merged_not_deleted", "idx_components")
     assert [x["code"] for x in meta["provenance"]["anomalies"]] == ["no_components"]
     with np.load(paths.export_npz(SID)) as d:
         assert d["C"].shape == (0, T) and d["component_indices"].shape == (0,)
@@ -312,8 +312,38 @@ def test_components_none_of_which_pass_the_rule(tmp_path):
     proc = paths.root / rec.stages["autoinspect"].outputs["processed"]
     est = _est()
     est.autoinspection_config = {"ml_threshold": 0.99}
+    # a merge product passes at any threshold, so row 4 becomes an ordinary component
+    est.metrics_df.loc[4, "decision"] = "ok"
+    est.metrics_df.loc[4, "ml_keep_probability"] = 0.3
     with open(proc, "wb") as fh:
         pickle.dump(est, fh)
     res = export.run(paths, rec, cfg)
     assert _check_empty_export(paths, res, N) == {"C", "component_indices", "fps"}  # as with components
     assert scipy.io.loadmat(paths.export_filters(SID))["A"].shape == (0, H, W)
+
+
+def test_rule_without_decision_columns():
+    """A processed pickle from an older run: P only, no decision / delete columns."""
+    est = SimpleNamespace(idx_components=np.arange(3), autoinspection_config={"ml_threshold": 0.72},
+                          metrics_df=pd.DataFrame({"component_idx": [0, 1, 2],
+                                                   "ml_keep_probability": [0.9, 0.5, np.nan]}))
+    assert export._ml_filter(est)[0].tolist() == [0]
+    assert _counts(est) == {"component_rule": "ml_or_merged_not_deleted", "n_exported": 1,
+                            "n_snr_duplicates_exported": None, "n_merge_products_dropped": None,
+                            "median_snr": None}
+
+
+def test_all_three_export_paths_use_one_rule(tmp_path, monkeypatch):
+    import batch_export
+    est = _est()
+    est.name = SID  # extract_session_name reads it
+    assert old.ml_approved_components(est.metrics_df, 0.5) == {2, 4}
+    assert export._ml_filter(est)[0].tolist() == [2, 4]
+    folder = tmp_path / "a" / "b"  # export_one also looks for feedback one folder up
+    folder.mkdir(parents=True)
+    path = folder / f"{SID}_processed.pickle"
+    path.write_bytes(pickle.dumps(est))
+    monkeypatch.setattr(batch_export, "get_fps", lambda name: 19.76)
+    assert batch_export.export_one(path)["neurons"] == 2
+    with np.load(folder / f"{SID}_data.npz") as d:
+        assert sorted(d["component_indices"].tolist()) == [2, 4]

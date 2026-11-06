@@ -42,6 +42,7 @@ from export_estimates_data import (
     get_fps,
     load_estimates,
     load_feedback,
+    ml_approved_components,
 )
 
 
@@ -101,8 +102,7 @@ def export_one(est_path: Path, ml_threshold_override=None):
                         'ml_threshold', DEFAULT_ML_THRESHOLD
                     )
 
-            ml_approved_mask = df['ml_keep_probability'] >= threshold
-            ml_approved_indices = set(df.loc[ml_approved_mask, 'component_idx'].tolist())
+            ml_approved_indices = ml_approved_components(df, threshold)
             component_indices = np.array(
                 [i for i in component_indices if i in ml_approved_indices]
             )
@@ -110,7 +110,7 @@ def export_one(est_path: Path, ml_threshold_override=None):
             ml_filtered = True
             ml_threshold_used = threshold
             n_ml_rejected = n_before_ml_filter - len(component_indices)
-            print(f"  ML filter (>={threshold}): "
+            print(f"  Export rule (P >= {threshold} or merged, not deleted): "
                   f"{n_before_ml_filter} -> {len(component_indices)} (-{n_ml_rejected})")
 
     feedback_path = find_feedback_file(est_path, session_name)

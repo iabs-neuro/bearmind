@@ -63,6 +63,9 @@ def test_export_outputs(series):
         meta = json.loads((series.root / outputs["json"]).read_text(encoding="utf-8"))
         assert meta["fps"] == pytest.approx(r.fps)
         assert "provenance" in meta
+        assert meta["component_rule"] in ("ml_or_merged_not_deleted", "idx_components")
+        if meta["component_rule"] == "ml_or_merged_not_deleted":
+            assert meta["n_snr_duplicates_exported"] == 0 and meta["n_merge_products_dropped"] == 0
         with np.load(series.root / outputs["npz"], allow_pickle=False) as d:
             assert d.files, f"{r.sid}: empty npz"
         with open(series.root / outputs["timestamps"], encoding="utf-8") as fh:
