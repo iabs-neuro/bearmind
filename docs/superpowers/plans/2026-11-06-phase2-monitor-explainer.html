@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEARMiND Monitor</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2330; --muted:#5d6676; --line:#d9dde4;
+  --done:#c8e6c9; --done-ink:#1b5e20; --run:#bbdefb; --run-ink:#0d47a1; --wait:#e1bee7; --wait-ink:#4a148c;
+  --warn:#fff3b0; --warn-ink:#6d5300; --err:#ffcdd2; --err-ink:#8e0000; --none:#eef0f3;
+  --accent:#2f5bd3; --win:#e9ecf1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+    --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+    --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+    --accent:#7aa2ff; --win:#232831;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+  --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+  --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+  --accent:#7aa2ff; --win:#232831;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:19px;margin:32px 0 10px} h3{font-size:16px;margin:18px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+/* mock window */
+.win{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.titlebar{background:var(--win);padding:7px 12px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:4px}
+.tabs{display:flex;gap:2px;padding:6px 10px 0;background:var(--win);border-bottom:1px solid var(--line);font-size:13px}
+.tab{padding:6px 12px;border-radius:6px 6px 0 0;color:var(--muted)} .tab.on{background:var(--panel);color:var(--ink);font-weight:600;border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.pad{padding:12px 14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{padding:3px 9px;border-radius:12px;font-size:13px;font-weight:600}
+.chip.run{background:var(--run);color:var(--run-ink)}
+.btn{border:1px solid var(--line);background:var(--bg);padding:4px 10px;border-radius:6px;font-size:13px;color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{position:relative}
+.num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;flex:0 0 22px}
+.sect{border-top:1px solid var(--line)}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 6px;display:flex;gap:6px;align-items:center}
+/* progress */
+.stage{display:grid;grid-template-columns:96px 1fr 120px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--none)}
+.bar i{display:block;height:100%}
+.d{background:#43a047}.r{background:#1e88e5}.w{background:#8e24aa}.f{background:#e53935}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-weight:600;text-align:left;color:var(--muted);padding:4px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:3px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td.c{border-radius:3px}
+.c.ok{background:var(--done);color:var(--done-ink)} .c.run{background:var(--run);color:var(--run-ink)}
+.c.wait{background:var(--wait);color:var(--wait-ink)} .c.warn{background:var(--warn);color:var(--warn-ink)}
+.c.err{background:var(--err);color:var(--err-ink)} .c.no{color:var(--muted)}
+.tblwrap{overflow-x:auto}
+/* warnings */
+.warn-item{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.lvl{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;text-align:center;height:fit-content}
+.lvl.e{background:var(--err);color:var(--err-ink)} .lvl.w{background:var(--warn);color:var(--warn-ink)}
+.log{font:12px/1.45 Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre;overflow-x:auto;color:var(--muted)}
+/* explanation */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card ol,.card ul{margin:6px 0 0;padding-left:20px} .card li{margin:4px 0}
+.ex{display:flex;gap:10px;margin:10px 0}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin-top:8px}
+.flow .s{padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.flow .arr{color:var(--muted)}
+.check li{list-style:none;margin-left:-20px}
+.check li::before{content:"\2610";margin-right:8px;color:var(--accent)}
+code{font-family:Consolas,monospace;font-size:13px;background:var(--none);padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>BEARMiND, фаза 2: окно мониторинга</h1>
+<p class="muted">Макет окна для одобрения. Данные выдуманы: серия LT1, 24 сессии. Текст в окне на английском. Пояснения справа по-русски, номера совпадают с метками на макете.</p>
+
+<div class="grid">
+<!-- ===================== MOCK WINDOW ===================== -->
+<div class="win" aria-label="Макет окна">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>BEARMiND — H:\Projects\LT1\CalciumData</div>
+  <div class="tabs"><span class="tab on">Monitor</span><span class="tab">Scan</span><span class="tab">Thresholds</span><span class="tab">Inspection</span></div>
+
+  <div class="pad">
+    <div class="label"><span class="num">1</span>Batch</div>
+    <div class="row">
+      <span class="chip run">Running</span>
+      <span>LT1_J05_2D &middot; MC &middot; 6 min</span>
+      <span class="muted">heartbeat 4 s ago</span>
+      <span style="flex:1"></span>
+      <span class="btn">Stop after current stage</span><span class="btn">Open folder</span>
+    </div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">2</span>Progress &mdash; 24 sessions</div>
+    <div class="stage"><span>Crop</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="muted">24 done</span></div>
+    <div class="stage"><span>MC</span><div class="bar"><i class="d" style="width:58%"></i><i class="r" style="width:4.2%"></i></div><span class="muted">14 done &middot; 1 running</span></div>
+    <div class="stage"><span>Thresholds</span><div class="bar"><i class="d" style="width:33%"></i><i class="w" style="width:16.7%"></i></div><span class="muted">8 done &middot; 4 wait</span></div>
+    <div class="stage"><span>CNMF-E</span><div class="bar"><i class="d" style="width:25%"></i><i class="f" style="width:4.2%"></i></div><span class="muted">6 done &middot; 1 failed</span></div>
+    <div class="stage"><span>Inspection</span><div class="bar"><i class="d" style="width:16.7%"></i><i class="w" style="width:8.3%"></i></div><span class="muted">4 done &middot; 2 wait</span></div>
+    <div class="stage"><span>Autoinspect</span><div class="bar"><i class="d" style="width:12.5%"></i></div><span class="muted">3 done</span></div>
+    <div class="stage"><span>Export</span><div class="bar"><i class="d" style="width:12.5%"></i></div><span class="muted">3 done</span></div>
+    <div class="legend"><span><b class="d"></b>done</span><span><b class="r"></b>running</span><span><b class="w"></b>waits for you</span><span><b class="f"></b>failed</span></div>
+    <p class="muted" style="font-size:13px;margin-top:6px">Estimated time left: ~3 h 10 min (time waiting for you not counted)</p>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">3</span>Waiting for you</div>
+    <div class="row"><span class="btn primary">Thresholds: 4 sessions &rarr;</span><span class="btn primary">Manual inspection: 2 sessions &rarr;</span></div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">4</span>Sessions</div>
+    <div class="tblwrap">
+    <table class="tbl">
+      <tr><th>Session</th><th>Crop</th><th>MC</th><th>Thresholds</th><th>CNMF-E</th><th>Inspection</th><th>Autoinspect</th><th>Export</th></tr>
+      <tr><td>LT1_J01_1D</td><td class="c ok">512&times;480</td><td class="c ok">3.2 px</td><td class="c ok">gSig 4</td><td class="c ok">231 cells</td><td class="c ok">not needed</td><td class="c ok">128 kept</td><td class="c ok">121 neurons</td></tr>
+      <tr><td>LT1_J01_2D</td><td class="c ok">512&times;480</td><td class="c ok">4.1 px</td><td class="c ok">gSig 4</td><td class="c ok">219 cells</td><td class="c ok">cleaned</td><td class="c ok">117 kept</td><td class="c ok">112 neurons</td></tr>
+      <tr><td>LT1_J01_3D</td><td class="c ok">512&times;480</td><td class="c ok">2.7 px</td><td class="c ok">gSig 4</td><td class="c ok">240 cells</td><td class="c ok">not needed</td><td class="c warn">22 kept</td><td class="c warn">19 neurons</td></tr>
+      <tr><td>LT1_J01_4D</td><td class="c ok">512&times;480</td><td class="c ok">3.0 px</td><td class="c ok">gSig 4</td><td class="c ok">226 cells</td><td class="c wait">waits</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td>LT1_J03_1D</td><td class="c ok">498&times;470</td><td class="c ok">5.6 px</td><td class="c ok">gSig 5</td><td class="c err">failed</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td>LT1_J03_2D</td><td class="c ok">498&times;470</td><td class="c ok">4.4 px</td><td class="c ok">gSig 5</td><td class="c run">running</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td>LT1_J05_1D</td><td class="c ok">505&times;488</td><td class="c warn">18 px</td><td class="c wait">waits</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td>LT1_J05_2D</td><td class="c ok">505&times;488</td><td class="c run">running</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td class="muted">&hellip; 16 more</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">5</span>Warnings &mdash; 3 sessions</div>
+    <div class="warn-item"><span class="lvl e">ERROR</span><span><b>LT1_J03_1D &middot; CNMF-E</b> stage process ran out of memory; retried once, failed again. Other sessions continue. <span class="btn" style="padding:1px 7px">Retry</span></span></div>
+    <div class="warn-item"><span class="lvl w">WARN</span><span><b>LT1_J05_1D &middot; MC</b> max shift 18 px (warn above 10). Check the MC preview.</span></div>
+    <div class="warn-item"><span class="lvl w">WARN</span><span><b>LT1_J01_3D &middot; Export</b> 19 neurons (warn below 30); autoinspection deleted 91%.</span></div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">6</span>Log &mdash; LT1_J03_1D</div>
+    <div class="log">14:02:11 [INFO] cnmf: start, 18000 frames, 498x470, gSig 4
+14:31:40 [FAILED] cnmf: stage process exited with code 0xc0000005
+14:31:41 [INFO] cnmf: automatic retry 1 of 1
+15:00:02 [FAILED] cnmf: out of memory (needs ~148 GB, budget 120 GB)</div>
+  </div>
+</div>
+
+<!-- ===================== EXPLANATION ===================== -->
+<div>
+  <div class="card">
+    <h3>Что показывает окно</h3>
+    <div class="ex"><span class="num">1</span><div><b>Батч.</b> Работает ли батч и что он делает сейчас. Если процесс батча завис или исчез, окно пишет <code>Not responding</code>, и кнопка Start снова доступна. Кнопка Stop останавливает батч после текущего этапа, данные не портятся.</div></div>
+    <div class="ex"><span class="num">2</span><div><b>Прогресс.</b> Одна полоса на этап. Зелёное — готово, синее — идёт, фиолетовое — ждёт вас, красное — упало. Оценка времени не учитывает ожидание вас.</div></div>
+    <div class="ex"><span class="num">3</span><div><b>Ждут вас.</b> Сколько сессий ждут порогов или ручной инспекции. Кнопка открывает нужную вкладку (фазы 4 и 5).</div></div>
+    <div class="ex"><span class="num">4</span><div><b>Таблица.</b> Строка — сессия, столбец — этап. Цвет показывает состояние. Число — главный показатель этапа: размер кропа, сдвиг MC, число клеток, число нейронов. Щелчок по строке показывает лог сессии.</div></div>
+    <div class="ex"><span class="num">5</span><div><b>Предупреждения.</b> Только главные, шесть видов (список ниже). Сначала ошибки, потом предупреждения. У упавшего этапа есть кнопка Retry.</div></div>
+    <div class="ex"><span class="num">6</span><div><b>Лог.</b> Последние строки лога выбранной сессии.</div></div>
+  </div>
+
+  <div class="card">
+    <h3>Если сессия упала</h3>
+    <div class="flow"><span class="s">этап упал</span><span class="arr">&rarr;</span><span class="s">повтор 1 раз (если процесс упал или завис)</span><span class="arr">&rarr;</span><span class="s">клетка красная, причина в списке</span><span class="arr">&rarr;</span><span class="s">батч идёт к следующей сессии</span></div>
+    <p style="margin-top:10px">Батч не останавливается из-за одной сессии. Это уже работает в ядре: каждый этап идёт в отдельном процессе. Окно только показывает результат.</p>
+    <p>Закрытие окна батч не останавливает: батч — отдельный процесс. Окно можно открыть снова, и оно покажет текущее состояние.</p>
+  </div>
+
+  <div class="card">
+    <h3>Шесть видов предупреждений</h3>
+    <ol>
+      <li><b>Этап упал:</b> ошибка, нехватка памяти, зависание.</li>
+      <li><b>Данные из скана:</b> число кадров не совпадает с метками времени, необычная частота кадров.</li>
+      <li><b>MC:</b> большой сдвиг (больше 10 px — предупреждение, больше 30 px — ошибка).</li>
+      <li><b>CNMF-E:</b> число клеток в 2 раза больше или меньше медианы серии.</li>
+      <li><b>Автоинспекция</b> удалила больше 80 % компонент.</li>
+      <li><b>Экспорт:</b> меньше 30 нейронов (меньше 5 — ошибка).</li>
+    </ol>
+    <p class="muted">Пороги сейчас предварительные. Уточним их на LT1.</p>
+  </div>
+
+  <div class="card">
+    <h3>Что вы одобряете</h3>
+    <ul class="check">
+      <li>Весь текст окна на английском.</li>
+      <li>Вкладка Monitor из шести частей, как на макете.</li>
+      <li>Шесть видов предупреждений; пороги уточняем на LT1.</li>
+      <li>Кнопки: Start, Stop after current stage, Retry, Open folder, переходы к сессиям, которые ждут вас.</li>
+      <li>Батч работает отдельно от окна. Окно показывает состояние и запускает батч.</li>
+    </ul>
+    <p class="muted">Если что-то не так, назовите номер части. Например: «4 — добавить столбец FPS», «5 — убрать п. 4».</p>
+  </div>
+</div>
+</div>
+</div>
+</body>
+</html>
