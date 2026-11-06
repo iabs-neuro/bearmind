@@ -408,7 +408,7 @@ def SaveResults(estimates, sigma=3):
     savemat(fold + '_session.mat', {"A": np.array(ims)})
 
 
-def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
+def make_app(fname, default_fps=20, bkapp_kwargs=None):
     """
     Interactive neuron examination GUI.
 
@@ -1075,8 +1075,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             src.data = slice_cds(src, estimates.idx_components)
             add_dummy_data(src)
             src_partial.data = dict(src.data)
-            src_partial.selected.indices = np.arange(len(estimates.idx_components))
+            # No select-all: with every row selected a repeated click acts on all neurons,
+            # and a click in toggle mode only clears the selection.
+            src_partial.selected.indices = []
             storage.estimates = copy.deepcopy(estimates)
+            # The rows now show the full list; the partial list must match them without restore.
+            storage.estimates_partial = copy.deepcopy(estimates)
 
         def merge_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
@@ -1172,9 +1176,11 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
                 add_dummy_data(src)
                 src_partial.data = dict(src.data)
-                src_partial.selected.indices = np.arange(len(estimates.idx_components))
+                # Same as in del_callback: no select-all, partial list follows the shown rows.
+                src_partial.selected.indices = []
 
                 storage.estimates = copy.deepcopy(estimates)
+                storage.estimates_partial = copy.deepcopy(estimates)
 
         def show_callback(event, storage=None):
             estimates = copy.deepcopy(storage.estimates)
@@ -1189,10 +1195,12 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
 
             if len(sel_inds) != 0:
 
+                # Row numbers refer to the rows on screen, i.e. to the partial list, not to the full one.
                 estimates_partial.idx_components = np.array(
-                    [ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds])
+                    [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
 
-                part_to_total_mapping = {i: ind for i, ind in enumerate(estimates.idx_components) if i in sel_inds}
+                part_to_total_mapping = {i: ind for i, ind in enumerate(storage.estimates_partial.idx_components)
+                                         if i in sel_inds}
                 if verbose:
                     print('est comp num:', len(estimates.idx_components))
                     print('est comp:', estimates.idx_components)
@@ -1226,7 +1234,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             # prev_estimates = copy.deepcopy(storage.prev_estimates)
             # prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
             prev_data = storage.prev_data
-            prev_data_partial = storage.prev_data
+            # The partial view must come back from its own snapshot, not from the full one.
+            prev_data_partial = storage.prev_data_partial
 
             storage.estimates = copy.deepcopy(storage.prev_estimates)
             storage.estimates_partial = copy.deepcopy(storage.prev_estimates_partial)
@@ -1656,7 +1665,19 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
             )
         )
 
-    show(bkapp)
+    return bkapp
+
+
+def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
+    """
+    Interactive neuron examination GUI.
+
+    Args:
+        fname: Path to estimates pickle file
+        default_fps: Default frames per second (default: 20)
+        bkapp_kwargs: Dict with configuration options, see make_app.
+    """
+    show(make_app(fname, default_fps=default_fps, bkapp_kwargs=bkapp_kwargs))
 
 
 def ManualSeeds(fname, size=600, cnmf_dict=None):
