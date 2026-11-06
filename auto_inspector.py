@@ -25,6 +25,8 @@ from caiman.components_evaluation import (
 
 
 from scipy.stats import median_abs_deviation, skew, kurtosis, spearmanr
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import distance_matrix
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
@@ -1817,52 +1819,82 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
         else:
             raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml', 'hybrid'")
 
-    # Step 3: Correlation-based merge logic (UNCHANGED)
+    # Step 3: a merge group is a connected set of close pairs (see assign_merge_groups)
     if enable_merge:
-        # unique number of clusters
-        unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
-        unique_clusters = sorted(unique_clusters, reverse=True)
+        metrics_df = assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary, d_snr_thr)
 
-        metrics_df.sort_values('corr_groups', ascending=False, inplace=True)
-        for cluster_id in unique_clusters:
-            # indeces of neurons in cluster
-            cluster = metrics_df[metrics_df['corr_groups'] == cluster_id]
-            cluster_indices = cluster['component_idx'].tolist()
+    metrics_df.sort_index(inplace=True)
+    return metrics_df
 
-            for index_1 in cluster_indices:
-                for index_2 in cluster_indices:
-                    # address of current neuron
-                    metrics_df_mask_1 = metrics_df['component_idx'] == index_1
-                    metrics_df_mask_2 = metrics_df['component_idx'] == index_2
 
-                    # execute only if not already classified to delete
-                    if (index_1 != index_2 and metrics_df.loc[metrics_df_mask_1, 'delete'].item() == 0
-                            and metrics_df.loc[metrics_df_mask_2, 'delete'].item() == 0):
+def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=10):
+    """
+    Mark SNR duplicates for deletion and number the merge groups.
 
-                        # pandas df indeces matching with FBD matrix
-                        FBD_idx_1 = metrics_df.loc[metrics_df_mask_1].index[0]
-                        FBD_idx_2 = metrics_df.loc[metrics_df_mask_2].index[0]
+    A pair of components inside one correlation cluster is "close" when
+    FBD <= pxlthr_distance_boundary. A close pair with |dSNR| <= d_snr_thr is a merge
+    pair. A close pair with a larger dSNR deletes the dimmer component (the same
+    pass and order as the earlier code). A merge group is a chain of merge pairs
+    (a connected component of the pair graph) among components that stay.
+    The earlier code made the whole correlation cluster one group, which glued
+    distant cells (findings.md, item 4).
 
-                        # SNRs of current neurons
-                        snr = [metrics_df.loc[metrics_df_mask_1, 'caiman_snr'].item(),
-                               metrics_df.loc[metrics_df_mask_2, 'caiman_snr'].item()]
+    Args:
+        metrics_df: needs 'component_idx', 'corr_groups', 'caiman_snr', 'delete';
+            index labels are row numbers of FBD. 'delete' is changed in place.
+        FBD: (n, n) border distance matrix between components, pixels.
+        pxlthr_distance_boundary: largest FBD of a close pair (pixels).
+        d_snr_thr: largest SNR difference of a merge pair.
 
-                        # check for merge/delete/keep choice depending on rules
-                        if FBD[FBD_idx_1][FBD_idx_2] <= pxlthr_distance_boundary:
-                            d_snr = max(snr) - min(snr)
-                            # merge neurons with close snr value
-                            if d_snr <= d_snr_thr:
-                                metrics_df.loc[metrics_df_mask_1, 'merge'] = cluster_id
+    Returns:
+        metrics_df sorted by index, with 'merge' = 0 (no group) or 1..K (group
+        number, ordered by the smallest component_idx of the group).
+    """
+    metrics_df['merge'] = 0
+    unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
+    unique_clusters = sorted(unique_clusters, reverse=True)
 
-                            # delete all with smaller SNR
-                            elif snr[0] != max(snr):
-                                metrics_df.loc[metrics_df_mask_1, 'delete'] = 1
-                        # else : default value is 0 in 'delete' if it has not been classified already
+    # Same (unstable) sort call as before: it fixes the pair order, and the pair
+    # order decides which SNR duplicates are deleted.
+    metrics_df.sort_values('corr_groups', ascending=False, inplace=True)
+    ids = metrics_df['component_idx'].to_numpy()
+    snrs = metrics_df['caiman_snr'].to_numpy()
+    labels = metrics_df.index.to_numpy()
+    dele = metrics_df['delete'].to_numpy().copy()
+    corr = metrics_df['corr_groups'].to_numpy()
 
-        # Clean up conflicts: if neuron is marked for deletion, remove from merge groups
-        # Deletion is primary - no further actions allowed on deleted neurons
-        deleted_neurons = metrics_df['delete'] == 1
-        metrics_df.loc[deleted_neurons, 'merge'] = 0
+    pairs = []  # (position 1, position 2) of merge pairs
+    for cluster_id in unique_clusters:
+        members = np.nonzero(corr == cluster_id)[0]
+        for p1 in members:
+            for p2 in members:
+                if p1 != p2 and dele[p1] == 0 and dele[p2] == 0:
+                    if FBD[labels[p1]][labels[p2]] <= pxlthr_distance_boundary:
+                        snr = [snrs[p1], snrs[p2]]
+                        d_snr = max(snr) - min(snr)
+                        if d_snr <= d_snr_thr:
+                            pairs.append((p1, p2))
+                        elif snr[0] != max(snr):
+                            dele[p1] = 1
+    metrics_df['delete'] = dele
+
+    # A member deleted after its pair was recorded leaves the group.
+    pairs = [(a, b) for a, b in pairs if dele[a] == 0 and dele[b] == 0]
+    n = len(metrics_df)
+    if pairs:
+        rows, cols = zip(*pairs)
+        graph = coo_matrix((np.ones(len(pairs)), (rows, cols)), shape=(n, n))
+        _, comp = connected_components(graph, directed=False)
+        in_pair = np.zeros(n, dtype=bool)
+        in_pair[list(rows) + list(cols)] = True
+        comps = {}
+        for pos in np.nonzero(in_pair)[0]:
+            comps.setdefault(comp[pos], []).append(pos)
+        ordered = sorted(comps.values(), key=lambda g: min(ids[g]))
+        merge = np.zeros(n, dtype=int)
+        for k, g in enumerate(ordered, start=1):
+            merge[g] = k
+        metrics_df['merge'] = merge
 
     metrics_df.sort_index(inplace=True)
     return metrics_df
