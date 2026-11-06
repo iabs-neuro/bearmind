@@ -1,4 +1,6 @@
 import torch  # noqa: F401
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -6,13 +8,19 @@ from auto_inspector import assign_merge_groups, metrics_to_decision
 
 
 def _old_merge_step(metrics_df, FBD, pxlthr_distance_boundary, d_snr_thr):
-    """Verbatim copy of the merge step of auto_inspector.py at commit 63dfe9c (the reference)."""
+    """Copy of the merge step of auto_inspector.py at commit 63dfe9c (the reference).
+
+    Two deviations from the verbatim copy, and only these: the sort is stable and reassigned instead of
+    inplace. The old unstable sort left the visit order of the members of one cluster (all tied on
+    corr_groups) to the NumPy build, and the SNR-loser rule depends on that order, so the reference
+    needs the same fixed order to be comparable.
+    """
     metrics_df["merge"] = 0
     # unique number of clusters
     unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
     unique_clusters = sorted(unique_clusters, reverse=True)
 
-    metrics_df.sort_values('corr_groups', ascending=False, inplace=True)
+    metrics_df = metrics_df.sort_values('corr_groups', ascending=False, kind='stable')
     for cluster_id in unique_clusters:
         # indeces of neurons in cluster
         cluster = metrics_df[metrics_df['corr_groups'] == cluster_id]
@@ -53,7 +61,7 @@ def _old_merge_step(metrics_df, FBD, pxlthr_distance_boundary, d_snr_thr):
     deleted_neurons = metrics_df['delete'] == 1
     metrics_df.loc[deleted_neurons, 'merge'] = 0
 
-    metrics_df.sort_index(inplace=True)
+    metrics_df = metrics_df.sort_index()
     return metrics_df
 
 
@@ -144,3 +152,35 @@ def test_metrics_to_decision_uses_the_new_groups():
     out = metrics_to_decision(df, None, None, _fbd(4, {(0, 1): 5, (2, 3): 5}),
                               deletion_rules=["area<1"], brain="thresholds")
     assert out["merge"].tolist() == [1, 1, 2, 2]
+
+
+def test_deletions_follow_row_order_not_memory_layout():
+    """Chain A - B - C (A and C far apart): B is dimmer than A by more than d_snr_thr, C dimmer than B.
+    Whether C survives depends on whether B is deleted before B visits C, i.e. on the visit order. The
+    order is the frame's row order and does not change with dtype or memory layout."""
+    fbd = _fbd(3, {(0, 1): 5, (1, 2): 5})
+    df = _df([40.0, 25.0, 10.0], [1.0] * 3)
+
+    def deleted(frame):
+        out = assign_merge_groups(frame, fbd, 15, 10)
+        return dict(zip(out.index.tolist(), out["delete"].tolist()))
+
+    assert deleted(df) == {0: 0, 1: 1, 2: 0}               # B deleted by A first; C is never compared with A
+    reversed_rows = df.iloc[::-1]
+    assert deleted(reversed_rows) == {0: 0, 1: 1, 2: 1}    # C visits B first and is deleted
+    for frame, expected in ((df, {0: 0, 1: 1, 2: 0}), (reversed_rows, {0: 0, 1: 1, 2: 1})):
+        assert deleted(frame.copy()) == expected
+        assert deleted(pd.concat([frame.iloc[:1], frame.iloc[1:]])) == expected
+        assert deleted(frame.astype({"corr_groups": np.float32, "caiman_snr": np.float32})) == expected
+        assert deleted(frame.astype({"component_idx": np.int32, "delete": np.int8})) == expected
+
+
+def test_assign_merge_groups_leaves_the_input_and_warns_about_nothing():
+    df = _df([5.0, 6.0], [1.0, 1.0])
+    before = df.copy()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        out = assign_merge_groups(df, _fbd(2, {(0, 1): 5}), 15, 10)
+    assert not [w for w in caught if issubclass(w.category, FutureWarning) or "Pandas" in w.category.__name__],         [str(w.message) for w in caught]
+    pd.testing.assert_frame_equal(df, before)  # no 'merge' column added, no 'delete' change
+    assert out["merge"].tolist() == [1, 1]

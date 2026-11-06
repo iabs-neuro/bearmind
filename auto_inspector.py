@@ -1831,7 +1831,7 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
     if enable_merge:
         metrics_df = assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary, d_snr_thr)
 
-    metrics_df.sort_index(inplace=True)
+    metrics_df = metrics_df.sort_index()
     return metrics_df
 
 
@@ -1849,22 +1849,26 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
 
     Args:
         metrics_df: needs 'component_idx', 'corr_groups', 'caiman_snr', 'delete';
-            index labels are row numbers of FBD. 'delete' is changed in place.
+            index labels are row numbers of FBD. The frame is not modified: the function
+            works on a copy. Components of one cluster are visited in the frame's row order.
         FBD: (n, n) border distance matrix between components, pixels.
         pxlthr_distance_boundary: largest FBD of a close pair (pixels).
         d_snr_thr: largest SNR difference of a merge pair.
 
     Returns:
-        metrics_df sorted by index, with 'merge' = 0 (no group) or 1..K (group
-        number, ordered by the smallest component_idx of the group).
+        A new frame sorted by index, with 'delete' updated and 'merge' = 0 (no
+        group) or 1..K (group number, ordered by the smallest component_idx of
+        the group). Callers must use the returned frame.
     """
+    metrics_df = metrics_df.copy()
     metrics_df['merge'] = 0
     unique_clusters = metrics_df.loc[metrics_df['corr_groups'] != 0, 'corr_groups'].unique()
     unique_clusters = sorted(unique_clusters, reverse=True)
 
-    # Same (unstable) sort call as before: it fixes the pair order, and the pair
-    # order decides which SNR duplicates are deleted.
-    metrics_df.sort_values('corr_groups', ascending=False, inplace=True)
+    # The visit order decides which SNR duplicate of a chain is deleted, and all members of a cluster tie
+    # on corr_groups. A stable sort makes the tie order the frame's row order; the default quicksort ties
+    # depended on the NumPy build.
+    metrics_df = metrics_df.sort_values('corr_groups', ascending=False, kind='stable')
     ids = metrics_df['component_idx'].to_numpy()
     snrs = metrics_df['caiman_snr'].to_numpy()
     labels = metrics_df.index.to_numpy()
@@ -1904,8 +1908,7 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
             merge[g] = k
         metrics_df['merge'] = merge
 
-    metrics_df.sort_index(inplace=True)
-    return metrics_df
+    return metrics_df.sort_index()
 
 
 def metrics_to_dummy_decision(df):
