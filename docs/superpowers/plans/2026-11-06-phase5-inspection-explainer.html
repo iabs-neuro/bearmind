@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEARMiND manual inspection</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2330; --muted:#5d6676; --line:#d9dde4;
+  --done:#c8e6c9; --done-ink:#1b5e20; --run:#bbdefb; --run-ink:#0d47a1; --wait:#e1bee7; --wait-ink:#4a148c;
+  --warn:#fff3b0; --warn-ink:#6d5300; --err:#ffcdd2; --err-ink:#8e0000; --none:#eef0f3;
+  --accent:#2f5bd3; --win:#e9ecf1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+    --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+    --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+    --accent:#7aa2ff; --win:#232831;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+  --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+  --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+  --accent:#7aa2ff; --win:#232831;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:19px;margin:32px 0 10px} h3{font-size:16px;margin:18px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+/* mock window */
+.win{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.titlebar{background:var(--win);padding:7px 12px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:4px}
+.tabs{display:flex;gap:2px;padding:6px 10px 0;background:var(--win);border-bottom:1px solid var(--line);font-size:13px}
+.tab{padding:6px 12px;border-radius:6px 6px 0 0;color:var(--muted)} .tab.on{background:var(--panel);color:var(--ink);font-weight:600;border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.pad{padding:12px 14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{padding:3px 9px;border-radius:12px;font-size:13px;font-weight:600}
+.chip.run{background:var(--run);color:var(--run-ink)}
+.btn{border:1px solid var(--line);background:var(--bg);padding:4px 10px;border-radius:6px;font-size:13px;color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{position:relative}
+.num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;flex:0 0 22px}
+.sect{border-top:1px solid var(--line)}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 6px;display:flex;gap:6px;align-items:center}
+/* progress */
+.stage{display:grid;grid-template-columns:96px 1fr 120px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--none)}
+.bar i{display:block;height:100%}
+.d{background:#43a047}.r{background:#1e88e5}.w{background:#8e24aa}.f{background:#e53935}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-weight:600;text-align:left;color:var(--muted);padding:4px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:3px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td.c{border-radius:3px}
+.c.ok{background:var(--done);color:var(--done-ink)} .c.run{background:var(--run);color:var(--run-ink)}
+.c.wait{background:var(--wait);color:var(--wait-ink)} .c.warn{background:var(--warn);color:var(--warn-ink)}
+.c.err{background:var(--err);color:var(--err-ink)} .c.no{color:var(--muted)}
+.tblwrap{overflow-x:auto}
+/* warnings */
+.warn-item{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.lvl{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;text-align:center;height:fit-content}
+.lvl.e{background:var(--err);color:var(--err-ink)} .lvl.w{background:var(--warn);color:var(--warn-ink)}
+.log{font:12px/1.45 Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre;overflow-x:auto;color:var(--muted)}
+/* explanation */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card ol,.card ul{margin:6px 0 0;padding-left:20px} .card li{margin:4px 0}
+.ex{display:flex;gap:10px;margin:10px 0}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin-top:8px}
+.flow .s{padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.flow .arr{color:var(--muted)}
+.check li{list-style:none;margin-left:-20px}
+.check li::before{content:"\2610";margin-right:8px;color:var(--accent)}
+code{font-family:Consolas,monospace;font-size:13px;background:var(--none);padding:0 4px;border-radius:3px}
+
+/* ---- extra for phases 3-6 ---- */
+svg{max-width:100%;height:auto}
+.two{display:grid;grid-template-columns:190px minmax(0,1fr)}
+@media (max-width:640px){.two{grid-template-columns:1fr}.side{border-right:0!important;border-bottom:1px solid var(--line)}}
+.side{border-right:1px solid var(--line);padding:10px 12px;font-size:13px}
+.side .m{font-weight:600;margin-top:8px;color:var(--muted);font-size:12px}
+.sess{padding:2px 6px;border-radius:4px;margin:2px 0;display:flex;justify-content:space-between;gap:6px;font-size:12.5px}
+.sess.sel{outline:2px solid var(--accent)}
+.sess.ok{background:var(--done);color:var(--done-ink)} .sess.wait{background:var(--wait);color:var(--wait-ink)}
+.sess.warn{background:var(--warn);color:var(--warn-ink)} .sess.err{background:var(--err);color:var(--err-ink)}
+.sess.no{background:var(--none);color:var(--muted)}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumb{width:96px;font-size:11px;text-align:center;border:2px solid transparent;border-radius:6px;padding:2px}
+.thumb.sel{border-color:var(--accent)}
+.sl{display:grid;grid-template-columns:78px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.track{position:relative;height:6px;background:var(--none);border-radius:3px;border:1px solid var(--line)}
+.track i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:3px}
+.track b{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--accent);margin-left:-8px}
+.dlg{border:2px solid var(--accent);border-radius:8px;background:var(--panel);padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.2);font-size:13px}
+.maps{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cv svg,.maps svg{width:100%;height:auto;display:block;border-radius:4px}
+.cap{font-size:12px;color:var(--muted);margin-top:2px}
+.btn.off{opacity:.45}
+.btn.danger{background:var(--err);color:var(--err-ink);border-color:var(--err)}
+.btn.warnb{background:var(--warn);color:var(--warn-ink);border-color:var(--warn)}
+.btn.good{background:var(--done);color:var(--done-ink);border-color:var(--done)}
+/* tags */
+.tg{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.tg.meas{background:var(--done);color:var(--done-ink)} .tg.exp{background:var(--warn);color:var(--warn-ink)}
+.tg.synth{background:var(--run);color:var(--run-ink)}
+/* flags */
+.flag{background:var(--warn);color:var(--warn-ink);border-color:var(--warn-ink)}
+.flag li{margin:5px 0}
+/* horizontal bars */
+.hb{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 64px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+@media (max-width:560px){.hb{grid-template-columns:1fr 64px}.hb .t{grid-column:1 / 3;order:3}}
+.hb .t{height:14px;background:var(--none);border-radius:7px;overflow:hidden;display:flex}
+.hb .t i{display:block;height:100%}
+.hb .v{text-align:right;font-variant-numeric:tabular-nums}
+.c1{background:#1e88e5}.c2{background:#8e24aa}.c3{background:#fb8c00}.c4{background:#43a047}.c5{background:#e53935}.c6{background:#6d4c41}
+/* trees */
+.tree{font:12.5px/1.55 Consolas,monospace;white-space:pre;overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.tree .del{color:var(--err-ink);background:var(--err)} .tree .mv{background:var(--warn);color:var(--warn-ink)}
+.tree .new{background:var(--done);color:var(--done-ink)} .tree .dim{color:var(--muted)} .tree .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 5px;font-weight:700}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:720px){.two-col{grid-template-columns:1fr}}
+.tbl td.wrap{white-space:normal}
+.seg{display:flex;height:22px;border-radius:4px;overflow:hidden;font-size:11px;color:#fff}
+.seg span{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden}
+.lines{font-size:13px}
+.lines p{margin:3px 0}
+.tag-line{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>BEARMiND, фаза 5: ручная инспекция</h1>
+<p class="muted">Страница для одобрения. Сначала замеры скорости и план ускорения, ниже макет окна. Данные выдуманы: серия LT1, 24 сессии. Текст в окне на английском. Пояснения по-русски, номера совпадают с метками на макете.</p>
+
+<h2>Что медленно, и где уходит время</h2>
+<p class="muted">Вы назвали три медленных места. Для каждого есть замер. Зелёная метка «measured» — число измерено на настоящем файле. Синяя «tiled copy» — тот же файл, продолженный до длины 10 и 60 минут (экстраполяция по числу кадров). Жёлтая «expected» — выигрыш ожидаем, пока не сделан.</p>
+<div class="two-col">
+<div class="card">
+  <h3>1. Ответ на действие: удалить, склеить, перейти к другому нейрону</h3>
+  <p class="muted" style="font-size:13px">Время Python-кода одного щелчка. Сеть и перерисовка в браузере сюда не входят: их нельзя замерить без браузера.</p>
+  <h3 style="font-size:14px">Щелчок Delete sel. (на деле это три шага: Delete, Reset view, сортировка)</h3>
+  <div class="hb"><span>2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c1" style="width:13.4%"></i></div><span class="v">0.13 s</span></div>
+  <div class="hb"><span>18 000 кадров (около 10 мин) <span class="tg synth">tiled copy</span></span><div class="t"><i class="c1" style="width:23.7%"></i></div><span class="v">0.24 s</span></div>
+  <div class="hb"><span>107 107 кадров (около 60 мин) <span class="tg synth">tiled copy</span></span><div class="t"><i class="c1" style="width:92.3%"></i></div><span class="v">0.92 s</span></div>
+  <h3 style="font-size:14px">Щелчок Merge sel.</h3>
+  <div class="hb"><span>2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c3" style="width:29.5%"></i></div><span class="v">1.77 s</span></div>
+  <div class="hb"><span>18 000 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c3" style="width:33.7%"></i></div><span class="v">2.02 s</span></div>
+  <div class="hb"><span>107 107 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c3" style="width:98.3%"></i></div><span class="v">5.90 s</span></div>
+  <h3 style="font-size:14px">Сколько данных браузер получает при каждом таком обновлении</h3>
+  <div class="hb"><span>2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c2" style="width:1.9%"></i></div><span class="v">4.8 МБ</span></div>
+  <div class="hb"><span>18 000 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c2" style="width:16.8%"></i></div><span class="v">42 МБ</span></div>
+  <div class="hb"><span>107 107 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c2" style="width:99.6%"></i></div><span class="v">249 МБ</span></div>
+  <h3 style="font-size:14px">Переход к другому нейрону (выбор мышью)</h3>
+  <div class="hb"><span>Python-код, 2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c4" style="width:1.5%"></i></div><span class="v">0.05 мс</span></div>
+  <p style="font-size:13px">Код Python почти не тратит времени. Задержка, скорее всего, в браузере: он перерисовывает все трейсы. Это не измерено.</p>
+  <p style="font-size:13px"><b>Почему щелчок дорогой.</b> Один Delete делает 8 полных копий всех оценок (<code>copy.deepcopy</code>, 19 мс каждая на 2 000 кадров, 58 мс на 107 107) и 2 копии данных графика. Потом отправляет в браузер весь набор данных заново. Две трети набора — ось времени, продублированная для каждого нейрона.</p>
+</div>
+<div>
+<div class="card">
+  <h3>2. Сохранение и переход к следующей сессии</h3>
+  <h3 style="font-size:14px">Щелчок Save results (окно стоит, пока он не закончится)</h3>
+  <div class="hb"><span>2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c5" style="width:14.6%"></i></div><span class="v">2.19 s</span></div>
+  <div class="hb"><span>18 000 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c5" style="width:25.5%"></i></div><span class="v">3.83 s</span></div>
+  <div class="hb"><span>107 107 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c5" style="width:97.1%"></i></div><span class="v">14.56 s</span></div>
+  <h3 style="font-size:14px">Из них запись главного файла (pickle) &mdash; единственная часть, нужная батчу</h3>
+  <div class="hb"><span>2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c4" style="width:1.5%"></i></div><span class="v">0.04 s</span></div>
+  <div class="hb"><span>18 000 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c4" style="width:1.5%"></i></div><span class="v">0.10 s</span></div>
+  <div class="hb"><span>107 107 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c4" style="width:1.5%"></i></div><span class="v">0.19 s</span></div>
+  <p style="font-size:13px">Остальное — запись <code>traces.csv</code>, 194 картинок-фильтров и <code>.mat</code>. Фильтры занимают около 2 с при любой длине, CSV растёт с длиной сессии. Save progress быстрый: 0.1&ndash;0.3 с.</p>
+  <p style="font-size:13px">После сохранения следующая сессия начинается с нуля: новый процесс (см. часть 3).</p>
+</div>
+
+<div class="card">
+  <h3>3. Открытие сессии</h3>
+  <h3 style="font-size:14px">Что происходит, пока вы ждёте</h3>
+  <div class="hb"><span>Запуск Python и import <span class="tg meas">measured</span></span><div class="t"><i class="c6" style="width:70.7%"></i></div><span class="v">9.90 s</span></div>
+  <div class="hb"><span>Загрузка файла (82 МБ) <span class="tg meas">measured</span></span><div class="t"><i class="c4" style="width:1.5%"></i></div><span class="v">0.03 s</span></div>
+  <div class="hb"><span>Подготовка графика, 2 000 кадров <span class="tg meas">measured</span></span><div class="t"><i class="c1" style="width:4.4%"></i></div><span class="v">0.61 s</span></div>
+  <div class="hb"><span>Подготовка графика, 18 000 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c1" style="width:7.0%"></i></div><span class="v">0.98 s</span></div>
+  <div class="hb"><span>Подготовка графика, 107 107 кадров <span class="tg synth">tiled copy</span></span><div class="t"><i class="c1" style="width:20.9%"></i></div><span class="v">2.92 s</span></div>
+  <p style="font-size:13px">Запуск складывается из <code>caiman</code> (6.3 с) и <code>auto_inspector</code> с <code>driada</code> (2.5 с). Эти пакеты загружаются заново для каждой сессии: план запускает отдельный процесс на сессию.</p>
+  <p style="font-size:13px">Подготовка графика: 0.43 с из 0.61 с уходит на контуры нейронов (<code>get_contours</code>, 0.34 с). Контуры не зависят от длины записи.</p>
+  <p class="muted" style="font-size:12px">Файл читался из кэша ОС (0.02 с на 82 МБ). С холодного диска будет дольше; не измерено.</p>
+</div>
+</div></div>
+
+<div class="card">
+  <h3>Что изменит фаза 5, чтобы стало быстро</h3>
+  <div class="tblwrap"><table class="tbl">
+    <tr><th>Медленное</th><th>Что меняем</th><th>Основание</th><th>Статус</th></tr>
+    <tr><td class="wrap">Delete / Merge</td><td class="wrap">Не копировать все оценки на каждое действие. Хранить список удалённых номеров и откат по нему</td><td class="wrap">8 копий на щелчок; цена копии измерена</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span><br><span class="muted">цена измерена, выигрыш ожидаем</span></td></tr>
+    <tr><td class="wrap">Delete / Merge / Show</td><td class="wrap">Менять график по месту: убрать одну строку, а не отправлять весь набор данных</td><td class="wrap">4.8 / 42 / 249 МБ за обновление</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span><br><span class="muted">размер измерен, время в браузере нет</span></td></tr>
+    <tr><td class="wrap">Любое обновление, перерисовка</td><td class="wrap">Ось времени отправлять один раз. Показывать трейс не более чем 2 000 точками (мин-макс), полные данные остаются в файле</td><td class="wrap">ось времени = 3.1 из 4.8 МБ</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span></td></tr>
+    <tr><td class="wrap">Merge</td><td class="wrap">Пересчитывать контур только для склеенного нейрона</td><td class="wrap">пересчёт всех контуров 0.55 с из 1.77 с; ещё 0.93 с в <code>manual_merge</code> CaImAn</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span><br><span class="muted">вторую часть CaImAn так просто не ускорить</span></td></tr>
+    <tr><td class="wrap">Переход к другому нейрону</td><td class="wrap">Подсвечивать выбранный трейс, не перерисовывая остальные. Опция WebGL уже есть в коде (<code>enable_gpu_backend</code>)</td><td class="wrap">Python 0.05 мс: причина в браузере</td><td><span class="tg exp">expected</span><br><span class="muted">проверим в браузере при приёмке</span></td></tr>
+    <tr><td class="wrap">Save results</td><td class="wrap">Писать pickle сразу и записывать решение «cleaned». CSV, фильтры и .mat писать в фоне. Окно не стоит</td><td class="wrap">pickle 0.04&ndash;0.2 с из 2.2&ndash;14.6 с</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span></td></tr>
+    <tr><td class="wrap">Открытие следующей сессии</td><td class="wrap">Один сервер инспекции на серию вместо процесса на сессию: импорт один раз</td><td class="wrap">9.9 с на запуск и import</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span></td></tr>
+    <tr><td class="wrap">Открытие следующей сессии</td><td class="wrap">Пока вы чистите одну сессию, сервер в фоне готовит следующую (загрузка + контуры)</td><td class="wrap">0.6 / 1.0 / 2.9 с</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span><br><span class="muted">после этого следующая открывается сразу</span></td></tr>
+    <tr><td class="wrap">Открытие сессии</td><td class="wrap">Считать контуры один раз после CNMF-E и хранить рядом с оценками</td><td class="wrap"><code>get_contours</code> 0.34 с из 0.43 с</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span></td></tr>
+    <tr><td class="wrap">Запуск (запасной вариант)</td><td class="wrap">Загружать <code>driada</code> только когда нужна автоинспекция</td><td class="wrap">2.5 с из 9.9 с</td><td><span class="tg meas">measured</span> <span class="tg exp">expected</span><br><span class="muted">лишнее, если сервер один на серию</span></td></tr>
+  </table></div>
+  <p class="muted" style="font-size:13px">Измеренное — цены в Python. Выигрыш в секундах «ожидаем», пока изменения не сделаны. После фазы замеряем те же числа заново.</p>
+</div>
+
+
+<div class="card">
+  <h3>Как измеряли</h3>
+  <ul>
+    <li>Файл: <code>H:\Projects\_bearmind_test\series_short\5_Inspection\NOF_H01_1D\NOF_H01_1D_processed.pickle</code>, 2 000 кадров, 194 нейрона, изображение 608&times;608, 82 МБ. Файл читали только на чтение.</li>
+    <li>Сервер Bokeh и браузер не запускали. Вызывали настоящие функции <code>bm_examinator</code> и настоящие обработчики кнопок на объекте-документе в памяти.</li>
+    <li>«Tiled copy» &mdash; тот же файл, продолженный по времени до 18 000 и 107 107 кадров (10 и 60 минут). Это <b>экстраполяция по числу кадров</b>, а не настоящая запись. В настоящей сессии нейронов может быть больше, тогда всё станет медленнее.</li>
+    <li>Не измерено: перерисовка в браузере, пересылка по сети, чтение с холодного диска.</li>
+    <li>Merge мерили на <code>4_Estimates</code> (224 нейрона): в файле из <code>5_Inspection</code> разреженная матрица <code>S</code> не подходит для CaImAn <code>manual_merge</code>.</li>
+  </ul>
+</div>
+
+<h2>Макет: как выглядит инспекция</h2>
+<div class="grid">
+<style>
+.bk{display:grid;grid-template-columns:minmax(0,1fr) 110px minmax(0,1fr);gap:8px;align-items:start}
+@media (max-width:640px){.bk{grid-template-columns:1fr}}
+.metrics{font:10.5px/1.45 Consolas,monospace;border:1px solid var(--line);border-radius:4px;padding:6px;height:100%;min-height:90px;background:var(--bg)}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+</style>
+<div>
+<div class="win" aria-label="Макет окна Monitor" style="margin-bottom:16px">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>BEARMiND &mdash; Monitor (part)</div>
+  <div class="pad">
+    <div class="label"><span class="num">1</span>Sessions &mdash; select one, then press the button</div>
+    <div class="tblwrap"><table class="tbl">
+      <tr><th>Session</th><th>CNMF-E</th><th>Inspection</th><th>Autoinspect</th><th>Export</th></tr>
+      <tr><td>LT1_J03_1D</td><td class="c ok">231 cells</td><td class="c ok">not needed</td><td class="c ok">128 kept</td><td class="c ok">121 neurons</td></tr>
+      <tr style="outline:2px solid var(--accent)"><td>LT1_J03_2D</td><td class="c ok">219 cells</td><td class="c wait">waits</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+      <tr><td>LT1_J03_3D</td><td class="c run">running</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td><td class="c no">&ndash;</td></tr>
+    </table></div>
+    <div class="row" style="margin-top:8px"><span class="btn primary">Manual inspection</span><span class="btn">Not needed</span><span class="muted">Opens in your browser. This window stays free.</span></div>
+  </div>
+</div>
+
+<div class="win" aria-label="Макет окна инспекции">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>Browser &mdash; localhost:5006 &mdash; LT1_J03_2D</div>
+  <div class="pad">
+    <div class="bk">
+      <div>
+        <div class="label"><span class="num">2</span>Image with contours</div>
+        <div class="cv"><svg viewBox="0 0 300 300" role="img" aria-label="contours of components"><rect width="300" height="300" fill="#0b0d12"/><circle cx="136" cy="168" r="2" fill="rgb(59,59,59)"/><circle cx="136" cy="257" r="2" fill="rgb(42,42,42)"/><circle cx="55" cy="154" r="2" fill="rgb(70,70,70)"/><circle cx="184" cy="56" r="2" fill="rgb(58,58,58)"/><circle cx="91" cy="27" r="2" fill="rgb(70,70,70)"/><circle cx="13" cy="295" r="2" fill="rgb(58,58,58)"/><circle cx="196" cy="185" r="2" fill="rgb(40,40,40)"/><circle cx="187" cy="250" r="2" fill="rgb(34,34,34)"/><circle cx="18" cy="57" r="2" fill="rgb(45,45,45)"/><circle cx="180" cy="233" r="2" fill="rgb(50,50,50)"/><circle cx="132" cy="253" r="2" fill="rgb(63,63,63)"/><circle cx="70" cy="88" r="2" fill="rgb(30,30,30)"/><circle cx="199" cy="137" r="2" fill="rgb(47,47,47)"/><circle cx="122" cy="165" r="2" fill="rgb(35,35,35)"/><circle cx="212" cy="95" r="2" fill="rgb(44,44,44)"/><circle cx="154" cy="9" r="2" fill="rgb(66,66,66)"/><circle cx="230" cy="120" r="2" fill="rgb(48,48,48)"/><circle cx="116" cy="287" r="2" fill="rgb(30,30,30)"/><circle cx="64" cy="278" r="2" fill="rgb(33,33,33)"/><circle cx="141" cy="294" r="2" fill="rgb(55,55,55)"/><circle cx="126" cy="170" r="2" fill="rgb(42,42,42)"/><circle cx="234" cy="81" r="2" fill="rgb(35,35,35)"/><circle cx="93" cy="5" r="2" fill="rgb(56,56,56)"/><circle cx="227" cy="35" r="2" fill="rgb(45,45,45)"/><circle cx="212" cy="3" r="2" fill="rgb(59,59,59)"/><circle cx="239" cy="53" r="2" fill="rgb(65,65,65)"/><circle cx="57" cy="153" r="2" fill="rgb(38,38,38)"/><circle cx="126" cy="115" r="2" fill="rgb(55,55,55)"/><circle cx="126" cy="64" r="2" fill="rgb(47,47,47)"/><circle cx="259" cy="292" r="2" fill="rgb(67,67,67)"/><circle cx="91" cy="265" r="2" fill="rgb(43,43,43)"/><circle cx="56" cy="299" r="2" fill="rgb(68,68,68)"/><circle cx="193" cy="30" r="2" fill="rgb(39,39,39)"/><circle cx="64" cy="77" r="2" fill="rgb(69,69,69)"/><circle cx="99" cy="89" r="2" fill="rgb(34,34,34)"/><circle cx="22" cy="63" r="2" fill="rgb(70,70,70)"/><circle cx="73" cy="180" r="2" fill="rgb(53,53,53)"/><circle cx="187" cy="38" r="2" fill="rgb(67,67,67)"/><circle cx="145" cy="172" r="2" fill="rgb(54,54,54)"/><circle cx="55" cy="46" r="2" fill="rgb(44,44,44)"/><circle cx="245" cy="75" r="2" fill="rgb(42,42,42)"/><circle cx="48" cy="189" r="2" fill="rgb(65,65,65)"/><circle cx="59" cy="285" r="2" fill="rgb(60,60,60)"/><circle cx="181" cy="126" r="2" fill="rgb(36,36,36)"/><circle cx="33" cy="154" r="2" fill="rgb(46,46,46)"/><circle cx="72" cy="211" r="2" fill="rgb(46,46,46)"/><circle cx="126" cy="271" r="2" fill="rgb(61,61,61)"/><circle cx="88" cy="53" r="2" fill="rgb(34,34,34)"/><circle cx="38" cy="144" r="2" fill="rgb(69,69,69)"/><circle cx="184" cy="84" r="2" fill="rgb(43,43,43)"/><circle cx="225" cy="21" r="2" fill="rgb(56,56,56)"/><circle cx="134" cy="18" r="2" fill="rgb(41,41,41)"/><circle cx="85" cy="159" r="2" fill="rgb(38,38,38)"/><circle cx="28" cy="42" r="2" fill="rgb(58,58,58)"/><circle cx="294" cy="197" r="2" fill="rgb(63,63,63)"/><circle cx="175" cy="42" r="2" fill="rgb(32,32,32)"/><circle cx="277" cy="142" r="2" fill="rgb(52,52,52)"/><circle cx="210" cy="289" r="2" fill="rgb(31,31,31)"/><circle cx="180" cy="22" r="2" fill="rgb(34,34,34)"/><circle cx="219" cy="96" r="2" fill="rgb(34,34,34)"/><circle cx="23" cy="164" r="2" fill="rgb(32,32,32)"/><circle cx="270" cy="221" r="2" fill="rgb(38,38,38)"/><circle cx="238" cy="275" r="2" fill="rgb(52,52,52)"/><circle cx="25" cy="142" r="2" fill="rgb(34,34,34)"/><circle cx="261" cy="125" r="2" fill="rgb(31,31,31)"/><circle cx="259" cy="172" r="2" fill="rgb(69,69,69)"/><circle cx="199" cy="114" r="2" fill="rgb(30,30,30)"/><circle cx="183" cy="24" r="2" fill="rgb(70,70,70)"/><circle cx="35" cy="77" r="2" fill="rgb(56,56,56)"/><circle cx="218" cy="117" r="2" fill="rgb(67,67,67)"/><circle cx="137" cy="139" r="2" fill="rgb(64,64,64)"/><circle cx="25" cy="225" r="2" fill="rgb(31,31,31)"/><circle cx="93" cy="26" r="2" fill="rgb(31,31,31)"/><circle cx="69" cy="210" r="2" fill="rgb(61,61,61)"/><circle cx="234" cy="198" r="2" fill="rgb(61,61,61)"/><circle cx="77" cy="3" r="2" fill="rgb(49,49,49)"/><circle cx="43" cy="184" r="2" fill="rgb(63,63,63)"/><circle cx="51" cy="272" r="2" fill="rgb(58,58,58)"/><circle cx="149" cy="72" r="2" fill="rgb(55,55,55)"/><circle cx="200" cy="60" r="2" fill="rgb(57,57,57)"/><circle cx="241" cy="226" r="2" fill="rgb(42,42,42)"/><circle cx="264" cy="115" r="2" fill="rgb(67,67,67)"/><circle cx="276" cy="63" r="2" fill="rgb(38,38,38)"/><circle cx="149" cy="251" r="2" fill="rgb(32,32,32)"/><circle cx="213" cy="285" r="2" fill="rgb(47,47,47)"/><circle cx="247" cy="34" r="2" fill="rgb(60,60,60)"/><circle cx="83" cy="64" r="2" fill="rgb(56,56,56)"/><circle cx="115" cy="156" r="2" fill="rgb(50,50,50)"/><circle cx="215" cy="253" r="2" fill="rgb(69,69,69)"/><circle cx="136" cy="22" r="2" fill="rgb(32,32,32)"/><circle cx="83" cy="182" r="2" fill="rgb(47,47,47)"/><circle cx="171" cy="93" r="2" fill="rgb(66,66,66)"/><circle cx="6" cy="41" r="2" fill="rgb(59,59,59)"/><circle cx="57" cy="231" r="2" fill="rgb(47,47,47)"/><circle cx="71" cy="42" r="2" fill="rgb(33,33,33)"/><circle cx="295" cy="35" r="2" fill="rgb(36,36,36)"/><circle cx="189" cy="197" r="2" fill="rgb(53,53,53)"/><circle cx="288" cy="205" r="2" fill="rgb(42,42,42)"/><circle cx="247" cy="77" r="2" fill="rgb(30,30,30)"/><circle cx="227" cy="160" r="2" fill="rgb(32,32,32)"/><circle cx="54" cy="82" r="2" fill="rgb(52,52,52)"/><circle cx="162" cy="284" r="2" fill="rgb(62,62,62)"/><circle cx="184" cy="227" r="2" fill="rgb(55,55,55)"/><circle cx="255" cy="210" r="2" fill="rgb(44,44,44)"/><circle cx="26" cy="280" r="2" fill="rgb(54,54,54)"/><circle cx="39" cy="136" r="2" fill="rgb(70,70,70)"/><circle cx="266" cy="2" r="2" fill="rgb(65,65,65)"/><circle cx="171" cy="264" r="2" fill="rgb(51,51,51)"/><circle cx="139" cy="195" r="2" fill="rgb(43,43,43)"/><circle cx="30" cy="260" r="2" fill="rgb(37,37,37)"/><ellipse cx="72" cy="259" rx="8.9" ry="8.9" fill="#e6194b" fill-opacity="0.35" stroke="#e6194b" stroke-width="1"/><ellipse cx="160" cy="229" rx="6.3" ry="8.6" fill="#3cb44b" fill-opacity="0.35" stroke="#3cb44b" stroke-width="1"/><ellipse cx="247" cy="109" rx="5.3" ry="6.8" fill="#ffe119" fill-opacity="0.35" stroke="#ffe119" stroke-width="1"/><ellipse cx="164" cy="223" rx="6.9" ry="5.1" fill="#4363d8" fill-opacity="0.35" stroke="#4363d8" stroke-width="1"/><ellipse cx="234" cy="31" rx="8.2" ry="5.7" fill="#f58231" fill-opacity="0.35" stroke="#f58231" stroke-width="1"/><ellipse cx="105" cy="228" rx="5.6" ry="5.6" fill="#911eb4" fill-opacity="0.35" stroke="#911eb4" stroke-width="1"/><ellipse cx="154" cy="211" rx="8.4" ry="7.8" fill="#46f0f0" fill-opacity="0.35" stroke="#46f0f0" stroke-width="1"/><ellipse cx="271" cy="148" rx="8.8" ry="5.3" fill="#f032e6" fill-opacity="0.35" stroke="#ffee00" stroke-width="2.4"/><ellipse cx="74" cy="157" rx="6.2" ry="7.9" fill="#bcf60c" fill-opacity="0.35" stroke="#bcf60c" stroke-width="1"/><ellipse cx="188" cy="156" rx="8.4" ry="7.2" fill="#fabebe" fill-opacity="0.35" stroke="#fabebe" stroke-width="1"/><ellipse cx="99" cy="118" rx="8.4" ry="8.6" fill="#e6194b" fill-opacity="0.35" stroke="#e6194b" stroke-width="1"/><ellipse cx="71" cy="245" rx="8.9" ry="7.1" fill="#3cb44b" fill-opacity="0.35" stroke="#3cb44b" stroke-width="1"/><ellipse cx="170" cy="69" rx="7.1" ry="7.0" fill="#ffe119" fill-opacity="0.35" stroke="#ffe119" stroke-width="1"/><ellipse cx="179" cy="22" rx="8.9" ry="7.1" fill="#4363d8" fill-opacity="0.35" stroke="#4363d8" stroke-width="1"/><ellipse cx="123" cy="232" rx="7.3" ry="7.0" fill="#f58231" fill-opacity="0.35" stroke="#f58231" stroke-width="1"/><ellipse cx="202" cy="32" rx="7.2" ry="6.7" fill="#911eb4" fill-opacity="0.35" stroke="#911eb4" stroke-width="1"/><ellipse cx="274" cy="265" rx="6.1" ry="6.9" fill="#46f0f0" fill-opacity="0.35" stroke="#46f0f0" stroke-width="1"/><ellipse cx="49" cy="132" rx="8.3" ry="8.6" fill="#f032e6" fill-opacity="0.35" stroke="#f032e6" stroke-width="1"/><ellipse cx="144" cy="100" rx="5.8" ry="7.5" fill="#bcf60c" fill-opacity="0.35" stroke="#bcf60c" stroke-width="1"/><ellipse cx="266" cy="49" rx="8.1" ry="5.1" fill="#fabebe" fill-opacity="0.35" stroke="#fabebe" stroke-width="1"/><ellipse cx="67" cy="76" rx="7.7" ry="6.3" fill="#e6194b" fill-opacity="0.35" stroke="#e6194b" stroke-width="1"/><ellipse cx="111" cy="183" rx="5.4" ry="7.9" fill="#3cb44b" fill-opacity="0.35" stroke="#3cb44b" stroke-width="1"/><ellipse cx="47" cy="153" rx="6.0" ry="5.8" fill="#ffe119" fill-opacity="0.35" stroke="#ffe119" stroke-width="1"/><ellipse cx="158" cy="133" rx="6.5" ry="6.7" fill="#4363d8" fill-opacity="0.35" stroke="#4363d8" stroke-width="1"/><ellipse cx="158" cy="57" rx="5.8" ry="7.5" fill="#f58231" fill-opacity="0.35" stroke="#f58231" stroke-width="1"/><ellipse cx="188" cy="158" rx="8.4" ry="7.4" fill="#911eb4" fill-opacity="0.35" stroke="#911eb4" stroke-width="1"/><ellipse cx="247" cy="77" rx="8.0" ry="8.2" fill="#46f0f0" fill-opacity="0.35" stroke="#46f0f0" stroke-width="1"/><ellipse cx="260" cy="100" rx="6.3" ry="8.7" fill="#f032e6" fill-opacity="0.35" stroke="#f032e6" stroke-width="1"/><ellipse cx="73" cy="286" rx="8.6" ry="5.5" fill="#bcf60c" fill-opacity="0.35" stroke="#bcf60c" stroke-width="1"/><ellipse cx="79" cy="212" rx="6.0" ry="5.4" fill="#fabebe" fill-opacity="0.35" stroke="#fabebe" stroke-width="1"/><ellipse cx="240" cy="129" rx="8.2" ry="5.5" fill="#e6194b" fill-opacity="0.35" stroke="#e6194b" stroke-width="1"/><ellipse cx="124" cy="200" rx="5.1" ry="5.8" fill="#3cb44b" fill-opacity="0.35" stroke="#3cb44b" stroke-width="1"/><ellipse cx="200" cy="262" rx="8.9" ry="5.5" fill="#ffe119" fill-opacity="0.35" stroke="#ffe119" stroke-width="1"/><ellipse cx="152" cy="220" rx="7.0" ry="7.7" fill="#4363d8" fill-opacity="0.35" stroke="#4363d8" stroke-width="1"/><ellipse cx="65" cy="33" rx="5.4" ry="5.1" fill="#f58231" fill-opacity="0.35" stroke="#f58231" stroke-width="1"/><ellipse cx="164" cy="154" rx="7.3" ry="5.6" fill="#911eb4" fill-opacity="0.35" stroke="#911eb4" stroke-width="1"/><ellipse cx="64" cy="69" rx="8.4" ry="9.0" fill="#46f0f0" fill-opacity="0.35" stroke="#46f0f0" stroke-width="1"/><ellipse cx="266" cy="40" rx="5.2" ry="8.8" fill="#f032e6" fill-opacity="0.35" stroke="#f032e6" stroke-width="1"/><ellipse cx="140" cy="222" rx="6.3" ry="6.9" fill="#bcf60c" fill-opacity="0.35" stroke="#bcf60c" stroke-width="1"/><ellipse cx="154" cy="131" rx="7.4" ry="5.1" fill="#fabebe" fill-opacity="0.35" stroke="#fabebe" stroke-width="1"/><ellipse cx="205" cy="244" rx="5.7" ry="6.8" fill="#e6194b" fill-opacity="0.35" stroke="#e6194b" stroke-width="1"/><ellipse cx="215" cy="124" rx="5.8" ry="5.7" fill="#3cb44b" fill-opacity="0.35" stroke="#3cb44b" stroke-width="1"/><ellipse cx="153" cy="18" rx="8.6" ry="8.2" fill="#ffe119" fill-opacity="0.35" stroke="#ffe119" stroke-width="1"/><ellipse cx="206" cy="248" rx="7.5" ry="6.6" fill="#4363d8" fill-opacity="0.35" stroke="#4363d8" stroke-width="1"/><ellipse cx="177" cy="151" rx="8.9" ry="8.2" fill="#f58231" fill-opacity="0.35" stroke="#f58231" stroke-width="1"/><ellipse cx="84" cy="262" rx="8.0" ry="8.1" fill="#911eb4" fill-opacity="0.35" stroke="#911eb4" stroke-width="1"/></svg></div>
+      </div>
+      <div>
+        <div class="label"><span class="num">3</span>Metrics</div>
+        <div class="metrics"><b>Neuron #57</b><hr style="margin:3px 0">SNR: 6.4<br>r_value: 0.71<br>area: 112<br>corr_groups: 0<br>hvals: 0.031</div>
+      </div>
+      <div>
+        <div class="label"><span class="num">4</span>Traces</div>
+        <div class="cv"><svg viewBox="0 0 300 300" role="img" aria-label="calcium traces"><rect width="300" height="300" fill="#ffffff"/><polyline fill="none" stroke="#e6194b" stroke-width="1" points="8,289.7 13,288.8 17,289.6 22,288.4 27,289.0 32,290.0 36,268.8 41,289.6 46,289.9 51,288.6 55,274.9 60,289.0 65,288.2 70,289.7 74,289.8 79,289.1 84,289.3 88,268.6 93,289.5 98,289.6 103,288.3 107,288.5 112,288.6 117,289.1 122,289.6 126,288.3 131,289.3 136,289.3 141,278.4 145,288.6 150,289.0 155,288.9 159,289.6 164,288.9 169,289.7 174,289.3 178,289.3 183,289.4 188,289.9 193,288.5 197,288.7 202,288.3 207,289.2 212,288.2 216,288.3 221,289.3 226,288.3 230,289.9 235,288.5 240,275.4 245,289.4 249,275.6 254,288.3 259,288.6 264,289.5 268,289.0 273,289.9 278,288.4 283,288.3 287,289.2 292,288.4"/><polyline fill="none" stroke="#3cb44b" stroke-width="1" points="8,269.0 13,249.9 17,250.7 22,268.8 27,268.9 32,269.2 36,268.3 41,269.8 46,270.0 51,269.7 55,268.7 60,269.0 65,269.1 70,269.7 74,269.3 79,250.0 84,268.3 88,252.8 93,269.9 98,269.7 103,269.5 107,254.7 112,269.4 117,269.4 122,268.9 126,269.8 131,269.0 136,268.1 141,268.7 145,248.6 150,268.1 155,269.4 159,269.8 164,269.9 169,268.5 174,250.7 178,269.2 183,269.3 188,254.2 193,269.5 197,268.4 202,269.1 207,269.3 212,268.8 216,269.8 221,269.1 226,268.3 230,268.8 235,268.7 240,268.7 245,269.5 249,269.3 254,268.4 259,254.4 264,269.4 268,269.7 273,269.8 278,268.2 283,269.1 287,268.2 292,269.6"/><polyline fill="none" stroke="#ffe119" stroke-width="1" points="8,248.8 13,249.5 17,249.4 22,248.4 27,248.7 32,248.9 36,249.3 41,249.1 46,248.8 51,249.7 55,249.5 60,227.9 65,248.2 70,250.0 74,249.9 79,248.7 84,250.0 88,249.8 93,249.1 98,249.3 103,248.5 107,236.9 112,249.2 117,249.6 122,248.4 126,231.0 131,249.8 136,248.6 141,229.3 145,248.8 150,249.1 155,249.4 159,249.3 164,248.8 169,233.5 174,248.7 178,239.4 183,249.0 188,248.7 193,249.8 197,249.0 202,248.7 207,249.0 212,248.4 216,249.9 221,249.0 226,249.7 230,249.1 235,248.4 240,248.3 245,249.6 249,248.3 254,248.3 259,249.3 264,248.2 268,250.0 273,248.8 278,248.5 283,249.7 287,249.0 292,249.6"/><polyline fill="none" stroke="#4363d8" stroke-width="1" points="8,228.9 13,228.6 17,229.3 22,229.2 27,229.0 32,229.3 36,229.9 41,210.5 46,229.6 51,228.2 55,228.3 60,229.8 65,229.2 70,228.5 74,228.8 79,229.2 84,229.1 88,229.0 93,229.9 98,228.9 103,228.6 107,228.1 112,210.9 117,228.9 122,228.1 126,229.6 131,228.4 136,229.9 141,228.4 145,229.1 150,228.8 155,228.7 159,228.6 164,229.5 169,228.5 174,229.6 178,228.3 183,229.4 188,229.7 193,229.5 197,229.4 202,229.6 207,228.6 212,228.7 216,228.8 221,229.6 226,229.9 230,229.2 235,228.3 240,230.0 245,228.9 249,229.0 254,229.3 259,228.8 264,229.3 268,228.8 273,229.0 278,210.4 283,229.1 287,228.9 292,229.8"/><polyline fill="none" stroke="#f58231" stroke-width="1" points="8,209.7 13,209.4 17,197.5 22,209.7 27,208.4 32,209.8 36,209.8 41,208.5 46,208.7 51,209.8 55,208.8 60,209.6 65,208.4 70,195.1 74,209.4 79,209.3 84,209.9 88,208.3 93,208.9 98,208.2 103,208.1 107,208.6 112,209.7 117,208.7 122,209.3 126,209.9 131,209.8 136,208.5 141,209.7 145,209.8 150,209.2 155,209.3 159,209.2 164,208.8 169,208.9 174,209.6 178,209.4 183,209.6 188,209.2 193,209.9 197,208.3 202,208.7 207,208.8 212,208.6 216,209.3 221,208.9 226,208.7 230,209.4 235,208.4 240,208.7 245,208.7 249,208.3 254,208.1 259,209.3 264,209.7 268,208.8 273,209.5 278,208.8 283,208.5 287,208.3 292,208.1"/><polyline fill="none" stroke="#911eb4" stroke-width="1" points="8,188.7 13,188.1 17,189.2 22,189.4 27,189.3 32,190.0 36,189.1 41,189.9 46,189.8 51,189.4 55,188.6 60,189.2 65,189.8 70,188.7 74,188.1 79,188.8 84,188.7 88,189.7 93,188.2 98,188.8 103,189.5 107,190.0 112,189.7 117,169.4 122,189.7 126,188.9 131,188.4 136,189.7 141,189.8 145,189.4 150,189.6 155,188.5 159,188.6 164,189.5 169,189.4 174,188.3 178,189.8 183,188.2 188,188.7 193,189.6 197,188.1 202,188.2 207,188.6 212,188.3 216,188.9 221,188.5 226,189.9 230,189.7 235,166.6 240,188.1 245,188.9 249,188.8 254,189.2 259,189.6 264,188.5 268,189.9 273,189.7 278,189.4 283,189.3 287,189.8 292,189.9"/><polyline fill="none" stroke="#46f0f0" stroke-width="1" points="8,169.6 13,169.3 17,168.4 22,169.1 27,168.7 32,168.8 36,169.0 41,168.8 46,169.5 51,168.1 55,168.3 60,168.6 65,168.6 70,169.0 74,169.5 79,168.8 84,169.8 88,168.1 93,169.0 98,169.0 103,168.1 107,169.5 112,169.2 117,168.7 122,168.7 126,170.0 131,169.3 136,168.7 141,168.2 145,168.4 150,168.9 155,169.9 159,169.3 164,150.6 169,168.2 174,169.6 178,168.5 183,168.5 188,168.9 193,168.7 197,168.2 202,169.1 207,168.8 212,169.2 216,157.3 221,169.6 226,168.8 230,169.2 235,169.3 240,169.6 245,169.7 249,169.4 254,169.3 259,168.9 264,169.1 268,168.6 273,168.6 278,169.0 283,169.3 287,169.4 292,169.2"/><polyline fill="none" stroke="#111111" stroke-width="2.2" points="8,148.4 13,148.3 17,149.2 22,149.9 27,148.6 32,149.1 36,148.5 41,148.5 46,148.5 51,149.3 55,148.3 60,149.3 65,148.5 70,149.1 74,149.8 79,148.7 84,148.2 88,148.5 93,149.4 98,149.5 103,149.7 107,148.2 112,148.8 117,148.1 122,149.1 126,148.6 131,148.5 136,148.1 141,149.1 145,149.6 150,149.6 155,131.1 159,148.9 164,148.9 169,149.5 174,148.9 178,148.1 183,148.7 188,149.5 193,149.3 197,149.3 202,132.0 207,149.8 212,148.9 216,149.4 221,148.6 226,148.9 230,129.4 235,149.4 240,149.7 245,136.6 249,148.4 254,149.0 259,148.1 264,148.7 268,148.5 273,149.1 278,149.5 283,148.8 287,149.5 292,149.6"/><polyline fill="none" stroke="#bcf60c" stroke-width="1" points="8,129.1 13,128.8 17,129.7 22,129.1 27,128.2 32,111.4 36,128.7 41,128.2 46,129.6 51,128.4 55,128.3 60,129.3 65,128.2 70,129.3 74,128.4 79,128.4 84,128.9 88,129.5 93,128.8 98,129.2 103,129.4 107,130.0 112,128.9 117,129.7 122,129.1 126,128.4 131,129.2 136,129.7 141,113.1 145,128.2 150,129.2 155,128.2 159,130.0 164,129.1 169,129.9 174,128.6 178,129.7 183,129.2 188,129.1 193,129.0 197,128.4 202,129.1 207,129.3 212,128.3 216,128.5 221,128.9 226,129.1 230,129.8 235,128.9 240,129.0 245,129.3 249,128.5 254,130.0 259,130.0 264,129.8 268,129.7 273,129.9 278,128.7 283,129.9 287,129.2 292,119.2"/><polyline fill="none" stroke="#fabebe" stroke-width="1" points="8,108.3 13,108.8 17,108.7 22,109.6 27,108.4 32,108.9 36,109.3 41,109.4 46,108.8 51,108.5 55,109.7 60,109.2 65,109.5 70,109.1 74,108.8 79,108.1 84,108.3 88,109.1 93,108.8 98,109.3 103,109.0 107,108.4 112,109.1 117,108.3 122,109.3 126,109.7 131,109.2 136,108.6 141,108.4 145,109.1 150,109.3 155,108.6 159,108.2 164,109.1 169,109.1 174,109.7 178,109.3 183,109.5 188,109.5 193,109.9 197,108.9 202,109.4 207,109.9 212,109.2 216,109.2 221,108.7 226,108.9 230,108.8 235,108.7 240,108.5 245,109.6 249,109.1 254,109.1 259,108.2 264,109.4 268,109.6 273,99.0 278,108.1 283,109.9 287,109.8 292,109.0"/><polyline fill="none" stroke="#e6194b" stroke-width="1" points="8,88.2 13,89.6 17,88.8 22,89.3 27,88.2 32,88.2 36,69.2 41,89.5 46,89.1 51,89.2 55,89.6 60,88.4 65,88.2 70,88.6 74,88.4 79,89.9 84,88.4 88,88.4 93,89.3 98,89.6 103,88.2 107,88.5 112,89.3 117,68.2 122,89.8 126,88.1 131,89.5 136,89.0 141,89.7 145,88.3 150,88.7 155,70.4 159,88.2 164,89.1 169,89.0 174,73.0 178,89.1 183,79.6 188,89.8 193,89.9 197,89.1 202,89.4 207,88.4 212,89.2 216,89.7 221,88.8 226,89.0 230,89.8 235,89.3 240,89.8 245,89.2 249,89.2 254,89.5 259,89.2 264,89.7 268,89.1 273,89.6 278,88.1 283,88.1 287,89.1 292,89.0"/><polyline fill="none" stroke="#3cb44b" stroke-width="1" points="8,70.0 13,68.5 17,68.8 22,69.8 27,69.4 32,69.0 36,48.0 41,69.5 46,68.8 51,69.6 55,68.4 60,68.9 65,68.3 70,69.3 74,69.3 79,68.9 84,68.3 88,69.6 93,69.8 98,69.7 103,68.5 107,68.2 112,68.5 117,69.4 122,68.8 126,70.0 131,47.0 136,69.6 141,69.1 145,68.4 150,69.2 155,68.5 159,69.4 164,68.3 169,69.3 174,69.8 178,69.9 183,70.0 188,68.1 193,69.5 197,68.7 202,69.7 207,68.3 212,69.9 216,56.8 221,68.8 226,52.3 230,69.8 235,69.9 240,69.8 245,68.4 249,69.3 254,68.9 259,69.0 264,68.4 268,53.7 273,70.0 278,69.4 283,68.3 287,68.5 292,69.1"/><polyline fill="none" stroke="#ffe119" stroke-width="1" points="8,49.1 13,48.4 17,48.2 22,48.4 27,48.7 32,48.8 36,48.1 41,48.4 46,49.8 51,32.8 55,48.2 60,48.4 65,48.2 70,49.7 74,48.1 79,49.7 84,49.8 88,49.7 93,49.3 98,49.7 103,48.5 107,48.8 112,49.8 117,49.2 122,35.2 126,49.9 131,49.6 136,48.6 141,49.7 145,48.5 150,49.7 155,48.5 159,49.3 164,49.2 169,49.3 174,49.3 178,48.5 183,48.4 188,49.1 193,49.0 197,49.6 202,49.9 207,49.1 212,48.7 216,49.6 221,48.7 226,48.9 230,49.9 235,48.5 240,48.8 245,49.3 249,49.2 254,48.4 259,49.8 264,48.2 268,48.9 273,48.6 278,48.3 283,49.8 287,48.9 292,49.0"/><polyline fill="none" stroke="#4363d8" stroke-width="1" points="8,29.1 13,28.7 17,28.3 22,29.6 27,28.6 32,29.1 36,28.9 41,28.3 46,29.6 51,28.3 55,28.2 60,30.0 65,28.4 70,28.5 74,28.5 79,29.9 84,29.9 88,28.4 93,28.5 98,17.2 103,15.4 107,29.0 112,29.7 117,29.1 122,29.1 126,28.6 131,28.5 136,29.9 141,29.5 145,28.9 150,29.4 155,28.6 159,28.7 164,28.7 169,29.0 174,28.3 178,28.6 183,28.4 188,29.6 193,28.4 197,29.4 202,28.1 207,29.4 212,29.3 216,29.0 221,29.1 226,28.9 230,29.6 235,29.9 240,29.5 245,28.8 249,28.6 254,28.2 259,29.6 264,15.0 268,28.6 273,29.2 278,29.7 283,29.1 287,28.6 292,28.3"/></svg></div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Sort: <b>XY</b> &middot; SNR &middot; R-val &middot; H-val &middot; Area &middot; Corr</div>
+    <div class="label" style="margin-top:10px"><span class="num">5</span>Change the neuron set</div>
+    <div class="btnrow">
+      <span class="btn warnb">Delete sel.</span><span class="btn warnb">Merge sel.</span><span class="btn primary">Show sel.</span><span class="btn primary">Reset view</span><span class="btn danger">Revert change</span><span class="btn danger">Discard all</span>
+    </div>
+    <div class="label" style="margin-top:10px"><span class="num">6</span>Save</div>
+    <div class="btnrow">
+      <span class="btn good">Save progress</span><span class="btn good">Save results</span>
+    </div>
+    <div class="cap">Saved. Decision &ldquo;cleaned&rdquo; recorded for LT1_J03_2D. You can close this tab.</div>
+  </div>
+</div>
+
+<div class="win" aria-label="Результат" style="margin-top:16px">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>Result</div>
+  <div class="pad">
+    <div class="label"><span class="num">7</span>After &ldquo;Save results&rdquo;</div>
+    <div class="tblwrap"><table class="tbl">
+      <tr><th>Session</th><th>CNMF-E</th><th>Inspection</th><th>Autoinspect</th><th>Export</th></tr>
+      <tr><td>LT1_J03_2D</td><td class="c ok">219 cells</td><td class="c ok">cleaned</td><td class="c run">running</td><td class="c no">&ndash;</td></tr>
+    </table></div>
+    <div class="tree" style="margin-top:8px">5_Inspection\LT1_J03_2D\
+  <span class="new">LT1_J03_2D_manual_estimates.pickle</span>   <span class="dim">&lt;- your result, always the last save</span>
+  progress\                              <span class="dim">&lt;- "Save progress" copies go here</span>
+    LT1_J03_2D06-11-2026 14-02-11_estimates.pickle</div>
+  </div>
+</div>
+</div>
+
+<div>
+  <div class="card">
+    <h3>Что показывает макет</h3>
+    <div class="ex"><span class="num">1</span><div><b>Кнопка в сводке.</b> Выберите сессию, у которой CNMF-E готов, и нажмите <code>Manual inspection</code>. Окно инспекции откроется в браузере. Окно BEARMiND не блокируется.</div></div>
+    <div class="ex"><span class="num">2</span><div><b>Картинка с контурами.</b> Нынешнее окно Bokeh. Логика не меняется: сортировки, режимы <code>legacy</code> и <code>capcan</code> остаются.</div></div>
+    <div class="ex"><span class="num">3</span><div><b>Метрики</b> выбранного нейрона.</div></div>
+    <div class="ex"><span class="num">4</span><div><b>Трейсы</b> на всю длину сессии. Лимита кадров нет (в ноутбуке был <code>end_frame=90000</code>, он резал длинные сессии).</div></div>
+    <div class="ex"><span class="num">5</span><div><b>Кнопки изменения набора.</b> Удалить, склеить, показать, сбросить вид, откатить, отбросить всё.</div></div>
+    <div class="ex"><span class="num">6</span><div><b>Сохранение.</b> <code>Save progress</code> — промежуточная копия. <code>Save results</code> — итог.</div></div>
+    <div class="ex"><span class="num">7</span><div><b>Итог.</b> Файл ложится в <code>5_Inspection\&lt;SID&gt;\</code>, в сводке появляется <code>cleaned</code>, батч продолжает.</div></div>
+  </div>
+  
+<div class="card">
+  <h3>Путь сессии через инспекцию</h3>
+  <div class="flow"><span class="s">CNMF-E готов</span><span class="arr">&rarr;</span><span class="s"><b style="color:var(--wait-ink);background:var(--wait);padding:0 4px;border-radius:3px">waits</b> ручной инспекции</span><span class="arr">&rarr;</span><span class="s">вы: Manual inspection, чистите, Save results</span><span class="arr">&rarr;</span><span class="s">решение <b>cleaned</b> записано само</span><span class="arr">&rarr;</span><span class="s">батч берёт автоинспекцию</span></div>
+  <p style="margin-top:8px">Ждёт только эта сессия. Остальные идут дальше. Отдельной кнопки «cleaned» нет: решение пишет само сохранение. Если чистить нечего, нажмите <b>Not needed</b> (фаза 2).</p>
+</div>
+
+  <div class="card">
+    <h3>Если что-то пошло не так</h3>
+    <div class="flow"><span class="s">закрыли браузер без сохранения</span><span class="arr">&rarr;</span><span class="s">решения нет, сессия ждёт</span><span class="arr">&rarr;</span><span class="s">сервер сам завершается</span></div>
+    <div class="flow"><span class="s">нажали Save results дважды</span><span class="arr">&rarr;</span><span class="s">файл один, последний; решение «cleaned»</span></div>
+    <div class="flow"><span class="s">CNMF-E пересчитали, пока окно открыто</span><span class="arr">&rarr;</span><span class="s">окно пишет «result is outdated»; решение не записывается</span></div>
+    <div class="flow"><span class="s">вторая инспекция той же сессии</span><span class="arr">&rarr;</span><span class="s">второй сервер не стартует, сообщение называет адрес первого</span></div>
+    <p style="margin-top:10px">Результат инспекции сохраняется <b>без сжатия</b>. Сжатие перепутало бы признаки для ML-фильтра автоинспекции.</p>
+  </div>
+  <div class="card">
+    <h3>Ошибка «не тот нейрон после удаления»</h3>
+    <p>Эту ошибку чинит отдельная задача, прямо сейчас. Она не входит в фазу 5. Ускорение ниже не зависит от неё.</p>
+  </div>
+  <div class="card flag">
+    <h3>Где план расходится с вашими решениями</h3>
+    <ul>
+      <li><b>Скорость.</b> План: «логику окна инспекции не менять», правки только в обвязке. Вы просите существенно ускорить удаление, склейку, переход и сохранение. Это требует менять внутренности обработчиков <code>del / merge / show / revert</code> и сохранения. Нужен ваш ответ: разрешаете ли менять эти обработчики (поведение для вас прежнее, внутри другое).</li>
+      <li><b>Процесс на сессию.</b> План запускает отдельный процесс <code>python -m bearmind inspect SERIES SID</code> на каждую сессию. Быстрый переход к следующей требует одного долгоживущего сервера на серию. План придётся поправить.</li>
+      <li><b>Язык.</b> План пишет кнопку «Ручная инспекция», статус «Инспекция … открывается в браузере…», «Результат устарел: CNMF-E пересчитан…» по-русски. На макете всё по-английски.</li>
+      <li><b>Новые пакеты.</b> План: «новых пакетов нет». Теперь можно ставить пакеты в окружение <code>bearmind</code>, если они не конфликтуют с CaImAn. Для ускорения это может понадобиться (например, быстрая запись CSV); пока не требуется.</li>
+      <li><b>Мало главных предупреждений.</b> План (задача 4) добавляет новое предупреждение «похоже на кальциевую волну». Фаза 2 зафиксировала шесть видов. Решите: добавить седьмой вид или показывать волну только в списке ждущих инспекции.</li>
+</ul>
+  </div>
+  <div class="card">
+    <h3>Что вы одобряете</h3>
+    <ul class="check">
+      <li>Инспекция открывается из сводки кнопкой Manual inspection, в браузере; окно BEARMiND свободно.</li>
+      <li>Результат лежит в 5_Inspection и сохраняется без сжатия; «cleaned» пишется само при Save results.</li>
+      <li>Разрешение менять внутренности обработчиков, чтобы действия стали быстрыми (первая строка таблицы изменений).</li>
+      <li>Один сервер инспекции на серию и фоновая подготовка следующей сессии вместо процесса на каждую.</li>
+      <li>Сохранение в фоне: «cleaned» сразу после записи главного файла.</li>
+      <li>После фазы замеряем те же числа и показываем вам рядом с прежними.</li>
+    </ul>
+    <p class="muted">Если что-то не так, назовите номер части. Например: «5 — не трогать Merge», «6 — оставить CSV синхронно».</p>
+  </div>
+</div>
+</div>
+</div>
+</body>
+</html>

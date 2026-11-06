@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEARMiND Scan tab</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2330; --muted:#5d6676; --line:#d9dde4;
+  --done:#c8e6c9; --done-ink:#1b5e20; --run:#bbdefb; --run-ink:#0d47a1; --wait:#e1bee7; --wait-ink:#4a148c;
+  --warn:#fff3b0; --warn-ink:#6d5300; --err:#ffcdd2; --err-ink:#8e0000; --none:#eef0f3;
+  --accent:#2f5bd3; --win:#e9ecf1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+    --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+    --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+    --accent:#7aa2ff; --win:#232831;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+  --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+  --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+  --accent:#7aa2ff; --win:#232831;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:19px;margin:32px 0 10px} h3{font-size:16px;margin:18px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+/* mock window */
+.win{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.titlebar{background:var(--win);padding:7px 12px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:4px}
+.tabs{display:flex;gap:2px;padding:6px 10px 0;background:var(--win);border-bottom:1px solid var(--line);font-size:13px}
+.tab{padding:6px 12px;border-radius:6px 6px 0 0;color:var(--muted)} .tab.on{background:var(--panel);color:var(--ink);font-weight:600;border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.pad{padding:12px 14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{padding:3px 9px;border-radius:12px;font-size:13px;font-weight:600}
+.chip.run{background:var(--run);color:var(--run-ink)}
+.btn{border:1px solid var(--line);background:var(--bg);padding:4px 10px;border-radius:6px;font-size:13px;color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{position:relative}
+.num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;flex:0 0 22px}
+.sect{border-top:1px solid var(--line)}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 6px;display:flex;gap:6px;align-items:center}
+/* progress */
+.stage{display:grid;grid-template-columns:96px 1fr 120px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--none)}
+.bar i{display:block;height:100%}
+.d{background:#43a047}.r{background:#1e88e5}.w{background:#8e24aa}.f{background:#e53935}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-weight:600;text-align:left;color:var(--muted);padding:4px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:3px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td.c{border-radius:3px}
+.c.ok{background:var(--done);color:var(--done-ink)} .c.run{background:var(--run);color:var(--run-ink)}
+.c.wait{background:var(--wait);color:var(--wait-ink)} .c.warn{background:var(--warn);color:var(--warn-ink)}
+.c.err{background:var(--err);color:var(--err-ink)} .c.no{color:var(--muted)}
+.tblwrap{overflow-x:auto}
+/* warnings */
+.warn-item{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.lvl{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;text-align:center;height:fit-content}
+.lvl.e{background:var(--err);color:var(--err-ink)} .lvl.w{background:var(--warn);color:var(--warn-ink)}
+.log{font:12px/1.45 Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre;overflow-x:auto;color:var(--muted)}
+/* explanation */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card ol,.card ul{margin:6px 0 0;padding-left:20px} .card li{margin:4px 0}
+.ex{display:flex;gap:10px;margin:10px 0}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin-top:8px}
+.flow .s{padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.flow .arr{color:var(--muted)}
+.check li{list-style:none;margin-left:-20px}
+.check li::before{content:"\2610";margin-right:8px;color:var(--accent)}
+code{font-family:Consolas,monospace;font-size:13px;background:var(--none);padding:0 4px;border-radius:3px}
+
+/* ---- extra for phases 3-6 ---- */
+svg{max-width:100%;height:auto}
+.two{display:grid;grid-template-columns:190px minmax(0,1fr)}
+@media (max-width:640px){.two{grid-template-columns:1fr}.side{border-right:0!important;border-bottom:1px solid var(--line)}}
+.side{border-right:1px solid var(--line);padding:10px 12px;font-size:13px}
+.side .m{font-weight:600;margin-top:8px;color:var(--muted);font-size:12px}
+.sess{padding:2px 6px;border-radius:4px;margin:2px 0;display:flex;justify-content:space-between;gap:6px;font-size:12.5px}
+.sess.sel{outline:2px solid var(--accent)}
+.sess.ok{background:var(--done);color:var(--done-ink)} .sess.wait{background:var(--wait);color:var(--wait-ink)}
+.sess.warn{background:var(--warn);color:var(--warn-ink)} .sess.err{background:var(--err);color:var(--err-ink)}
+.sess.no{background:var(--none);color:var(--muted)}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumb{width:96px;font-size:11px;text-align:center;border:2px solid transparent;border-radius:6px;padding:2px}
+.thumb.sel{border-color:var(--accent)}
+.sl{display:grid;grid-template-columns:78px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.track{position:relative;height:6px;background:var(--none);border-radius:3px;border:1px solid var(--line)}
+.track i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:3px}
+.track b{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--accent);margin-left:-8px}
+.dlg{border:2px solid var(--accent);border-radius:8px;background:var(--panel);padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.2);font-size:13px}
+.maps{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cv svg,.maps svg{width:100%;height:auto;display:block;border-radius:4px}
+.cap{font-size:12px;color:var(--muted);margin-top:2px}
+.btn.off{opacity:.45}
+.btn.danger{background:var(--err);color:var(--err-ink);border-color:var(--err)}
+.btn.warnb{background:var(--warn);color:var(--warn-ink);border-color:var(--warn)}
+.btn.good{background:var(--done);color:var(--done-ink);border-color:var(--done)}
+/* tags */
+.tg{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.tg.meas{background:var(--done);color:var(--done-ink)} .tg.exp{background:var(--warn);color:var(--warn-ink)}
+.tg.synth{background:var(--run);color:var(--run-ink)}
+/* flags */
+.flag{background:var(--warn);color:var(--warn-ink);border-color:var(--warn-ink)}
+.flag li{margin:5px 0}
+/* horizontal bars */
+.hb{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 64px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+@media (max-width:560px){.hb{grid-template-columns:1fr 64px}.hb .t{grid-column:1 / 3;order:3}}
+.hb .t{height:14px;background:var(--none);border-radius:7px;overflow:hidden;display:flex}
+.hb .t i{display:block;height:100%}
+.hb .v{text-align:right;font-variant-numeric:tabular-nums}
+.c1{background:#1e88e5}.c2{background:#8e24aa}.c3{background:#fb8c00}.c4{background:#43a047}.c5{background:#e53935}.c6{background:#6d4c41}
+/* trees */
+.tree{font:12.5px/1.55 Consolas,monospace;white-space:pre;overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.tree .del{color:var(--err-ink);background:var(--err)} .tree .mv{background:var(--warn);color:var(--warn-ink)}
+.tree .new{background:var(--done);color:var(--done-ink)} .tree .dim{color:var(--muted)} .tree .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 5px;font-weight:700}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:720px){.two-col{grid-template-columns:1fr}}
+.tbl td.wrap{white-space:normal}
+.seg{display:flex;height:22px;border-radius:4px;overflow:hidden;font-size:11px;color:#fff}
+.seg span{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden}
+.lines{font-size:13px}
+.lines p{margin:3px 0}
+.tag-line{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>BEARMiND, фаза 3: вкладка Scan</h1>
+<p class="muted">Макет вкладки для одобрения. Данные выдуманы: серия LT1, 6 мышей (J01 J03 J05 J06 J08 J10) на 4 дня, 24 сессии. Текст в окне на английском. Пояснения справа по-русски, номера совпадают с метками на макете.</p>
+<div class="grid">
+<div class="win" aria-label="Макет окна">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>BEARMiND &mdash; H:\Projects\LT1\CalciumData</div>
+  <div class="tabs"><span class="tab">Monitor</span><span class="tab on">Scan</span><span class="tab">Thresholds</span><span class="tab">Inspection</span></div>
+
+  <div class="pad">
+    <div class="label"><span class="num">1</span>Scan</div>
+    <div class="row">
+      <span class="btn primary">Rescan</span>
+      <span class="muted">Scanning LT1_J10_3D &hellip; 21 / 24</span>
+    </div>
+    <div class="bar" style="margin-top:8px"><i class="r" style="width:87.5%"></i></div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">2</span>Summary</div>
+    <div>Found <b>24</b> sessions of <b>6</b> mice &middot; bonsai 24 &middot; legacy 0 &middot; excluded 3 &middot; with problems 4 &middot; unrecognized folders 1</div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">3</span>Sessions found</div>
+    <div class="tblwrap">
+    <table class="tbl">
+      <tr><th>Session</th><th>Mode</th><th>Parts</th><th>Chunks</th><th>Video frames</th><th>Frames to process</th><th>FPS</th><th>Min</th><th>Anomalies</th><th>Excluded</th></tr>
+      <tr><td class="c ok">LT1_J01_1D</td><td>bonsai</td><td>1</td><td>3</td><td>18 000</td><td>18 000</td><td>30.0</td><td>10.0</td><td class="wrap">&ndash;</td><td></td></tr><tr><td class="c ok">LT1_J01_2D</td><td>bonsai</td><td>1</td><td>3</td><td>18 002</td><td>18 000</td><td>30.0</td><td>10.0</td><td class="wrap">&ndash;</td><td></td></tr><tr><td class="c warn">LT1_J03_3D</td><td>bonsai</td><td>2</td><td>5</td><td>17 950</td><td>17 950</td><td>30.0</td><td>10.0</td><td class="wrap">split recording: 2 parts, pause 38 s</td><td></td></tr><tr style="outline:2px solid var(--accent)"><td class="c err" style="color:var(--muted)">LT1_J05_2D</td><td style="color:var(--muted)">bonsai</td><td style="color:var(--muted)">1</td><td style="color:var(--muted)">3</td><td style="color:var(--muted)">18 174</td><td style="color:var(--muted)">18 000</td><td style="color:var(--muted)">30.0</td><td style="color:var(--muted)">10.0</td><td class="wrap" style="color:var(--muted)">frames &ne; timestamps: +174 at the end</td><td><b>by anomaly</b></td></tr><tr><td class="c err" style="color:var(--muted)">LT1_J06_4D</td><td style="color:var(--muted)">bonsai</td><td style="color:var(--muted)">1</td><td style="color:var(--muted)">3</td><td style="color:var(--muted)">18 000</td><td style="color:var(--muted)">&ndash;</td><td style="color:var(--muted)">&ndash;</td><td style="color:var(--muted)">&ndash;</td><td class="wrap" style="color:var(--muted)">no timestamps found</td><td><b>by anomaly</b></td></tr><tr><td class="c ok" style="color:var(--muted)">LT1_J08_1D</td><td style="color:var(--muted)">bonsai</td><td style="color:var(--muted)">1</td><td style="color:var(--muted)">3</td><td style="color:var(--muted)">18 000</td><td style="color:var(--muted)">18 000</td><td style="color:var(--muted)">30.0</td><td style="color:var(--muted)">10.0</td><td class="wrap" style="color:var(--muted)">&ndash;</td><td><b>by you</b></td></tr><tr><td class="c warn">LT1_J10_2D</td><td>bonsai</td><td>1</td><td>3</td><td>18 000</td><td>18 000</td><td>24.9</td><td>12.0</td><td class="wrap">FPS outlier: 24.9 (series median 30.0)</td><td></td></tr><tr><td class="c ok">LT1_J10_3D</td><td>bonsai</td><td>1</td><td>3</td><td>18 000</td><td>18 000</td><td>30.0</td><td>10.0</td><td class="wrap">&ndash;</td><td></td></tr>
+      <tr><td class="muted">&hellip; 16 more</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+    </div>
+    <div class="legend"><span><b class="d"></b>normal</span><span><b style="background:#e0b400"></b>warning</span><span><b class="f"></b>error</span><span>grey text = excluded</span></div>
+    <p class="cap"><span class="num">4</span> Grey row = excluded. &ldquo;by anomaly&rdquo; = the program excluded it. &ldquo;by you&rdquo; = you pressed Exclude.</p>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">5</span>Details &mdash; LT1_J05_2D</div>
+    <div class="lines">
+      <p><span class="lvl e" style="display:inline-block">ERROR</span> 174 more video frames than timestamps (at the end).</p>
+      <p><b>Part folders:</b> <code>1_Raw\LT1_J05_2D</code></p>
+      <p><b>FPS:</b> 30.0 from timestamps &middot; 0 intervals dropped &middot; longest pause 0.07 s</p>
+      <p><b>Decisions:</b> none yet</p>
+    </div>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">6</span>Actions for the selected session</div>
+    <div class="row">
+      <span class="btn">Open folder</span><span class="btn">Exclude</span><span class="btn off">Include</span>
+      <span class="btn primary">Accept with trimming to common length</span><span class="btn off">Confirm stitch</span>
+    </div>
+    <p class="cap">Buttons that do not fit the session are grey. This session has a frame mismatch, so only &ldquo;Accept with trimming&rdquo; is on.</p>
+  </div>
+
+  <div class="pad sect">
+    <div class="label"><span class="num">7</span>Unrecognized folders</div>
+    <div class="log" style="white-space:normal">1_Raw\LT1_J05_3D_old &mdash; name does not match the session pattern</div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h3>Что показывает вкладка</h3>
+    <div class="ex"><span class="num">1</span><div><b>Кнопка скана и полоса.</b> Нажмите <code>Scan</code>. Программа обходит папки серии и читает видео и таймстемпы. Окно не зависает во время скана. После первого скана кнопка называется <code>Rescan</code>.</div></div>
+    <div class="ex"><span class="num">2</span><div><b>Сводка.</b> Сколько сессий и мышей найдено, сколько исключено, сколько с проблемами и сколько папок не распознано.</div></div>
+    <div class="ex"><span class="num">3</span><div><b>Таблица.</b> Строка — сессия. Фон названия показывает худшую непросмотренную проблему. Длинный список аномалий сжат до трёх названий и «ещё N».</div></div>
+    <div class="ex"><span class="num">4</span><div><b>Серая строка.</b> Сессия исключена и в батч не пойдёт. «By anomaly» — исключила программа. «By you» — исключили вы.</div></div>
+    <div class="ex"><span class="num">5</span><div><b>Подробности.</b> Полный текст аномалий с числами, папки частей, FPS и история ваших решений.</div></div>
+    <div class="ex"><span class="num">6</span><div><b>Кнопки.</b> Решения по выбранной сессии. Кнопки, которые не подходят, серые.</div></div>
+    <div class="ex"><span class="num">7</span><div><b>Нераспознанные папки.</b> Папка, которую программа не поняла, и причина. Двойной щелчок открывает папку.</div></div>
+  </div>
+
+  <div class="card">
+    <h3>Какие решения есть</h3>
+    <div class="tblwrap"><table class="tbl">
+      <tr><th>Проблема</th><th>Что делает программа сама</th><th>Что делаете вы</th></tr>
+      <tr><td class="wrap">Кадров в видео больше (или меньше), чем таймстемпов</td><td class="wrap">Ставит ошибку и исключает сессию</td><td class="wrap"><b>Accept with trimming</b>: лишние кадры отбрасываются. Или <b>Exclude</b></td></tr>
+      <tr><td class="wrap">Запись разорвана на части</td><td class="wrap">Склеивает части по времени начала</td><td class="wrap"><b>Confirm stitch</b>: отметка «я проверил». Не хотите склейку — <b>Exclude</b></td></tr>
+      <tr><td class="wrap">Нет таймстемпов или видео</td><td class="wrap">Ставит ошибку и исключает сессию</td><td class="wrap">Исправьте файлы в проводнике, нажмите <b>Rescan</b></td></tr>
+      <tr><td class="wrap">Необычный FPS</td><td class="wrap">Только предупреждение</td><td class="wrap">Проверьте и оставьте, или <b>Exclude</b></td></tr>
+    </table></div>
+    <p class="muted" style="font-size:13px">Вкладка не удаляет и не меняет файлы. Сырые видео в <code>1_Raw</code> никто не трогает.</p>
+  </div>
+
+  <div class="card">
+    <h3>Обрезка до общей длины</h3>
+    <p>Видео длиннее таймстемпов на 174 кадра. Программа берёт общую длину и не использует лишнее.</p>
+    <div style="margin-top:8px;font-size:12px">
+      <div class="muted">видео, 18 174 кадра</div>
+      <div class="seg"><span style="flex:18000;background:#1e88e5">используется 18 000</span><span style="flex:174;background:#e53935"></span></div>
+      <div class="muted" style="margin-top:6px">таймстемпы, 18 000</div>
+      <div class="seg"><span style="flex:18000;background:#43a047">18 000</span></div>
+      <div class="muted" style="margin-top:4px">красное — 174 кадра отброшено в конце (файл на диске не меняется)</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Склейка разорванной записи</h3>
+    <div style="margin-top:4px;font-size:12px">
+      <div class="seg"><span style="flex:9;background:#1e88e5">часть 1</span><span style="flex:1.2;background:var(--line);color:var(--ink)">38 с</span><span style="flex:8;background:#1e88e5">часть 2</span></div>
+    </div>
+    <p style="margin-top:8px">Батч не ждёт вас. Склейка идёт сама. Кнопка <b>Confirm stitch</b> только фиксирует, что вы её проверили. После этого сессия не считается непросмотренным предупреждением.</p>
+  </div>
+
+  <div class="card">
+    <h3>Если что-то пошло не так</h3>
+    <div class="flow"><span class="s">скан упал (папка недоступна)</span><span class="arr">&rarr;</span><span class="s">окно показывает ошибку</span><span class="arr">&rarr;</span><span class="s">прежняя таблица остаётся</span></div>
+    <div class="flow"><span class="s">вы исправили файлы в проводнике</span><span class="arr">&rarr;</span><span class="s">Rescan</span><span class="arr">&rarr;</span><span class="s">исключение по аномалии снимается само</span></div>
+    <p style="margin-top:10px">Ваше ручное <b>Exclude</b> остаётся после пересканирования. Снять его можно только кнопкой <b>Include</b>.</p>
+    <p>Батч работает, а вы нажали <b>Rescan</b>? Окно спросит: «Batch is running. If session files changed, their stages will be recomputed. Rescan?». Файлы не менялись — ничего не пересчитается.</p>
+  </div>
+
+  <div class="card flag">
+    <h3>Где план расходится с вашими решениями</h3>
+    <ul>
+      <li><b>Язык.</b> План фазы 3 пишет вкладку и кнопки по-русски («Скан», «Исключить», «Пересканировать»). На макете всё по-английски (Scan, Exclude, Rescan). Тексты аномалий тоже станут английскими.</li>
+      <li><b>Порядок вкладок.</b> План ставит «Скан» первой и открывает окно на ней. По вашему решению вкладки идут рядом с Monitor: Monitor, Scan, Thresholds, Inspection, как в фазе 2.</li>
+      <li><b>Новые пакеты.</b> План: «новых пакетов нет». Теперь можно ставить пакеты в окружение <code>bearmind</code>, если они не конфликтуют с CaImAn. Фазе 3 они пока не нужны.</li>
+      <li><b>Мало главных предупреждений.</b> План даёт тексты для всех кодов аномалий скана. Таблица уже сжимает их до трёх, но подробности покажут все коды. Решите: оставить все коды в подробностях или показывать только главные.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Что вы одобряете</h3>
+    <ul class="check">
+      <li>Вкладка Scan рядом с Monitor, весь текст на английском.</li>
+      <li>Скан по кнопке, окно не зависает, ошибка скана не стирает таблицу.</li>
+      <li>Таблица с цветом по худшей проблеме и серыми исключёнными сессиями.</li>
+      <li>Пять решений: Exclude, Include, Accept with trimming, Confirm stitch, Rescan.</li>
+      <li>Вкладка ничего не удаляет; файлы правите в проводнике и нажимаете Rescan.</li>
+      <li>Склейка идёт сама, батч вас не ждёт.</li>
+    </ul>
+    <p class="muted">Если что-то не так, назовите номер части. Например: «3 — добавить столбец Day», «6 — убрать Confirm stitch».</p>
+  </div>
+</div>
+</div>
+</div>
+</body>
+</html>

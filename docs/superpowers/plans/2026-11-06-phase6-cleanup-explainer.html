@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEARMiND cleanup and guide</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2330; --muted:#5d6676; --line:#d9dde4;
+  --done:#c8e6c9; --done-ink:#1b5e20; --run:#bbdefb; --run-ink:#0d47a1; --wait:#e1bee7; --wait-ink:#4a148c;
+  --warn:#fff3b0; --warn-ink:#6d5300; --err:#ffcdd2; --err-ink:#8e0000; --none:#eef0f3;
+  --accent:#2f5bd3; --win:#e9ecf1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+    --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+    --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+    --accent:#7aa2ff; --win:#232831;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1c2027; --ink:#e7e9ee; --muted:#9aa3b2; --line:#323844;
+  --done:#2e5b32; --done-ink:#d7f5d9; --run:#24476e; --run-ink:#d6e8ff; --wait:#4f2f5c; --wait-ink:#f1dcf8;
+  --warn:#5c4e14; --warn-ink:#fff1b3; --err:#6a2a2e; --err-ink:#ffd9dc; --none:#262b33;
+  --accent:#7aa2ff; --win:#232831;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:19px;margin:32px 0 10px} h3{font-size:16px;margin:18px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+/* mock window */
+.win{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.titlebar{background:var(--win);padding:7px 12px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+.dots span{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--line);margin-right:4px}
+.tabs{display:flex;gap:2px;padding:6px 10px 0;background:var(--win);border-bottom:1px solid var(--line);font-size:13px}
+.tab{padding:6px 12px;border-radius:6px 6px 0 0;color:var(--muted)} .tab.on{background:var(--panel);color:var(--ink);font-weight:600;border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.pad{padding:12px 14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{padding:3px 9px;border-radius:12px;font-size:13px;font-weight:600}
+.chip.run{background:var(--run);color:var(--run-ink)}
+.btn{border:1px solid var(--line);background:var(--bg);padding:4px 10px;border-radius:6px;font-size:13px;color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{position:relative}
+.num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;flex:0 0 22px}
+.sect{border-top:1px solid var(--line)}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 6px;display:flex;gap:6px;align-items:center}
+/* progress */
+.stage{display:grid;grid-template-columns:96px 1fr 120px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--none)}
+.bar i{display:block;height:100%}
+.d{background:#43a047}.r{background:#1e88e5}.w{background:#8e24aa}.f{background:#e53935}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{font-weight:600;text-align:left;color:var(--muted);padding:4px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:3px 5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td.c{border-radius:3px}
+.c.ok{background:var(--done);color:var(--done-ink)} .c.run{background:var(--run);color:var(--run-ink)}
+.c.wait{background:var(--wait);color:var(--wait-ink)} .c.warn{background:var(--warn);color:var(--warn-ink)}
+.c.err{background:var(--err);color:var(--err-ink)} .c.no{color:var(--muted)}
+.tblwrap{overflow-x:auto}
+/* warnings */
+.warn-item{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.lvl{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;text-align:center;height:fit-content}
+.lvl.e{background:var(--err);color:var(--err-ink)} .lvl.w{background:var(--warn);color:var(--warn-ink)}
+.log{font:12px/1.45 Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre;overflow-x:auto;color:var(--muted)}
+/* explanation */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card ol,.card ul{margin:6px 0 0;padding-left:20px} .card li{margin:4px 0}
+.ex{display:flex;gap:10px;margin:10px 0}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin-top:8px}
+.flow .s{padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.flow .arr{color:var(--muted)}
+.check li{list-style:none;margin-left:-20px}
+.check li::before{content:"\2610";margin-right:8px;color:var(--accent)}
+code{font-family:Consolas,monospace;font-size:13px;background:var(--none);padding:0 4px;border-radius:3px}
+
+/* ---- extra for phases 3-6 ---- */
+svg{max-width:100%;height:auto}
+.two{display:grid;grid-template-columns:190px minmax(0,1fr)}
+@media (max-width:640px){.two{grid-template-columns:1fr}.side{border-right:0!important;border-bottom:1px solid var(--line)}}
+.side{border-right:1px solid var(--line);padding:10px 12px;font-size:13px}
+.side .m{font-weight:600;margin-top:8px;color:var(--muted);font-size:12px}
+.sess{padding:2px 6px;border-radius:4px;margin:2px 0;display:flex;justify-content:space-between;gap:6px;font-size:12.5px}
+.sess.sel{outline:2px solid var(--accent)}
+.sess.ok{background:var(--done);color:var(--done-ink)} .sess.wait{background:var(--wait);color:var(--wait-ink)}
+.sess.warn{background:var(--warn);color:var(--warn-ink)} .sess.err{background:var(--err);color:var(--err-ink)}
+.sess.no{background:var(--none);color:var(--muted)}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumb{width:96px;font-size:11px;text-align:center;border:2px solid transparent;border-radius:6px;padding:2px}
+.thumb.sel{border-color:var(--accent)}
+.sl{display:grid;grid-template-columns:78px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.track{position:relative;height:6px;background:var(--none);border-radius:3px;border:1px solid var(--line)}
+.track i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:3px}
+.track b{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--accent);margin-left:-8px}
+.dlg{border:2px solid var(--accent);border-radius:8px;background:var(--panel);padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.2);font-size:13px}
+.maps{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cv svg,.maps svg{width:100%;height:auto;display:block;border-radius:4px}
+.cap{font-size:12px;color:var(--muted);margin-top:2px}
+.btn.off{opacity:.45}
+.btn.danger{background:var(--err);color:var(--err-ink);border-color:var(--err)}
+.btn.warnb{background:var(--warn);color:var(--warn-ink);border-color:var(--warn)}
+.btn.good{background:var(--done);color:var(--done-ink);border-color:var(--done)}
+/* tags */
+.tg{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.tg.meas{background:var(--done);color:var(--done-ink)} .tg.exp{background:var(--warn);color:var(--warn-ink)}
+.tg.synth{background:var(--run);color:var(--run-ink)}
+/* flags */
+.flag{background:var(--warn);color:var(--warn-ink);border-color:var(--warn-ink)}
+.flag li{margin:5px 0}
+/* horizontal bars */
+.hb{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) 64px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+@media (max-width:560px){.hb{grid-template-columns:1fr 64px}.hb .t{grid-column:1 / 3;order:3}}
+.hb .t{height:14px;background:var(--none);border-radius:7px;overflow:hidden;display:flex}
+.hb .t i{display:block;height:100%}
+.hb .v{text-align:right;font-variant-numeric:tabular-nums}
+.c1{background:#1e88e5}.c2{background:#8e24aa}.c3{background:#fb8c00}.c4{background:#43a047}.c5{background:#e53935}.c6{background:#6d4c41}
+/* trees */
+.tree{font:12.5px/1.55 Consolas,monospace;white-space:pre;overflow-x:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.tree .del{color:var(--err-ink);background:var(--err)} .tree .mv{background:var(--warn);color:var(--warn-ink)}
+.tree .new{background:var(--done);color:var(--done-ink)} .tree .dim{color:var(--muted)} .tree .n{background:var(--accent);color:#fff;border-radius:9px;padding:0 5px;font-weight:700}
+.two-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:720px){.two-col{grid-template-columns:1fr}}
+.tbl td.wrap{white-space:normal}
+.seg{display:flex;height:22px;border-radius:4px;overflow:hidden;font-size:11px;color:#fff}
+.seg span{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden}
+.lines{font-size:13px}
+.lines p{margin:3px 0}
+.tag-line{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>BEARMiND, фаза 6: чистка и инструкция для студентов</h1>
+<p class="muted">Схема для одобрения: что убирается, что переезжает и что появляется. Последняя фаза: после неё репозиторий чистый, а у студентов есть инструкция. Номера на схеме совпадают с пояснениями справа.</p>
+
+<div class="card">
+  <h3>Как идёт фаза</h3>
+  <div class="flow"><span class="s">1 аудит</span><span class="arr">&rarr;</span><span class="s">2 побочные эффекты импорта</span><span class="arr">&rarr;</span><span class="s">3 старое в history</span><span class="arr">&rarr;</span><span class="s">4 хардкоды и копии</span><span class="arr">&rarr;</span><span class="s">5 ноутбуки и мусор</span><span class="arr">&rarr;</span><span class="s">6 инструкция</span><span class="arr">&rarr;</span><span class="s">7 установка с нуля</span></div>
+  <p style="margin-top:8px">Окна и результаты обработки от фазы не меняются. Вы увидите только: репозиторий стал чище, а у студентов есть инструкция.</p>
+</div>
+<div class="grid">
+<div>
+  <div class="win">
+    <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>Repository: before and after</div>
+    <div class="pad">
+      <div class="two-col">
+        <div><div class="label">Before</div><div class="tree"><span class="dim">bearmind\  (repository root, 433 tracked files)</span>
+  <span class="del">.DS_Store</span>                              <span class="n">5</span>
+  <span class="del">.ipynb_checkpoints\</span>                    <span class="n">5</span>
+  <span class="del">BEARMiND_full_pipeline.ipynb</span>           <span class="n">5</span>
+  <span class="del">MoviePlay.ipynb</span>                       <span class="n">5</span>
+  <span class="mv">config.py</span>                            <span class="n">1</span>  makes config.json on import
+  <span class="mv">startup.py</span>                           <span class="n">1</span>  and other root modules
+  <span class="del">batch_autoinspect.py</span>                  <span class="n">3</span>
+  <span class="del">batch_export.py</span>                       <span class="n">3</span>
+  <span class="del">export_estimates_data.py</span>              <span class="n">3</span>
+  <span class="mv">batch_autoinspect_all.py</span>              <span class="n">2</span>
+  <span class="mv">batch_export_all.py</span>                   <span class="n">2</span>
+  <span class="mv">chain_run_export_after_autoinspect.py</span> <span class="n">2</span>
+  <span class="mv">resplit_fof.py</span>                        <span class="n">2</span>
+  <span class="mv">bm_batch_routines.py</span>                  <span class="n">2</span>  old pipeline inside
+  <span class="mv">bm_examinator.py</span>                      <span class="n">3</span>  dead block at the end
+  <span class="mv">auto_inspector.py, bm_qc.py, ...</span>      <span class="n">4</span>  hardcodes, copies
+  bearmind\                  <span class="dim">the new package</span>
+  docs\
+  experiments\ (195 files)   ml\ (77)   paper\ (11)
+  production_models\ (6)     tests\ (36)</div></div>
+        <div><div class="label">After</div><div class="tree"><span class="dim">bearmind\  (repository root)</span>
+  .gitignore                    <span class="dim">+ .DS_Store, .ipynb_checkpoints/, temp/, __pycache__/</span>
+  config.py                     <span class="dim">no files, no windows on import</span>
+  startup.py                    <span class="dim">same</span>
+  bm_batch_routines.py          <span class="dim">only functions still used</span>
+  bm_examinator.py              <span class="dim">dead block removed</span>
+  auto_inspector.py, bm_qc.py   <span class="dim">one source for each setting</span>
+  bearmind\                     <span class="dim">the new package, defaults.yaml</span>
+  <span class="new">history\</span>                      <span class="n">2</span>
+    <span class="new">README.md</span>                   <span class="dim">what is here, why, known bug of ReDoCNMF</span>
+    <span class="new">legacy_pipeline.py</span>         <span class="dim">DoCropAndRewrite, DoMotionCorrection, DoCNMF, ReDoCNMF</span>
+    <span class="new">mini3\</span>                    <span class="dim">the four MINI3 scripts, as they were</span>
+  <span class="new">docs\students\</span>               <span class="n">6</span>
+    <span class="new">README.md</span>                   <span class="dim">install and start</span>
+    <span class="new">series-workflow.md</span>          <span class="dim">work with a series, colors, troubleshooting</span>
+  docs\   experiments\   ml\   paper\   production_models\   tests\
+  <span class="new">tests\test_import_side_effects.py, test_history_moves.py,
+         test_no_hardcodes.py, test_student_guide.py</span></div></div>
+      </div>
+      <div class="legend"><span><b style="background:#e53935"></b>deleted</span><span><b style="background:#e0b400"></b>changed or moved</span><span><b class="d"></b>new</span></div>
+    </div>
+  </div>
+  <div style="height:16px"></div>
+  
+<div class="win">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>What happens when you import a module <span class="n">1</span></div>
+  <div class="pad">
+    <div class="two-col">
+      <div>
+        <div class="label">Now</div>
+        <div class="log" style="white-space:normal">
+          <code>import config</code><br>
+          &rarr; creates <code>config.json</code> in the current folder<br>
+          &rarr; opens a small Tk window<br>
+          &rarr; unknown DATA_PATHWAY: <code>UnboundLocalError</code><br>
+          &rarr; <code>sys.modules['torch'] = None</code>; <code>np.Inf</code> breaks in NumPy 2
+        </div>
+      </div>
+      <div>
+        <div class="label">After the phase</div>
+        <div class="log" style="white-space:normal;color:var(--done-ink);background:var(--done)">
+          <code>import config</code><br>
+          &rarr; nothing is created, no window<br>
+          &rarr; <code>config.json</code> only by <code>write_config</code> / <code>update_config</code><br>
+          &rarr; unknown DATA_PATHWAY: clear message with the allowed values<br>
+          &rarr; the program works from any folder
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  
+<div class="win" style="margin-top:16px">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>Audit table (first deliverable of the phase). Statuses below are an example</div>
+  <div class="pad">
+    <div class="tblwrap"><table class="tbl">
+      <tr><th>Item of Appendix A</th><th>Where now</th><th>Status</th><th>Task</th></tr>
+      <tr><td class="wrap">FPS rounded to integer at export</td><td class="wrap">export_estimates_data.py</td><td class="c ok wrap">goes away with the file</td><td>3</td></tr>
+      <tr><td class="wrap">fr = fps/2 in notebook CNMF-E cell</td><td class="wrap">BEARMiND_full_pipeline.ipynb</td><td class="c ok wrap">goes with the notebook (new code: fr = FPS)</td><td>5</td></tr>
+      <tr><td class="wrap">ReDoCNMF seeds after opts</td><td class="wrap">bm_batch_routines.py</td><td class="c warn wrap">moves to history, described in README</td><td>3</td></tr>
+      <tr><td class="wrap">update_config does not reach importers</td><td class="wrap">config.py</td><td class="c err wrap">remains, fix in this phase</td><td>2</td></tr>
+      <tr><td class="wrap">load_fps_data without sep=';'</td><td class="wrap">capcan_validation.py</td><td class="c err wrap">remains</td><td>4</td></tr>
+    </table></div>
+    <p class="cap">Real items come from Appendix A and the recon. The status column is filled by the audit; here it only shows the format.</p>
+  </div>
+</div>
+
+  
+<div class="win" style="margin-top:16px">
+  <div class="titlebar"><span class="dots"><span></span><span></span><span></span></span>Student guide: table of contents <span class="n">6</span></div>
+  <div class="pad">
+    <div class="two-col">
+      <div>
+        <div class="label"><code>docs\students\README.md</code></div>
+        <ol class="lines">
+          <li>Что нужно на компьютере</li>
+          <li>Как создать окружение <code>bearmind</code></li>
+          <li>Как проверить установку: <code>run_bearmind.bat --help</code>, <code>bearmind_gui.bat</code></li>
+          <li>Окружение не найдено: что делать</li>
+        </ol>
+      </div>
+      <div>
+        <div class="label"><code>docs\students\series-workflow.md</code></div>
+        <ol class="lines" start="1">
+          <li>Папка серии: <code>1_Raw</code>, <code>0_TimeStamps</code> и другие; пайплайн не пишет в <code>1_Raw</code></li>
+          <li>Вкладка <b>Scan</b>: найти сессии, разобрать аномалии</li>
+          <li>Запуск батча на вкладке <b>Monitor</b></li>
+          <li>Вкладка <b>Thresholds</b></li>
+          <li>Manual inspection или Not needed</li>
+          <li>Сводка: исключить сессию, пересчитать</li>
+          <li>Цвета клеток и три самых частых предупреждения</li>
+          <li>Если что-то пошло не так</li>
+        </ol>
+      </div>
+    </div>
+    <div class="label" style="margin-top:12px">Пример страницы (так будет выглядеть шаг)</div>
+    <div class="log" style="white-space:pre-wrap;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--ink)"><b>3. Запуск батча</b>
+
+<b>Внимание.</b> Закройте <code>summary.csv</code> в Excel. Excel блокирует файл, и батч не может его обновить.
+
+1. Откройте окно BEARMiND двойным щелчком по <code>bearmind_gui.bat</code>.
+2. Откройте вкладку <b>Monitor</b>.
+3. Нажмите <b>Start</b>.
+4. Проверьте строку <b>Running</b> сверху.</div>
+  </div>
+</div>
+
+</div>
+
+<div>
+  <div class="card">
+    <h3>Что делает фаза</h3>
+    <div class="ex"><span class="num">1</span><div><b>Побочные эффекты импорта.</b> Импорт модуля больше не создаёт файлы и окна. <code>config.json</code> пишется только явной командой. Неизвестный режим даёт понятную ошибку. Программа работает из любой папки.</div></div>
+    <div class="ex"><span class="num">2</span><div><b>Старое в <code>history\</code>.</b> Функции старого конвейера (<code>DoCropAndRewrite</code>, <code>DoMotionCorrection</code>, <code>DoCNMF</code>, <code>ReDoCNMF</code>) и четыре скрипта MINI3 переезжают через <code>git mv</code>. Их <b>не переписывают</b>: это запись того, как обработаны данные статьи. Известный баг <code>ReDoCNMF</code> не чинят, а описывают в <code>history\README.md</code>.</div></div>
+    <div class="ex"><span class="num">3</span><div><b>Удаляется.</b> <code>batch_autoinspect.py</code>, <code>batch_export.py</code>, <code>export_estimates_data.py</code>: их работу делают этапы пакета <code>bearmind</code>. Также блок-строка в конце <code>bm_examinator.py</code>, код после <code>return</code>, скрытые кнопки кропа.</div></div>
+    <div class="ex"><span class="num">4</span><div><b>Хардкоды и копии.</b> Абсолютные пути, <code>n_processes=14</code>, <code>max_mem_gb=16</code>, путь к модели от текущей папки, порт Bokeh, срезы имён файлов. Параметры автоинспекции живут только в <code>bearmind\defaults.yaml</code>. Чтение FPS и PNR&rarr;imax — по одной функции вместо 3&ndash;4 копий.</div></div>
+    <div class="ex"><span class="num">5</span><div><b>Ноутбуки и мусор.</b> <code>BEARMiND_full_pipeline.ipynb</code>, <code>MoviePlay.ipynb</code>, <code>.DS_Store</code>, <code>.ipynb_checkpoints</code>. Ноутбуки удаляются <b>только после</b> аудита: каждое значение из них должно быть в <code>defaults.yaml</code>. Исключение — <code>fr</code>: в новом коде <code>fr = FPS</code>.</div></div>
+    <div class="ex"><span class="num">6</span><div><b>Инструкция для студентов.</b> По-русски, два файла. Названия кнопок и этапов — как в программе, по-английски. Правила простого языка: один шаг — одно действие, глагол первым, предупреждение до шага, предложение до 20 слов.</div></div>
+  </div>
+
+  <div class="card">
+    <h3>Что не меняется</h3>
+    <ul>
+      <li>Алгоритмы CaImAn и логика автоинспекции: метрики, правила, ML-модель.</li>
+      <li>Форматы <code>npz</code>, <code>mat</code>, <code>json</code>.</li>
+      <li>Порог <code>pxlthr_distance_boundary</code> = 15 px.</li>
+      <li><code>experiments\</code>, <code>ml\</code>, <code>paper\</code>, <code>production_models\</code>.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Как проверяют</h3>
+    <ul>
+      <li>Тест: импорт каждого модуля корня в пустой папке ничего не создаёт.</li>
+      <li>Тест: ни один файл вне <code>history\</code> не импортирует перенесённые имена.</li>
+      <li>Тест: каждая команда из инструкции существует, каждый упомянутый путь есть, шаги короче 20 слов.</li>
+      <li>Окружение собирается с нуля по <code>environment.yml</code> и <code>requirements-pip.txt</code> во временную папку. Свежий клон запускает <code>run_bearmind.bat --help</code>. Полный набор тестов проходит.</li>
+    </ul>
+    <p class="muted" style="font-size:13px">Не проверить на этой машине: компьютер без CUDA и с другим процессором (нужен ли обход <code>OPENBLAS_CORETYPE</code>). Это попадёт в отчёт как «не проверено».</p>
+  </div>
+
+  <div class="card">
+    <h3>Если что-то пошло не так</h3>
+    <div class="flow"><span class="s">аудит нашёл в ноутбуке значение, которого нет в <code>defaults.yaml</code></span><span class="arr">&rarr;</span><span class="s">ноутбук не удаляется</span><span class="arr">&rarr;</span><span class="s">значение дописывается отдельным коммитом</span></div>
+    <div class="flow"><span class="s">скрипт из <code>paper\</code> импортировал уехавшую функцию</span><span class="arr">&rarr;</span><span class="s">тест падает до слияния</span></div>
+    <div class="flow"><span class="s">окружение с нуля не собралось</span><span class="arr">&rarr;</span><span class="s">чиним <code>environment.yml</code>, фаза не закрыта</span></div>
+    <p style="margin-top:10px">Заметьте: сейчас в <code>BEARMiND_full_pipeline.ipynb</code> лежат ваши правки, не попавшие в git. План этого не учитывает. До удаления ноутбука аудит сверит и их.</p>
+  </div>
+
+  <div class="card flag">
+    <h3>Где план расходится с вашими решениями</h3>
+    <ul>
+      <li><b>Язык названий в инструкции.</b> План называет вкладки по-русски («Скан», «Пороги»). Вы решили: все тексты программы английские, инструкция по-русски, но названия кнопок и этапов как в программе. В инструкции будут Scan, Thresholds, Monitor, Manual inspection.</li>
+      <li><b>Порядок вкладок.</b> План фазы 3 и 4 ставит «Скан» первой. В инструкции порядок рядом с Monitor: Monitor, Scan, Thresholds, Inspection.</li>
+      <li><b>Новые пакеты.</b> План: «новых пакетов нет» и окружение собирается по двум готовым файлам. Если фазы 3&ndash;5 добавят пакет в <code>bearmind</code>, он должен попасть в <code>environment.yml</code> или <code>requirements-pip.txt</code>. Проверка «с нуля» это поймает.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Что вы одобряете</h3>
+    <ul class="check">
+      <li>Старый конвейер и скрипты MINI3 уезжают в <code>history\</code> без переписывания; три устаревших скрипта удаляются.</li>
+      <li>Ноутбуки удаляются только после того, как аудит подтвердил значения в <code>defaults.yaml</code>.</li>
+      <li>Импорт модулей не создаёт файлов и окон; всё работает из любой папки.</li>
+      <li>Хардкоды и копии кода заменены одним источником.</li>
+      <li>Инструкция для студентов: два файла, по-русски, названия кнопок английские, оглавление как слева.</li>
+      <li>Проверка: тесты, установка с нуля и свежий клон.</li>
+    </ul>
+    <p class="muted">Если что-то не так, назовите номер части. Например: «2 — оставить MoviePlay.ipynb», «6 — добавить раздел про экспорт».</p>
+  </div>
+</div>
+</div>
+</div>
+</body>
+</html>
