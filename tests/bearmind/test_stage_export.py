@@ -84,15 +84,16 @@ def _setup(tmp_path, layout="bonsai", n_frames=T, est_frames=None, model=True):
 def test_export_matches_old_structure(tmp_path):
     paths, rec, cfg = _setup(tmp_path)
     res = export.run(paths, rec, cfg)
-    # reference: old export() on the same object with the same ML filter
+    # reference: old export() on the same object with the same ML filter and the registry's fps
     est = pickle.loads((paths.root / rec.stages["autoinspect"].outputs["processed"]).read_bytes())
     idx = np.array([0, 2])
     ref_npz, ref_json = old.export(old.extract_data(est, idx), old.build_metadata(
-        est, 20.0, SID, component_indices=idx), SID, tmp_path / "ref")
+        est, rec.fps, SID, component_indices=idx), SID, tmp_path / "ref")
     with np.load(paths.export_npz(SID)) as a, np.load(ref_npz) as b:
         assert set(a.files) == set(b.files)
         assert a["C"].shape == (2, T)
         assert all(np.array_equal(a[k], b[k]) for k in a.files)  # content as the old export
+        assert float(a["fps"]) == 19.76  # the exact rate from the timestamps, not the rounded 20
     meta = json.loads(paths.export_json(SID).read_text())
     ref = json.loads(ref_json.read_text())
     assert set(ref) | {"autoinspection_fps", "provenance", "timestamps_file"} <= set(meta)
@@ -300,7 +301,7 @@ def test_session_without_components_exports_empty(tmp_path):
         pickle.dump(_no_components_est(), fh)
     res = export.run(paths, rec, cfg)
     keys = _check_empty_export(paths, res, 0)
-    assert keys == {"C", "component_indices", "asp", "reconstructions"}  # the keys of an inspected session
+    assert keys == {"C", "component_indices", "asp", "reconstructions", "fps"}  # keys of an inspected session
     mat = scipy.io.loadmat(paths.export_filters(SID))
     assert mat["A"].shape == (0, H, W) and mat["A"].dtype == np.uint8
     assert set(res.outputs) == {"npz", "json", "timestamps", "filters"}
@@ -314,5 +315,5 @@ def test_components_none_of_which_pass_the_rule(tmp_path):
     with open(proc, "wb") as fh:
         pickle.dump(est, fh)
     res = export.run(paths, rec, cfg)
-    assert _check_empty_export(paths, res, N) == {"C", "component_indices"}  # as with components: no caches
+    assert _check_empty_export(paths, res, N) == {"C", "component_indices", "fps"}  # as with components
     assert scipy.io.loadmat(paths.export_filters(SID))["A"].shape == (0, H, W)

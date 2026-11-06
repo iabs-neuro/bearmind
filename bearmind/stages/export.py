@@ -39,8 +39,8 @@ def rule_counts(est, idx, ml_info) -> dict:
     The rule is the old one (ml_keep_probability >= threshold; 'idx_components' when there are no ML
     probabilities). Autoinspection only marks components: an SNR duplicate keeps its P above the threshold
     and is exported although marked delete; a merge product has P = NaN and is never exported. The median
-    SNR comes from metrics_df: after a merge, est.SNR_comp is not in the order of the components. None:
-    not known (no metrics_df or no such column).
+    SNR comes from metrics_df: in processed files made before main's fbd1ad3 (2026-11-01), est.SNR_comp is
+    not in the order of the components after a merge. None: not known (no metrics_df or no such column).
     """
     df = getattr(est, "metrics_df", None)
     exported = {int(i) for i in idx}

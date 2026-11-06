@@ -17,8 +17,10 @@ def check_aligned(path: Path) -> None:
 
     The model features caiman_snr and caiman_r_score are read by position from est.SNR_comp and
     est.r_values (auto_inspector.estimates_to_metrics). CaImAn's manual_merge does not update them, and
-    estimates_compression keeps arr[:N] instead of the arrays of the kept components (its output carries
-    idx_components_bad_original); on such input every component would be scored with another one's values.
+    estimates_compression kept arr[:N] instead of the arrays of the kept components; on such input every
+    component would be scored with another one's values. Both are fixed since main's 6c73765 / fbd1ad3
+    (2026-10-31, 11-01), but a file compressed before that cannot be told apart from a newer one (both carry
+    idx_components_bad_original), so every compressed input is still refused.
     """
     with open(path, "rb") as f:
         est = pickle.load(f)
