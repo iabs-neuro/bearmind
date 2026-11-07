@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLab
                                QVBoxLayout, QWidget)
 
 from bearmind import actions, monitor, scan_view
-from bearmind.gui.monitor_tab import (ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, MonitorTab, _WARNING_TEXT,
-                                      _named, _plural)
+from bearmind.gui.monitor_tab import (ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, WARNING_TEXT, MonitorTab,
+                                      named, plural)
 from bearmind.paths import SeriesPaths
 
 log = logging.getLogger("bearmind")
@@ -55,6 +55,7 @@ class _Bridge(QObject):
 class ScanTab(QWidget):
     scan_finished = Signal(bool)  # True: the scan finished and wrote the registry
     status_message = Signal(str)
+    decided = Signal()  # a decision of this tab was written: Monitor's table changes with it
 
     def __init__(self, series: Path, parent=None, confirm=None, message=None, open_folder=None):
         super().__init__(parent)
@@ -64,6 +65,8 @@ class ScanTab(QWidget):
         self._message = message or self._show_message
         self._open_folder = open_folder or (lambda p: os.startfile(str(p)))
         self._scanning = False
+        self._closing = False
+        self._thread: threading.Thread | None = None
         self._view: scan_view.ScanView | None = None
         self._rows: dict[str, scan_view.ScanRow] = {}
         self._bridge = _Bridge(self)
@@ -167,17 +170,32 @@ class ScanTab(QWidget):
         self.progress_bar.setRange(0, 0)  # busy until the first total arrives
         self.progress_label.setText("Scanning …")
         self._update_buttons()
-        threading.Thread(target=self._work, name="bearmind-scan", daemon=True).start()
+        self._thread = threading.Thread(target=self._work, name="bearmind-scan", daemon=True)
+        self._thread.start()
+
+    def shutdown(self, timeout_s: float = 60.0) -> None:
+        """Before the tab is deleted: wait (bounded) for a running scan, so it ends its registry writes."""
+        self._closing = True
+        t = self._thread
+        if t is not None and t.is_alive():
+            t.join(timeout_s)
+
+    @staticmethod
+    def _emit(signal, *args) -> None:
+        try:
+            signal.emit(*args)
+        except RuntimeError:  # the tab was deleted while the scan ran: nobody is left to show the result
+            pass
 
     def _work(self) -> None:
         bridge = self._bridge
         try:
-            view = actions.rescan(self.paths, lambda i, n, sid: bridge.progress.emit(i, n, sid))
-            bridge.done.emit(view)
+            view = actions.rescan(self.paths, lambda i, n, sid: self._emit(bridge.progress, i, n, sid))
+            self._emit(bridge.done, view)
         except Exception as e:  # shown by the tab; the traceback goes to the log
             log.error("scan failed:\n%s", traceback.format_exc())
             first = (str(e).splitlines() or [""])[0]
-            bridge.failed.emit(type(e).__name__, first)
+            self._emit(bridge.failed, type(e).__name__, first)
 
     def _on_progress(self, i: int, n: int, sid: str) -> None:
         self.progress_bar.setRange(0, max(n, 1))
@@ -194,9 +212,11 @@ class ScanTab(QWidget):
         self.progress_bar.setRange(0, max(n, 1))
         self.progress_bar.setValue(n)
         self.progress_label.setText(f"Scan finished — {n} / {n}")
-        self._show(view)
-        self._say(f"Scanned {_plural(n)}")
-        self.scan_finished.emit(True)
+        try:
+            self._show(view)
+            self._say(f"Scanned {plural(n)}")
+        finally:  # the registry is written: Monitor must refresh even if showing it failed here
+            self.scan_finished.emit(True)
 
     def _on_failed(self, kind: str, first: str) -> None:
         self._end_scan()
@@ -208,6 +228,11 @@ class ScanTab(QWidget):
         self.scan_finished.emit(False)
 
     # --- showing the model ---
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._scanning:  # Monitor's menu or the batch may have changed the registry meanwhile
+            self.refresh()
 
     def refresh(self) -> None:
         self._show(scan_view.scan_view(self.paths))
@@ -329,7 +354,7 @@ class ScanTab(QWidget):
     @staticmethod
     def _ask_text(name: str, sids) -> str:
         if name == "confirm_stitch":
-            who = _named(sids)
+            who = named(sids)
             return f"The stitch of {who} will be marked as checked by you."
         return MonitorTab._ask_text(name, sids, None)
 
@@ -357,11 +382,12 @@ class ScanTab(QWidget):
             self._message("BEARMiND", f"Not in the series any more: {', '.join(e.unknown)}")
             return
         if res.ok:
-            self._say(f"{_DONE_TEXT[name]} {_plural(len(res.ok))}: {', '.join(res.ok)}")
+            self._say(f"{_DONE_TEXT[name]} {plural(len(res.ok))}: {', '.join(res.ok)}")
         else:
             self._say("Nothing was changed.")
         lines = [f"{sid}: {actions.failure_text(code, detail)}" for sid, (code, detail) in res.failed.items()]
-        lines += [_WARNING_TEXT.get(code, "{sid}: " + code).format(sid=sid) for sid, code in res.warnings]
+        lines += [WARNING_TEXT.get(code, "{sid}: " + code).format(sid=sid) for sid, code in res.warnings]
         if lines:
             self._message("BEARMiND", "\n".join(lines))
         self.refresh()
+        self.decided.emit()

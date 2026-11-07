@@ -849,3 +849,9 @@ class MonitorTab(QWidget):
     def selected_sids(self) -> list[str]:
         rows = sorted({ix.row() for ix in self.table.selectionModel().selectedIndexes()})
         return [self.model.item(r, 0).text() for r in rows]
+
+
+# public names for the Scan tab, which shows the same warnings and names sessions the same way
+WARNING_TEXT = _WARNING_TEXT
+named = _named
+plural = _plural

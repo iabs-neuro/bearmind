@@ -1,7 +1,10 @@
 import re
+import threading
 import time
 
+import pytest
 from PySide6.QtCore import QEventLoop, Qt, QTimer
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QLabel, QPushButton
 
 from bearmind import monitor, registry, scan
@@ -234,7 +237,7 @@ def test_confirm_stitch_twice_shows_warning(qapp, make_series, tmp_path):
     sid = tab.model.item(0, 0).text()
     select(tab, sid)
     tab.stitch_button.click()
-    tab.stitch_button.setEnabled(True)  # a second click through a stale state
+    # exercises the actions warning through _run, not the button (disabled after the first confirm)
     tab._run("confirm_stitch")
     assert tab.dlg.messages and "already confirmed" in tab.dlg.messages[-1][1]
 
@@ -429,3 +432,95 @@ def test_monitor_scanned_hides_scan_tab_button(qapp, make_series, tmp_path):
     t.show()
     assert not t.scan_tab_button.isVisible()
     t.close()
+
+
+def _slow_scan(monkeypatch, delay=0.3):
+    real = scan.scan_series
+
+    def slow(series_root, progress=None):
+        time.sleep(delay)
+        return real(series_root, progress)
+
+    monkeypatch.setattr(scan, "scan_series", slow)
+
+
+@pytest.fixture
+def thread_errors(monkeypatch):
+    errors = []
+    monkeypatch.setattr(threading, "excepthook", lambda a: errors.append(a.exc_value))
+    return errors
+
+
+def test_window_refuses_open_and_close_during_scan(qapp, make_series, tmp_path, monkeypatch, thread_errors):
+    _slow_scan(monkeypatch)
+    root = build(make_series, tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    w = MainWindow(root)
+    tab = w.scan
+    loop = QEventLoop()
+    tab.scan_finished.connect(lambda ok: loop.quit())
+    tab.start_scan()
+    assert w.open_series(other) is False and w.scan is tab
+    assert "scan is running" in w.statusBar().currentMessage()
+    ev = QCloseEvent()
+    w.closeEvent(ev)
+    assert not ev.isAccepted()
+    QTimer.singleShot(20000, loop.quit)
+    loop.exec()
+    assert not tab.is_scanning() and w.tabs.widget(1) is tab
+    assert w.open_series(other) is True
+    assert not thread_errors
+    assert len(registry.all_records(SeriesPaths(root))) == 3
+
+
+def test_shutdown_waits_and_deleted_bridge_is_ignored(qapp, make_series, tmp_path, monkeypatch, thread_errors):
+    import shiboken6
+    _slow_scan(monkeypatch)
+    root = build(make_series, tmp_path)
+    tab = make_tab(root)
+    tab.start_scan()
+    shiboken6.delete(tab._bridge)  # what deleting the tab does to its children
+    tab.shutdown()
+    assert not tab._thread.is_alive()
+    assert not thread_errors
+    assert len(registry.all_records(SeriesPaths(root))) == 3  # the scan ran to the end and wrote
+
+
+def test_scan_finished_emitted_even_if_show_fails(qapp, make_series, tmp_path, monkeypatch):
+    tab = make_tab(build(make_series, tmp_path))
+    got = []
+    tab.scan_finished.connect(got.append)
+    seen = []
+    monkeypatch.setattr(tab, "_show", lambda view: (seen.append(1), (_ for _ in ()).throw(ValueError("boom")))[1])
+    monkeypatch.setattr("sys.excepthook", lambda *a: seen.append(a[0]))  # PySide reports slot errors here
+    loop = QEventLoop()
+    tab.scan_finished.connect(lambda ok: loop.quit())
+    QTimer.singleShot(20000, loop.quit)
+    tab.start_scan()
+    loop.exec()
+    assert got == [True]
+
+
+def test_tab_refreshes_when_shown(qapp, make_series, tmp_path):
+    from bearmind import actions
+    tab = scanned(qapp, make_series, tmp_path)
+    actions.set_excluded(tab.paths, [SIDS[0]], True, "monitor")  # what Monitor's menu does
+    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == ""
+    tab.show()
+    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == "by you"
+    tab.close()
+
+
+def test_scan_tab_decision_refreshes_monitor_at_once(qapp, make_series, tmp_path):
+    root = build(make_series, tmp_path)
+    scan.scan_series(root)
+    w = MainWindow(root)
+    w.monitor.timer.stop()
+    dlg = Dialogs()
+    w.scan._confirm = dlg.confirm
+    select(w.scan, SIDS[0])
+    w.scan.exclude_button.click()
+    m = w.monitor.model
+    item = next(m.item(i, 0) for i in range(m.rowCount()) if m.item(i, 0).text() == SIDS[0])
+    assert item.foreground().color().name() == EXCLUDED_INK

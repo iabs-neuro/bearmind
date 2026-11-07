@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, QMessageBox, QTabWidget,
                                QVBoxLayout, QWidget)
 
@@ -88,6 +88,9 @@ class MainWindow(QMainWindow):
 
     def open_series(self, series: Path) -> bool:
         series = Path(series)
+        if self._scan_running():  # the scan writes the old series' registry: it is not cut off or orphaned
+            self.statusBar().showMessage("A scan is running. Wait for it to finish, then open the series.")
+            return False
         if not series.is_dir():
             self._message("BEARMiND", f"Series folder not found: {series}")
             return False
@@ -106,6 +109,8 @@ class MainWindow(QMainWindow):
         old = self.tabs.widget(index)
         if isinstance(old, MonitorTab):
             old.timer.stop()
+        if isinstance(old, ScanTab):
+            old.shutdown()
         self.tabs.removeTab(index)
         old.deleteLater()
         self.tabs.insertTab(index, tab, name)
@@ -122,6 +127,19 @@ class MainWindow(QMainWindow):
         scan_tab.status_message.connect(self.statusBar().showMessage)
         # a finished scan changes the table and the not-scanned state, which the timer would show only later
         scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh() if ok else None)
+        scan_tab.decided.connect(monitor_tab.refresh)
+
+    def _scan_running(self) -> bool:
+        tab = self.tabs.widget(TAB_NAMES.index("Scan"))
+        return isinstance(tab, ScanTab) and tab.is_scanning()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # simplest safe choice: keep the window until the scan ends (a scan cannot be cancelled half-way)
+        if self._scan_running():
+            self.statusBar().showMessage("A scan is running. Wait for it to finish, then close the window.")
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def show_tab(self, name: str) -> None:
         self.tabs.setCurrentIndex(TAB_NAMES.index(name))
