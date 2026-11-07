@@ -576,3 +576,25 @@ def test_unreadable_video_keeps_the_session_folder(make_series, tmp_path):
     next((root / "1_Raw").rglob("NOF_H01_1D_1.avi")).write_bytes(bytes(range(256)) * 20)
     r = scan.scan_series(root)[0]
     assert r.parts == [] and codes(r)["unreadable_video"].data == {"folder": "1_Raw/HM_NOF_1D/NOF_H01_1D"}
+
+
+def test_unrecognized_list_read_with_retries(make_series, tmp_path, monkeypatch):
+    """I5: on Windows a reader can meet the list while a scan replaces it (PermissionError); it retries."""
+    import pathlib
+    root = make_series(tmp_path / "s", "bonsai")
+    bad = root / "1_Raw" / "junk"
+    bad.mkdir()
+    (bad / "a.avi").write_bytes(b"x")
+    scan.scan_series(root)
+    real = pathlib.Path.read_text
+    refused = []
+
+    def busy(self, *a, **k):
+        if self.name == "scan_unrecognized.csv" and len(refused) < 2:
+            refused.append(self)
+            raise PermissionError("being replaced")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", busy)
+    assert scan.read_unrecognized(SeriesPaths(root)) == [("1_Raw/junk", "folder name is not a session id")]
+    assert len(refused) == 2

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import io
 import json
 import os
 import re
@@ -534,9 +535,12 @@ def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[S
 
 
 def read_unrecognized(paths: SeriesPaths) -> list[tuple[str, str]]:
-    """(path, reason) of every folder the last scan could not read as a session ([] before any scan)."""
+    """(path, reason) of every folder the last scan could not read as a session ([] before any scan).
+
+    Read with fileio.read_text: on Windows the file can be refused for a moment while a scan replaces it.
+    """
     try:
-        with open(paths.scan_unrecognized_csv, encoding="utf-8", newline="") as fh:
-            return [(row["path"], row["reason"]) for row in csv.DictReader(fh)]
+        text = fileio.read_text(paths.scan_unrecognized_csv)
     except FileNotFoundError:
         return []
+    return [(row["path"], row["reason"]) for row in csv.DictReader(io.StringIO(text))]
