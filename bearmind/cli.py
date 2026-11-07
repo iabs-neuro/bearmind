@@ -5,15 +5,17 @@ Exit codes: 0 ok, 1 partial failure, 2 bad input, 3 series busy, 130 interrupted
 config goes through registry.update_record / config.update_yaml, so it is safe next to a running runner.
 """
 import argparse
+import importlib
 import json
 import logging
 import math
 import os
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import actions, launcher, monitor, provenance, registry, runner, scan
+from bearmind import actions, config, launcher, monitor, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
 from bearmind.stages import gate
@@ -128,11 +130,32 @@ def _next_hint(paths) -> str:
 # --- commands ---
 
 def cmd_gui(args) -> int:
-    from bearmind.gui import app  # lazy: the other commands must work without PySide6
-
+    try:
+        app = importlib.import_module("bearmind.gui.app")  # lazy: the other commands must work without PySide6
+    except ImportError as e:
+        return _gui_cannot_start(e)
     series = str(Path(args.series).resolve()) if args.series else None  # absolute before the chdir
     os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
     return app.main([series] if series else [])
+
+
+def _gui_cannot_start(e: ImportError) -> int:
+    """The window started with pythonw has no console: the traceback goes to gui.log (next to machine.yaml, where
+    the window logs too), and without a console a message box says where."""
+    log_file = config.machine_file().parent / "gui.log"
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')}\n{traceback.format_exc()}\n")
+    except OSError:
+        pass
+    text = f"the window cannot start: {type(e).__name__}: {_first_line(e)}; details in {log_file}"
+    _say(f"[FAILED] {text}")
+    if sys.stdout is None and os.name == "nt":
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, text, "BEARMiND", 0x10)  # MB_ICONERROR
+    return 1
 
 
 def cmd_scan(args) -> int:
@@ -389,12 +412,11 @@ def cmd_gate(args) -> int:
             return OK
     _check_sids(recs, sids)
     who, code = _who(args), OK
+    # one call for the whole list: each call reads every record of the series
+    many = actions.gate_not_needed(paths, sids, who, force=args.force) if decision == "not_needed" else None
     for sid in sids:
         _warn_excluded(recs[sid])
-        if decision == "not_needed":
-            res = actions.gate_not_needed(paths, [sid], who, force=args.force)
-        else:
-            res = actions.gate_cleaned(paths, sid, who)
+        res = many if many is not None else actions.gate_cleaned(paths, sid, who)
         if sid in res.failed:
             fcode, detail = res.failed[sid]
             if fcode == "already_passed":

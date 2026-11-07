@@ -1,4 +1,5 @@
 """Main window of BEARMiND: series chooser and tabs. Tab contents live in their own modules."""
+import logging
 import sys
 import traceback
 from datetime import datetime
@@ -134,16 +135,37 @@ def _report(message, exc_type, exc, tb) -> None:
     message("BEARMiND error", f"{exc_type.__name__}: {first}")
 
 
+def _gui_log_handler() -> logging.Handler | None:
+    """The bearmind logger's warnings (a slow refresh, a refresh that keeps failing) into gui.log: under pythonw
+    there is no console, and they would be lost."""
+    f = config.machine_file().parent / "gui.log"
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    h = logging.FileHandler(f, encoding="utf-8", delay=True)  # opened at the first warning
+    h.setLevel(logging.WARNING)
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.getLogger("bearmind").addHandler(h)
+    return h
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    app = QApplication.instance() or QApplication(sys.argv[:1])
-    # before the window exists: under pythonw an exception in the constructor would otherwise vanish
-    sys.excepthook = lambda t, e, tb: _report(_default_message, t, e, tb)
+    handler = _gui_log_handler()
     try:
-        window = MainWindow(Path(argv[0]) if argv else None)
-    except Exception:
-        sys.excepthook(*sys.exc_info())
-        return 1
-    sys.excepthook = window.report_exception
-    window.show()
-    return app.exec()
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        # before the window exists: under pythonw an exception in the constructor would otherwise vanish
+        sys.excepthook = lambda t, e, tb: _report(_default_message, t, e, tb)
+        try:
+            window = MainWindow(Path(argv[0]) if argv else None)
+        except Exception:
+            sys.excepthook(*sys.exc_info())
+            return 1
+        sys.excepthook = window.report_exception
+        window.show()
+        return app.exec()
+    finally:
+        if handler is not None:
+            logging.getLogger("bearmind").removeHandler(handler)
+            handler.close()

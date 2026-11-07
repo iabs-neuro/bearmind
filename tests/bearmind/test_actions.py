@@ -178,3 +178,22 @@ def test_export_summary_equals_status_csv(series, capsys):
     from_status = series.paths.summary_csv.read_bytes()
     dest = actions.export_summary(series.paths, series.root / "copy.csv")
     assert dest.read_bytes() == from_status
+
+
+def test_cli_gate_all_waiting_calls_the_action_once(series, monkeypatch):
+    """M10: one gate_not_needed call for the whole list (it reads every record once; 300 calls read 300x300)."""
+    from bearmind import cli
+
+    for sid in (S1, S2, S3):
+        _wait_gate(series, sid)
+    calls = []
+    real = actions.gate_not_needed
+
+    def counting(paths, sids, who, force=False):
+        calls.append(list(sids))
+        return real(paths, sids, who, force)
+
+    monkeypatch.setattr(actions, "gate_not_needed", counting)
+    assert cli.main(["gate", str(series.paths.root), "--all-waiting", "not-needed", "--who", "ann"]) == 0
+    assert calls == [[S1, S2, S3]]
+    assert all(("manual_inspection", "not_needed", "ann") in _decisions(series.paths, sid) for sid in (S1, S2, S3))

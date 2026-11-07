@@ -103,3 +103,35 @@ def test_monitor_tab_hint_before_any_series(qapp):
     w = MainWindow()
     texts = [lab.text() for lab in w.tabs.widget(0).findChildren(QLabel)]
     assert texts == ["Open a series: Series > Open series..."]
+
+
+def test_main_writes_bearmind_warnings_to_gui_log(qapp, monkeypatch):
+    """M7: under pythonw there is no console; the bearmind logger's warnings go to gui.log while the window runs."""
+    import logging
+
+    from bearmind.gui import app
+
+    def window(*a, **k):
+        logging.getLogger("bearmind.monitor").warning("monitor refresh took 3.0 s for 300 sessions")
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
+    monkeypatch.setattr(app, "MainWindow", window)
+    monkeypatch.setattr(app, "_default_message", lambda title, text: None)
+    assert app.main([]) == 1
+    text = (config.machine_file().parent / "gui.log").read_text(encoding="utf-8")
+    assert "WARNING bearmind.monitor: monitor refresh took 3.0 s for 300 sessions" in text
+    # the handler belongs to this run of the window only
+    assert not [h for h in logging.getLogger("bearmind").handlers if isinstance(h, logging.FileHandler)]
+
+
+def test_gui_import_error_is_logged_and_printed(monkeypatch, capsys):
+    """M7: a broken PySide6 install must not vanish without a trace."""
+    from bearmind import cli
+
+    monkeypatch.setitem(sys.modules, "bearmind.gui.app", None)  # the import fails with ImportError
+    assert cli.main(["gui"]) == 1
+    out = capsys.readouterr().out
+    log = config.machine_file().parent / "gui.log"
+    assert out.startswith("[FAILED] the window cannot start: ModuleNotFoundError") and str(log) in out
+    assert "ModuleNotFoundError" in log.read_text(encoding="utf-8")
