@@ -1998,3 +1998,82 @@ def test_parent_rerun_while_previews_are_off_remakes_them_when_turned_on(series)
     s.stubs.calls.clear()
     _run(s)
     assert s.stubs.calls == [(S1, "mc_preview"), (S1, "cnmf_preview")]
+
+
+# --- one batch per machine ---
+
+def _second_series(s):
+    paths = SeriesPaths(s.tmp / "series2")
+    config.update_yaml(paths.series_config, {"runner": {"isolate_stages": False}})
+    save_record(paths, _record(S1))
+    config.update_yaml(paths.session_config(S1), THRESH)
+    return paths
+
+
+def _machine_lock():
+    return Path(os.environ["BEARMIND_HOME"]) / "runner.lock"
+
+
+def test_second_series_refused_on_one_machine(series):
+    s = series
+    other = _second_series(s)
+    t, release = _hold_run_lock(s)
+    try:
+        with pytest.raises(RuntimeError) as e:
+            runner.run(other.root, once=True)
+        assert str(e.value) == (f"another batch is running on this machine: {s.paths.root} "
+                                f"(PID {os.getpid()}); run one batch at a time")
+        assert not other.lock.exists()  # the refused run leaves no lock of its own
+    finally:
+        release.set()
+        t.join(60)
+    del s.stubs.hooks[(S1, "crop")]
+    runner.run(other.root, once=True)  # released after the first run ended
+
+
+def test_machine_lock_released_after_interrupt_stop_and_failure(series):
+    s = series
+    s.stubs.fail[(S2, "mc")] = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt):
+        _run(s)
+    assert not _machine_lock().exists()
+    del s.stubs.fail[(S2, "mc")]
+    s.stubs.hooks[(S2, "mc")] = lambda *a: s.paths.stop_request.write_text("stop\n")
+    assert _run(s)  # the stop request ends the run before the next stage
+    assert not _machine_lock().exists() and not s.paths.lock.exists()
+    del s.stubs.hooks[(S2, "mc")]
+    s.stubs.fail[(S2, "cnmf")] = RuntimeError("boom")
+    assert _run(s)["failed"] == 1
+    assert not _machine_lock().exists()
+    s.stubs.fail.clear()
+    s.paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(RuntimeError, match="broken"):  # an error outside the stages
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(runner, "_loop", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("broken")))
+        try:
+            _run(s)
+        finally:
+            monkey.undo()
+    assert not _machine_lock().exists()
+
+
+def test_dead_machine_lock_taken_over(series):
+    s = series
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    _machine_lock().write_text(json.dumps({"pid": p.pid, "create_time": 1.0, "series": "gone"}),
+                               encoding="utf-8")
+    assert _run(s)["done"] == 21
+    assert not _machine_lock().exists()
+
+
+def test_machine_busy_reports_live_holder_only(series):
+    s = series
+    assert runner.machine_busy() is None
+    t, release = _hold_run_lock(s)
+    try:
+        assert runner.machine_busy() == (str(s.paths.root), os.getpid())
+    finally:
+        release.set()
+        t.join(60)
+    assert runner.machine_busy() is None

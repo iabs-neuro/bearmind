@@ -699,3 +699,11 @@ def test_main_failure_named_before_a_failed_preview(series, capsys):
     assert _main("run", series.root, "--once") == 0
     rec = load_record(series.paths, S1)
     assert all(rec.stages[s].state is State.DONE for s in STAGES + SIDE)
+
+
+def test_run_machine_busy(series, capsys, monkeypatch):
+    def busy(*a, **k):
+        raise RuntimeError("another batch is running on this machine: D:/x (PID 7); run one batch at a time")
+    monkeypatch.setattr(runner, "run", busy)
+    assert _main("run", series.root, "--once") == 3
+    assert "[FAILED] another batch is running on this machine" in capsys.readouterr().out

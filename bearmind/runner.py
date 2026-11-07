@@ -733,36 +733,99 @@ def _lock_holder(lock: Path):
         return None
 
 
-def _acquire_lock(paths):
-    """OS lock on _bearmind/run.lock, held through an open handle for the whole run.
-
-    The OS releases it when the process dies, so a killed runner never blocks the series; the PID and
-    process start time written into the file only tell a second runner who holds it.
-    """
-    lock = paths.lock
+def _take_lock(lock: Path, extra: dict | None = None):
+    """Open `lock`, take the OS lock, write who holds it. Returns the handle, or None when it is held."""
     lock.parent.mkdir(parents=True, exist_ok=True)
     fh = os.fdopen(os.open(lock, os.O_RDWR | os.O_CREAT), "r+b", buffering=0)
     if not _os_lock(fh):
         fh.close()
-        pid = _lock_holder(lock)
-        raise RuntimeError(f"series is already being processed by PID {pid if pid is not None else 'unknown'}")
+        return None
     me = psutil.Process()
     fh.seek(0)
     fh.truncate()
-    fh.write(json.dumps({"pid": me.pid, "create_time": me.create_time(), "time": _now()}).encode())
+    fh.write(json.dumps({"pid": me.pid, "create_time": me.create_time(), "time": _now(), **(extra or {})}).encode())
     return fh
 
 
-def _release_lock(paths, fh) -> None:
+def _drop_lock(lock: Path, fh) -> None:
     try:
         _os_unlock(fh)
     except OSError:
         pass
     fh.close()
     try:
-        paths.lock.unlink()
+        lock.unlink()
     except (FileNotFoundError, PermissionError):
         pass  # a new runner opened it already
+
+
+def _acquire_lock(paths):
+    """OS lock on _bearmind/run.lock, held through an open handle for the whole run.
+
+    The OS releases it when the process dies, so a killed runner never blocks the series; the PID and
+    process start time written into the file only tell a second runner who holds it.
+    """
+    fh = _take_lock(paths.lock)
+    if fh is None:
+        pid = _lock_holder(paths.lock)
+        raise RuntimeError(f"series is already being processed by PID {pid if pid is not None else 'unknown'}")
+    return fh
+
+
+def _release_lock(paths, fh) -> None:
+    _drop_lock(paths.lock, fh)
+
+
+def machine_lock() -> Path:
+    return config._home() / "runner.lock"
+
+
+def _machine_busy_text(series, pid) -> str:
+    return (f"another batch is running on this machine: {series if series else 'unknown series'} "
+            f"(PID {pid if pid is not None else 'unknown'}); run one batch at a time")
+
+
+def _lock_info(lock: Path) -> dict:
+    try:
+        info = json.loads(lock.read_text(encoding="utf-8"))
+        return info if isinstance(info, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def machine_busy():
+    """(series, PID) of the batch holding the machine lock, or None when no live runner holds it.
+
+    The pools of two series together can exceed the machine's memory budget, so one batch runs at a time.
+    """
+    lock = machine_lock()
+    if not lock.exists():
+        return None
+    try:
+        fh = os.fdopen(os.open(lock, os.O_RDWR), "r+b", buffering=0)
+    except OSError:
+        return None
+    try:
+        if _os_lock(fh):
+            _os_unlock(fh)
+            return None
+    finally:
+        fh.close()
+    info = _lock_info(lock)
+    return info.get("series"), info.get("pid")
+
+
+def busy_message() -> str | None:
+    busy = machine_busy()
+    return None if busy is None else _machine_busy_text(*busy)
+
+
+def _acquire_machine_lock(paths):
+    fh = _take_lock(machine_lock(), {"series": str(paths.root)})
+    if fh is None:
+        info = _lock_info(machine_lock())
+        raise RuntimeError(_machine_busy_text(info.get("series"), info.get("pid")))
+    return fh
 
 
 # --- the run ---
@@ -1434,6 +1497,11 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     run_ = _Run(paths, until, sids, once, poll_s, console)
     config.resolve(paths)  # a broken series config stops here, before any state changes
     lock = _acquire_lock(paths)
+    try:
+        mlock = _acquire_machine_lock(paths)
+    except BaseException:
+        _release_lock(paths, lock)
+        raise
     cwd = os.getcwd()
     try:
         os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
@@ -1462,6 +1530,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     finally:
         run_.close()
         os.chdir(cwd)
+        _drop_lock(machine_lock(), mlock)
         _release_lock(paths, lock)
 
 

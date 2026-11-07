@@ -187,3 +187,15 @@ def test_real_start_command_smoke(tmp_path):
     assert json.loads(paths.heartbeat.read_text(encoding="utf-8"))["exit"] == "finished"
     assert not paths.lock.exists()
     assert monitor.runner_state(paths).status == "stopped"
+
+
+def test_start_detached_refuses_when_machine_busy(tmp_path, monkeypatch):
+    from bearmind import runner
+    monkeypatch.setattr(runner, "machine_busy", lambda: ("D:/other", 4242))
+    started = []
+    monkeypatch.setattr(launcher.subprocess, "Popen", lambda *a, **k: started.append(1))
+    with pytest.raises(RuntimeError) as e:
+        launcher.start_detached(tmp_path / "series")
+    assert str(e.value) == ("another batch is running on this machine: D:/other (PID 4242); "
+                            "run one batch at a time")
+    assert not started

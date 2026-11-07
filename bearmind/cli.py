@@ -195,7 +195,7 @@ def cmd_run(args) -> int:
         _say("[WARN] stopped by Ctrl+C; run the same command to resume where it stopped")
         return INTERRUPTED
     except RuntimeError as e:
-        if "already being processed" in str(e):
+        if "already being processed" in str(e) or "another batch is running" in str(e):
             _say(f"[FAILED] {e}")
             return BUSY
         raise

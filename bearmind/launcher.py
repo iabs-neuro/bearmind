@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from bearmind import monitor, provenance
+from bearmind import monitor, provenance, runner
 from bearmind.paths import SeriesPaths
 
 
@@ -38,6 +38,9 @@ def start_detached(series_root: Path, cmd: list[str] | None = None) -> int:
     state = monitor.runner_state(paths)
     if state.alive:
         raise RuntimeError(f"batch already running: PID {state.pid}")
+    busy = runner.busy_message()
+    if busy:
+        raise RuntimeError(busy)
     cmd = cmd or runner_command(paths.root)
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
