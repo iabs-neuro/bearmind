@@ -487,7 +487,8 @@ def test_window_refuses_open_and_close_during_scan(qapp, make_series, tmp_path, 
     root = build(make_series, tmp_path)
     other = tmp_path / "other"
     other.mkdir()
-    w = MainWindow(root)
+    shown = []
+    w = MainWindow(root, message=lambda title, text: shown.append(text))
     tab = w.scan
     loop = QEventLoop()
     tab.scan_finished.connect(lambda ok: loop.quit())
@@ -497,6 +498,8 @@ def test_window_refuses_open_and_close_during_scan(qapp, make_series, tmp_path, 
     ev = QCloseEvent()
     w.closeEvent(ev)
     assert not ev.isAccepted()
+    # R3: a message box besides the status line, which is easy to miss
+    assert shown == ["A scan is running. Wait for it to finish, then try again."] * 2
     QTimer.singleShot(20000, loop.quit)
     loop.exec()
     assert not tab.is_scanning() and w.tabs.widget(1) is tab
@@ -798,3 +801,19 @@ def test_timer_refreshes_only_while_visible(qapp, make_series, tmp_path):
     tab.shutdown()
     assert not tab.timer.isActive()
     tab.close()
+
+
+def test_failed_scan_refreshes_monitor(qapp, make_series, tmp_path, monkeypatch):
+    """I5: a scan that failed after writing records: Monitor shows them at once, not at its next tick."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",))
+    w = MainWindow(root)
+    w.monitor.timer.stop()
+    assert wait_scan(w.scan) and w.monitor.model.rowCount() == 1
+    make_series(root, sid="NOF_H02_1D")
+    real = fileio.write_atomic
+    monkeypatch.setattr(fileio, "write_atomic", lambda path, *a, **k: (
+        (_ for _ in ()).throw(PermissionError("locked")) if str(path).endswith("scan_unrecognized.csv")
+        else real(path, *a, **k)))
+    w.scan._message = lambda *a: None
+    assert wait_scan(w.scan) is False
+    assert w.monitor.model.rowCount() == 2

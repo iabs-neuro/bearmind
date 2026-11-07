@@ -18,6 +18,7 @@ TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
 _PHASE = {"Thresholds": 4, "Inspection": 5}
 PLACEHOLDER_TEXT = "This tab is coming in a later version of BEARMiND."
 MAX_RECENT = 10
+SCAN_RUNNING = "A scan is running. Wait for it to finish, then try again."
 
 
 def _placeholder(name: str) -> QWidget:
@@ -89,30 +90,46 @@ class MainWindow(QMainWindow):
     def open_series(self, series: Path) -> bool:
         series = Path(series)
         if self._scan_running():  # the scan writes the old series' registry: it is not cut off or orphaned
-            self.statusBar().showMessage("A scan is running. Wait for it to finish, then open the series.")
+            self._refuse("A scan is running. Wait for it to finish, then open the series.")
             return False
         if not series.is_dir():
             self._message("BEARMiND", f"Series folder not found: {series}")
             return False
-        self.series = series.resolve()
+        series = series.resolve()
+        # the new tabs first: if building them fails, the window keeps the old series, tabs, title and recent list
+        built = []
+        try:
+            built.append(MonitorTab(series))
+            built.append(ScanTab(series))
+        except Exception:
+            for tab in built:
+                self._retire(tab)
+            self.report_exception(*sys.exc_info())
+            return False
+        self._set_tabs(*built)
+        self.series = series
         self.setWindowTitle(f"BEARMiND — {self.series}")
         shown = str(self.series)
         recent = [shown] + [p for p in self._recent() if p != shown]
         # update_yaml deep-merges, and a list is replaced as a whole, so the new order is stored verbatim
         config.update_yaml(config.machine_file(), {"gui": {"recent_series": recent[:MAX_RECENT]}})
         self._fill_recent()
-        self._set_tabs(MonitorTab(self.series), ScanTab(self.series))
         return True
+
+    @staticmethod
+    def _retire(tab: QWidget) -> None:
+        """A tab leaving the window: its timer stops and a running scan ends its writes first."""
+        if isinstance(tab, MonitorTab):
+            tab.timer.stop()
+        if isinstance(tab, ScanTab):
+            tab.shutdown()
+        tab.deleteLater()
 
     def _replace_tab(self, name: str, tab: QWidget) -> None:
         index = TAB_NAMES.index(name)
         old = self.tabs.widget(index)
-        if isinstance(old, MonitorTab):
-            old.timer.stop()
-        if isinstance(old, ScanTab):
-            old.shutdown()
         self.tabs.removeTab(index)
-        old.deleteLater()
+        self._retire(old)
         self.tabs.insertTab(index, tab, name)
 
     def _set_tabs(self, monitor_tab: MonitorTab, scan_tab: ScanTab) -> None:
@@ -125,18 +142,24 @@ class MainWindow(QMainWindow):
         monitor_tab.open_tab.connect(self.show_tab)
         monitor_tab.status_message.connect(self.statusBar().showMessage)
         scan_tab.status_message.connect(self.statusBar().showMessage)
-        # a finished scan changes the table and the not-scanned state, which the timer would show only later
-        scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh() if ok else None)
+        # a finished scan changes the table and the not-scanned state, which the timer would show only later; a
+        # failed one may have written records before it failed
+        scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh())
         scan_tab.decided.connect(monitor_tab.refresh)
 
     def _scan_running(self) -> bool:
         tab = self.tabs.widget(TAB_NAMES.index("Scan"))
         return isinstance(tab, ScanTab) and tab.is_scanning()
 
+    def _refuse(self, status: str) -> None:
+        """The status line alone is easy to miss after a click: a message box says it too."""
+        self.statusBar().showMessage(status)
+        self._message("BEARMiND", SCAN_RUNNING)
+
     def closeEvent(self, event: QCloseEvent) -> None:
         # simplest safe choice: keep the window until the scan ends (a scan cannot be cancelled half-way)
         if self._scan_running():
-            self.statusBar().showMessage("A scan is running. Wait for it to finish, then close the window.")
+            self._refuse("A scan is running. Wait for it to finish, then close the window.")
             event.ignore()
             return
         super().closeEvent(event)

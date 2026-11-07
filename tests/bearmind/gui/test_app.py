@@ -135,3 +135,29 @@ def test_gui_import_error_is_logged_and_printed(monkeypatch, capsys):
     log = config.machine_file().parent / "gui.log"
     assert out.startswith("[FAILED] the window cannot start: ModuleNotFoundError") and str(log) in out
     assert "ModuleNotFoundError" in log.read_text(encoding="utf-8")
+
+
+def test_open_series_failure_keeps_the_old_series(qapp, tmp_path, monkeypatch):
+    """I6: the new tabs are built first; if that fails the window keeps the old series, title, tabs and recent
+    list, shows the error, and stops the tab already built."""
+    from bearmind.gui.monitor_tab import MonitorTab
+    from bearmind.gui.scan_tab import ScanTab
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    seen = []
+    w = MainWindow(a, message=lambda title, text: seen.append(text))
+    old_tabs, title = [w.tabs.widget(i) for i in range(w.tabs.count())], w.windowTitle()
+    made = []
+    real_init = MonitorTab.__init__
+    monkeypatch.setattr(MonitorTab, "__init__", lambda self, *x, **k: (made.append(self), real_init(self, *x, **k))[1])
+    monkeypatch.setattr(ScanTab, "_build", lambda self: (_ for _ in ()).throw(RuntimeError("cannot build\nmore")))
+    assert w.open_series(b) is False
+    assert seen == ["RuntimeError: cannot build"]
+    assert w.series == a.resolve() and w.windowTitle() == title
+    assert [w.tabs.widget(i) for i in range(w.tabs.count())] == old_tabs and w.monitor is old_tabs[0]
+    recent = yaml.safe_load(config.machine_file().read_text(encoding="utf-8"))["gui"]["recent_series"]
+    assert recent == [str(a.resolve())]
+    assert len(made) == 1 and not made[0].timer.isActive()
+    assert old_tabs[0].timer.isActive()
