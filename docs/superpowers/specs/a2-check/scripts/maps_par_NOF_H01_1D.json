@@ -1,0 +1,51 @@
+{
+ "serial": {
+  "seconds": 158.3,
+  "map_workers": 1,
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.86,
+   "min_pnr": 12.5,
+   "method": "mirror_fdr"
+  },
+  "npz": "C:\\Users\\User\\AppData\\Local\\Temp\\claude\\3fb66d12025b3383\\8c6833f1-37e2-4703-88da-d2e058320a8f\\scratchpad\\t8\\maps_serial\\_bearmind\\thresholds\\NOF_H01_1D_maps.npz"
+ },
+ "parallel": {
+  "seconds": 68.8,
+  "map_workers": 5,
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.86,
+   "min_pnr": 12.5,
+   "method": "mirror_fdr"
+  },
+  "npz": "C:\\Users\\User\\AppData\\Local\\Temp\\claude\\3fb66d12025b3383\\8c6833f1-37e2-4703-88da-d2e058320a8f\\scratchpad\\t8\\maps_parallel\\_bearmind\\thresholds\\NOF_H01_1D_maps.npz"
+ },
+ "arrays": [
+  "cn_3",
+  "cn_4",
+  "cn_5",
+  "cn_6",
+  "cn_7",
+  "cn_mirror_3",
+  "cn_mirror_4",
+  "cn_mirror_5",
+  "cn_mirror_6",
+  "cn_mirror_7",
+  "gsig",
+  "max",
+  "mean",
+  "pnr_3",
+  "pnr_4",
+  "pnr_5",
+  "pnr_6",
+  "pnr_7",
+  "pnr_mirror_3",
+  "pnr_mirror_4",
+  "pnr_mirror_5",
+  "pnr_mirror_6",
+  "pnr_mirror_7"
+ ],
+ "all_arrays_equal": true,
+ "suggested_equal": true
+}

@@ -1,0 +1,37 @@
+{
+ "RFC_F01_1D": {
+  "table": "H:\\Dataset\\CalciumData\\RFC\\4_Estimates_inspections\\inspection_artifacts_RFC_F01_1D\\RFC_F01_1D_metrics_with_decisions.csv",
+  "n_rows": 156,
+  "n_kept": 110,
+  "kept_outside_box": []
+ },
+ "RFC_F01_3D": {
+  "table": "H:\\Dataset\\CalciumData\\RFC\\4_Estimates_inspections\\inspection_artifacts_RFC_F01_3D\\RFC_F01_3D_metrics_with_decisions.csv",
+  "n_rows": 148,
+  "n_kept": 70,
+  "kept_outside_box": []
+ },
+ "RFC_F20_1D": {
+  "table": "H:\\Dataset\\CalciumData\\RFC\\4_Estimates_inspections\\inspection_artifacts_RFC_F20_1D\\RFC_F20_1D_metrics_with_decisions.csv",
+  "n_rows": 392,
+  "n_kept": 254,
+  "kept_outside_box": [
+   {
+    "idx": "569",
+    "y": 565.1,
+    "x": 166.9,
+    "decision": "ok",
+    "ml_p": "0.9373335057026214",
+    "snr": "4.710840945768293",
+    "in_lit_mask": false,
+    "mean_at": 13.7
+   }
+  ]
+ },
+ "RFC_F20_3D": {
+  "table": "H:\\Dataset\\CalciumData\\RFC\\4_Estimates_inspections\\inspection_artifacts_RFC_F20_3D\\RFC_F20_3D_metrics_with_decisions.csv",
+  "n_rows": 380,
+  "n_kept": 204,
+  "kept_outside_box": []
+ }
+}
