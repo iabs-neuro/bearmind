@@ -110,6 +110,7 @@ preview:
 # export from series_short, whose fixed costs dominate, so they overestimate long sessions). No number for gate:
 # it is a person's decision.
 monitor:
+  refresh_ms: 2000
   heartbeat_dead_s: 120
   eta_s_per_frame:
     crop: 0.0001

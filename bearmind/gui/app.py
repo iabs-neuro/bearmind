@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
                                QVBoxLayout, QWidget)
 
 from bearmind import config
+from bearmind.gui.monitor_tab import MonitorTab
 
 TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
 _PHASE = {"Scan": 3, "Thresholds": 4, "Inspection": 5}
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         for name in TAB_NAMES:
-            # the Monitor tab is a placeholder until its own module replaces it
+            # the Monitor tab is built when a series is opened
             self.tabs.addTab(_placeholder(name) if name in _PHASE else QWidget(), name)
         self._build_menus()
         if series is not None:
@@ -85,29 +86,52 @@ class MainWindow(QMainWindow):
         # update_yaml deep-merges, and a list is replaced as a whole, so the new order is stored verbatim
         config.update_yaml(config.machine_file(), {"gui": {"recent_series": recent[:MAX_RECENT]}})
         self._fill_recent()
+        self._set_monitor(MonitorTab(self.series))
         return True
+
+    def _set_monitor(self, tab: MonitorTab) -> None:
+        old = self.tabs.widget(0)
+        if isinstance(old, MonitorTab):
+            old.timer.stop()
+        self.tabs.removeTab(0)
+        old.deleteLater()
+        self.tabs.insertTab(0, tab, TAB_NAMES[0])
+        self.tabs.setCurrentIndex(0)
+        self.monitor = tab
+        tab.open_tab.connect(self.show_tab)
+        tab.status_message.connect(self.statusBar().showMessage)
 
     def show_tab(self, name: str) -> None:
         self.tabs.setCurrentIndex(TAB_NAMES.index(name))
 
     def report_exception(self, exc_type, exc, tb) -> None:
         """Slot exceptions must not close the window: log the traceback, show the first line."""
-        text = "".join(traceback.format_exception(exc_type, exc, tb))
-        try:
-            log = config.machine_file().parent / "gui.log"
-            log.parent.mkdir(parents=True, exist_ok=True)
-            with open(log, "a", encoding="utf-8") as f:
-                f.write(f"{datetime.now().isoformat(timespec='seconds')}\n{text}\n")
-        except OSError:
-            pass
-        first = (str(exc).splitlines() or [""])[0]
-        self._message("BEARMiND error", f"{exc_type.__name__}: {first}")
+        _report(self._message, exc_type, exc, tb)
+
+
+def _report(message, exc_type, exc, tb) -> None:
+    text = "".join(traceback.format_exception(exc_type, exc, tb))
+    try:
+        log = config.machine_file().parent / "gui.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')}\n{text}\n")
+    except OSError:
+        pass
+    first = (str(exc).splitlines() or [""])[0]
+    message("BEARMiND error", f"{exc_type.__name__}: {first}")
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    window = MainWindow(Path(argv[0]) if argv else None)
+    # before the window exists: under pythonw an exception in the constructor would otherwise vanish
+    sys.excepthook = lambda t, e, tb: _report(_default_message, t, e, tb)
+    try:
+        window = MainWindow(Path(argv[0]) if argv else None)
+    except Exception:
+        sys.excepthook(*sys.exc_info())
+        return 1
     sys.excepthook = window.report_exception
     window.show()
     return app.exec()

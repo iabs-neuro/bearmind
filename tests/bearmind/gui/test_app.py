@@ -65,3 +65,33 @@ def test_excepthook_logs_and_keeps_window(qapp, tmp_series):
 def test_cli_gui_help():
     r = subprocess.run([sys.executable, "-m", "bearmind", "gui", "--help"], cwd=REPO, capture_output=True, text=True)
     assert r.returncode == 0 and "SERIES" in r.stdout
+
+
+def test_open_series_builds_monitor_tab_and_routes_signals(qapp, tmp_series):
+    from bearmind.gui.monitor_tab import MonitorTab
+
+    w = MainWindow(tmp_series)
+    tab = w.tabs.widget(0)
+    assert isinstance(tab, MonitorTab) and w.tabs.tabText(0) == "Monitor"
+    tab.open_tab.emit("Inspection")
+    assert w.tabs.currentIndex() == 3
+    tab.status_message.emit("hello")
+    assert w.statusBar().currentMessage() == "hello"
+    w.open_series(tmp_series)  # a second open replaces the tab and stops the old timer
+    assert w.tabs.widget(0) is not tab and w.tabs.count() == 4 and not tab.timer.isActive()
+
+
+def test_main_reports_constructor_failure(qapp, monkeypatch):
+    from bearmind.gui import app
+
+    seen = []
+
+    def boom(*a, **k):
+        raise RuntimeError("cannot build\nsecond")
+
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)  # restored after the test
+    monkeypatch.setattr(app, "MainWindow", boom)
+    monkeypatch.setattr(app, "_default_message", lambda title, text: seen.append(text))
+    assert app.main([]) == 1
+    assert seen == ["RuntimeError: cannot build"]
+    assert "cannot build" in (config.machine_file().parent / "gui.log").read_text(encoding="utf-8")
