@@ -29,6 +29,16 @@ def _placeholder(name: str) -> QWidget:
     return page
 
 
+def _hint() -> QWidget:
+    page = QWidget()
+    lay = QVBoxLayout(page)
+    lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label = QLabel("Open a series: Series > Open series...")
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    lay.addWidget(label)
+    return page
+
+
 def _default_message(title: str, text: str) -> None:
     QMessageBox.warning(None, title, text)
 
@@ -44,7 +54,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
         for name in TAB_NAMES:
             # the Monitor tab is built when a series is opened
-            self.tabs.addTab(_placeholder(name) if name in _PHASE else QWidget(), name)
+            self.tabs.addTab(_placeholder(name) if name in _PHASE else _hint(), name)
         self._build_menus()
         if series is not None:
             self.open_series(series)
@@ -55,7 +65,7 @@ class MainWindow(QMainWindow):
         open_action.triggered.connect(self._choose_series)
         self.series_menu.addAction(open_action)
         self.recent_menu = self.series_menu.addMenu("Recent")
-        self.actions_menu = self.menuBar().addMenu("Actions")  # filled by the Monitor tab
+        self.actions_menu = self.menuBar().addMenu("Actions")  # filled when a series is opened
         self._fill_recent()
 
     def _choose_series(self) -> None:
@@ -98,6 +108,8 @@ class MainWindow(QMainWindow):
         self.tabs.insertTab(0, tab, TAB_NAMES[0])
         self.tabs.setCurrentIndex(0)
         self.monitor = tab
+        self.actions_menu.clear()
+        self.actions_menu.addActions(tab.menu_actions)
         tab.open_tab.connect(self.show_tab)
         tab.status_message.connect(self.statusBar().showMessage)
 

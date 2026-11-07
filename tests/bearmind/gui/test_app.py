@@ -95,3 +95,11 @@ def test_main_reports_constructor_failure(qapp, monkeypatch):
     assert app.main([]) == 1
     assert seen == ["RuntimeError: cannot build"]
     assert "cannot build" in (config.machine_file().parent / "gui.log").read_text(encoding="utf-8")
+
+
+def test_monitor_tab_hint_before_any_series(qapp):
+    from PySide6.QtWidgets import QLabel
+
+    w = MainWindow()
+    texts = [lab.text() for lab in w.tabs.widget(0).findChildren(QLabel)]
+    assert texts == ["Open a series: Series > Open series..."]
