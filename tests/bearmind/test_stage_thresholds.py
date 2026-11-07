@@ -138,3 +138,46 @@ def test_thresholds_fail_at_once_without_temp_space(tmp_path, monkeypatch):
     T, h, w = 200, *VideoArray(paths.mc_video(SID)).shape[1:]
     _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), round(T * h * w / 1e9, 1))
     assert not (tmp_path / "tmp").exists()
+
+
+def test_map_peak_follows_compute_init_maps_strips():
+    assert thresholds.map_peak_gb(17861, 461, 608, 7, 1, 19.12) == pytest.approx(19.12, rel=0.02)
+    assert thresholds.map_peak_gb(107107, 567, 520, 7, 1, 19.12) == pytest.approx(50.8, abs=0.2)
+    assert thresholds.map_peak_gb(100, 20, 30, 7, 1, 19.12) == pytest.approx(24 * 100 * 30 * 20 / 1e9)
+
+
+def test_map_workers():
+    cfg = {"machine": {"n_cpus": 32, "ram_gb": 191.2, "cnmf_ram_budget_gb": 152.96}}
+    g = [3, 4, 5, 6, 7]
+    assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 5
+    assert thresholds.map_workers(107107, 567, 520, g, 1, cfg) == 3
+    cfg["machine"]["n_cpus"] = 2
+    assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 1
+    cfg["machine"].update(n_cpus=32, cnmf_ram_budget_gb=30)
+    assert thresholds.map_workers(107107, 567, 520, g, 1, cfg) == 1
+
+
+@pytest.mark.slow
+def test_parallel_maps_equal_serial(tmp_path):
+    mov, _ = synthetic_movie(T=300)
+    frames = np.clip(np.round(mov), 0, 255).astype(np.uint8)
+    rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[], n_frames=300, fps=20.0,
+                        fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
+    res, outs = [], []
+    for name, machine in (("serial", {"n_cpus": 2}), ("parallel", {"n_cpus": 8, "cnmf_ram_budget_gb": 64})):
+        paths = SeriesPaths(tmp_path / name)
+        mc = paths.mc_video(SID)
+        mc.parent.mkdir(parents=True)
+        write_ffv1([frames], mc, 20.0)
+        cfg = config.load_defaults()
+        cfg["machine"] = {"temp_dir": str(tmp_path / f"tmp_{name}"), "ram_gb": 16, **machine}
+        cfg["thresholds"]["gsig_range"] = [3, 4, 5]
+        res.append(thresholds.run(paths, rec, cfg))
+        outs.append(paths.threshold_maps(SID))
+    res1, res2 = res
+    assert res2.metrics["map_workers"] == 3 and res1.metrics["map_workers"] == 1
+    d1, d2 = np.load(outs[0]), np.load(outs[1])
+    assert sorted(d1.files) == sorted(d2.files)
+    for k in d1.files:
+        assert np.array_equal(d1[k], d2[k]), k
+    assert res1.metrics["suggested"] == res2.metrics["suggested"]

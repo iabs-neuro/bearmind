@@ -1,5 +1,6 @@
 """Threshold maps: CNMF-E correlation / PNR images per candidate gSig for the threshold GUI."""
 import gc
+import math
 import os
 import shutil
 import time
@@ -8,6 +9,7 @@ import traceback
 import numpy as np
 
 import bm_qc
+from bearmind import pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, require_temp_space
 from bearmind.stages.cnmf import mem_budget_gb
@@ -32,6 +34,41 @@ def _projections(movie):
     return (total / T).astype(np.float32), mx
 
 
+def map_peak_gb(T: int, h: int, w: int, g: int, tsub: int, mem_gb: float) -> float:
+    """Peak RAM of one compute_init_maps call.
+
+    It keeps about 6 float32 copies of a strip (ceil(T / tsub) frames x w columns x rows). The strip has
+    mem_gb worth of rows but never fewer than 4 * g + 10 (the filter margin), so on long movies the peak
+    exceeds mem_gb.
+    """
+    t_ds = math.ceil(T / tsub)
+    budget_rows = mem_gb * 1e9 / (24 * t_ds * w)
+    rows = min(h, max(budget_rows, 4 * g + 10))
+    return 24 * t_ds * w * rows / 1e9
+
+
+def map_workers(T: int, h: int, w: int, gsigs: list, tsub: int, cfg) -> int:
+    """Processes for the gSig maps: one per gSig, within the CPUs and the machine RAM budget."""
+    cap = min(len(gsigs), int(cfg["machine"]["n_cpus"]) - 1)
+    if cap <= 1:
+        return 1
+    mem_gb = mem_budget_gb(cfg)
+    peak = max(map_peak_gb(T, h, w, g, tsub, mem_gb) for g in gsigs)
+    by_ram = math.floor(float(cfg["machine"]["cnmf_ram_budget_gb"]) / peak)
+    return int(max(1, min(cap, by_ram)))
+
+
+def _maps_job(args):
+    """Pool worker: the maps of one gSig from the shared uint8 memmap (opened read-only here)."""
+    u8_path, shape, g, tsub, mem_gb = args
+    movie = np.memmap(u8_path, dtype=np.uint8, mode="r", shape=tuple(shape))
+    try:
+        return g, bm_qc.compute_init_maps(movie, gSig=g, tsub=tsub, mirror=True, max_mem_gb=mem_gb,
+                                          verbose=False)
+    finally:
+        del movie
+
+
 def _suggest(maps, g):
     """Returns the suggestion dict; raises ValueError when no method gives finite values."""
     sug, _ = bm_qc.suggest_init_thresholds(maps, gSiz=4 * g + 1)
@@ -43,6 +80,38 @@ def _suggest(maps, g):
         if np.isfinite(c) and np.isfinite(p):
             return {"gSig": int(g), "min_corr": c, "min_pnr": p, "method": method}
     raise ValueError("no suggestion method gave finite min_corr / min_pnr")
+
+
+def _collect(results, arrays, g_sug):
+    """Store each (g, maps) as it arrives; returns the maps of g_sug."""
+    sug_maps = None
+    for g, maps in results:
+        arrays[f"cn_{g}"] = np.asarray(maps["cn"], np.float32)
+        arrays[f"pnr_{g}"] = np.asarray(maps["pnr"], np.float32)
+        if "cn_neg" in maps:
+            arrays[f"cn_mirror_{g}"] = np.asarray(maps["cn_neg"], np.float32)
+            arrays[f"pnr_mirror_{g}"] = np.asarray(maps["pnr_neg"], np.float32)
+        if g == g_sug:
+            sug_maps = maps
+    return sug_maps
+
+
+def _parallel_maps(u8_path, shape, gsigs, tsub, mem_gb, n_workers):
+    """Maps of all gSig in a watched CaImAn pool, in the order of gsigs."""
+    saved = os.environ.get("OPENBLAS_NUM_THREADS")
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"  # workers inherit it: one BLAS thread each, as in cnmf.run
+    dview = None
+    try:
+        dview = pool.start_pool(n_workers)
+        jobs = [(str(u8_path), tuple(shape), g, tsub, mem_gb) for g in gsigs]
+        return dview.map(_maps_job, jobs)
+    finally:
+        if dview is not None:
+            pool.stop_pool(dview)
+        if saved is None:
+            os.environ.pop("OPENBLAS_NUM_THREADS", None)
+        else:
+            os.environ["OPENBLAS_NUM_THREADS"] = saved
 
 
 def run(paths, rec, cfg) -> StageResult:
@@ -64,16 +133,14 @@ def run(paths, rec, cfg) -> StageResult:
         arrays = {"gsig": np.array(gsigs, dtype=int)}
         arrays["mean"], arrays["max"] = _projections(movie)
         sug_maps = None
-        for g in gsigs:
-            maps = bm_qc.compute_init_maps(movie, gSig=g, tsub=tsub, mirror=True, max_mem_gb=mem_gb,
-                                           verbose=False)
-            arrays[f"cn_{g}"] = np.asarray(maps["cn"], np.float32)
-            arrays[f"pnr_{g}"] = np.asarray(maps["pnr"], np.float32)
-            if "cn_neg" in maps:
-                arrays[f"cn_mirror_{g}"] = np.asarray(maps["cn_neg"], np.float32)
-                arrays[f"pnr_mirror_{g}"] = np.asarray(maps["pnr_neg"], np.float32)
-            if g == g_sug:
-                sug_maps = maps
+        n_workers = map_workers(n_frames, h, w, gsigs, tsub, cfg)
+        if n_workers == 1:
+            results = ((g, bm_qc.compute_init_maps(movie, gSig=g, tsub=tsub, mirror=True, max_mem_gb=mem_gb,
+                                                   verbose=False)) for g in gsigs)
+            sug_maps = _collect(results, arrays, g_sug)
+        else:
+            sug_maps = _collect(_parallel_maps(u8_path, movie.shape, gsigs, tsub, mem_gb, n_workers),
+                                arrays, g_sug)
     except BaseException as e:
         traceback.clear_frames(e.__traceback__)  # traceback frames would keep the memmap (and its file) open
         raise
@@ -108,4 +175,5 @@ def run(paths, rec, cfg) -> StageResult:
     except Exception as e:
         anomalies.append(Anomaly("no_threshold_suggestion", "warning", str(e) or type(e).__name__))
     return StageResult(outputs={"threshold_maps": paths.rel(out)}, anomalies=anomalies,
-                       metrics={"suggested": suggested, "gsig_range": gsigs, "n_frames": n_frames})
+                       metrics={"suggested": suggested, "gsig_range": gsigs, "n_frames": n_frames,
+                                    "map_workers": n_workers})
