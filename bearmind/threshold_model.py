@@ -27,6 +27,11 @@ class ThresholdMaps:
     cn_mirror: dict[int, np.ndarray]      # empty when the file has no mirrored maps
     pnr_mirror: dict[int, np.ndarray]
 
+    @property
+    def usable_gsigs(self) -> list[int]:
+        """The gSigs that can be shown and chosen: both maps present (a damaged file may list more)."""
+        return [g for g in self.gsigs if g in self.cn and g in self.pnr]
+
 
 @dataclass
 class Counters:
@@ -70,7 +75,8 @@ def _group_sizes(mask: np.ndarray) -> np.ndarray:
 
 
 def _known(maps: ThresholdMaps, g: int) -> int:
-    return g if g in maps.cn and g in maps.pnr else config.fallback_gsig(maps.gsigs)
+    usable = maps.usable_gsigs
+    return g if g in usable else config.fallback_gsig(usable)
 
 
 def counters(maps: ThresholdMaps, g: int, min_corr: float, min_pnr: float, min_blob_px: int) -> Counters:
@@ -107,7 +113,7 @@ def gsig_thumbnail(maps: ThresholdMaps, g: int, size: int = 160) -> np.ndarray:
     return display_u8(prod)
 
 
-def _last_line(text: str) -> str:
+def last_line(text: str) -> str:
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     return lines[-1] if lines else ""
 
@@ -133,7 +139,7 @@ def _item(paths, rec) -> ThresholdItem:
     elif not paths.threshold_maps(rec.sid).is_file():
         state = "no_maps"
         if th is not None and th.state is State.FAILED:
-            reason = _last_line(th.error) or "failed"
+            reason = last_line(th.error) or "failed"
         elif th is not None and th.state is State.DONE:
             reason = "maps file not found"
         else:
@@ -157,13 +163,14 @@ def threshold_items(paths) -> list[ThresholdItem]:
 
 
 def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str]:
-    # a stored or suggested gSig outside the maps (range changed since) cannot be shown: the fallback gSig
-    # takes its place, the thresholds stay; source_text says so
-    fb_g = config.fallback_gsig(maps.gsigs)
+    # a stored or suggested gSig without its maps (range changed since, or a damaged file) cannot be shown: the
+    # fallback among the usable gSigs takes its place, the thresholds stay; missing_gsig_note says so
+    usable = maps.usable_gsigs
+    fb_g = config.fallback_gsig(usable)
     for src, v in (("chosen", item.chosen), ("suggested", item.suggested)):
         if v:
             g = int(v["gSig"])
-            return (g if g in maps.gsigs else fb_g), float(v["min_corr"]), float(v["min_pnr"]), src
+            return (g if g in usable else fb_g), float(v["min_corr"]), float(v["min_pnr"]), src
     fb = cfg["thresholds"]["fallback"]
     return fb_g, float(fb["min_corr"]), float(fb["min_pnr"]), "fallback"
 
@@ -171,9 +178,17 @@ def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple
 def missing_gsig_note(item: ThresholdItem, maps: ThresholdMaps, source: str) -> str:
     """Text for the window when the stored/suggested gSig has no map, else an empty string."""
     v = item.chosen if source == "chosen" else item.suggested if source == "suggested" else None
-    if v and int(v["gSig"]) not in maps.gsigs:
-        return f"gSig {int(v['gSig'])} has no map; showing {config.fallback_gsig(maps.gsigs)}"
+    usable = maps.usable_gsigs
+    if v and int(v["gSig"]) not in usable:
+        return f"gSig {int(v['gSig'])} has no map; showing {config.fallback_gsig(usable)}"
     return ""
+
+
+def start_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str, str]:
+    """(gSig, min_corr, min_pnr, source, note): initial_values on the usable gSigs, and the note when the stored
+    or suggested gSig had to be swapped. The window's start and its Reset both take their values from here."""
+    g, min_corr, min_pnr, source = initial_values(item, maps, cfg)
+    return g, min_corr, min_pnr, source, missing_gsig_note(item, maps, source)
 
 
 def source_text(source: str, item: ThresholdItem) -> str:

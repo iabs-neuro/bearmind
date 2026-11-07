@@ -17,7 +17,8 @@ def _blob(shape, cy, cx, s=2.0):
     return np.exp(-((y - cy) ** 2 + (x - cx) ** 2) / (2 * s ** 2))
 
 
-def _maps(mirror=False, single=True, g=4):
+def _maps(mirror=False, single=True, g=4, gsigs=None):
+    """Maps of gSig g; `gsigs` lists more gSigs, each with the same maps."""
     shape = (60, 60)
     cn = 0.1 * np.random.default_rng(0).random(shape)
     cn = cn + _blob(shape, 15, 15) + _blob(shape, 40, 40)
@@ -31,7 +32,8 @@ def _maps(mirror=False, single=True, g=4):
         pnrm = 5 * np.ones(shape)
         cnm[10:13, 10:13], pnrm[10:13, 10:13] = 0.9, 15.0
         cn_m, pnr_m = {g: cnm}, {g: pnrm}
-    return tm.ThresholdMaps([g], cn, pnr, {g: cn}, {g: pnr}, cn_m, pnr_m)
+    gs = list(gsigs or [g])
+    return tm.ThresholdMaps(gs, cn, pnr, {k: cn for k in gs}, {k: pnr for k in gs}, cn_m, pnr_m)
 
 
 def test_passing_mask():
@@ -144,8 +146,7 @@ CFG = {"thresholds": {"fallback": {"min_corr": 0.85, "min_pnr": 8}}}
 
 
 def test_initial_values_order():
-    m = _maps()
-    m.gsigs = [3, 4, 5]
+    m = _maps(gsigs=[3, 4, 5])
     sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
     ch = {"gSig": 5, "min_corr": 0.7, "min_pnr": 6.0}
     assert tm.initial_values(_item(sug, ch), m, CFG) == (5, 0.7, 6.0, "chosen")
@@ -154,11 +155,8 @@ def test_initial_values_order():
 
 
 def test_initial_values_without_suggestion():
-    m = _maps()
-    m.gsigs = [3, 4, 5, 6, 7]
-    assert tm.initial_values(_item(), m, CFG) == (4, 0.85, 8.0, "fallback")
-    m.gsigs = [5, 6, 7]
-    assert tm.initial_values(_item(), m, CFG)[0] == 6
+    assert tm.initial_values(_item(), _maps(gsigs=[3, 4, 5, 6, 7]), CFG) == (4, 0.85, 8.0, "fallback")
+    assert tm.initial_values(_item(), _maps(gsigs=[5, 6, 7]), CFG)[0] == 6
 
 
 def test_source_texts_english():
@@ -253,3 +251,24 @@ def test_gsig_without_map_falls_back():
 
 def test_fallback_gsig_rule_shared():
     assert config.fallback_gsig([3, 4, 5, 6, 7]) == 4 and config.fallback_gsig([5, 6, 7]) == 6
+
+
+def test_usable_gsigs_and_start_values():
+    """A gSig listed in the file without both maps cannot be shown or chosen: the shared fallback among the usable
+    gSigs takes its place, and the note says so."""
+    m = _maps(gsigs=[3, 4, 5])
+    del m.cn[4], m.pnr[4]
+    assert m.gsigs == [3, 4, 5] and m.usable_gsigs == [3, 5]
+    sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
+    assert tm.initial_values(_item(sug), m, CFG) == (5, 0.85, 8.0, "suggested")
+    assert tm.start_values(_item(sug), m, CFG) == (5, 0.85, 8.0, "suggested", "gSig 4 has no map; showing 5")
+    assert tm.start_values(_item(), m, CFG) == (5, 0.85, 8.0, "fallback", "")
+    assert tm.counters(m, 4, 0.8, 8.0, 2).n_blobs == 2  # counted on the fallback, not a KeyError
+    assert tm.slider_range_pnr(m, 4) >= 30.0 and tm.gsig_thumbnail(m, 4, 30).shape == (30, 30)
+    ch = {"gSig": 9, "min_corr": 0.7, "min_pnr": 6.0}
+    assert tm.start_values(_item(sug, ch), m, CFG) == (5, 0.7, 6.0, "chosen", "gSig 9 has no map; showing 5")
+
+
+def test_last_line_public():
+    assert tm.last_line("Traceback\n  File x\nMemoryError: y\n\n") == "MemoryError: y"
+    assert tm.last_line("") == "" and tm.last_line(None) == ""

@@ -28,6 +28,8 @@ log = logging.getLogger("bearmind")
 
 CNMF_DONE_ASK = ("CNMF-E of {sid} is already done. With the new thresholds it will be recomputed, and manual "
                  "inspection will be needed again. Write?")
+CNMF_RUNNING_ASK = ("CNMF-E of {sid} is running with the old thresholds. It will run again with the new ones, and "
+                    "manual inspection will be needed again. Write?")
 ALL_HAVE = "All sessions have thresholds."
 NO_SESSIONS = "No sessions in this series yet. Scan the series in the Scan tab."
 CORR_STEPS = 100  # slider units per 1.0: min_corr moves in steps of 0.01
@@ -42,7 +44,9 @@ WARN_BUTTON = ("QPushButton { background: #fff3b0; color: #6d5300; border: 1px s
 THUMB_STYLE = (f"QToolButton {{ border: 2px solid transparent; border-radius: 6px; padding: 2px; }}"
                f"QToolButton:checked {{ border-color: {ACCENT}; background: #dde5f8; }}")
 ACCEPT_TIP = "Write these thresholds to the session and show the next session that waits"
-ACCEPT_MOUSE_TIP = "Write these thresholds to every session of this mouse that has no thresholds yet"
+ACCEPT_MOUSE_TIP = ("Write these thresholds to every session of this mouse that has no thresholds yet and is not "
+                    "excluded")
+EXCLUDED_NOTE = "The session is excluded: the batch does not process it."
 
 
 def _section(text: str) -> QLabel:
@@ -512,26 +516,39 @@ class ThresholdsTab(QWidget):
         if item.state == "no_maps":
             return None, f"No maps: {item.reason}" if item.reason else "No maps"
         th = rec.stages.get("thresholds") if rec is not None else None
+        path = self.paths.threshold_maps(item.sid)
         # the stage leaves the old file until it replaces it: maps of another crop or MC must not be chosen from
-        if th is not None and th.state is State.RUNNING:
-            return None, "The maps are being recomputed by the batch."
-        if th is not None and th.state is State.FAILED:
-            last = ([ln.strip() for ln in (th.error or "").splitlines() if ln.strip()] or ["no error text"])[-1]
-            return None, f"The maps are out of date: the thresholds stage failed: {last}"
-        if th is not None and th.state is not State.DONE:
-            return None, f"The maps are out of date: the batch will recompute them (thresholds {th.state.value})."
+        stale = th is not None and th.state is not State.DONE
+        if item.state == "excluded" and (stale or not path.is_file()):
+            # the batch skips an excluded session: nothing will recompute its maps, or make them
+            if not path.is_file():
+                return None, f"No maps. {EXCLUDED_NOTE}"
+            return None, "The maps are out of date, and the session is excluded: the batch does not process it."
+        if stale:
+            error = tm.last_line(th.error).rstrip(".")
+            if th.state is State.RUNNING:
+                return None, "The maps are being recomputed by the batch."
+            if th.state is State.PENDING:
+                return None, "The maps are out of date: the batch will recompute them."
+            if th.state is State.FAILED:
+                return None, (f"The maps are out of date: the thresholds stage failed: {error or 'no error text'}. "
+                              "Retry it in Monitor.")
+            if th.state is State.SKIPPED:  # "skipped: mc failed": an earlier stage must be retried first
+                return None, f"The maps are out of date ({error or 'skipped'}). Retry the failed stage in Monitor."
+            return None, f"The maps are out of date (thresholds stage {th.state.value})."
         try:
-            maps = tm.load_maps(self.paths.threshold_maps(item.sid))
+            maps = tm.load_maps(path)
         except Exception as e:  # any broken file (zip, pickle, missing key) is shown as the reason
             first = (str(e).splitlines() or [""])[0]
             return None, f"Maps cannot be read: {type(e).__name__}: {first}"
-        if not self._usable(maps):
+        if not maps.usable_gsigs:
             return None, "Maps cannot be read: the file holds no correlation and PNR map pair."
         return maps, ""
 
-    @staticmethod
-    def _usable(maps: tm.ThresholdMaps) -> list[int]:
-        return [g for g in maps.gsigs if g in maps.cn and g in maps.pnr]
+    def _start_values(self, item: tm.ThresholdItem, cfg: dict, use_choice: bool = True):
+        """(gSig, min_corr, min_pnr, source, note), one rule for the session start and for Reset: a gSig without
+        its maps is swapped for a usable one, and the note says so."""
+        return tm.start_values(item if use_choice else replace(item, chosen=None), self._maps, cfg)
 
     def _load_maps(self, keep: bool, rec=None) -> None:
         item = self._by_sid[self._sid]
@@ -547,14 +564,11 @@ class ThresholdsTab(QWidget):
             self._show_no_maps()
             self._update_buttons()
             return
-        g, c, p, source = tm.initial_values(item, self._maps, cfg)
-        usable = self._usable(self._maps)
-        if g not in usable:  # listed in the file without its maps: the shared fallback among those that exist
-            g = config.fallback_gsig(usable)
-        if old is not None and old[0] in usable:
+        g, c, p, source, note = self._start_values(item, cfg)
+        if old is not None and old[0] in self._maps.usable_gsigs:
             g, c, p = old  # the person's values stay when the batch replaced the maps under them
         else:
-            self._source, self._note = source, tm.missing_gsig_note(item, self._maps, source)
+            self._source, self._note = source, note
         self._build_strip()
         self._apply(g, c, p)
         self._show_source()
@@ -589,7 +603,7 @@ class ThresholdsTab(QWidget):
 
     def _build_strip(self) -> None:
         self._clear_strip()
-        for g in self._usable(self._maps):
+        for g in self._maps.usable_gsigs:
             u8 = np.ascontiguousarray(tm.gsig_thumbnail(self._maps, g))
             h, w = u8.shape
             pix = QPixmap.fromImage(QImage(u8.data, w, h, w, QImage.Format.Format_Grayscale8).copy()).scaled(
@@ -633,12 +647,16 @@ class ThresholdsTab(QWidget):
         spin.blockSignals(False)
 
     def _select_gsig(self, g: int, keep_pnr: float) -> None:
-        self._g = g
-        self._base = {"corr": _grey_rgb(self._maps.cn[g]), "pnr": _grey_rgb(self._maps.pnr[g])}
+        # every lookup before any change: a gSig without its maps raises here and leaves the screen and current()
+        # as they were
+        base = {"corr": _grey_rgb(self._maps.cn[g]), "pnr": _grey_rgb(self._maps.pnr[g])}
         # the PNR range depends on gSig; a value above it widens the range rather than being cut to it, so the
         # slider never shows another value than the one that will be written
-        self._set_pnr_top(max(tm.slider_range_pnr(self._maps, g), keep_pnr))
-        self.gsig_buttons[g].setChecked(True)
+        top = max(tm.slider_range_pnr(self._maps, g), keep_pnr)
+        button = self.gsig_buttons[g]
+        self._g, self._base = g, base
+        self._set_pnr_top(top)
+        button.setChecked(True)
         self.maps_title.setText(f"Correlation and PNR, gSig {g}")
 
     def _apply(self, g: int, min_corr: float, min_pnr: float) -> None:
@@ -739,26 +757,45 @@ class ThresholdsTab(QWidget):
         item = self._by_sid.get(self._sid)
         if item is None or self._maps is None or not item.suggested:
             return
-        bare = replace(item, chosen=None)  # initial_values prefers a choice; the suggestion is asked for here
-        g, c, p, self._source = tm.initial_values(bare, self._maps, self._session_cfg(item))
-        self._note = tm.missing_gsig_note(bare, self._maps, self._source)
+        g, c, p, source, note = self._start_values(item, self._session_cfg(item), use_choice=False)
         self._apply(g, c, p)
+        self._source, self._note = source, note
         self._show_source()
 
     def _gone(self, names) -> None:
         self._message("BEARMiND", f"Not in the series any more: {', '.join(names)}")
         self.refresh()
 
-    def _same_as_config(self, item, g: int, c: float, p: float) -> bool:
-        cnmf = self._session_cfg(item).get("cnmf") or {}
-        return cnmf.get("gSig") == g and cnmf.get("min_corr") == c and cnmf.get("min_pnr") == p
+    def _run_values(self, cnmf, item) -> tuple:
+        """(gSig, min_corr, min_pnr) the CNMF-E run used or uses: its recorded parameters, else the config."""
+        prm = cnmf.params or {}
+        if all(prm.get(k) is not None for k in ("gSig", "min_corr", "min_pnr")):
+            g = prm["gSig"]
+            g = g[0] if isinstance(g, (list, tuple)) else g  # cnmf_params stores gSig as (g, g)
+            return int(g), float(prm["min_corr"]), float(prm["min_pnr"])
+        cfg = self._session_cfg(item).get("cnmf") or {}  # a stage record without parameters (not from the runner)
+        return tuple(cfg.get(k) for k in ("gSig", "min_corr", "min_pnr"))
+
+    def _rerun_question(self, rec, item, g: int, c: float, p: float) -> str:
+        """The question before a write that makes CNMF-E run again ("" when it does not)."""
+        cnmf = rec.stages.get("cnmf")
+        if cnmf is None or cnmf.state not in (State.DONE, State.RUNNING):
+            return ""
+        # the values the run used change nothing it reads (cnmf_params makes them int / float), so CNMF-E does not
+        # run again and the question would be false
+        if self._run_values(cnmf, item) == (g, c, p):
+            return ""
+        return (CNMF_DONE_ASK if cnmf.state is State.DONE else CNMF_RUNNING_ASK).format(sid=rec.sid)
 
     def accept_and_next(self) -> None:
         item = self._by_sid.get(self._sid) if self._sid else None
         if self._refusal(item):
             return
         sid, g, c, p = self.current()
-        rec = self._record(sid)  # fresh: CNMF-E may have finished, or the session been excluded, since the refresh
+        # before any question: its modal loop runs the timer, which may reload or clear the maps meanwhile
+        maps = self._maps
+        counters = tm.counters(maps, g, c, p, self._min_blob_px)
+        rec = self._record(sid)  # fresh: CNMF-E may have started or finished, or the session been excluded
         if rec is None:
             self._gone([sid])
             return
@@ -766,12 +803,9 @@ class ThresholdsTab(QWidget):
             self._message("BEARMiND", WARNING_TEXT["excluded_session"].format(sid=sid))
             self.refresh()
             return
-        cnmf = rec.stages.get("cnmf")
-        # the same values change nothing CNMF-E reads, so it is not recomputed and the question would be false
-        if cnmf is not None and cnmf.state is State.DONE and not self._same_as_config(item, g, c, p):
-            if not self._confirm(CNMF_DONE_ASK.format(sid=sid), yes="Write", no="Cancel"):
-                return
-        counters = tm.counters(self._maps, g, c, p, self._min_blob_px)
+        question = self._rerun_question(rec, item, g, c, p)
+        if question and not self._confirm(question, yes="Write", no="Cancel"):
+            return
         try:
             res = actions.set_thresholds(self.paths, sid, g, c, p, who=actions.current_user(), source="window",
                                          counters=counters)
@@ -787,26 +821,22 @@ class ThresholdsTab(QWidget):
             return
         _, g, c, p = self.current()
         mouse = item.mouse
-        # fresh, by the rule of apply_to_mouse: excluded first, then a session with its own choice is kept
-        mine = [i for i in tm.threshold_items(self.paths) if i.mouse == mouse]
-        if not mine:
+        try:
+            plan = actions.mouse_plan(self.paths, mouse)  # the rule apply_to_mouse writes by
+        except actions.UnknownSession:
             self._gone([mouse])
             return
-        get = [i.sid for i in mine if i.state != "excluded" and i.chosen is None]
-        keep = [i.sid for i in mine if i.state != "excluded" and i.chosen is not None]
-        excluded = [i.sid for i in mine if i.state == "excluded"]
-        if not get:
+        if not plan.will_get:
             self._message("BEARMiND", f"Every session of {mouse} has its own thresholds or is excluded: "
                                       "nothing to write.")
             return
         lines = [f"Thresholds gSig {g}, min_corr {c:.2f}, min_pnr {p:.1f} for the sessions of {mouse}.",
-                 f"Will get these thresholds: {_listed(get)}",
-                 f"Keep their own: {_listed(keep) if keep else 'none'}"]
-        if excluded:
-            lines.append(f"Excluded, left alone: {_listed(excluded)}")
-        redo = [i.sid for i in mine if i.sid in get and i.state == "cnmf_done"]  # done, but the config lost them
-        if redo:
-            lines.append(f"CNMF-E of {_listed(redo)} is already done: it will be recomputed, and manual "
+                 f"Will get these thresholds: {_listed(plan.will_get)}",
+                 f"Keep their own: {_listed(plan.keep_own) if plan.keep_own else 'none'}"]
+        if plan.excluded:
+            lines.append(f"Excluded, left alone: {_listed(plan.excluded)}")
+        if plan.cnmf_done:
+            lines.append(f"CNMF-E of {_listed(plan.cnmf_done)} is already done: it will be recomputed, and manual "
                          "inspection will be needed again.")
         if not self._confirm("\n".join(lines), yes="Write", no="Cancel"):
             return
@@ -816,10 +846,11 @@ class ThresholdsTab(QWidget):
             self._gone([mouse])
             return
         self._after_write(res, warn=False)  # its warnings are the groups the question already named
-        if sorted(res.ok) != sorted(get):  # the registry changed between the question and the write
+        if sorted(res.ok) != sorted(plan.will_get):  # the registry changed between the question and the write
             self._message("BEARMiND", f"The sessions of {mouse} changed after the question. "
                                       f"Written: {_listed(res.ok) if res.ok else 'none'}.")
-        self._next_waiting(f"Thresholds written for {len(res.ok)} of {len(mine)} sessions of {mouse}.")
+        total = len(plan.will_get) + len(plan.keep_own) + len(plan.excluded)
+        self._next_waiting(f"Thresholds written for {len(res.ok)} of {total} sessions of {mouse}.")
 
     def _after_write(self, res: actions.ActionResult, warn: bool = True) -> None:
         if warn and res.warnings:

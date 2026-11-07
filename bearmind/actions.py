@@ -431,22 +431,51 @@ def _has_choice(paths, rec) -> bool:
     return all(c.get(k) is not None for k in ("gSig", "min_corr", "min_pnr"))
 
 
+@dataclass
+class MousePlan:
+    """What apply_to_mouse does to each session of a mouse (sids in order); the window lists it before the write."""
+    will_get: list = field(default_factory=list)
+    keep_own: list = field(default_factory=list)   # has thresholds: never overwritten, its CNMF-E would re-run
+    excluded: list = field(default_factory=list)   # left alone
+    cnmf_done: list = field(default_factory=list)  # in will_get with CNMF-E done (config lost them): it re-runs
+
+
+def _mouse_plan(paths, mouse: str) -> tuple[MousePlan, dict]:
+    recs = _records(paths)
+    mine = {sid: rec for sid, rec in sorted(recs.items()) if rec.mouse == mouse}
+    if not mine:  # a typo or a mouse whose sessions are gone: raises before any write, as an unknown session
+        raise UnknownSession([mouse], {r.mouse for r in recs.values()})
+    plan = MousePlan()
+    for sid, rec in mine.items():
+        # excluded first: the runner ignores an excluded session, so that is its warning even when it has a choice
+        if rec.excluded:
+            plan.excluded.append(sid)
+        elif _has_choice(paths, rec):
+            plan.keep_own.append(sid)
+        else:
+            plan.will_get.append(sid)
+            cnmf = rec.stages.get("cnmf")
+            if cnmf is not None and cnmf.state is State.DONE:
+                plan.cnmf_done.append(sid)
+    return plan, mine
+
+
+def mouse_plan(paths, mouse: str) -> MousePlan:
+    return _mouse_plan(paths, mouse)[0]
+
+
 def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float, who: str) -> ActionResult:
-    """The same thresholds for every session of the mouse that has none. A session with a choice is never
-    overwritten (its CNMF-E would re-run), and an excluded one is left alone: both get a warning."""
+    """The same thresholds for every session of the mouse that has none (mouse_plan). A session with a choice is
+    never overwritten (its CNMF-E would re-run), and an excluded one is left alone: both get a warning."""
     bad = threshold_error(gsig, min_corr, min_pnr)
     if bad:
         raise ValueError(bad)
-    recs = _records(paths)
-    mine = [(sid, rec) for sid, rec in sorted(recs.items()) if rec.mouse == mouse]
-    if not mine:  # a typo or a mouse whose sessions are gone: raises before any write, as an unknown session
-        raise UnknownSession([mouse], {r.mouse for r in recs.values()})
+    plan, mine = _mouse_plan(paths, mouse)
     res = ActionResult()
-    for sid, rec in mine:
-        # excluded first: the runner ignores an excluded session, so that is its warning even when it has a choice
-        if rec.excluded:
+    for sid, rec in mine.items():
+        if sid in plan.excluded:
             res.warnings.append((sid, "excluded_session"))
-        elif _has_choice(paths, rec):
+        elif sid in plan.keep_own:
             res.warnings.append((sid, "already_chosen"))
         else:
             _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse", None)

@@ -8,7 +8,7 @@ import yaml
 
 from bearmind import actions
 from bearmind.threshold_model import Counters
-from bearmind.registry import STAGES, Anomaly, StageRecord, State, load_record, update_record
+from bearmind.registry import STAGES, Anomaly, StageRecord, State, load_record, save_record, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
 
 
@@ -455,6 +455,30 @@ def test_apply_to_mouse_invalid_writes_nothing(series):
     with pytest.raises(ValueError):
         actions.apply_to_mouse(series.paths, load_record(series.paths, S1).mouse, 4, 92.0, 8, "ann")
     assert not series.paths.session_config(S1).exists()
+
+
+def test_mouse_plan_groups(series):
+    """One rule for the window's question and the write: excluded first, then a session with its own choice is
+    kept, the rest get the thresholds; those with CNMF-E done are named, since it will be recomputed."""
+    from tests.bearmind.test_runner import _record
+
+    p = series.paths
+    s4 = "NOF_H01_3D"
+    save_record(p, _record(s4, decided=False, excluded=True))
+    actions.set_thresholds(p, S1, 3, 0.8, 7)
+    _set(p, S2, "cnmf", State.DONE)
+    plan = actions.mouse_plan(p, "NOF_H01")
+    assert (plan.will_get, plan.keep_own, plan.excluded, plan.cnmf_done) == ([S2], [S1], [s4], [S2])
+    res = actions.apply_to_mouse(p, "NOF_H01", 4, 0.85, 8, "ann")
+    assert res.ok == plan.will_get
+    assert res.warnings == [(S1, "already_chosen"), (s4, "excluded_session")]
+    assert actions.mouse_plan(p, "NOF_H01").keep_own == [S1, S2]
+
+
+def test_mouse_plan_unknown_mouse_raises(series):
+    with pytest.raises(actions.UnknownSession) as e:
+        actions.mouse_plan(series.paths, "NOPE_X01")
+    assert e.value.unknown == ["NOPE_X01"]
 
 
 def test_apply_to_mouse_unknown_mouse_raises_before_writes(series):

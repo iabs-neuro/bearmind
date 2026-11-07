@@ -23,6 +23,8 @@ SHAPE = (40, 60)  # not square: the aspect ratio of the shown maps is checkable
 BLOBS = ((10, 12, 10.0), (10, 45, 15.0), (29, 15, 22.0), (29, 45, 30.0))
 CNMF_ASK = ("CNMF-E of {} is already done. With the new thresholds it will be recomputed, and manual inspection "
             "will be needed again. Write?")
+CNMF_RUNNING_ASK = ("CNMF-E of {} is running with the old thresholds. It will run again with the new ones, and manual "
+                    "inspection will be needed again. Write?")
 
 
 def _gauss(shape, cy, cx, s):
@@ -76,12 +78,15 @@ def series_maps(series, make_avi):  # noqa: F811  (the series fixture imported a
 
 
 class Dialogs:
-    def __init__(self, answer=True):
+    def __init__(self, answer=True, during=None):
         self.answer = answer
+        self.during = during  # runs while the question is open: the modal loop lets the timer refresh meanwhile
         self.asked, self.messages = [], []
 
     def confirm(self, text, yes="Write", no="Cancel"):
         self.asked.append((text, yes, no))
+        if self.during is not None:
+            self.during()
         return self.answer
 
     def message(self, title, text):
@@ -98,9 +103,9 @@ def make_tab(qapp):
 
     made = []
 
-    def _make(paths, dlg=None):
+    def _make(paths, dlg=None, report=_reraise):
         dlg = dlg or Dialogs()
-        tab = ThresholdsTab(paths.root, confirm=dlg.confirm, message=dlg.message, report=_reraise)
+        tab = ThresholdsTab(paths.root, confirm=dlg.confirm, message=dlg.message, report=report)
         tab.dlg = dlg
         tab.said = []
         tab.status_message.connect(tab.said.append)
@@ -279,6 +284,15 @@ def test_gsig_listed_without_maps_falls_back(qapp, series_maps, make_tab):
     tab = make_tab(p)
     assert sorted(tab.gsig_buttons) == [3, 5]
     assert tab.current() == (S1, 5, 0.85, 8.0) and tab.gsig_buttons[5].isChecked()
+    assert tab.source_label.text().endswith(" — gSig 4 has no map; showing 5")  # the swap is said, not hidden
+    # Reset asks for the suggestion again: the same swap, and the screen and current() agree
+    tab.set_gsig(3)
+    tab.set_thresholds(0.7, 12.0)
+    tab.reset_button.click()
+    assert tab.current() == (S1, 5, 0.85, 8.0)
+    assert tab.maps_title.text() == "Correlation and PNR, gSig 5"
+    assert [g for g, b in tab.gsig_buttons.items() if b.isChecked()] == [5]
+    assert tab.source_label.text().endswith(" — gSig 4 has no map; showing 5")
 
 
 def test_overlay_is_fast_on_600_px_maps(qapp, series, make_avi, make_tab):  # noqa: F811
@@ -295,8 +309,7 @@ def test_overlay_is_fast_on_600_px_maps(qapp, series, make_avi, make_tab):  # no
         tab.min_pnr_slider.setValue(v)
         times.append(time.perf_counter() - t)
     tab.min_pnr_slider.setSliderDown(False)
-    # the budget is 50 ms (measured in the report); the bound leaves room for a loaded machine
-    assert statistics.median(times) < 0.2
+    assert statistics.median(times) < 0.05  # the requirement: the mask follows a drag within 50 ms
 
 
 def test_whole_image_visible(qapp, series_maps, make_tab):
@@ -323,6 +336,21 @@ def test_refresh_keeps_the_shown_values(qapp, series_maps, make_tab):
     tab.refresh()
     assert tab.current() == (S1, 5, 0.7, 12.0)
     assert tree_rows(tab)[0][S2] == "chosen"
+
+
+def test_new_maps_file_reloads_and_keeps_the_values(qapp, series_maps, make_tab):
+    """The batch replaced the shown session's maps (here: without mirrored maps): the tab shows the new maps
+    without a session change, and the person's slider values stay."""
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.set_gsig(5)
+    tab.set_thresholds(0.7, 12.0)
+    assert "mirrored" in tab.counters_label.text()
+    save_maps(p.threshold_maps(S1), mirror=False)
+    tab.refresh()
+    assert tab.current() == (S1, 5, 0.7, 12.0) and tab.gsig_buttons[5].isChecked()
+    assert "mirrored" not in tab.counters_label.text()
+    assert tab.source_label.text().startswith("Autotune suggestion (robust_bg)")
 
 
 # --- part 7: buttons ---
@@ -389,8 +417,10 @@ def test_accept_for_mouse(qapp, series_maps, make_tab):
     tab.set_thresholds(0.9, 10.0)
     tab.accept_for_mouse()
     ((text, yes, no),) = tab.dlg.asked
-    assert "Will get these thresholds: NOF_H01_1D" in text and "Keep their own: NOF_H01_2D" in text
-    assert (yes, no) == ("Write", "Cancel") and S3 not in text
+    assert text.splitlines() == ["Thresholds gSig 4, min_corr 0.90, min_pnr 10.0 for the sessions of NOF_H01.",
+                                 "Will get these thresholds: NOF_H01_1D",
+                                 "Keep their own: NOF_H01_2D"]
+    assert (yes, no) == ("Write", "Cancel")
     assert not p.session_config(S1).exists() and len(_choices(p)) == 1  # Cancel writes nothing
     tab.dlg.answer = True
     tab.accept_for_mouse()
@@ -398,6 +428,44 @@ def test_accept_for_mouse(qapp, series_maps, make_tab):
     assert _cfg(p, S2) == {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}  # its own choice stays
     assert [r["source"] for r in _choices(p)] == ["cli", "window_mouse"]
     assert not p.session_config(S3).exists()
+    assert not tab.dlg.messages
+
+
+def test_accept_for_mouse_names_excluded_and_cnmf_done(qapp, series_maps, make_tab):
+    from tests.bearmind.test_runner import _record
+
+    p = series_maps.paths
+    registry.save_record(p, _record("NOF_H01_3D", decided=False, excluded=True))
+    _set(p, S2, "cnmf", State.DONE)  # done, but its config lost the thresholds: the write recomputes it
+    tab = make_tab(p, Dialogs(answer=False))
+    tab.show_session(S1)
+    tab.accept_for_mouse()
+    ((text, _, _),) = tab.dlg.asked
+    assert text.splitlines() == [
+        "Thresholds gSig 4, min_corr 0.85, min_pnr 8.0 for the sessions of NOF_H01.",
+        "Will get these thresholds: NOF_H01_1D, NOF_H01_2D",
+        "Keep their own: none",
+        "Excluded, left alone: NOF_H01_3D",
+        "CNMF-E of NOF_H01_2D is already done: it will be recomputed, and manual inspection will be needed again."]
+    assert not _choices(p)
+
+
+def test_accept_for_mouse_says_when_the_sessions_changed(qapp, series_maps, make_tab):
+    """The registry changed while the question was open: the message names what was really written."""
+    p = series_maps.paths
+    dlg = Dialogs(during=lambda: actions.set_thresholds(p, S2, 3, 0.7, 6.0))
+    tab = make_tab(p, dlg)
+    tab.show_session(S1)
+    tab.accept_for_mouse()
+    assert "Will get these thresholds: NOF_H01_1D, NOF_H01_2D" in dlg.asked[0][0].splitlines()
+    assert dlg.messages == [("BEARMiND", "The sessions of NOF_H01 changed after the question. Written: NOF_H01_1D.")]
+    assert _cfg(p, S2) == {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}
+
+
+def test_accept_mouse_tooltip(qapp, series_maps, make_tab):
+    tab = make_tab(series_maps.paths)
+    assert tab.accept_mouse_button.toolTip() == ("Write these thresholds to every session of this mouse that has "
+                                                 "no thresholds yet and is not excluded")
 
 
 # --- part 8 and the states that refuse a write ---
@@ -428,6 +496,123 @@ def test_cnmf_done_same_values_need_no_question(qapp, series_maps, make_tab):
     assert tab.current() == (S1, 4, 0.8, 8.0)
     tab.accept_and_next()
     assert not tab.dlg.asked and _choices(p)[-1]["sid"] == S1
+
+
+def test_cnmf_running_asks_before_write(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    _set(p, S1, "cnmf", State.RUNNING)
+    tab = make_tab(p, Dialogs(answer=False))
+    tab.show_session(S1)
+    assert tree_rows(tab)[0][S1] == "chosen" and tab.accept_button.isEnabled()
+    tab.set_thresholds(0.9, 9.0)
+    tab.accept_and_next()
+    assert tab.dlg.asked == [(CNMF_RUNNING_ASK.format(S1), "Write", "Cancel")]
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0} and not _choices(p)
+
+
+def test_cnmf_running_with_the_values_it_uses_needs_no_question(qapp, series_maps, make_tab):
+    """The run's own parameters decide: the config changed after the run started does not."""
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 5, "min_corr": 0.7, "min_pnr": 6.0}})
+    _set(p, S1, "cnmf", State.RUNNING)
+    update_record(p, S1, lambda r: r.stages["cnmf"].params.update(gSig=[4, 4], min_corr=0.85, min_pnr=8.0))
+    tab = make_tab(p, Dialogs(answer=False))
+    tab.show_session(S1)
+    tab.set_gsig(4)
+    tab.set_thresholds(0.85, 8.0)
+    tab.accept_and_next()
+    assert not tab.dlg.asked and _cfg(p, S1) == {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0}
+
+
+def test_question_open_while_the_maps_go_away(qapp, series_maps, make_tab):
+    """The modal question runs a nested event loop, so the timer may clear the maps meanwhile: the write uses the
+    values and the counters the person saw when asked."""
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    _set(p, S1, "cnmf", State.DONE)
+    tab = make_tab(p)
+
+    def meanwhile():
+        _set(p, S1, "thresholds", State.RUNNING)
+        tab.refresh()
+
+    tab.dlg.during = meanwhile
+    tab.show_session(S1)
+    tab.set_thresholds(0.9, 9.0)
+    seen = tab.counters_label.text()
+    tab.accept_and_next()
+    assert tab.dlg.asked and _cfg(p, S1) == {"gSig": 4, "min_corr": 0.9, "min_pnr": 9.0}
+    row = _choices(p)[-1]
+    assert seen.startswith(f"blobs {row['n_blobs']} ·") and row["n_mirror_blobs"] != ""
+
+
+@pytest.mark.parametrize("state, error, text", [
+    (State.RUNNING, None, "The maps are being recomputed by the batch."),
+    (State.PENDING, None, "The maps are out of date: the batch will recompute them."),
+    (State.FAILED, "Traceback\n  File x\nMemoryError: cannot allocate\n",
+     "The maps are out of date: the thresholds stage failed: MemoryError: cannot allocate. Retry it in Monitor."),
+    (State.SKIPPED, "skipped: mc failed",
+     "The maps are out of date (skipped: mc failed). Retry the failed stage in Monitor."),
+])
+def test_out_of_date_maps_reason(qapp, series_maps, make_tab, state, error, text):
+    p = series_maps.paths
+    _set(p, S1, "thresholds", state, error=error)
+    tab = make_tab(p)
+    tab.show_session(S1)
+    assert tab.corr_view.text() == text and tab.pnr_view.text() == text
+    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == text
+
+
+def test_excluded_session_reason_says_the_batch_ignores_it(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    _set(p, S1, "thresholds", State.PENDING)  # an old maps file, the stage reset
+    for sid in (S1, S3):  # S3 has no maps file at all
+        update_record(p, sid, lambda r: setattr(r, "excluded", True))
+    tab = make_tab(p)
+    tab.show_session(S1)
+    assert tab.corr_view.text() == ("The maps are out of date, and the session is excluded: the batch does not "
+                                    "process it.")
+    tab.show_session(S3)
+    assert tab.corr_view.text() == "No maps. The session is excluded: the batch does not process it."
+    assert "recompute" not in tab.corr_view.text() and not tab.accept_button.isEnabled()
+
+
+def test_refresh_guard_reports_once_then_says_it(qapp, series_maps, make_tab, monkeypatch):
+    reported = []
+    tab = make_tab(series_maps.paths, report=lambda t, e, tb: reported.append(e))
+
+    def boom(paths):
+        raise RuntimeError("registry busy\nmore")
+
+    monkeypatch.setattr(tm, "threshold_items", boom)
+    tab.refresh()
+    tab.refresh()
+    assert [str(e) for e in reported] == ["registry busy\nmore"]  # one dialog, not one per tick
+    assert tab.said == ["Refresh failed: RuntimeError: registry busy"]
+
+
+def test_video_workers_joined_at_exit_without_exec(qapp, make_avi, tmp_path):
+    """A process that never runs exec() gets no aboutToQuit: the atexit guard joins the workers. Twice is harmless,
+    and a worker whose C++ object is already gone is skipped."""
+    import shiboken6
+
+    from bearmind.gui import video_view
+    from bearmind.gui.video_view import VideoView
+
+    path = save_video(make_avi, tmp_path / "mc.avi")
+    view = VideoView()
+    view.set_video(path, 20)
+    _wait(qapp, lambda: view.slider.isEnabled())
+    assert video_view._LIVE
+    video_view._join_at_exit()
+    assert not video_view._LIVE
+    video_view._join_at_exit()
+    gone = video_view._Worker(path, 0)
+    video_view._LIVE.add(gone)
+    shiboken6.delete(gone)
+    video_view._join_at_exit()
+    assert not video_view._LIVE
 
 
 def test_session_without_maps(qapp, series_maps, make_tab):

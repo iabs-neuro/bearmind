@@ -8,6 +8,7 @@ between requests, so no lock stays on the FFV1 file after that (the batch may ne
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import threading
 import time
@@ -51,6 +52,21 @@ def _join_held(holder: list) -> None:
 def _join_all() -> None:
     for w in list(_LIVE):
         _join(w)
+
+
+def _join_at_exit() -> None:
+    """A second guard for a process that never runs exec() (a script, the tests): it gets no aboutToQuit, and a
+    QThread still running when Python finalizes Qt aborts the process. Idempotent: a joined worker leaves _LIVE."""
+    for w in list(_LIVE):
+        try:
+            _join(w)
+        except RuntimeError:  # its C++ object is already deleted (the QApplication went first): nothing to join
+            _LIVE.discard(w)
+
+
+# atexit handlers run before the interpreter tears down modules and objects, so the threads are joined while the
+# Qt objects still exist
+atexit.register(_join_at_exit)
 
 
 def _hook_quit() -> None:

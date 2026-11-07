@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # before PySide6 is imported
 
 import pytest
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 
@@ -24,13 +25,26 @@ def _refresh_errors_fail_tests(monkeypatch):
     A test that passes its own `report` keeps it."""
     from bearmind.gui.monitor_tab import MonitorTab
     from bearmind.gui.scan_tab import ScanTab
+    from bearmind.gui.thresholds_tab import ThresholdsTab
 
     def reraise(exc_type, exc, tb):
         raise exc
 
-    for cls in (MonitorTab, ScanTab):
+    for cls in (MonitorTab, ScanTab, ThresholdsTab):
         def init(self, *a, real=cls.__init__, **k):
             k.setdefault("report", reraise)
             real(self, *a, **k)
 
         monkeypatch.setattr(cls, "__init__", init)
+
+
+@pytest.fixture(autouse=True)
+def _join_video_workers(qapp):
+    """The tests never run exec(), so aboutToQuit never joins the MC video workers: a worker left running is
+    destroyed at interpreter exit (exit code 127 after "all passed"), and the global registry leaks into the next
+    test. Widgets deleted with deleteLater go too, since no event loop runs to delete them."""
+    yield
+    from bearmind.gui import video_view
+
+    video_view._join_all()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
