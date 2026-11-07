@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gc
 import json
+import logging
 import math
 import os
 import pickle
@@ -28,6 +29,7 @@ from bearmind.video import decode_to_memmap, video_info
 
 # Frames per tile of the memmap writer's transpose: (TILE, h, cols) uint8 tiles stay cache-resident,
 # measured 2-5x faster than one strided copy per column.
+log = logging.getLogger(__name__)
 TILE = 64
 # save_memmap in CaImAn 1.13.2 adds exactly np.float32(add_to_movie), default 0.0001, in one addition.
 ADD_TO_MOVIE = np.float32(1e-4)
@@ -86,6 +88,7 @@ def cnmf_movie_shape(rec) -> tuple[int, int, int] | None:
     crop = mc.metrics.get("crop")
     if crop is None and not rec.parts:
         return None  # no frame size to decide from
+    # a part shape is (h, w)
     h, w = (int(crop[2]), int(crop[3])) if crop is not None else (int(x) for x in rec.parts[0].shape)
     return T, h, w
 
@@ -207,7 +210,15 @@ def run(paths, rec, cfg) -> StageResult:
     if shape is not None and shape != (T, h, w):
         raise ValueError(f"{mc_path.name} has {T}x{h}x{w} frames, its MC record says "
                          f"{shape[0]}x{shape[1]}x{shape[2]}: run MC again")
-    downsample = None if shape is None else background_downsample(*shape, cfg)
+    if shape is None:  # no MC record to decide from: the video on disk is the movie CNMF-E will read
+        shape = (T, h, w)
+        params = cnmf_params(cfg, rec.fps, shape)
+    downsample = background_downsample(*shape, cfg)
+    # logged before the heavy work: a session that dies of memory leaves only "stage_crashed" in the record
+    log.log(logging.INFO if downsample_anomaly(downsample) is None else logging.WARNING,
+            "%s: CNMF-E memory decision: ssub_B configured %d, chosen %d, need_gib %.1f, budget_gib %.1f, fits %s",
+            sid, downsample.configured, downsample.ssub_B, downsample.need_gib, downsample.budget_gib,
+            downsample.fits)
     tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     require_temp_space(tmp, TEMP_BYTES_PER_PX_FRAME * T * h * w, "CNMF-E")
 
@@ -318,7 +329,7 @@ def run(paths, rec, cfg) -> StageResult:
             if not tmp.exists():
                 break
             time.sleep(0.5)
-    anomaly = None if downsample is None else downsample_anomaly(downsample)
+    anomaly = downsample_anomaly(downsample)
     if anomaly is not None:
         result.anomalies.append(anomaly)
     if tmp.exists():

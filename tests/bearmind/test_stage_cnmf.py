@@ -384,3 +384,52 @@ def test_run_rejects_an_mc_video_that_differs_from_its_record(tmp_path):
     with pytest.raises(ValueError, match="run MC again"):
         cnmf.run(paths, rec, cfg)
     assert not (tmp_path / "tmp").exists()
+
+
+def test_cnmf_params_reach_caiman_ssub_b():
+    from caiman.source_extraction.cnmf.params import CNMFParams
+
+    cfg = _cfg(); cfg["cnmf"].update(gSig=4, min_corr=0.8, min_pnr=8)
+    opts = CNMFParams(params_dict=cnmf_params(cfg, 29.75, (HOUR, 567, 520)))
+    assert opts.init["ssub_B"] == 3
+
+
+def _boom_after_decision(monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("heavy call reached")
+
+    monkeypatch.setattr(cnmf, "decode_to_memmap", boom)
+
+
+def test_run_logs_the_decision_before_the_heavy_work(tmp_path, monkeypatch, caplog):
+    import logging
+
+    mov, _ = synthetic_movie(T=50, n_cells=2)
+    paths, rec, cfg = _setup(tmp_path, mov)
+    cfg["machine"]["cnmf_ram_budget_gb"] = 8.0000001  # base alone is 8 GiB: nothing fits
+    _boom_after_decision(monkeypatch)
+    with caplog.at_level(logging.INFO, logger=cnmf.__name__):
+        with pytest.raises(RuntimeError, match="heavy call reached"):
+            cnmf.run(paths, rec, cfg)
+    recs = [r for r in caplog.records if "memory decision" in r.getMessage()]
+    assert len(recs) == 1 and recs[0].levelno == logging.WARNING
+    m = recs[0].getMessage()
+    assert "configured 2, chosen 4" in m and "need_gib" in m and "budget_gib 8.0" in m and "fits False" in m
+
+
+def test_run_decides_from_the_video_without_an_mc_record(tmp_path, monkeypatch):
+    mov, _ = synthetic_movie(T=50, n_cells=2)
+    paths, rec, cfg = _setup(tmp_path, mov)
+    cfg["machine"]["cnmf_ram_budget_gb"] = 8.0000001
+    seen = {}
+    real = cnmf.background_downsample
+
+    def spy(T, h, w, c):
+        seen["shape"] = (T, h, w)
+        return real(T, h, w, c)
+
+    monkeypatch.setattr(cnmf, "background_downsample", spy)
+    _boom_after_decision(monkeypatch)
+    with pytest.raises(RuntimeError, match="heavy call reached"):
+        cnmf.run(paths, rec, cfg)
+    assert seen["shape"] == tuple(mov.shape)
