@@ -224,3 +224,46 @@ def test_seed_is_an_autoinspect_input(tmp_path):
     p1 = runner.stage_params("autoinspect", rec, cfg1, paths)
     assert p0["autoinspect"]["seed"] == 0
     assert config.params_hash(p0) != config.params_hash(p1)
+
+
+def test_grouping_version_is_an_autoinspect_input(tmp_path, monkeypatch):
+    """A change of the merge grouping re-runs autoinspection (and export) but not MC, thresholds or CNMF-E."""
+    import export_estimates_data
+    from bearmind import runner
+    paths, rec, cfg = _setup(tmp_path)
+    before = {s: runner.stage_params(s, rec, cfg, paths) for s in ("mc", "thresholds", "cnmf", "autoinspect")}
+    assert before["autoinspect"]["merge_grouping"] == export_estimates_data.MERGE_GROUPING
+    monkeypatch.setattr(export_estimates_data, "MERGE_GROUPING", "another_grouping")
+    after = {s: runner.stage_params(s, rec, cfg, paths) for s in before}
+    assert config.params_hash(after["autoinspect"]) != config.params_hash(before["autoinspect"])
+    for s in ("mc", "thresholds", "cnmf"):
+        assert after[s] == before[s]
+
+
+def _fake_inspection(monkeypatch, tmp_path, n_components):
+    """run_auto_inspection with the heavy calls replaced, enough to reach the autoinspection_config."""
+    n = n_components
+    est = SimpleNamespace(idx_components=np.arange(n), S=np.zeros((n, 2)), C=np.zeros((max(n, 1), 2)))
+    df = pd.DataFrame({"component_idx": np.arange(n), "delete": [0] * n, "merge": [0] * n})
+
+    monkeypatch.setattr(ae_launch, "LoadEstimates", lambda *a, **k: est)
+    monkeypatch.setattr(ae_launch, "estimates_to_metrics",
+                        lambda *a, **k: (df, None, None, np.zeros((n, n)), None, {}, {}))
+    monkeypatch.setattr(ae_launch, "metrics_to_decision", lambda df_, *a, **k: df_)
+    monkeypatch.setattr(ae_launch, "implement_decision",
+                        lambda e, d, return_index_mapping=False: (e, {"nr_before": n, "nr_after": n,
+                                                                      "merged_groups": [], "deleted": []}))
+    monkeypatch.setattr(ae_launch, "transform_metrics_df_indices", lambda d, *a, **k: d)
+    path = tmp_path / "x_estimates.pickle"
+    path.write_bytes(b"")
+    return path
+
+
+@pytest.mark.parametrize("n_components", [0, 3])
+def test_run_auto_inspection_writes_the_grouping_marker(tmp_path, monkeypatch, n_components):
+    import export_estimates_data
+    path = _fake_inspection(monkeypatch, tmp_path, n_components)
+    res = ae_launch.run_auto_inspection(str(path), fps=20, brain="thresholds", save_artifacts=False,
+                                        verbose=False)
+    cfg = res["estimates"].autoinspection_config
+    assert cfg["merge_grouping"] == export_estimates_data.MERGE_GROUPING == "fbd_complete"

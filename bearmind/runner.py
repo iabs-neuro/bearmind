@@ -38,6 +38,7 @@ from bearmind.crop import fitted_size, mouse_frame_shape
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
 import bearmind.stages
+import export_estimates_data
 from bearmind.stages import WaitingForInput
 
 log = logging.getLogger("bearmind.runner")
@@ -179,7 +180,10 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
                 "manual_result": _file_stat(paths.manual_result(rec.sid)),
                 "cnmf_finished": None if cnmf is None else cnmf.finished}
     if stage == "autoinspect":
+        # The grouping algorithm is code, not configuration: its version in the hash re-runs autoinspection
+        # (and export after it) on sessions processed with another one.
         return {"autoinspect": cfg["autoinspect"],
+                "merge_grouping": export_estimates_data.MERGE_GROUPING,
                 "model_sha256": _model_sha(provenance.model_file(cfg)),
                 "fps": round(rec.fps) if rec.fps else None}
     if stage == "export":

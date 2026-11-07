@@ -106,8 +106,8 @@
 [OK] FOF FOF_F54_1D delete identical
 [OK] series_short NOF_H01_1D delete identical
 [OK] series_short NOF_H03_3D delete identical
-CC: sessions 33, delete identical 32, groups 1463 -> 1574, members in groups 4396 -> 4377, biggest group 47 -> 16, not FBD-connected 83 -> 0, max centre distance 400 -> 64 px, > 30 px 74 -> 39, > 100 px 19 -> 0
-FOF: sessions 21, delete identical 21, groups 329 -> 393, members in groups 893 -> 883, biggest group 53 -> 7, not FBD-connected 18 -> 0, max centre distance 377 -> 30 px, > 30 px 13 -> 1, > 100 px 10 -> 0
-RFC: sessions 52, delete identical 48, groups 714 -> 1825, members in groups 5641 -> 5577, biggest group 256 -> 29, not FBD-connected 93 -> 0, max centre distance 508 -> 89 px, > 30 px 97 -> 152, > 100 px 56 -> 0
-ALL: sessions 106, delete identical 101, groups 2506 -> 3792, members in groups 10930 -> 10837, biggest group 256 -> 29, not FBD-connected 194 -> 0, max centre distance 508 -> 89 px, > 30 px 184 -> 192, > 100 px 85 -> 0
-series_short: sessions 2, delete identical 2, groups 24 -> 24, members in groups 54 -> 54, biggest group 4 -> 4, not FBD-connected 0 -> 0, max centre distance 22 -> 22 px, > 30 px 0 -> 0, > 100 px 0 -> 0
+CC: sessions 33, delete identical 32, groups 1463 -> 1868, members in groups 4396 -> 3802, biggest group 47 -> 3, not FBD-connected 83 -> 0, pair not an edge 550 -> 0, max centre distance 400 -> 19 px, > 30 px 74 -> 0, > 100 px 19 -> 0
+FOF: sessions 21, delete identical 21, groups 329 -> 410, members in groups 893 -> 825, biggest group 53 -> 3, not FBD-connected 18 -> 0, pair not an edge 58 -> 0, max centre distance 377 -> 18 px, > 30 px 13 -> 0, > 100 px 10 -> 0
+RFC: sessions 52, delete identical 48, groups 714 -> 2328, members in groups 5641 -> 4776, biggest group 256 -> 4, not FBD-connected 93 -> 0, pair not an edge 290 -> 0, max centre distance 508 -> 25 px, > 30 px 97 -> 0, > 100 px 56 -> 0
+ALL: sessions 106, delete identical 101, groups 2506 -> 4606, members in groups 10930 -> 9403, biggest group 256 -> 4, not FBD-connected 194 -> 0, pair not an edge 898 -> 0, max centre distance 508 -> 25 px, > 30 px 184 -> 0, > 100 px 85 -> 0
+series_short: sessions 2, delete identical 2, groups 24 -> 24, members in groups 54 -> 49, biggest group 4 -> 3, not FBD-connected 0 -> 0, pair not an edge 5 -> 0, max centre distance 22 -> 16 px, > 30 px 0 -> 0, > 100 px 0 -> 0

@@ -408,3 +408,13 @@ def test_export_rule_counters_anomaly(tmp_path):
     a = [a for a in res.anomalies if a.code == "export_rule_counters"]
     assert len(a) == 1 and a[0].level == "warning"
     assert a[0].data == {"n_snr_duplicates_exported": 0, "n_merge_products_dropped": 1}
+
+
+def test_merge_products_excluded_counts_only_exportable_rows():
+    """A from_merge row whose component is not in idx_components would never be exported: not counted."""
+    est = _est(old_grouping=True)
+    approved, info = old.approved_components(est, 0.5)
+    assert approved == {2} and info["merge_products_excluded"] == 1
+    est.idx_components = np.array([0, 1, 2, 3])
+    approved, info = old.approved_components(est, 0.5)
+    assert approved == {2} and info["merge_products_excluded"] == 0

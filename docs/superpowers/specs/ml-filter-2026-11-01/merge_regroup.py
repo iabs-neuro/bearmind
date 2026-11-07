@@ -1,6 +1,6 @@
 import torch  # noqa: F401
 """Re-evaluate merge grouping on saved autoinspection sessions: old groups (saved 'merge') against
-the neighbourhood groups of auto_inspector.assign_merge_groups. Only regroups from the saved csv,
+the tight (complete-linkage) groups of auto_inspector.assign_merge_groups. Only regroups from the saved csv,
 FBD and FCD; autoinspection is not run. Read-only on the data; writes merge_regroup_out.txt next to itself.
 
 usage: merge_regroup.py <corpus root> <series_short root>"""
@@ -35,7 +35,7 @@ def thresholds(art, sid):
     return th
 
 
-def group_stats(dec, merge, FBD, FCD, pxl):
+def group_stats(dec, merge, FBD, FCD, pxl, dsnr):
     """Groups = delete==0 rows sharing one merge id, size >= 2 (as merge_spread_corpus.groups_of)."""
     keep = dec["delete"].to_numpy() == 0
     out = []
@@ -52,7 +52,12 @@ def group_stats(dec, merge, FBD, FCD, pxl):
                     seen.add(int(j))
                     stack.append(int(j))
         sub = FCD[np.ix_(p, p)][~np.eye(len(p), dtype=bool)]
-        out.append(dict(n=len(p), connected=len(seen) == len(p), max_fcd=float(sub.max())))
+        # a merge edge: same correlation cluster, close, similar SNR (the pair rule of assign_merge_groups)
+        snr = dec["caiman_snr"].to_numpy()[p]
+        cg = dec["corr_groups"].to_numpy()[p]
+        edge = adj & (cg[:, None] == cg[None, :]) & (np.abs(snr[:, None] - snr[None, :]) <= dsnr)
+        nonedge = not (edge | np.eye(len(p), dtype=bool)).all()
+        out.append(dict(n=len(p), connected=len(seen) == len(p), max_fcd=float(sub.max()), nonedge=nonedge))
     return out
 
 
@@ -70,8 +75,9 @@ def session(art, sid):
     same = new["delete"].to_numpy().tolist() == dec["delete"].tolist()
     nbad = int((new["delete"].to_numpy() != dec["delete"].to_numpy()).sum())
     pxl = th["pxlthr_distance_boundary"]
-    before = group_stats(dec, dec["merge"].to_numpy(), FBD, FCD, pxl)
-    after = group_stats(dec.assign(delete=new["delete"].to_numpy()), new["merge"].to_numpy(), FBD, FCD, pxl)
+    dsnr = th["d_snr_thr"]
+    before = group_stats(dec, dec["merge"].to_numpy(), FBD, FCD, pxl, dsnr)
+    after = group_stats(dec.assign(delete=new["delete"].to_numpy()), new["merge"].to_numpy(), FBD, FCD, pxl, dsnr)
     return same, nbad, before, after
 
 
@@ -91,12 +97,12 @@ def summary(name, nsess, nsame, before, after):
         n = np.array([r["n"] for r in rows]) if rows else np.array([0])
         mf = np.array([r["max_fcd"] for r in rows]) if rows else np.array([0.0])
         return dict(groups=len(rows), members=int(n.sum()), biggest=int(n.max()),
-                    unconn=sum(not r["connected"] for r in rows), maxfcd=float(mf.max()),
+                    unconn=sum(not r["connected"] for r in rows), nonedge=sum(r["nonedge"] for r in rows), maxfcd=float(mf.max()),
                     g30=int((mf > 30).sum()) if rows else 0, g100=int((mf > 100).sum()) if rows else 0)
     b, a = fmt(before), fmt(after)
     say(f"{name}: sessions {nsess}, delete identical {nsame}, groups {b['groups']} -> {a['groups']}, "
         f"members in groups {b['members']} -> {a['members']}, biggest group {b['biggest']} -> {a['biggest']}, "
-        f"not FBD-connected {b['unconn']} -> {a['unconn']}, max centre distance {b['maxfcd']:.0f} -> {a['maxfcd']:.0f} px, "
+        f"not FBD-connected {b['unconn']} -> {a['unconn']}, pair not an edge {b['nonedge']} -> {a['nonedge']}, max centre distance {b['maxfcd']:.0f} -> {a['maxfcd']:.0f} px, "
         f"> 30 px {b['g30']} -> {a['g30']}, > 100 px {b['g100']} -> {a['g100']}")
 
 

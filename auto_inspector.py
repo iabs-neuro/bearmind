@@ -27,6 +27,8 @@ from caiman.components_evaluation import (
 from scipy.stats import median_abs_deviation, skew, kurtosis, spearmanr
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
 from scipy.spatial import distance_matrix
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
@@ -1827,7 +1829,7 @@ def metrics_to_decision(metrics_df, match_mtx, FCD, FBD,
         else:
             raise ValueError(f"Unknown brain type: {brain}. Supported: 'thresholds', 'ml', 'hybrid'")
 
-    # Step 3: a merge group is a connected set of close pairs (see assign_merge_groups)
+    # Step 3: a merge group is a set of components that are all pairwise close (see assign_merge_groups)
     if enable_merge:
         metrics_df = assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary, d_snr_thr)
 
@@ -1842,10 +1844,13 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
     A pair of components inside one correlation cluster is "close" when
     FBD <= pxlthr_distance_boundary. A close pair with |dSNR| <= d_snr_thr is a merge
     pair. A close pair with a larger dSNR deletes the dimmer component (the same
-    pass and order as the earlier code). A merge group is a chain of merge pairs
-    (a connected component of the pair graph) among components that stay.
-    The earlier code made the whole correlation cluster one group, which glued
-    distant cells (findings.md, item 4).
+    pass and order as the earlier code). A merge group is a set of components that stay and
+    of which every pair is a merge pair (complete linkage inside each connected component of the
+    merge-pair graph, cut at pxlthr_distance_boundary; closest pairs join first, ties go by row order).
+    Earlier versions grouped whole correlation clusters, then chains of merge pairs; both glued distant
+    cells (the whole-wave review of the May 2026 corpus: 192 of 3792 chain groups spanned more than
+    30 px between centres, the largest over 88 px), and a merged group becomes one exported neuron.
+    A chain A-B-C-D therefore splits into compact groups, e.g. [A B] [C D].
 
     Args:
         metrics_df: needs 'component_idx', 'corr_groups', 'caiman_snr', 'delete';
@@ -1897,12 +1902,36 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
         rows, cols = zip(*pairs)
         graph = coo_matrix((np.ones(len(pairs)), (rows, cols)), shape=(n, n))
         _, comp = connected_components(graph, directed=False)
+        # Distance of a merge pair is its FBD; any other pair gets a sentinel above the cutoff, so complete
+        # linkage never joins two parts unless every cross pair is a merge pair.
+        sentinel = 2.0 * pxlthr_distance_boundary + 1.0
+        edge_dist = {}
+        for a, b in pairs:
+            key = (min(a, b), max(a, b))
+            d = float(FBD[labels[a]][labels[b]])
+            edge_dist[key] = min(d, edge_dist.get(key, d))
         in_pair = np.zeros(n, dtype=bool)
         in_pair[list(rows) + list(cols)] = True
         comps = {}
-        for pos in np.nonzero(in_pair)[0]:
+        for pos in np.nonzero(in_pair)[0]:  # ascending position: the frame's row order
             comps.setdefault(comp[pos], []).append(pos)
-        ordered = sorted(comps.values(), key=lambda g: min(ids[g]))
+        groups = []
+        for members in comps.values():
+            m = len(members)
+            dist = np.full((m, m), sentinel)
+            for i in range(m):
+                for j in range(i + 1, m):
+                    d = edge_dist.get((members[i], members[j]))
+                    if d is not None:
+                        dist[i, j] = dist[j, i] = d
+            np.fill_diagonal(dist, 0.0)
+            tree = linkage(squareform(dist, checks=False), method="complete")
+            flat = fcluster(tree, t=pxlthr_distance_boundary, criterion="distance")
+            for lab in np.unique(flat):
+                g = [members[i] for i in np.nonzero(flat == lab)[0]]
+                if len(g) >= 2:
+                    groups.append(g)
+        ordered = sorted(groups, key=lambda g: min(ids[g]))
         merge = np.zeros(n, dtype=int)
         for k, g in enumerate(ordered, start=1):
             merge[g] = k

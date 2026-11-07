@@ -79,26 +79,43 @@ def _fbd(n, close):  # close: {(i, j): distance}; all other pairs inf, as for un
     return m
 
 
-def _fbd_connected(fbd, rows, thr):
-    sub = fbd[np.ix_(rows, rows)] <= thr
-    seen, stack = {0}, [0]
-    while stack:
-        k = stack.pop()
-        for j in np.nonzero(sub[k])[0]:
-            if int(j) not in seen:
-                seen.add(int(j))
-                stack.append(int(j))
-    return len(seen) == len(rows)
-
-
 def test_two_far_pairs_in_one_cluster_are_two_groups():
     out = assign_merge_groups(_df([5.0] * 4, [1.0] * 4), _fbd(4, {(0, 1): 5, (2, 3): 5}))
     assert out["merge"].tolist() == [1, 1, 2, 2] and out["delete"].tolist() == [0] * 4
 
 
-def test_chain_is_one_group():
+def test_chain_splits_into_tight_groups():
+    # A-B, B-C, C-D are merge pairs; A-C, A-D, B-D are not. Complete linkage joins the closest pairs first
+    # and never joins two groups unless every cross pair is a merge pair. All edges tie, so the first
+    # merge is the first pair in row order, [A B]; then C-D is the only pair left that can join.
+    out = assign_merge_groups(_df([5.0] * 4, [1.0] * 4), _fbd(4, {(0, 1): 5, (1, 2): 5, (2, 3): 5}))
+    assert out["merge"].tolist() == [1, 1, 2, 2]
+
+
+def test_chain_of_three_keeps_one_pair():
     out = assign_merge_groups(_df([5.0] * 3, [1.0] * 3), _fbd(3, {(0, 1): 5, (1, 2): 5, (0, 2): 40}))
-    assert out["merge"].tolist() == [1, 1, 1]
+    assert out["merge"].tolist() == [1, 1, 0]
+
+
+def test_closer_pair_goes_first():
+    # B-C is the closest pair, so [B C] forms first and A (not close to C) stays alone
+    out = assign_merge_groups(_df([5.0] * 3, [1.0] * 3), _fbd(3, {(0, 1): 9, (1, 2): 2}))
+    assert out["merge"].tolist() == [0, 1, 1]
+
+
+def test_clique_of_four_is_one_group():
+    close = {(i, j): 3 + i + j for i in range(4) for j in range(i + 1, 4)}
+    out = assign_merge_groups(_df([5.0] * 4, [1.0] * 4), _fbd(4, close))
+    assert out["merge"].tolist() == [1, 1, 1, 1]
+
+
+def test_grouping_is_deterministic():
+    rng = np.random.default_rng(3)
+    n = 30
+    fbd = rng.uniform(0, 25, (n, n)); fbd = np.minimum(fbd, fbd.T); np.fill_diagonal(fbd, np.inf)
+    df = _df(rng.uniform(5, 12, n), [1.0] * n)
+    first = assign_merge_groups(df.copy(), fbd, 15, 10)["merge"].tolist()
+    assert assign_merge_groups(df.copy(), fbd, 15, 10)["merge"].tolist() == first
 
 
 def test_member_deleted_later_drops_out():
@@ -137,14 +154,13 @@ def test_random_inputs_keep_old_deletes():
             assert len(g) >= 2 and (g["delete"] == 0).all()
             assert g["merge"].nunique() == 1 and old.loc[g.index, "merge"].nunique() == 1
             assert (old.loc[g.index, "merge"] != 0).all()     # inside one old group
-            assert _fbd_connected(fbd, g.index.to_numpy(), 15)  # every new group is FBD-connected
-        # every kept pair that passes the pair rule ends in one group
-        kept = new.index[new["delete"] == 0]
-        for i in kept:
-            for j in kept:
-                if (i < j and new.at[i, "corr_groups"] == new.at[j, "corr_groups"] != 0
-                        and fbd[i, j] <= 15 and abs(snr[i] - snr[j]) <= 10):
-                    assert new.at[i, "merge"] == new.at[j, "merge"] != 0
+            # every pair inside a group is a merge edge (complete linkage)
+            rows = g.index.to_numpy()
+            for a in rows:
+                for b in rows:
+                    if a < b:
+                        assert fbd[a, b] <= 15 and abs(snr[a] - snr[b]) <= 10, (seed, a, b)
+                        assert g.at[a, "corr_groups"] == g.at[b, "corr_groups"]
 
 
 def test_metrics_to_decision_uses_the_new_groups():

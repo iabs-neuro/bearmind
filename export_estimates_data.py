@@ -34,10 +34,12 @@ from naming import extract_session_id, extract_base_session
 # Default ML threshold for legacy files without autoinspection_config
 DEFAULT_ML_THRESHOLD = 0.72
 
-# Merge groups are connected sets of close pairs (auto_inspector.assign_merge_groups since 28a1b4c);
-# run_auto_inspection stores this value in autoinspection_config['merge_grouping']. Older processed files
-# have no such key: their merge groups were whole correlation clusters that glued distant cells.
-MERGE_GROUPING = "fbd_pairs"
+# Merge groups are sets of components that are all pairwise close (complete linkage,
+# auto_inspector.assign_merge_groups); run_auto_inspection stores this value in
+# autoinspection_config['merge_grouping'] and the autoinspect stage hash carries it. "fbd_pairs" = single
+# linkage (chains), 28a1b4c..461a66f; earlier pickles carry no key (whole correlation clusters). The export
+# guard treats both as old: their merge groups glued distant cells.
+MERGE_GROUPING = "fbd_complete"
 
 # FPS lookup - avoid heavy import chain from ae_launch
 FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
@@ -236,7 +238,8 @@ def approved_components(est, threshold: float) -> tuple:
     n_excluded = 0
     if 'decision' in df.columns and 'component_idx' in df.columns:
         merged = set(df.loc[df['decision'] == 'from_merge', 'component_idx'].tolist())
-        n_excluded = len(approved & merged)
+        # a merge row outside idx_components would not be exported anyway: do not report it as left out
+        n_excluded = len(approved & merged & set(np.asarray(est.idx_components).tolist()))
         approved = approved - merged
     return approved, {'merge_grouping': grouping or 'whole_cluster', 'merge_products_excluded': n_excluded}
 
