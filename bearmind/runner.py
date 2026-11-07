@@ -112,6 +112,9 @@ def _what(st) -> str:
     return e.split(":", 1)[0]
 
 
+wait_reason = _what  # public name for the monitor window
+
+
 # --- parameters and hashes ---
 
 _SHA_CACHE: dict = {}
@@ -1265,6 +1268,7 @@ _KEYS = {  # stage -> [(column, metric of that stage, or a function of the recor
     "autoinspect": [("autoinspect_n_kept", "n_kept"), ("autoinspect_deleted_frac", "deleted_frac")],
     "export": [("export_n_neurons", "n_neurons"), ("export_median_snr", "median_snr")],
 }
+STAGE_KEYS = _KEYS  # public name for the monitor window
 SUMMARY_COLUMNS = (["sid", "mouse", "excluded"]
                    + [c for s in STAGES for c in [s] + [k for k, _ in _KEYS[s]]]
                    + ["gSig", "min_corr", "min_pnr", "worst_check", "waiting_for", "error", "anomalies"])

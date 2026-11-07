@@ -132,6 +132,9 @@ def _read(f) -> SessionRecord:
     return _from_json(json.loads(fileio.read_text(f)))
 
 
+read_file = _read  # public name: the monitor rereads single files whose mtime changed
+
+
 def _plain(x):
     """json default: numpy scalars / arrays in stage metrics become Python numbers / lists."""
     if hasattr(x, "tolist"):

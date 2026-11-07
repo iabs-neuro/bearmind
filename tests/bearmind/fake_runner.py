@@ -1,0 +1,18 @@
+"""Stand-in for a live batch: takes the real run.lock and writes a real heartbeat, then waits for stdin to close.
+
+Usage: python fake_runner.py SERIES_ROOT SID STAGE STATUS   (SID "-": no current stage)
+Prints "ready" once the lock is held and the heartbeat is written.
+"""
+import sys
+
+from bearmind import runner
+from bearmind.paths import SeriesPaths
+
+paths = SeriesPaths(sys.argv[1])
+sid, stage, status = sys.argv[2:5]
+lock = runner._acquire_lock(paths)
+hb = runner._Heartbeat(paths)
+hb.update(status=status, current=None if sid == "-" else {"sid": sid, "stage": stage})
+print("ready", flush=True)
+sys.stdin.read()
+runner._release_lock(paths, lock)
