@@ -828,4 +828,5 @@ def test_include_leaves_out_not_found_sessions(qapp, make_series, tmp_path):
     tab.refresh()
     select(tab, "NOF_H01_1D")
     assert not tab.include_button.isEnabled()
-    assert "The session folder was not found by the last scan: restore it and Rescan" in         tab.include_button.toolTip()
+    assert "The session folder was not found by the last scan: restore it and Rescan" in \
+        tab.include_button.toolTip()

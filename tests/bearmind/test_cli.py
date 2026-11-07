@@ -1,4 +1,5 @@
 """Command line tests: tiny series, stage stubs through runner.STAGE_FUNCS, exit codes and registry/config effects."""
+import csv
 import json
 import os
 import subprocess
@@ -724,7 +725,6 @@ def test_cli_thresholds_set_logs_source_cli(series, capsys):
                  "--min-pnr", 9)
     assert code == 0
     assert f"[OK] {S1}: gSig=5 min_corr=0.7 min_pnr=9" in capsys.readouterr().out
-    import csv
     with open(SeriesPaths(series.root).threshold_choices_csv, encoding="utf-8", newline="") as f:
         (row,) = list(csv.DictReader(f))
     assert row["source"] == "cli" and row["who"] == "tester" and row["sid"] == S1

@@ -429,7 +429,8 @@ def test_accept_suggested_logs_source(series):
     actions.accept_suggested(series.paths, [S1], who="ann")
     (row,) = _choices(series.paths)
     assert row["source"] == "accept_suggested" and row["who"] == "ann"
-    assert (row["suggested_gSig"], row["suggested_min_corr"], row["suggested_min_pnr"]) ==         (row["gSig"], row["min_corr"], row["min_pnr"]) == ("4", "0.8", "8.0")
+    assert (row["suggested_gSig"], row["suggested_min_corr"], row["suggested_min_pnr"]) == \
+        (row["gSig"], row["min_corr"], row["min_pnr"]) == ("4", "0.8", "8.0")
     assert ("thresholds", "gSig=4 min_corr=0.8 min_pnr=8.0", "ann") in _decisions(series.paths, S1)
 
 
@@ -454,6 +455,15 @@ def test_apply_to_mouse_invalid_writes_nothing(series):
     with pytest.raises(ValueError):
         actions.apply_to_mouse(series.paths, load_record(series.paths, S1).mouse, 4, 92.0, 8, "ann")
     assert not series.paths.session_config(S1).exists()
+
+
+def test_apply_to_mouse_unknown_mouse_raises_before_writes(series):
+    with pytest.raises(actions.UnknownSession) as e:
+        actions.apply_to_mouse(series.paths, "NOPE_X01", 4, 0.85, 8, "ann")
+    assert e.value.unknown == ["NOPE_X01"]
+    assert load_record(series.paths, S1).mouse in e.value.known
+    assert not series.paths.threshold_choices_csv.exists()
+    assert not any(series.paths.session_config(s).exists() for s in (S1, S2, S3))
 
 
 def test_set_excluded_include_not_found_stays_excluded(series):

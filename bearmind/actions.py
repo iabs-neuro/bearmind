@@ -229,6 +229,7 @@ def _write_thresholds(paths, rec, gsig, min_corr, min_pnr, who: str, source: str
                                                                 "min_pnr": min_pnr}})
     value = f"gSig={gsig} min_corr={min_corr} min_pnr={min_pnr}"
     registry.update_record(paths, rec.sid, lambda r: r.decisions.append(Decision("thresholds", value, who, now)))
+    # the CSV log comes last: if a write above fails, the log never claims a choice the config does not hold
     _log_choice(paths, rec, who, source, gsig, min_corr, min_pnr, counters, now)
 
 
@@ -425,7 +426,7 @@ def accept_suggested(paths, sids, *, who: str = "") -> ActionResult:
 def _has_choice(paths, rec) -> bool:
     try:
         c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-    except Exception:  # a broken config is shown by Monitor; here the session has no choice
+    except (config.ConfigError, OSError):  # a broken config is shown by Monitor; here the session has no choice
         return False
     return all(c.get(k) is not None for k in ("gSig", "min_corr", "min_pnr"))
 
@@ -436,10 +437,13 @@ def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float
     bad = threshold_error(gsig, min_corr, min_pnr)
     if bad:
         raise ValueError(bad)
+    recs = _records(paths)
+    mine = [(sid, rec) for sid, rec in sorted(recs.items()) if rec.mouse == mouse]
+    if not mine:  # a typo or a mouse whose sessions are gone: raises before any write, as an unknown session
+        raise UnknownSession([mouse], {r.mouse for r in recs.values()})
     res = ActionResult()
-    for sid, rec in sorted(_records(paths).items()):
-        if rec.mouse != mouse:
-            continue
+    for sid, rec in mine:
+        # excluded first: the runner ignores an excluded session, so that is its warning even when it has a choice
         if rec.excluded:
             res.warnings.append((sid, "excluded_session"))
         elif _has_choice(paths, rec):
