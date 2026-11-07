@@ -581,3 +581,9 @@ def test_run_exit_code_for_a_stage_not_recorded(series, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "[FAILED] 1 stages not started or not recorded (registry not writable)" in out
     assert f"{S2} mc: not started" in out
+
+
+def test_cli_stop(series, capsys):
+    assert _main("stop", series.root) == 0
+    assert "[OK] stop requested; the runner stops before its next stage" in capsys.readouterr().out
+    assert series.paths.stop_request.is_file()

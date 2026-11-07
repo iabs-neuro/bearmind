@@ -97,6 +97,10 @@ class SeriesPaths:
         return self._service / "run.lock"
 
     @property
+    def stop_request(self) -> Path:
+        return self._service / "stop.request"
+
+    @property
     def summary_csv(self) -> Path:
         return self._service / "summary.csv"
 

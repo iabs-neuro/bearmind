@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import actions, provenance, registry, runner, scan
+from bearmind import actions, launcher, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
 from bearmind.stages import gate
@@ -167,6 +167,12 @@ def cmd_run(args) -> int:
             return BUSY
         raise
     return _report_run(paths, res)
+
+
+def cmd_stop(args) -> int:
+    launcher.request_stop(_series(args.series))
+    _say("[OK] stop requested; the runner stops before its next stage")
+    return OK
 
 
 def _report_run(paths, res) -> int:
@@ -470,6 +476,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--until", type=_stage, help=f"last stage to run: {', '.join(STAGES)}")
     sp.add_argument("--sessions", nargs="+", metavar="SID", help="only these sessions")
     sp.add_argument("--once", action="store_true", help="do not wait for people; stop when nothing is ready")
+    add("stop", cmd_stop, "ask the runner to stop before its next stage", who=False)
     add("status", cmd_status, "show state of every session and write summary.csv", who=False)
 
     sp = add("thresholds", cmd_thresholds, "set CNMF-E thresholds", who=False)

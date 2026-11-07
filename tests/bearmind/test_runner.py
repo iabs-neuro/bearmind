@@ -750,6 +750,8 @@ def test_waiting_session_that_cannot_be_scheduled_does_not_spin(series, monkeypa
         clock[0] += x
 
     monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=fake_sleep))
+    # these tests check how long a wait is asked for; the 1 s slicing has its own tests (stop request)
+    monkeypatch.setattr(runner, "_sleep_unless_stopped", lambda paths, seconds: fake_sleep(seconds))
     with pytest.raises(KeyboardInterrupt):
         runner.run(s.paths.root, poll_s=5)
     assert len(sleeps) == 4 and all(x >= 5 for x in sleeps), sleeps
@@ -773,6 +775,8 @@ def test_decision_inside_poll_window_is_picked_up(series, monkeypatch):
         clock[0] += x / 2  # coarse clock: woke inside the poll window
 
     monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=fake_sleep))
+    # these tests check how long a wait is asked for; the 1 s slicing has its own tests (stop request)
+    monkeypatch.setattr(runner, "_sleep_unless_stopped", lambda paths, seconds: fake_sleep(seconds))
     res = runner.run(s.paths.root, poll_s=5)
     assert _states(s.paths, S1) == [State.DONE] * 7
     assert res["waiting"] == 0
@@ -1382,3 +1386,46 @@ def test_oversized_box_is_clipped_to_the_frame(series):
     s.stubs.calls.clear()
     _run(s)
     assert s.stubs.calls == []  # the clipped placement is up to date: no finalize loop
+
+
+# --- stop request ---
+
+def test_stop_request_stops_between_stages(series):
+    s = series
+    s.stubs.hooks[(S1, "crop")] = lambda paths, rec, cfg: paths.stop_request.write_text("stop")
+    res = _run(s)
+    assert res["stopped"] is True
+    assert [c for c in s.stubs.calls if c[1] != "crop"] == []  # the running stage finished, no other began
+    assert s.stubs.calls == [(S1, "crop")]
+    assert _states(s.paths, S1)[0] is State.DONE and _states(s.paths, S1)[1:] == [State.PENDING] * 6
+    assert _heartbeat(s.paths)["status"] == "idle"
+    assert not s.paths.lock.exists()
+    assert not s.paths.stop_request.exists()
+
+
+def test_stop_request_stops_waiting_runner(series):
+    from bearmind import launcher
+
+    s = series
+    save_record(s.paths, _record(S1, decided=False))
+    t, out = _run_bounded(s, poll_s=30)
+    deadline = time.time() + 60
+    while time.time() < deadline and (_heartbeat(s.paths) or {}).get("status") != "waiting":
+        time.sleep(0.05)
+    assert (_heartbeat(s.paths) or {}).get("status") == "waiting"
+    t0 = time.time()
+    launcher.request_stop(s.paths)
+    t.join(10)
+    assert not t.is_alive() and time.time() - t0 < 5
+    assert out["res"]["stopped"] is True
+    assert not s.paths.stop_request.exists() and not s.paths.lock.exists()
+    assert _heartbeat(s.paths)["status"] == "idle"
+
+
+def test_stale_stop_request_removed_at_start(series):
+    s = series
+    s.paths.stop_request.parent.mkdir(parents=True, exist_ok=True)
+    s.paths.stop_request.write_text("stop")
+    res = _run(s)
+    assert "stopped" not in res and res["done"] == 21
+    assert not s.paths.stop_request.exists()

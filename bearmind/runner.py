@@ -1116,6 +1116,16 @@ def _skip(tried, not_started, records, once, poll_s) -> set:
     return skip | {k for k, t in not_started.items() if once or now - t < poll_s}
 
 
+def _sleep_unless_stopped(paths, seconds: float) -> None:
+    """Sleep in slices of 1 s: a stop request ends a wait that lasts poll_s (30 s) within a second."""
+    end = time.monotonic() + seconds
+    while not paths.stop_request.exists():
+        left = end - time.monotonic()
+        if left <= 0:
+            return
+        time.sleep(min(left, 1.0))
+
+
 def _loop(paths, run_: _Run) -> dict:
     tried = {}  # (sid, stage) -> monotonic time of the last attempt that ended WAITING
     not_started = {}  # (sid, stage) -> monotonic time of the last attempt that could not start
@@ -1135,6 +1145,11 @@ def _loop(paths, run_: _Run) -> dict:
         return (*_split_waits(waiting, records, problems), problems)
 
     while True:
+        # top of the iteration: a stage that is running has finished, the next one is not chosen yet
+        if paths.stop_request.exists():
+            log.info("stop requested: the runner stops before its next stage", extra={"console": True})
+            run_.result["stopped"] = True
+            return dict(run_.result)
         records, broken = registry.read_all(paths)
         view = _View(paths)
         due = _finalize_due(records, view, _Scope(records, run_.sids), attempted, once, poll_s)
@@ -1170,7 +1185,7 @@ def _loop(paths, run_: _Run) -> dict:
             # next retry of a waiting stage; one that is due but was not offered (its session cannot be
             # scheduled now) must not turn this into a busy loop, so it waits a full poll
             due_at = [t + poll_s for t in list(tried.values()) + list(not_started.values()) if t + poll_s > now]
-            time.sleep(max(0.01, min(due_at) - now if due_at else poll_s))
+            _sleep_unless_stopped(paths, max(0.01, min(due_at) - now if due_at else poll_s))
             continue
         # about to return: a decision may have landed after this snapshot was read (C1)
         fresh, fresh_broken = registry.read_all(paths)
@@ -1230,12 +1245,16 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         run_.open()
         log.info("run started: pid %d, until %s, sessions %s, once %s", os.getpid(), until or "export",
                  "all" if sids is None else ",".join(sids), once)
+        # a request left by an earlier run (a killed runner never removed it) must not stop this one
+        paths.stop_request.unlink(missing_ok=True)
         known = {r.sid for r in registry.all_records(paths)}
         for sid in sids or ():
             if sid not in known:
                 log.warning("%s: no such session in the registry", sid)
         _reset_running(paths)
         result = _loop(paths, run_)
+        if result.get("stopped"):
+            paths.stop_request.unlink(missing_ok=True)
         log.info("run finished: %s", ", ".join(f"{k} {v}" for k, v in result.items()))
         return result
     except BaseException as e:
