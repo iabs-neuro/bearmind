@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from bearmind import actions
-from bearmind.registry import STAGES, StageRecord, State, load_record, update_record
+from bearmind.registry import STAGES, Anomaly, StageRecord, State, load_record, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
 
 
@@ -248,3 +248,68 @@ def test_retry_failed_resets_every_failed_preview(series):
     states = load_record(series.paths, S1).stages
     assert states["mc_preview"].state is State.PENDING and states["cnmf_preview"].state is State.PENDING
     assert all(states[s].state is State.DONE for s in STAGES)
+
+
+def _split_series(make_series, tmp_path):
+    from bearmind import scan
+    from bearmind.paths import SeriesPaths
+    root = make_series(tmp_path / "s", "legacy_split")
+    scan.scan_series(root)
+    paths = SeriesPaths(root)
+    return paths, scan_view_sid(paths)
+
+
+def scan_view_sid(paths):
+    from bearmind import scan_view
+    return scan_view.scan_view(paths).rows[0].sid
+
+
+def test_confirm_stitch(make_series, tmp_path):
+    paths, sid = _split_series(make_series, tmp_path)
+    excluded = load_record(paths, sid).excluded
+    res = actions.confirm_stitch(paths, [sid], "ann")
+    assert res.ok == [sid] and not res.failed
+    assert _decisions(paths, sid)[-1] == ("stitch_confirmed", "true", "ann")
+    assert load_record(paths, sid).excluded == excluded
+
+
+def test_confirm_stitch_no_split(series):
+    before = _decisions(series.paths, S1)
+    res = actions.confirm_stitch(series.paths, [S1], "ann")
+    assert res.failed == {S1: ("no_split", "")} and not res.ok
+    assert _decisions(series.paths, S1) == before
+
+
+def test_confirm_stitch_error_level_split_is_refused(series):
+    def make_error(r):
+        r.anomalies.append(Anomaly("split_recording", "error", "cannot stitch", data={"gaps_s": []}))
+    update_record(series.paths, S1, make_error)
+    res = actions.confirm_stitch(series.paths, [S1], "ann")
+    assert res.failed == {S1: ("no_split", "")}
+
+
+def test_confirm_stitch_unknown_writes_nothing(series):
+    before = _decisions(series.paths, S1)
+    with pytest.raises(actions.UnknownSession):
+        actions.confirm_stitch(series.paths, [S1, "NOPE"], "ann")
+    assert _decisions(series.paths, S1) == before
+
+
+def test_rescan_returns_view(make_series, tmp_path):
+    from bearmind.paths import SeriesPaths
+    root = make_series(tmp_path / "s", "legacy_split")
+    view = actions.rescan(SeriesPaths(root))
+    assert view.scanned and len(view.rows) == 1
+
+
+def test_rescan_keeps_stitch_confirmation(make_series, tmp_path):
+    paths, sid = _split_series(make_series, tmp_path)
+    actions.confirm_stitch(paths, [sid], "ann")
+    view = actions.rescan(paths)
+    line = next(x for x in view.rows[0].anomalies if x.code == "split_recording")
+    assert line.reviewed
+
+
+def test_failure_text_no_split_english():
+    text = actions.failure_text("no_split", "")
+    assert text and not re.search("[Ѐ-ӿ]", text)

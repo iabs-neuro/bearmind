@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import config, registry, runner, scan
+from bearmind import config, registry, runner, scan, scan_view
 from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
 from bearmind.stages import WaitingForInput, gate
 
@@ -37,6 +37,7 @@ _FAILURE_TEXT = {
     "invalid_suggestion": "The suggested thresholds are invalid: {detail}",
     "manual_result_missing": "The manual inspection result is not found. Save the cleaned file at {detail} "
                              "and repeat.",
+    "no_split": "The session is not a stitched split recording, so there is nothing to confirm.",
     "no_failed_stage": "The session has no failed stage, so nothing was reset.",
     # the window's text (the CLI prints its own): the window has no force path, so it asks for nothing
     "already_passed": "Manual inspection already passed, so nothing was recorded. A new decision would make "
@@ -234,6 +235,36 @@ def accept_mismatch(paths, sids, who: str) -> ActionResult:
     _decide(paths, sids, "accept_mismatch", "true", who)
     res.ok = sids
     return res
+
+
+def confirm_stitch(paths, sids, who: str) -> ActionResult:
+    """Mark the stitch of a split recording as reviewed (only for the warning level: an error-level split
+    cannot be stitched, so there is nothing to confirm)."""
+    recs = _records(paths)
+    sids = list(sids)
+    check_sids(recs, sids)
+    res = ActionResult()
+    todo = []
+    for sid in sids:
+        if any(a.code == "split_recording" and a.level == "warning" and not a.data.get("stage")
+               for a in recs[sid].anomalies):
+            todo.append(sid)
+        else:
+            res.failed[sid] = ("no_split", "")
+    # not _decide: this decision does not touch the exclusion, which the scan re-evaluates anyway
+    now = datetime.now().isoformat(timespec="milliseconds")
+    for sid in todo:
+        registry.update_record(paths, sid, lambda rec: rec.decisions.append(
+            Decision("stitch_confirmed", "true", who, now)))
+        res.ok.append(sid)
+    return res
+
+
+def rescan(paths, progress=None):
+    """Scan the series again and return the Scan tab's model. Manual decisions stay; the scan re-evaluates
+    the exclusion, so an anomaly-based one clears once the files are fixed."""
+    scan.scan_series(paths.root, progress)
+    return scan_view.scan_view(paths)
 
 
 def gate_not_needed(paths, sids, who: str, force: bool = False) -> ActionResult:
