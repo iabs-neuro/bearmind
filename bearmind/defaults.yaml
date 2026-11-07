@@ -122,14 +122,15 @@ preview:
   speed: 4
 # Monitor window model (not stage parameters). eta_s_per_frame: seconds per frame of each stage, used for the
 # time-left estimate until the series has two finished runs of that stage (medians of the tables in
-# docs/superpowers/specs/2026-11-01-e2e-report.md: crop, mc and thresholds from series1; cnmf, autoinspect and
+# docs/superpowers/specs/2026-11-01-e2e-report.md: mc and thresholds from series1; cnmf, autoinspect and
 # export from series_short, whose fixed costs dominate, so they overestimate long sessions). No number for gate:
-# it is a person's decision.
+# it is a person's decision. crop: the activity-based field of view reads three windows and builds the seed maps,
+# 60-100 s per session (about 90 s for a typical 18 000-frame session = 0.005 s per frame).
 monitor:
   refresh_ms: 2000
   heartbeat_dead_s: 120
   eta_s_per_frame:
-    crop: 0.0001
+    crop: 0.005
     mc: 0.046
     thresholds: 0.071
     cnmf: 0.14
