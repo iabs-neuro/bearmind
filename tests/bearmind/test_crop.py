@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from bearmind import config
-from bearmind.crop import (ACTIVITY_SIGMA_PX, activity_fov, activity_map, detect_fov, lit_fov, mouse_box_size,
-                           place_box)
+from bearmind.crop import (ACTIVITY_SIGMA_PX, MIN_POS_NEG, activity_field, activity_fov, detect_fov, lit_fov,
+                           mouse_box_size, place_box)
 from bearmind.paths import SeriesPaths
 from bearmind.registry import RawPart, SessionRecord
 from bearmind.stages import crop as crop_stage
@@ -56,11 +56,12 @@ def left_scene():
 
 
 def _field(mov):
+    """(lit box, ActivityField) as the crop stage computes them (gSig 3 for these cells)."""
     import bm_qc  # CaImAn: only the tests that compute seed maps pay for it
 
     lit_box, lit_mask = lit_fov(mov.mean(axis=0, dtype=np.float64))
     maps = bm_qc.compute_init_maps(mov, gSig=3, tsub=1, mirror=True, verbose=False)
-    return lit_box, activity_fov(activity_map(maps, lit_mask), lit_box, 0.005, 20)
+    return lit_box, activity_field(maps, lit_box, lit_mask, 3, 0.005, 20)
 
 
 def _inside(box, outer):
@@ -74,13 +75,51 @@ def _covers(box, y, x, spare):
 
 def test_activity_fov_covers_the_active_part(left_scene):
     mov, cells = left_scene
-    lit_box, box = _field(mov)
-    assert box is not None and _inside(box, lit_box)
+    lit_box, found = _field(mov)
+    box = found.field
+    assert found.reason == "activity" and box is not None and _inside(box, lit_box)
     assert all(_covers(box, cy, cx, 5) for cy, cx, _ in cells)
     # Right of the cells only noise: smoothed noise carries 0.3-0.7 % of the positive mass there, at the 0.5 %
     # cut, so that edge lands up to 12 px beyond the cells' tails (3 sigma) plus the margin (8 seeds measured).
     assert box[1] + box[3] <= 110 + 20 + 3 * ACTIVITY_SIGMA_PX + 15
     assert box[3] <= 0.8 * lit_box[3]
+
+
+def test_strong_cell_beyond_the_active_area_is_kept():
+    """A very active cell 40 px right of the active area: its excess and the ring of its sign-inverted movie
+    cancel after smoothing (E ~ 0 at its centre), so the activity map alone cuts it; the strong-seed guard
+    keeps it."""
+    rng = np.random.default_rng(0)
+    cells = _left_cells(rng)
+    lit_box, found = _field(_movie(rng, _disk_background(), cells + [(100., 150., 120.)]))
+    assert found.reason == "activity"
+    assert _covers(found.field, 100, 150, 5) and _inside(found.field, lit_box)
+    assert all(_covers(found.field, cy, cx, 5) for cy, cx, _ in cells)
+    plain = activity_fov(found.activity, lit_box, 0.005, 20)  # the same field without the guard
+    assert not _covers(plain, 100, 150, 0)
+    assert any(abs(y - 100) <= 3 and abs(x - 150) <= 3 for y, x in found.seeds)
+
+
+def test_activity_field_reasons():
+    """Hand-made seed maps: why the field is what it is."""
+    cn, pnr = np.full((H, W), 0.5, np.float32), np.full((H, W), 2.0, np.float32)
+    maps = {"cn": cn.copy(), "pnr": pnr.copy(), "cn_neg": cn.copy(), "pnr_neg": pnr.copy()}
+    lit_mask = np.zeros((H, W), bool)
+    lit_mask[10:190, 30:210] = True
+    lit_box = (10, 30, 180, 180)
+    maps["cn"][40:160, 40:120], maps["pnr"][40:160, 40:120] = 1.0, 20.0  # strong cells all over a block
+    found = activity_field(maps, lit_box, lit_mask, 4, 0.005, 20)
+    assert found.reason == "activity" and found.field is not None and found.pos_neg >= MIN_POS_NEG
+    assert len(found.seeds) > 0 and all(_covers(found.field, y, x, 0) for y, x in found.seeds)
+    small = {k: v.copy() for k, v in maps.items()}
+    small["cn"][:], small["pnr"][:] = 0.5, 2.0
+    small["cn"][95:105, 115:125], small["pnr"][95:105, 115:125] = 1.0, 20.0
+    found = activity_field(small, lit_box, lit_mask, 4, 0.005, 0)  # no margin: the smoothed spot stays small
+    assert found.reason == "fallback_small" and found.field is None
+    noise = {k: v.copy() for k, v in maps.items()}
+    noise["cn_neg"][40:160, 40:120], noise["pnr_neg"][40:160, 40:120] = 1.0, 20.0  # the mirror is as strong
+    found = activity_field(noise, lit_box, lit_mask, 4, 0.005, 20)
+    assert found.reason == "fallback_pos_neg" and found.field is None and found.pos_neg < MIN_POS_NEG
 
 
 def test_activity_fov_arithmetic():
@@ -89,11 +128,20 @@ def test_activity_fov_arithmetic():
     a[40:160, 40:120] = 1.0  # uniform activity: 0.5 % of 80 columns is 0.4 of a column
     assert activity_fov(a, (10, 30, 180, 180), 0.005, 20) == (20, 30, 160, 110)  # left edge clipped at the lit box
     assert activity_fov(a, (10, 30, 180, 180), 0.005, 0) == (40, 40, 120, 80)
-    a[60, 200] = -0.5 * a.sum()  # negative mass over 1 / MIN_POS_NEG of the positive: noise
-    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20) is None
+    # protected points widen the field by the margin around them, clipped to the lit box; never narrow it
+    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20, protect=[(100, 200)]) == (20, 30, 160, 180)
+    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20, protect=[(15, 80)]) == (10, 30, 170, 110)
+    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20, protect=[(100, 80)]) == (20, 30, 160, 110)
+    total = a.sum()
+    a[60, 200] = -total / (MIN_POS_NEG + 1)  # positive mass MIN_POS_NEG + 1 times the negative: kept
+    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20) == (20, 30, 160, 110)
+    a[60, 200] = -total / (MIN_POS_NEG - 1)  # under MIN_POS_NEG times: noise, whatever is protected
+    assert activity_fov(a, (10, 30, 180, 180), 0.005, 20, protect=[(100, 200)]) is None
     small = np.zeros((H, W))
     small[95:105, 115:125] = 1.0
     assert activity_fov(small, (10, 30, 180, 180), 0.005, 20) is None  # 50 x 50 < 25 % of the lit box
+    # a protected point does not rescue a small field: the lit area is used, which covers it anyway
+    assert activity_fov(small, (10, 30, 180, 180), 0.005, 20, protect=[(20, 40), (180, 200)]) is None
     assert activity_fov(np.zeros((H, W)), (10, 30, 180, 180), 0.005, 20) is None
 
 
@@ -110,8 +158,9 @@ def test_activity_fov_keeps_dim_active_tissue():
         core.append((CY + rr * np.sin(a), CX + rr * np.cos(a), 40.))
     # the lit edge sits ~5 px inside the disk (the mean is smoothed before the threshold): 20 px inside it
     dim = [(CY + 65 * np.sin(a), CX + 65 * np.cos(a), 10.) for a in np.deg2rad([150, 165, 180, 195, 210])]
-    lit_box, box = _field(_movie(rng, bg, core + dim))
-    assert box is not None and box != lit_box  # activity placed it
+    lit_box, found = _field(_movie(rng, bg, core + dim))
+    box = found.field
+    assert found.reason == "activity" and box != lit_box  # activity placed it
     assert all(_covers(box, cy, cx, 3) for cy, cx, _ in dim)
 
 
@@ -119,7 +168,8 @@ def test_activity_fov_keeps_dim_active_tissue():
 def test_activity_fov_does_not_collapse_without_cells(scene):
     rng = np.random.default_rng(2)
     mov = _movie(rng, _disk_background(), [], spot=(100, 150) if scene == "hot_spot" else None)
-    lit_box, box = _field(mov)
+    lit_box, found = _field(mov)
+    box = found.field
     assert box is None or box[2] * box[3] >= 0.9 * lit_box[2] * lit_box[3]
 
 
@@ -140,14 +190,16 @@ def test_detect_metrics_and_projection(tmp_path, make_avi, left_scene):
     paths, rec, cfg = _session(tmp_path, make_avi, left_scene[0])
     res = crop_stage.detect(paths, rec, cfg)
     m = res.metrics
-    assert set(m) == {"fov", "fov_lit", "fov_activity", "fov_method", "frame_shape"}
+    assert set(m) == {"fov", "fov_lit", "fov_activity", "fov_method", "activity_pos_neg", "frame_shape"}
     assert m["frame_shape"] == [H, W] and m["fov_method"] == "activity"
+    assert type(m["activity_pos_neg"]) is float and m["activity_pos_neg"] >= MIN_POS_NEG
     assert m["fov"] == m["fov_activity"] and _inside(m["fov"], m["fov_lit"]) and m["fov"] != m["fov_lit"]
     assert all(type(v) is int for v in m["fov"] + m["fov_lit"])
     assert res.outputs == {"projection": paths.rel(paths.crop_projection("M1_d1"))}
     with np.load(paths.crop_projection("M1_d1")) as z:
-        assert set(z.files) == {"mean", "activity"}
+        assert set(z.files) == {"mean", "activity", "seeds"}
         assert z["mean"].shape == z["activity"].shape == (H, W) and z["mean"].dtype == np.float16
+        assert z["seeds"].ndim == 2 and z["seeds"].shape[1] == 2 and len(z["seeds"]) > 0
         assert abs(float(z["mean"][CY, CX]) - 100) < 3
     assert not list(paths.crop_projection("M1_d1").parent.glob("*.partial*"))
 
@@ -163,7 +215,7 @@ def test_detect_brightness_method(tmp_path, make_avi, monkeypatch, left_scene):
     cfg["crop"]["fov_method"] = "brightness"
     m = crop_stage.detect(paths, rec, cfg).metrics
     assert m["fov"] == m["fov_lit"] == list(detect_fov(left_scene[0]))
-    assert m["fov_activity"] is None and m["fov_method"] == "brightness"
+    assert m["fov_activity"] is None and m["fov_method"] == "brightness" and m["activity_pos_neg"] is None
     with np.load(paths.crop_projection("M1_d1")) as z:
         assert set(z.files) == {"mean"}
     cfg["crop"]["fov_method"] = "brightest"

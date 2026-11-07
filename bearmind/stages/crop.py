@@ -2,8 +2,7 @@
 import numpy as np
 
 from bearmind import config, fileio
-from bearmind.crop import (activity_fov, activity_map, fitted_size, lit_fov, mouse_box_size, mouse_frame_shape,
-                           place_box)
+from bearmind.crop import activity_field, fitted_size, lit_fov, mouse_box_size, mouse_frame_shape, place_box
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
 from bearmind.video import CropBox, SessionReader
@@ -16,8 +15,13 @@ FOV_METHODS = ("activity", "brightness")
 
 def detect(paths, rec, cfg) -> StageResult:
     """The lit area of the mean frame (outer limit) and, with fov_method activity, the field with calcium
-    activity inside it. metrics['fov'] is the field finalize_mouse centres the mouse box on: the activity
-    field, or the lit area when the method is brightness or the activity field is not trusted."""
+    activity inside it. metrics['fov'] is the field finalize_mouse centres the mouse box on.
+
+    metrics['fov_method'] says why the field is what it is: activity (the activity field), brightness (the lit
+    area, configured), fallback_pos_neg (the lit area: activity not told from noise, activity_pos_neg under
+    crop.MIN_POS_NEG), fallback_small (the lit area: the activity field under crop.MIN_FRAC_OF_LIT of it),
+    no_lit_area (no field: the session is processed uncropped).
+    """
     c = cfg["crop"]
     method = c["fov_method"]
     if method not in FOV_METHODS:
@@ -26,7 +30,7 @@ def detect(paths, rec, cfg) -> StageResult:
     frames = SessionReader(paths.root, rec, crop=None).windows(WINDOWS, length)
     mean = frames.mean(axis=0, dtype=np.float64).astype(np.float32)  # no float copy of all frames
     lit = lit_fov(mean, c["min_fov_frac"], c["fov_threshold_frac"])
-    activity = field = None
+    found = None
     if lit is not None and method == "activity":
         import bm_qc  # CaImAn: imported in the stage only, the runner imports this module for finalize_mouse
 
@@ -34,27 +38,30 @@ def detect(paths, rec, cfg) -> StageResult:
 
         maps = bm_qc.compute_init_maps(frames, gSig=ACTIVITY_GSIG, tsub=1, mirror=True,
                                        max_mem_gb=mem_budget_gb(cfg), verbose=False)
-        activity = activity_map(maps, lit[1])
-        field = activity_fov(activity, lit[0], float(c["activity_mass_cut"]), int(c["activity_margin_px"]))
+        found = activity_field(maps, lit[0], lit[1], ACTIVITY_GSIG, float(c["activity_mass_cut"]),
+                               int(c["activity_margin_px"]))
     lit_box = None if lit is None else list(lit[0])
-    out = _write_projection(paths, rec.sid, mean, activity)
+    field = None if found is None else found.field
+    out = _write_projection(paths, rec.sid, mean, found)
     return StageResult(outputs={"projection": paths.rel(out)}, metrics={
         "fov": list(field) if field is not None else lit_box,
         "fov_lit": lit_box,
         "fov_activity": None if field is None else list(field),
-        "fov_method": "activity" if field is not None else "brightness",
+        "fov_method": "no_lit_area" if lit is None else method if found is None else found.reason,
+        "activity_pos_neg": None if found is None else round(float(found.pos_neg), 2),
         "frame_shape": [int(frames.shape[1]), int(frames.shape[2])],
     })
 
 
-def _write_projection(paths, sid, mean, activity):
-    """The mean frame and the activity map (when computed) for the crop overview, as float16."""
+def _write_projection(paths, sid, mean, found):
+    """The mean frame and, when computed, the activity map (float16) and the strong seeds for the overview."""
     out = paths.crop_projection(sid)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".partial.npz")
     arrays = {"mean": mean.astype(np.float16)}
-    if activity is not None:
-        arrays["activity"] = activity.astype(np.float16)
+    if found is not None:
+        arrays["activity"] = found.activity.astype(np.float16)
+        arrays["seeds"] = found.seeds.astype(np.int32)
     try:
         np.savez_compressed(tmp, **arrays)
         fileio.replace(tmp, out)  # retried while the overview or a viewer holds the old file

@@ -228,8 +228,9 @@ class SessionReader:
         else:
             # gaps of (T - length) / (n_windows - 1) > length frames: the windows never overlap
             spans = [(s, s + length) for s in (k * (T - length) // (n_windows - 1) for k in range(n_windows))]
-        out = []
-        pos = 0
+        # filled in place: a list of frames plus np.stack would hold the frames twice
+        out = np.empty((sum(b - a for a, b in spans),) + tuple(self.shape[1:]), np.uint8)
+        k = pos = 0
         for path, n, broken in self._chunk_plan():
             if pos >= spans[-1][1]:
                 break
@@ -238,9 +239,10 @@ class SessionReader:
                 need = hits[-1][1] - pos  # decode the chunk's head up to its last wanted frame
                 for i, fr in enumerate(_head_frames(path, need, broken)):
                     if any(a <= pos + i < b for a, b in hits):
-                        out.append(self._crop(fr))
+                        out[k] = self._crop(fr)
+                        k += 1
             pos += max(n, 0)
-        return np.stack(out) if out else np.empty((0,) + self.shape[1:], np.uint8)
+        return out[:k]  # a stream shorter than n_frames ends early
 
 
 def _rate(fps: float) -> Fraction:

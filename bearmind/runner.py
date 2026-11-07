@@ -41,6 +41,7 @@ from bearmind import checks, config, fileio, isolate, naming, provenance, regist
 from bearmind.crop import fitted_size, mouse_frame_shape
 from bearmind.paths import SeriesPaths
 from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, Anomaly, Decision, StageRecord, State
+import bearmind.crop
 import bearmind.stages
 import export_estimates_data
 from bearmind.stages import WaitingForInput
@@ -242,10 +243,13 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     if stage in SIDE_STAGES:
         return _side_params(cfg)
     if stage == "crop":
+        # The field rule is code, not configuration: its version in the hash re-runs crop on sessions
+        # detected with another one.
         return {"parts": [{"folder": p.folder, "chunks": list(p.chunks), "n_frames": p.n_frames}
                           for p in rec.parts],
                 "n_frames": rec.n_frames,
-                "crop": {k: v for k, v in (cfg.get("crop") or {}).items() if k not in _CROP_WRITTEN}}
+                "crop": {k: v for k, v in (cfg.get("crop") or {}).items() if k not in _CROP_WRITTEN},
+                "fov_rule": bearmind.crop.FOV_RULE}
     if stage == "mc":
         c = cfg.get("crop") or {}
         return {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET), "fps": rec.fps}

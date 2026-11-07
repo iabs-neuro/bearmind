@@ -895,6 +895,23 @@ def test_overview_failure_does_not_stop_the_batch(series, monkeypatch):
     assert not s.paths.crop_overview.exists()
 
 
+def test_crop_rule_is_a_crop_input(series, monkeypatch):
+    """The field rule is code: its version is a crop parameter, so a new rule re-runs crop and what follows."""
+    import bearmind.crop
+
+    s = series
+    _run(s)
+    rec = load_record(s.paths, S1)
+    assert rec.stages["crop"].params["fov_rule"] == bearmind.crop.FOV_RULE
+    cfg = config.resolve(s.paths, sid=S1)
+    before = runner.stage_hash(rec, "crop", cfg, s.paths)
+    monkeypatch.setattr(bearmind.crop, "FOV_RULE", "activity_v999")
+    assert runner.stage_hash(rec, "crop", cfg, s.paths) != before
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == ALL
+
+
 def test_crop_detection_params_rerun_crop(series):
     """R30: the crop section is an input of crop, except the keys the pipeline writes."""
     s = series
