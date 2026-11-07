@@ -45,6 +45,10 @@ memory:
   max_ssub_B: 4
 thresholds:
   gsig_range: [3, 4, 5, 6, 7]
+  # Thresholds window only (not inputs of the stage hash): the smallest group of passing pixels that counts
+  # as a blob, and the slider start values when the autotune gave no suggestion.
+  min_blob_px: 2
+  fallback: {min_corr: 0.85, min_pnr: 8}
 # gSig, min_corr, min_pnr come from the session config; gSiz = 4*gSig + 1; fr = session FPS.
 cnmf:
   decay_time: 1
