@@ -7,6 +7,7 @@ import json
 import os
 import re
 import statistics
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -358,12 +359,19 @@ def _recreate(paths: SeriesPaths, f: Path, error: Exception, new_record):
     return rec if replace_broken(paths, rec, kept) else None
 
 
-def scan_series(series_root: Path) -> list[SessionRecord]:
+# (done, total, sid just written; "" right after the folder walk)
+ProgressFn = Callable[[int, int, str], None]
+
+
+def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[SessionRecord]:
     paths = SeriesPaths(series_root)
     if not paths.series_config.exists():
         config.update_yaml(paths.series_config, {})
     found, unrecognized = _walk(paths)
 
+    total = len(found)
+    if progress:
+        progress(0, total, "")
     built = {}
     for sid in sorted(found):
         cfg_scan = config.resolve(paths, sid=sid)["scan"]
@@ -394,7 +402,7 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
                                      data={"fps": fps, "nominal": nominal}))
 
     records = []
-    for sid, (parts, mode, n, fps, info, anomalies, _nominal) in built.items():
+    for sid, (parts, mode, n, fps, info, anomalies, _nominal) in built.items():  # built is in sorted sid order
         f = paths.registry_file(sid)
 
         def new_record(extra=(), anomalies=anomalies, sid=sid, mode=mode, parts=parts, n=n, fps=fps, info=info):
@@ -421,6 +429,8 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
             rec = new_record()
             save_record(paths, rec)
         records.append(rec)
+        if progress:
+            progress(len(records), total, sid)
 
     out = paths.scan_unrecognized_csv
     out.parent.mkdir(parents=True, exist_ok=True)

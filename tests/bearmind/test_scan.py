@@ -383,3 +383,13 @@ def test_rescan_keeps_a_concurrent_update(make_series, tmp_path):
     t.join(20)
     sc.join(20)
     assert load_record(paths, sid).stages["mc"].params_hash == "h"
+
+
+def test_progress_called_per_session(make_series, tmp_path):
+    root = tmp_path / "s"
+    sids = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
+    for sid in sids:
+        make_series(root, "bonsai", sid=sid)
+    calls = []
+    scan.scan_series(root, progress=lambda *a: calls.append(a))
+    assert calls == [(0, 3, ""), (1, 3, sids[0]), (2, 3, sids[1]), (3, 3, sids[2])]
