@@ -6,7 +6,6 @@ import dataclasses
 import json
 import os
 import re
-import statistics
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -313,6 +312,11 @@ def _n_dropped(t_ms, est, gap_factor: float) -> int:
     return int(np.maximum(np.rint(gaps) - 1, 1).sum())
 
 
+def rates_text(rates) -> str:
+    """Distinct frame rates as a person reads them: "19.8, 29.8"."""
+    return ", ".join(dict.fromkeys(f"{r:.1f}" for r in sorted(rates)))
+
+
 def plural(n: int, word: str) -> str:
     """"1 gap", "3 gaps"."""
     return f"{n} {word}" + ("" if n == 1 else "s")
@@ -438,24 +442,27 @@ def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[S
         built[sid] = _build_record(paths, sid, found[sid], cfg_scan)
 
     # FPS checks against the session's own mouse: mice of one series may be recorded at different rates (LT1:
-    # six mice at 19.76 fps, the rest at 30.59), which is no anomaly. A mouse with fewer sessions with a rate
-    # than checks.min_sessions_for_relative has no reference.
+    # six mice at 19.76 fps, the rest at 30.59), and one mouse may switch rates between days (NOF: 19.8 and
+    # 29.8, whose median 24.8 is neither), which is no anomaly. A rate is an outlier only when no other session
+    # of the mouse has a rate within fps_series_dev of it. A mouse with fewer sessions with a rate than
+    # checks.min_sessions_for_relative has no reference.
     series_cfg = config.resolve(paths)
     dev = series_cfg["scan"]["fps_series_dev"]
     min_n = series_cfg["checks"].get("min_sessions_for_relative", 3)
-    rates: dict[str, list] = {}
+    rates: dict[str, list[tuple[str, float]]] = {}
     for sid, b in built.items():
         if b[3]:
-            rates.setdefault(mouse_id(sid), []).append(b[3])
+            rates.setdefault(mouse_id(sid), []).append((sid, b[3]))
     for sid, (parts, mode, n, fps, info, anomalies, nominal) in built.items():
         if not fps:
             continue
         own = rates.get(mouse_id(sid), [])
-        median = statistics.median(own) if len(own) >= min_n else None
-        if median and abs(fps / median - 1) > dev:
+        others = sorted(r for s, r in own if s != sid)
+        if len(own) >= min_n and not any(abs(fps / o - 1) <= dev for o in others):
             anomalies.append(Anomaly("fps_outlier", "warning",
-                                     f"fps {fps:.2f} differs from mouse median {median:.2f}",
-                                     data={"fps": fps, "median": median, "mouse": mouse_id(sid)}))
+                                     f"fps {fps:.1f}; other sessions of the mouse: {rates_text(others)}",
+                                     data={"fps": fps, "nearest": min(others, key=lambda o: abs(o - fps)),
+                                           "others": others, "mouse": mouse_id(sid)}))
         if nominal and abs(fps / nominal - 1) > dev:
             anomalies.append(Anomaly("fps_outlier", "warning",
                                      f"fps {fps:.2f} differs from nominal frameRate {nominal:g}",

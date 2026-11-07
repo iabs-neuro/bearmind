@@ -85,7 +85,13 @@ def test_split_recording_reviewed(make_series, tmp_path):
 def test_fps_outlier_short_names_mouse_median(tmp_path):
     an = Anomaly("fps_outlier", "warning", "m", data={"fps": 24.9, "median": 30.0})
     line = scan_view.scan_view(_save(tmp_path, _rec(anomalies=[an]))).rows[0].anomalies[0]
-    assert line.short == "FPS outlier: 24.9 (mouse median 30.0)"
+    assert line.short == "FPS outlier: 24.9 (mouse median 30.0)"  # a record scanned before 2026-11-08
+
+
+def test_fps_outlier_short_names_the_other_rates(tmp_path):
+    an = Anomaly("fps_outlier", "warning", "m", data={"fps": 24.9, "nearest": 29.8, "others": [19.8, 19.81, 29.8]})
+    line = scan_view.scan_view(_save(tmp_path, _rec(anomalies=[an]))).rows[0].anomalies[0]
+    assert line.short == "FPS outlier: 24.9 (other sessions 19.8, 29.8)"
 
 
 def test_excluded_by(make_series, tmp_path):

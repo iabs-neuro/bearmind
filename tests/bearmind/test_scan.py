@@ -233,9 +233,30 @@ def test_fps_outlier_vs_mouse_median(make_series, tmp_path):
         "NOF_H01_1D": 20, "NOF_H01_2D": 20, "NOF_H01_3D": 20, "NOF_H01_4D": 10,  # one odd session
         "NOF_H02_1D": 30, "NOF_H02_2D": 30, "NOF_H02_3D": 30})  # a whole mouse at another rate
     a = codes(recs["NOF_H01_4D"])["fps_outlier"]
-    assert a.message == "fps 10.00 differs from mouse median 20.00" and a.level == "warning"
-    assert a.data["median"] == pytest.approx(20.0)
+    assert a.message == "fps 10.0; other sessions of the mouse: 20.0" and a.level == "warning"
+    assert a.data["nearest"] == pytest.approx(20.0) and a.data["mouse"] == "NOF_H01"
     assert [sid for sid, r in recs.items() if "fps_outlier" in codes(r)] == ["NOF_H01_4D"]
+
+
+def test_no_fps_outlier_for_a_mouse_switching_rates(make_series, tmp_path):
+    """R1: NOF mice switch between 19.8 and 29.8 fps from day to day; the mouse median (24.8) lies between
+    them, but every session has another session of the mouse at its own rate, so none is an outlier."""
+    recs = _series_at(make_series, tmp_path / "s", {
+        "NOF_H01_1D": 19.8, "NOF_H01_2D": 19.8, "NOF_H01_3D": 29.8, "NOF_H01_4D": 29.8})
+    assert not [sid for sid, r in recs.items() if "fps_outlier" in codes(r)]
+
+
+def test_fps_outlier_names_the_other_rates(make_series, tmp_path):
+    recs = _series_at(make_series, tmp_path / "s", {
+        "NOF_H01_1D": 30.0, "NOF_H01_2D": 30.0, "NOF_H01_3D": 30.0, "NOF_H01_4D": 24.9})
+    assert [sid for sid, r in recs.items() if "fps_outlier" in codes(r)] == ["NOF_H01_4D"]
+    a = codes(recs["NOF_H01_4D"])["fps_outlier"]
+    assert a.message == "fps 24.9; other sessions of the mouse: 30.0"
+    recs = _series_at(make_series, tmp_path / "t", {
+        "NOF_H01_1D": 19.8, "NOF_H01_2D": 19.8, "NOF_H01_3D": 29.8, "NOF_H01_4D": 24.9})
+    a = codes(recs["NOF_H01_4D"])["fps_outlier"]
+    assert a.message == "fps 24.9; other sessions of the mouse: 19.8, 29.8"
+    assert a.data["nearest"] == pytest.approx(29.8, abs=0.01)
 
 
 def test_no_fps_outlier_for_a_mouse_with_few_sessions(make_series, tmp_path):

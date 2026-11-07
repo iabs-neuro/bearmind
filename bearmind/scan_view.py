@@ -99,7 +99,9 @@ def _short(a, n_parts: int) -> str:
             return f"{title}: {n_parts} parts, cannot stitch"
         return f"{title}: {n_parts} parts" + (f", pause {_pause_text(max(gaps))}" if gaps else "")
     if a.code == "fps_outlier" and "fps" in d:
-        ref = (f"mouse median {d['median']:.1f}" if "median" in d
+        # "median": a record scanned before the rule compared with the other sessions of the mouse
+        ref = (f"other sessions {scan.rates_text(d['others'])}" if d.get("others")
+               else f"mouse median {d['median']:.1f}" if "median" in d
                else f"nominal {d['nominal']:g}" if "nominal" in d else "")
         return f"{title}: {d['fps']:.1f}" + (f" ({ref})" if ref else "")
     if a.code == "dropped_frames" and "n_gaps" in d:
