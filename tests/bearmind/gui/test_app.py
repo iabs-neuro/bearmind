@@ -20,7 +20,7 @@ def test_window_opens_with_series(qapp, tmp_series):
 
 def test_placeholder_tabs_text(qapp, tmp_series):
     w = MainWindow(tmp_series)
-    for i, phase in ((2, 4), (3, 5)):
+    for i, phase in ((3, 5),):  # Thresholds is built with the series since phase 4
         text = " ".join(lb.text() for lb in w.tabs.widget(i).findChildren(QLabel))
         assert "coming in a later version" in text and f"phase {phase}" in text
         assert not re.search("[А-Яа-яЁё]", text)
