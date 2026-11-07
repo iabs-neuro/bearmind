@@ -1,11 +1,12 @@
 import re
 
-from bearmind import monitor, scan, scan_view
+from bearmind import config, monitor, scan, scan_view
 from bearmind.paths import SeriesPaths
 from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, load_record,
                                save_record, update_record)
 
 CYRILLIC = re.compile("[Ѐ-ӿ]")
+RULE = {"max_gap_s": 1.0, "share": 0.01}  # defaults.yaml scan.dropped_frames_warn
 
 
 def _rec(sid="NOF_H01_1D", anomalies=(), decisions=(), excluded=False, fps=30.0, n_frames=900):
@@ -66,6 +67,9 @@ def test_auto_fixed_marked_not_counted(make_series, tmp_path):
     v = scan_view.scan_view(SeriesPaths(root))
     line = next(x for x in v.rows[0].anomalies if x.code == "chunk_tail_frames")
     assert line.auto_fixed and v.rows[0].level == "ok" and v.n_problems == 0
+    assert line.note == "fixed automatically"
+    # R2: the Anomalies column marks it and greys it, so it does not look like an error
+    assert v.rows[0].summary_parts == [("extra chunk frames: 2 (fixed)", True)]
 
 
 def test_split_recording_reviewed(make_series, tmp_path):
@@ -194,7 +198,7 @@ def _three_part_line(n_gaps, max_gap_ms):
     rec = _rec(anomalies=[split, drops])
     rec.parts = rec.parts * 3
     rec.decisions = [Decision("stitch_confirmed", scan.stitch_fingerprint(rec.parts), "me", "t")]
-    return next(x for x in scan_view._row(rec).anomalies if x.code == "dropped_frames")
+    return next(x for x in scan_view._row(rec, RULE).anomalies if x.code == "dropped_frames")
 
 
 def test_three_parts_two_pauses_no_drop_reviewed():
@@ -216,3 +220,145 @@ def test_session_not_found_row(make_series, tmp_path):
     assert row.excluded and row.excluded_by == "anomaly" and row.level == "error"
     assert row.summary == "not found by the last scan"
     assert scan_view.ANOMALY_TITLE["not_found_in_scan"] == "not found by the last scan"
+
+
+def _dropped(data, n_frames=18000, fps=30.0):
+    an = Anomaly("dropped_frames", "warning", "d", data=data)
+    return scan_view._row(_rec(anomalies=[an], fps=fps, n_frames=n_frames), RULE)
+
+
+def test_single_frame_drops_are_information():
+    """I7: LT1 has 1-18 single-frame gaps of ~70 ms per session; they are shown, not counted as problems."""
+    row = _dropped({"n_gaps": 18, "max_gap_ms": 70.0, "n_dropped": 18})
+    line = row.anomalies[0]
+    assert line.info and row.level == "ok"
+    assert row.summary_parts == [("dropped frames: 18 gaps, longest 70 ms", False)]
+    assert line.note == "information: no gap longer than 1 s, at most 1% of frames lost"
+    assert _dropped({"n_gaps": 1, "max_gap_ms": 72.0, "n_dropped": 1}).level == "ok"
+
+
+def test_dropped_frames_count_above_the_limits():
+    assert _dropped({"n_gaps": 1, "max_gap_ms": 1500.0, "n_dropped": 44}).level == "warning"  # longest gap
+    assert _dropped({"n_gaps": 50, "max_gap_ms": 300.0, "n_dropped": 400}).level == "warning"  # 2.2 % lost
+    line = _dropped({"n_gaps": 50, "max_gap_ms": 300.0, "n_dropped": 400}).anomalies[0]
+    assert not line.info and line.note == ""
+
+
+def test_dropped_frames_scanned_before_the_estimate():
+    """A record without n_dropped: the gap rule alone, and the line says the share is not known yet."""
+    line = _dropped({"n_gaps": 1, "max_gap_ms": 72.0}).anomalies[0]
+    assert line.info and "known after a rescan" in line.note
+    # each gap loses at least one frame: a gap count above the share is enough to count it
+    assert _dropped({"n_gaps": 300, "max_gap_ms": 72.0}).level == "warning"
+
+
+def test_dropped_frames_rule_from_the_series_config(tmp_path):
+    an = Anomaly("dropped_frames", "warning", "d", data={"n_gaps": 2, "max_gap_ms": 70.0, "n_dropped": 2})
+    paths = _save(tmp_path, _rec(anomalies=[an], n_frames=18000))
+    assert scan_view.scan_view(paths).n_problems == 0
+    paths.series_config.parent.mkdir(parents=True, exist_ok=True)
+    paths.series_config.write_text("scan:\n  dropped_frames_warn: {max_gap_s: 0.05}\n", encoding="utf-8")
+    assert scan_view.scan_view(paths).n_problems == 1
+    assert config.load_defaults()["scan"]["dropped_frames_warn"] == {"max_gap_s": 1.0, "share": 0.01}
+
+
+def test_odd_record_becomes_a_row_that_says_so(tmp_path):
+    """I6: one record the view cannot read (hand-edited, an older version) does not hide the table."""
+    odd = Anomaly("frames_ts_mismatch", "error", "e", data={"diff": "abc", "where": "end"})
+    paths = _save(tmp_path, _rec("NOF_H01_1D", anomalies=[odd], excluded=True), _rec("NOF_H01_2D"))
+    rows = {r.sid: r for r in scan_view.scan_view(paths).rows}
+    assert rows["NOF_H01_1D"].summary.startswith("cannot show: ValueError")
+    assert rows["NOF_H01_1D"].level == "error" and rows["NOF_H01_1D"].n_video_frames is None
+    assert rows["NOF_H01_1D"].excluded and rows["NOF_H01_1D"].excluded_by == "anomaly"
+    assert rows["NOF_H01_2D"].summary == "–"
+    null_gap = Anomaly("dropped_frames", "warning", "2 gaps", data={"n_gaps": 2, "max_gap_ms": None})
+    assert scan_view._row(_rec(anomalies=[null_gap]), RULE).sid == "NOF_H01_1D"
+
+
+def test_short_texts():
+    def short(code, data, level="warning"):
+        return scan_view._row(_rec(anomalies=[Anomaly(code, level, "m", data=data)]),
+                              RULE).anomalies[0].short
+    assert short("dropped_frames", {"n_gaps": 1, "max_gap_ms": 72.0}) == "dropped frames: 1 gap, longest 72 ms"
+    assert short("dropped_frames", {"n_gaps": 2, "max_gap_ms": 3598000.0}) == \
+        "dropped frames: 2 gaps, longest 59 min 58 s"
+    # M4: parts counted from 1 for a person
+    assert short("frames_ts_mismatch", {"diff": 2, "where": "part 0 end", "part": 0}) == \
+        "frames ≠ timestamps: +2 at the end of part 1"
+    assert [scan.duration_text(ms) for ms in (72.0, 1500.0, 38000.0, 3598000.0, 7380000.0)] == \
+        ["72 ms", "1.5 s", "38 s", "59 min 58 s", "2 h 3 min"]
+
+
+def test_split_pause_line_is_labelled():
+    """M5: a dropped_frames line that only reports the pause between the parts says so."""
+    split = Anomaly("split_recording", "warning", "split", data={"gaps_s": [3598.0]})
+    drops = Anomaly("dropped_frames", "warning", "drops", data={"n_gaps": 1, "max_gap_ms": 3598000.0})
+    rec = _rec(anomalies=[split, drops])
+    rec.parts = rec.parts * 2
+    lines = scan_view._row(rec, RULE).anomalies
+    assert lines[0].short == "split recording: 2 parts, pause 59 min 58 s"
+    assert lines[1].short == "dropped frames: 1 gap, longest 59 min 58 s (the pause between parts)"
+
+
+def test_accepted_mismatch_says_accepted_by_you(make_series, tmp_path):
+    """M1: an accepted mismatch is not "fixed automatically"."""
+    root = make_series(tmp_path / "s", "bonsai", ts_rows=25)
+    scan.scan_series(root)
+    paths = SeriesPaths(root)
+    sid = scan_view.scan_view(paths).rows[0].sid
+    from bearmind import actions
+    actions.accept_mismatch(paths, [sid], "me")
+    row = scan_view.scan_view(paths).rows[0]
+    line = next(x for x in row.anomalies if x.code == "frames_ts_mismatch")
+    assert line.auto_fixed and line.note == "accepted by you"
+    assert row.summary_parts == [("frames ≠ timestamps: +5 at the end (accepted)", True)]
+
+
+def test_counted_lines_lead_the_summary():
+    fixed = Anomaly("broken_last_frame", "warning", "b", auto_fixed=True)
+    err = Anomaly("no_timestamps", "error", "n")
+    row = scan_view._row(_rec(anomalies=[fixed, err]), RULE)
+    assert row.summary_parts == [("no timestamps found", False), ("broken last frame (fixed)", True)]
+    assert row.summary == "no timestamps found; broken last frame (fixed)"
+
+
+def test_open_folder_of_a_session_without_parts():
+    """M6: a session whose only part cannot be read has no parts; Open folder uses the anomaly's folder."""
+    rec = _rec(anomalies=[Anomaly("unreadable_video", "error", "x", data={"folder": "1_Raw/HM/NOF_H01_1D"})])
+    assert scan_view._row(rec, RULE).folder == "HM/NOF_H01_1D"
+    rec.parts = []
+    row = scan_view._row(rec, RULE)
+    assert row.folder == "1_Raw/HM/NOF_H01_1D" and row.folders == []
+
+
+def test_fps_text():
+    """M11: the intervals left out of the estimate are not "dropped" frames."""
+    rec = _rec(fps=20.0)
+    assert scan_view._row(rec, RULE).fps_text == \
+        "20.0 from timestamps · 0 intervals ignored in the FPS estimate · longest pause 70 ms"
+    rec.fps_info["n_outliers"] = 1
+    assert "· 1 interval ignored in the FPS estimate ·" in scan_view._row(rec, RULE).fps_text
+
+
+def test_summary_counts_not_found_and_unreadable(make_series, tmp_path):
+    """I1, M8: sessions the last scan did not find and unreadable registry files are named in the summary."""
+    root = make_series(tmp_path / "s", "bonsai")
+    make_series(root, "bonsai", sid="NOF_H02_1D")
+    scan.scan_series(root)
+    next((root / "1_Raw").rglob("NOF_H02_1D")).rename(tmp_path / "away")
+    scan.scan_series(root)
+    paths = SeriesPaths(root)
+    paths.registry_file("NOF_X99_1D").write_text("{garbage", encoding="utf-8")
+    assert scan_view.scan_view(paths).summary_text() == (
+        "Found 1 session of 1 mouse · bonsai 1 · legacy 0 · excluded 1 · with problems 1 · unrecognized folders 0"
+        " · not found by the last scan 1 · unreadable registry files 1")
+
+
+def test_included_by_you_over_an_error():
+    """I4: a person's include that overrides an error is shown as such."""
+    err = Anomaly("frames_ts_mismatch", "error", "e", data={"diff": 50, "where": "end"})
+    rec = _rec(anomalies=[err], decisions=[Decision("exclude", "false", "me", "t")])
+    row = scan_view._row(rec, RULE)
+    assert not row.excluded and row.excluded_by == "included" and row.level == "error"
+    plain = scan_view._row(_rec(decisions=[Decision("exclude", "false", "me", "t")]), RULE)
+    assert plain.excluded_by == ""

@@ -6,6 +6,10 @@ scan:
   max_mismatch_frac: 0.02
   gap_factor: 2.0
   fps_series_dev: 0.05
+  # Scan tab only (read from defaults < series config; no stage hash includes it): a dropped_frames line counts
+  # as a problem when its longest gap exceeds max_gap_s or the frames lost exceed this share of the session's
+  # frames; below both it is shown as information. The scan's anomaly levels do not depend on it.
+  dropped_frames_warn: {max_gap_s: 1.0, share: 0.01}
 crop:
   # frames read for detection: three windows of sample_frames / 3 at the start, middle and end of the session
   sample_frames: 3000
