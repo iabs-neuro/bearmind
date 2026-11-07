@@ -34,11 +34,18 @@ _quit_hooked = False
 
 
 def _join(worker) -> None:
+    if worker not in _LIVE:  # already joined (and maybe deleted): its C++ object must not be touched
+        return
     worker.stop()
     worker.wait()  # at most one frame decode; the file is free after this
-    if worker in _LIVE:
-        _LIVE.discard(worker)
-        worker.deleteLater()
+    _LIVE.discard(worker)
+    worker.deleteLater()
+
+
+def _join_held(holder: list) -> None:
+    w, holder[0] = holder[0], None
+    if w is not None:
+        _join(w)
 
 
 def _join_all() -> None:
@@ -113,6 +120,9 @@ class VideoView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker: _Worker | None = None
+        # The current worker, for the one `destroyed` connection; the slot must not reference self (already gone).
+        self._holder: list = [None]
+        self.destroyed.connect(lambda *_, h=self._holder: _join_held(h))
         self._token = 0
         self._path: Path | None = None
         self._fps = 20.0
@@ -170,7 +180,7 @@ class VideoView(QWidget):
         _hook_quit()
         self._worker = w = _Worker(self._path, self._token)
         _LIVE.add(w)
-        self.destroyed.connect(lambda *_: _join(w))  # no reference to self: the view is already gone
+        self._holder[0] = w
         self._worker.opened.connect(self._on_opened)
         self._worker.failed.connect(self._on_failed)
         self._worker.decoded.connect(self._on_decoded)
@@ -301,6 +311,7 @@ class VideoView(QWidget):
     # ---- lifetime ----
     def _stop_worker(self) -> None:
         w, self._worker = self._worker, None
+        self._holder[0] = None
         if w is not None:
             _join(w)
         try:

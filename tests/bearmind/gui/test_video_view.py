@@ -161,3 +161,23 @@ def test_unreadable_video_message(qapp, tmp_path):
     _wait(qapp, lambda: v.image_label.text() != "")
     assert v.image_label.text().startswith("MC video cannot be read: ")
     v.close()
+
+
+def test_destroy_after_session_changes_is_clean(qapp, make_avi, tmp_path, monkeypatch):
+    a, _ = _movie(make_avi, tmp_path)
+    b = make_avi(tmp_path / "b.avi", np.zeros((5, 16, 16), np.uint8))
+    errors = []
+    monkeypatch.setattr("sys.excepthook", lambda *args: errors.append(args))
+    parent = QWidget()
+    QVBoxLayout(parent).addWidget(v := VideoView())
+    counts = []
+    for path in (a, b, a):
+        v.set_video(path, 20)
+        _wait(qapp, lambda: v.slider.isEnabled())
+        counts.append(v.receivers("2destroyed(QObject*)"))
+    assert len(set(counts)) == 1  # the destroyed connection is made once per view, not once per session
+    qapp.sendPostedEvents(None, 52)  # QEvent.DeferredDelete: the joined workers are deleted
+    shiboken6.delete(parent)
+    qapp.processEvents()
+    assert errors == []
+    assert not video_view._LIVE
