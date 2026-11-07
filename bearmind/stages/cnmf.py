@@ -27,9 +27,9 @@ from bearmind.registry import Anomaly, State
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
 from bearmind.video import decode_to_memmap, video_info
 
+log = logging.getLogger(__name__)
 # Frames per tile of the memmap writer's transpose: (TILE, h, cols) uint8 tiles stay cache-resident,
 # measured 2-5x faster than one strided copy per column.
-log = logging.getLogger(__name__)
 TILE = 64
 # save_memmap in CaImAn 1.13.2 adds exactly np.float32(add_to_movie), default 0.0001, in one addition.
 ADD_TO_MOVIE = np.float32(1e-4)
