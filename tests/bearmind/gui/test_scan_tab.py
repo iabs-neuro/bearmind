@@ -1,3 +1,4 @@
+import os
 import re
 import threading
 import time
@@ -5,11 +6,11 @@ import time
 import pytest
 from PySide6.QtCore import QEventLoop, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtWidgets import QHeaderView, QLabel, QPushButton
 
-from bearmind import monitor, registry, scan
+from bearmind import actions, fileio, monitor, registry, scan, scan_view
 from bearmind.gui.app import MainWindow
-from bearmind.gui.monitor_tab import EXCLUDED_INK, MonitorTab
+from bearmind.gui.monitor_tab import CELL_BG, EXCLUDED_INK, MonitorTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.paths import SeriesPaths
 from bearmind.registry import Anomaly
@@ -166,6 +167,8 @@ def test_details_show_all_anomalies(qapp, make_series, tmp_path):
     fixed = next(line for line in text.splitlines() if "the last frame is broken" in line)
     assert "fixed automatically" in fixed and fixed.startswith("FIXED")
     assert "Part folders:" in text and "FPS:" in text and "Decisions: none yet" in text
+    folder = registry.load_record(SeriesPaths(root), sid).parts[0].folder
+    assert f"Part folders: {folder.replace('/', os.sep)}" in text  # M12: as Explorer shows it
 
 
 def test_exclude_and_include(qapp, make_series, tmp_path):
@@ -270,14 +273,42 @@ def test_unrecognized_double_click_opens(qapp, make_series, tmp_path):
 
 
 def test_broken_registry_file_listed(qapp, make_series, tmp_path):
+    """M8: under their own header, not among the unrecognized folders, and counted in the summary."""
     root = build(make_series, tmp_path)
     tab = make_tab(root)
     wait_scan(tab)
     f = SeriesPaths(root).registry_file(SIDS[0])
     f.write_text("{not json", encoding="utf-8")
     tab.refresh()
-    texts = [tab.unrecognized_list.item(i).text() for i in range(tab.unrecognized_list.count())]
-    assert any(str(f) in t or f.name in t for t in texts)
+    texts = [tab.broken_list.item(i).text() for i in range(tab.broken_list.count())]
+    assert len(texts) == 1 and f.name in texts[0]
+    assert tab.broken_header.text() == "Unreadable registry files" and not tab.broken_header.isHidden()
+    assert tab.unrecognized_list.count() == 0 and tab.unrecognized_header.isHidden()
+    assert "unreadable registry files 1" in tab.summary_label.text()
+    tab.broken_list.itemDoubleClicked.emit(tab.broken_list.item(0))
+    assert tab.dlg.opened == [f.parent]
+
+
+def test_info_and_accepted_lines_in_details(qapp, make_series, tmp_path):
+    """I7: single-frame drops are information (no colour, not counted); M1: an accepted mismatch says so."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",), ts_rows=25)
+    tab = make_tab(root)
+    wait_scan(tab)
+    sid = "NOF_H01_1D"
+    add_anomalies(root, sid, Anomaly("dropped_frames", "warning", "1 gap in timestamps (max 72 ms)",
+                                     data={"n_gaps": 1, "max_gap_ms": 72.0, "n_dropped": 1}))
+    # one lost frame is 4 % of this 25-frame session; a long real session at 1 % has hundreds
+    tab.paths.series_config.write_text("scan:\n  dropped_frames_warn: {share: 0.5}\n", encoding="utf-8")
+    actions.accept_mismatch(tab.paths, [sid], "me")
+    tab.refresh()
+    select(tab, sid)
+    text = tab.details.toPlainText()
+    info = next(line for line in text.splitlines() if "1 gap in timestamps" in line)
+    assert info.startswith("INFO ") and "(information: no gap longer than 1 s" in info
+    accepted = next(line for line in text.splitlines() if "timestamp rows" in line)
+    assert accepted.startswith("FIXED") and accepted.endswith("(accepted by you)")
+    assert tab.model.item(0, 0).background().color().name() == CELL_BG["ok"]  # no warning colour
+    assert "with problems 0" in tab.summary_label.text()
 
 
 def test_rescan_while_runner_alive_asks(qapp, make_series, tmp_path, monkeypatch):
@@ -524,3 +555,246 @@ def test_scan_tab_decision_refreshes_monitor_at_once(qapp, make_series, tmp_path
     m = w.monitor.model
     item = next(m.item(i, 0) for i in range(m.rowCount()) if m.item(i, 0).text() == SIDS[0])
     assert item.foreground().color().name() == EXCLUDED_INK
+
+
+def test_finish_text_uses_the_scan_total(qapp, make_series, tmp_path):
+    """I1: a session the scan no longer finds stays in the table; the finish text counts what was scanned."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D", "NOF_H01_2D"))
+    tab = make_tab(root)
+    said = []
+    tab.status_message.connect(said.append)
+    wait_scan(tab)
+    next((root / "1_Raw").rglob("NOF_H01_2D")).rename(tmp_path / "away")
+    assert wait_scan(tab)
+    assert tab.model.rowCount() == 2 and tab.progress_label.text() == "Scan finished — 1 / 1"
+    assert said[-1] == "Scanned 1 session"
+    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 9).text() == "by anomaly"
+    assert "not found by the last scan" in tab.model.item(row_of(tab, "NOF_H01_2D"), 8).text()
+    assert "not found by the last scan 1" in tab.summary_label.text()
+
+
+def test_missing_raw_fails_the_scan(qapp, make_series, tmp_path):
+    root = build(make_series, tmp_path)
+    tab = make_tab(root)
+    wait_scan(tab)
+    (root / "1_Raw").rename(tmp_path / "moved")
+    assert wait_scan(tab) is False
+    assert tab.dlg.messages[-1][0] == "Scan failed" and "1_Raw not found" in tab.dlg.messages[-1][1]
+
+
+def _excluded_three(make_series, tmp_path):
+    """NOF_H01_1D excluded by you, NOF_H01_2D excluded by anomaly (frame mismatch), NOF_H02_1D included."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D", "NOF_H02_1D"))
+    make_series(root, sid="NOF_H01_2D", ts_rows=25)
+    tab = make_tab(root)
+    wait_scan(tab)
+    actions.set_excluded(tab.paths, ["NOF_H01_1D"], True, "me")
+    tab.refresh()
+    return tab
+
+
+def _decisions(tab, sid):
+    return [(d.what, d.value) for d in registry.load_record(tab.paths, sid).decisions]
+
+
+def test_include_only_for_sessions_excluded_by_you(qapp, make_series, tmp_path):
+    """I4: Include writes only for rows excluded by you and names only them; an anomaly is fixed by Rescan or
+    Accept, which the button's tooltip says."""
+    tab = _excluded_three(make_series, tmp_path)
+    select(tab, "NOF_H01_2D")
+    assert not tab.include_button.isEnabled()
+    assert "Rescan" in tab.include_button.toolTip() and "Accept" in tab.include_button.toolTip()
+    before = {sid: _decisions(tab, sid) for sid in ("NOF_H01_2D", "NOF_H02_1D")}
+    select(tab, "NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D")
+    assert tab.include_button.isEnabled()
+    tab.include_button.click()
+    assert tab.dlg.asked[-1] == "Session NOF_H01_1D will be included in the batch again."
+    assert _decisions(tab, "NOF_H01_1D")[-1] == ("exclude", "false")
+    assert {sid: _decisions(tab, sid) for sid in ("NOF_H01_2D", "NOF_H02_1D")} == before
+
+
+def test_exclude_only_for_sessions_not_excluded(qapp, make_series, tmp_path):
+    tab = _excluded_three(make_series, tmp_path)
+    before = {sid: _decisions(tab, sid) for sid in ("NOF_H01_1D", "NOF_H01_2D")}
+    select(tab, "NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D")
+    tab.exclude_button.click()
+    assert tab.dlg.asked[-1].startswith("Session NOF_H02_1D will be excluded")
+    assert _decisions(tab, "NOF_H02_1D")[-1] == ("exclude", "true")
+    assert {sid: _decisions(tab, sid) for sid in ("NOF_H01_1D", "NOF_H01_2D")} == before
+
+
+def test_included_by_you_over_an_error(qapp, make_series, tmp_path):
+    """I4: the CLI `decide include` still includes a session with an error; the column says who did it."""
+    tab = _excluded_three(make_series, tmp_path)
+    actions.set_excluded(tab.paths, ["NOF_H01_2D"], False, "me")
+    tab.refresh()
+    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 9).text() == "included by you"
+
+
+def test_failure_after_the_writes_refreshes_the_table(qapp, make_series, tmp_path, monkeypatch):
+    """I5: the scan wrote the records, then the unrecognized list failed: the table shows what is written."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",), ts_rows=25)
+    tab = make_tab(root)
+    wait_scan(tab)
+    assert tab.model.item(0, 9).text() == "by anomaly"
+    make_series(root, sid="NOF_H01_1D")  # the person fixes the timestamps
+    real = fileio.write_atomic
+
+    def locked(path, *a, **k):
+        if str(path).endswith("scan_unrecognized.csv"):
+            raise PermissionError("scan_unrecognized.csv is open in Excel")
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(fileio, "write_atomic", locked)
+    assert wait_scan(tab) is False
+    assert tab.dlg.messages[-1] == ("Scan failed", "PermissionError: scan_unrecognized.csv is open in Excel")
+    assert tab.model.item(0, 9).text() == ""
+    assert registry.load_record(tab.paths, "NOF_H01_1D").excluded is False
+
+
+def test_refresh_failure_reported_once_then_status_line(qapp, make_series, tmp_path, monkeypatch):
+    """I6: like Monitor's refresh: the first failure is reported (a dialog), repeats go to the status line."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",))
+    reported, said = [], []
+    tab = make_tab(root, report=lambda *exc: reported.append(exc[1]))
+    tab.status_message.connect(said.append)
+    real, fail = scan_view.scan_view, ["share gone"]
+
+    def view(*a, **k):
+        if fail[0]:
+            raise OSError(fail[0])
+        return real(*a, **k)
+
+    monkeypatch.setattr(scan_view, "scan_view", view)
+    tab.refresh()
+    tab.refresh()
+    assert [str(e) for e in reported] == ["share gone"]
+    assert said == ["Refresh failed: OSError: share gone"]
+    fail[0] = None
+    tab.refresh()
+    fail[0] = "again"
+    tab.refresh()
+    assert len(reported) == 2  # a refresh that worked in between: the next failure is reported again
+
+
+def test_odd_record_row_does_not_break_the_tab(qapp, tmp_path):
+    """I6: one record the view cannot read is a row that says so; the table still opens."""
+    from bearmind.registry import STAGES, RawPart, SessionRecord, StageRecord
+    paths = SeriesPaths(tmp_path / "s")
+    rec = SessionRecord(sid="NOF_H01_1D", mouse="NOF_H01", mode="bonsai",
+                        parts=[RawPart("1_Raw/x", ["x_0.avi"], 10, (16, 16), None, None, None, None)],
+                        n_frames=10, fps=20.0, fps_info={"fps": 20.0, "source": "timestamps"},
+                        anomalies=[Anomaly("frames_ts_mismatch", "error", "e", data={"diff": "abc"})],
+                        decisions=[], excluded=True, stages={s: StageRecord() for s in STAGES})
+    registry.save_record(paths, rec)
+    tab = make_tab(paths.root)
+    assert tab.model.rowCount() == 1
+    assert tab.model.item(0, 8).text().startswith("cannot show: ValueError")
+    assert tab.model.item(0, 4).text() == "–"
+
+
+def test_layout_excluded_column_does_not_stretch(qapp, make_series, tmp_path):
+    """R2: only the Anomalies column stretches; anomaly text stays on one line, the rest in the tooltip."""
+    tab = scanned(qapp, make_series, tmp_path)
+    head = tab.table.horizontalHeader()
+    assert not head.stretchLastSection()
+    assert head.sectionResizeMode(8) == QHeaderView.ResizeMode.Stretch
+    assert head.sectionResizeMode(9) != QHeaderView.ResizeMode.Stretch
+    assert not tab.table.wordWrap()
+
+
+def test_anomalies_cell_greys_fixed_lines(qapp, make_series, tmp_path):
+    """R2: fixed lines are marked "(fixed)" and drawn grey; the tooltip lists every line with its note."""
+    from PySide6.QtGui import QPainter, QPixmap
+    from PySide6.QtWidgets import QStyleOptionViewItem
+    from bearmind.gui.scan_tab import SUMMARY_ROLE
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",), ts_rows=28)  # extra chunk frames: fixed
+    tab = make_tab(root)
+    wait_scan(tab)
+    add_anomalies(root, "NOF_H01_1D", Anomaly("no_metadata", "warning", "no start time"))
+    tab.refresh()
+    item = tab.model.item(0, 8)
+    assert item.data(SUMMARY_ROLE) == [("no recording start time", False), ("extra chunk frames: 2 (fixed)", True)]
+    assert item.text() == "no recording start time; extra chunk frames: 2 (fixed)"
+    assert item.toolTip().splitlines() == ["extra chunk frames: 2 (fixed automatically)", "no recording start time"]
+    # the delegate paints the parts (a narrow cell elides the last one) without raising
+    pix = QPixmap(120, 24)
+    painter = QPainter(pix)
+    opt = QStyleOptionViewItem()
+    opt.rect = pix.rect()
+    opt.widget = tab.table
+    try:
+        tab.table.itemDelegateForColumn(8).paint(painter, opt, tab.model.index(0, 8))
+    finally:
+        painter.end()
+
+
+def test_confirmation_texts(qapp, make_series, tmp_path):
+    """M2, M3: the Scan tab says what Accept and Confirm stitch do."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D",), ts_rows=25)  # 5 frames more than timestamps
+    make_series(root, sid="NOF_H01_2D", ts_rows=35)  # 5 timestamps more than frames
+    tab = make_tab(root)
+    wait_scan(tab)
+    select(tab, "NOF_H01_1D")
+    tab.dlg.answer = False
+    tab.accept_button.click()
+    assert tab.dlg.asked[-1] == ("Session NOF_H01_1D will be used without the extra frames at the end; "
+                                 "the files stay unchanged.")
+    select(tab, "NOF_H01_2D")
+    tab.accept_button.click()
+    assert tab.dlg.asked[-1] == ("Session NOF_H01_2D will be used without the extra timestamp rows at the end; "
+                                 "the files stay unchanged.")
+    split = make_tab(make_series(tmp_path / "split", "legacy_split"))
+    wait_scan(split)
+    sid = split.model.item(0, 0).text()
+    select(split, sid)
+    split.dlg.answer = False
+    split.stitch_button.click()
+    assert split.dlg.asked[-1] == f"Session {sid} will be marked as checked: the stitch by start time stays as it is."
+
+
+def test_open_folder_of_unreadable_and_missing(qapp, make_series, tmp_path):
+    """M6: a session whose video cannot be read opens its session folder; a folder that is gone is said so."""
+    root = build(make_series, tmp_path, sids=("NOF_H01_1D", "NOF_H01_2D"))
+    next((root / "1_Raw").rglob("NOF_H01_1D_1.avi")).write_bytes(bytes(range(256)) * 20)
+    tab = make_tab(root)
+    wait_scan(tab)
+    select(tab, "NOF_H01_1D")
+    assert tab.open_folder_button.isEnabled()
+    tab.open_folder_button.click()
+    assert tab.dlg.opened == [root / "1_Raw" / "HM_NOF_1D" / "NOF_H01_1D"]
+    next((root / "1_Raw").rglob("NOF_H01_2D")).rename(tmp_path / "away")
+    wait_scan(tab)
+    select(tab, "NOF_H01_2D")
+    tab.open_folder_button.click()
+    assert len(tab.dlg.opened) == 1 and "Folder not found" in tab.dlg.messages[-1][1]
+
+
+def test_unknown_session_refreshes_the_table(qapp, make_series, tmp_path):
+    """M9: a session removed meanwhile (registry file gone): the message, then the table without it."""
+    tab = scanned(qapp, make_series, tmp_path)
+    select(tab, SIDS[0])
+    tab.paths.registry_file(SIDS[0]).unlink()
+    tab.exclude_button.click()
+    assert "Not in the series any more" in tab.dlg.messages[-1][1]
+    assert SIDS[0] not in [tab.model.item(i, 0).text() for i in range(tab.model.rowCount())]
+
+
+def test_timer_refreshes_only_while_visible(qapp, make_series, tmp_path):
+    """M10: like Monitor, the visible tab follows registry changes; a hidden one waits for showEvent."""
+    from bearmind import config
+    tab = scanned(qapp, make_series, tmp_path)
+    assert tab.timer.isActive()
+    assert tab.timer.interval() == int(config.load_defaults()["monitor"]["refresh_ms"])
+    actions.set_excluded(tab.paths, [SIDS[0]], True, "monitor")
+    tab.timer.timeout.emit()
+    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == ""  # hidden: not refreshed
+    tab.show()
+    actions.set_excluded(tab.paths, [SIDS[1]], True, "monitor")
+    select(tab, SIDS[2])
+    tab.timer.timeout.emit()
+    assert tab.model.item(row_of(tab, SIDS[1]), 9).text() == "by you"
+    assert tab.selected_sids() == [SIDS[2]]
+    tab.shutdown()
+    assert not tab.timer.isActive()
+    tab.close()

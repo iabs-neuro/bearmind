@@ -37,6 +37,7 @@ class AnomalyLine:
     reviewed: bool      # split_recording (and its pause) whose current stitch a person confirmed
     info: bool = False  # dropped_frames below scan.dropped_frames_warn: shown, not a problem
     note: str = ""      # said after the text in the details: "fixed automatically", "checked by you", ...
+    data: dict = field(default_factory=dict)  # Anomaly.data (the sign of a mismatch for its confirmation)
 
     @property
     def counts(self) -> bool:
@@ -205,7 +206,8 @@ def _line(a, rec: SessionRecord, n_parts: int, split, gaps, confirmed: bool, rul
     elif a.code == "dropped_frames" and not pause:
         counts, note = _dropped_counts(a.data, rec.n_frames, rule)
         info = not counts
-    return AnomalyLine(a.code, a.level, a.message, _short(a, n_parts, pause), a.auto_fixed, reviewed, info, note)
+    return AnomalyLine(a.code, a.level, a.message, _short(a, n_parts, pause), a.auto_fixed, reviewed, info, note,
+                       dict(a.data))
 
 
 def _summary_parts(lines: list[AnomalyLine]) -> list[tuple[str, bool]]:
