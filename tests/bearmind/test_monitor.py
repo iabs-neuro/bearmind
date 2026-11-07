@@ -119,6 +119,17 @@ def test_runner_state_after_normal_exit(tmp_series):
     assert r.alive is False and r.status == "stopped"
 
 
+def test_fake_runner_clean_exit_is_stopped_not_dead(tmp_series):
+    """Like the real runner, the stand-in writes an idle pulse and removes its lock when it ends normally."""
+    p = spawn(tmp_series, "A_M1_1D", "mc", "running")
+    stop(p)
+    hb = monitor._read_json(tmp_series.heartbeat)
+    assert hb["status"] == "idle" and hb["current"] is None and hb["exit"] == "finished"
+    assert not tmp_series.lock.exists()
+    r = monitor.runner_state(tmp_series)
+    assert r.alive is False and r.status == "stopped"
+
+
 def test_cell_levels_and_texts(tmp_series):
     put(tmp_series, "A_M1_1D", {
         "mc": done({"max_shift_px": 18.0}, [check("mc", "mc_max_shift_px", "warning")]),

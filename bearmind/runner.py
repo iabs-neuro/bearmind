@@ -522,7 +522,7 @@ class _Heartbeat:
         self.lock = threading.Lock()
         self.payload = {"pid": os.getpid(), "time": None, "current": None,
                         "counts": dict.fromkeys(COUNT_KEYS, 0), "by_stage": {}, "status": "running",
-                        "unschedulable": {}}
+                        "unschedulable": {}, "exit": None}
         self._stop = threading.Event()
         self._thread = None
 
@@ -683,6 +683,9 @@ class _Run:
         self.logs = self.hb = None
         self.waiting_logged = set()
         self.auto_retries = {}  # (sid, stage) -> automatic retries after a crash used in this run
+        # why the run ended, for the window: "finished", "stopped" (stop request), "interrupted" (Ctrl+C) or
+        # "error: <exception>"; written with the final heartbeat
+        self.exit = None
 
     def open(self):
         self.logs = _Logs(self.paths, self.console)
@@ -690,15 +693,16 @@ class _Run:
         self.hb.update(status="running")
         self.hb.start()
 
-    def refresh(self, status="running", records=None, broken=None, problems=None):
-        """Heartbeat counts and summary.csv from the registry as it is now."""
+    def refresh(self, status="running", records=None, broken=None, problems=None, **extra):
+        """Heartbeat counts and summary.csv from the registry as it is now; `extra` goes into the heartbeat."""
         if records is None:
             records, broken = registry.read_all(self.paths)
         if problems is None:
             problems = schedule_problems(self.paths, records, broken=broken or ())
         cur = None if self.current is None else {"sid": self.current[0], "stage": self.current[1]}
         counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages)
-        self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur, unschedulable=problems)
+        self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur, unschedulable=problems,
+                       **extra)
         summary(self.paths, records, problems=problems, broken=broken)
 
     def abort(self):
@@ -724,9 +728,11 @@ class _Run:
         if self.hb is not None:
             self.hb.stop()
             try:
-                self.refresh(status="idle")
+                self.refresh(status="idle", exit=self.exit)
             except Exception as e:
                 log.warning("final heartbeat / summary failed: %s", _last_line(e))
+                # the window tells "stopped" from "not responding" by this pulse: it is written without counts
+                self.hb.update(status="idle", current=None, exit=self.exit)
         if self.logs is not None:
             self.logs.close()
 
@@ -1267,9 +1273,12 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         result = _loop(paths, run_)
         if result.get("stopped"):
             _clear_stop_request(paths)
+        run_.exit = "stopped" if result.get("stopped") else "finished"
         log.info("run finished: %s", ", ".join(f"{k} {v}" for k, v in result.items()))
         return result
     except BaseException as e:
+        run_.exit = ("interrupted" if isinstance(e, KeyboardInterrupt)
+                     else "error: " + " ".join(_last_line(e).split()))
         run_.abort()
         log.error("run stopped: %s", _last_line(e))
         raise

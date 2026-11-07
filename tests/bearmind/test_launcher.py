@@ -162,3 +162,28 @@ def _kill(pid):
         psutil.Process(pid).kill()
     except psutil.NoSuchProcess:
         pass
+
+
+def test_real_start_command_smoke(tmp_path):
+    """The command the Start button runs, on a series whose only session is excluded: the real runner starts,
+    finds nothing to do and exits; its console log is UTF-8 with the runner's own summary line, the final
+    heartbeat carries the exit reason and the lock is gone. Cyrillic and a space in the path."""
+    from bearmind import registry
+    from bearmind.registry import STAGES, SessionRecord, StageRecord
+
+    paths = SeriesPaths(tmp_path / "серия тест")
+    registry.save_record(paths, SessionRecord(
+        sid="LT1_J01_1D", mouse="LT1_J01", mode="bonsai", parts=[], n_frames=100, fps=20.0, fps_info={},
+        anomalies=[], decisions=[], excluded=True, stages={s: StageRecord() for s in STAGES}))
+    pid = launcher.start_detached(paths.root)  # default runner_command: python -m bearmind run SERIES
+    try:
+        psutil.Process(pid).wait(120)
+    except psutil.NoSuchProcess:
+        pass
+    finally:
+        _kill(pid)
+    text = (paths.logs_dir / "runner_console.log").read_bytes().decode("utf-8")  # strict: UTF-8 or it raises
+    assert "this run: done 0, failed 0, skipped 0" in text and "excluded 1" in text, text
+    assert json.loads(paths.heartbeat.read_text(encoding="utf-8"))["exit"] == "finished"
+    assert not paths.lock.exists()
+    assert monitor.runner_state(paths).status == "stopped"

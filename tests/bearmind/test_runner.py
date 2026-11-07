@@ -1452,3 +1452,59 @@ def test_stop_request_removal_retries_permission_error(series, monkeypatch):
     monkeypatch.setattr(Path, "unlink", unlink)
     res = _run(s)
     assert res["stopped"] is True and len(fails) == 2 and not s.paths.stop_request.exists()
+
+
+# --- the exit reason in the final heartbeat ---
+
+def test_final_heartbeat_exit_finished(series):
+    s = series
+    _run(s)
+    hb = _heartbeat(s.paths)
+    assert hb["status"] == "idle" and hb["exit"] == "finished"
+
+
+def test_final_heartbeat_exit_stopped(series):
+    s = series
+    s.stubs.hooks[(S1, "crop")] = lambda paths, rec, cfg: paths.stop_request.write_text("stop")
+    assert _run(s)["stopped"] is True
+    hb = _heartbeat(s.paths)
+    assert hb["status"] == "idle" and hb["exit"] == "stopped"
+
+
+def test_final_heartbeat_exit_runner_error(series, monkeypatch):
+    s = series
+
+    def broken_loop(paths, run_):
+        raise RuntimeError("registry folder gone")
+
+    monkeypatch.setattr(runner, "_loop", broken_loop)
+    with pytest.raises(RuntimeError):
+        _run(s)
+    hb = _heartbeat(s.paths)
+    assert hb["status"] == "idle" and hb["exit"] == "error: RuntimeError: registry folder gone"
+    assert not s.paths.lock.exists()
+
+
+def test_final_heartbeat_exit_interrupted(series):
+    s = series
+    s.stubs.fail[(S2, "mc")] = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt):
+        _run(s)
+    assert _heartbeat(s.paths)["exit"] == "interrupted"
+
+
+def test_final_heartbeat_keeps_exit_when_the_last_refresh_fails(series, monkeypatch):
+    """The window shows the exit reason: it must reach the heartbeat even when the registry cannot be read
+    at the very end."""
+    s = series
+    real = runner._Run.refresh
+
+    def refresh(self, status="running", *a, **k):
+        if status == "idle":
+            raise OSError("registry not readable")
+        return real(self, status, *a, **k)
+
+    monkeypatch.setattr(runner._Run, "refresh", refresh)
+    _run(s)
+    hb = _heartbeat(s.paths)
+    assert hb["status"] == "idle" and hb["exit"] == "finished" and hb["current"] is None
