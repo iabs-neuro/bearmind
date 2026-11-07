@@ -528,16 +528,33 @@ def _preview_setting(value, name):
 
 def cmd_previews(args) -> int:
     paths = _series(args.series)
-    _records(paths)  # a scanned series: a typo in the folder name must not create a config elsewhere
+    recs = _records(paths)  # a scanned series: a typo in the folder name must not create a config elsewhere
     tbin, ssub = _preview_setting(args.tbin, "--tbin"), _preview_setting(args.ssub, "--ssub")
-    actions.set_previews(paths, args.state == "on", tbin=tbin, ssub=ssub)
-    if args.state == "off":
+    on = args.state == "on"
+    actions.set_previews(paths, on, tbin=tbin, ssub=ssub)
+    if not on:
         _say("[OK] previews off; existing preview files are kept")
-        return OK
-    pv = config.resolve(paths)["preview"]
-    _say(f"[OK] previews on (tbin {pv['tbin']}, ssub {pv['ssub']}); the next run makes them for every session "
-         f"whose MC / CNMF-E is done")
+    else:
+        pv = config.resolve(paths)["preview"]
+        _say(f"[OK] previews on (tbin {pv['tbin']}, ssub {pv['ssub']}); the next run makes them for every "
+             f"session whose MC / CNMF-E is done")
+    own = _own_preview_sessions(paths, recs, on)
+    if own:  # a mouse or session config overrides the series setting
+        _say(f"{own} sessions follow their own mouse config")
     return OK
+
+
+def _own_preview_sessions(paths, recs, on: bool) -> int:
+    """Sessions whose effective preview.enabled differs from what was just set (unreadable configs are left out)."""
+    n = 0
+    for rec in recs.values():
+        if rec.excluded:
+            continue
+        try:
+            n += bool(config.resolve(paths, rec.sid)["preview"]["enabled"]) != on
+        except Exception:
+            continue
+    return n
 
 
 # --- parser ---

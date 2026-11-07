@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from bearmind import cli, config, runner
+from bearmind import cli, config, naming, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, State, load_record, save_record, update_record
 from bearmind.stages import gate
@@ -707,3 +707,13 @@ def test_run_machine_busy(series, capsys, monkeypatch):
     monkeypatch.setattr(runner, "run", busy)
     assert _main("run", series.root, "--once") == 3
     assert "[FAILED] another batch is running on this machine" in capsys.readouterr().out
+
+
+def test_previews_command_names_sessions_with_their_own_setting(series, capsys):
+    _finished_setup(series)
+    assert _main("previews", series.root, "on") == 0
+    assert "follow their own" not in capsys.readouterr().out
+    config.update_yaml(series.paths.mouse_config(naming.mouse_id(SIDS[0])), {"preview": {"enabled": False}})
+    own = sum(1 for sid in SIDS if naming.mouse_id(sid) == naming.mouse_id(SIDS[0]))
+    assert _main("previews", series.root, "on") == 0
+    assert f"{own} sessions follow their own mouse config" in capsys.readouterr().out
