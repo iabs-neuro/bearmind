@@ -598,3 +598,12 @@ def test_unrecognized_list_read_with_retries(make_series, tmp_path, monkeypatch)
     monkeypatch.setattr(pathlib.Path, "read_text", busy)
     assert scan.read_unrecognized(SeriesPaths(root)) == [("1_Raw/junk", "folder name is not a session id")]
     assert len(refused) == 2
+
+
+def test_fps_outlier_with_min_sessions_one(make_series, tmp_path):
+    """checks.min_sessions_for_relative 1: a mouse with one session has no other session to compare with."""
+    from bearmind import config
+    root = tmp_path / "s"
+    config.update_yaml(SeriesPaths(root).series_config, {"checks": {"min_sessions_for_relative": 1}})
+    recs = _series_at(make_series, root, {"NOF_H01_1D": 20})
+    assert "fps_outlier" not in codes(recs["NOF_H01_1D"])

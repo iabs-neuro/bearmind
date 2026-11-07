@@ -472,7 +472,7 @@ def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[S
             continue
         own = rates.get(mouse_id(sid), [])
         others = sorted(r for s, r in own if s != sid)
-        if len(own) >= min_n and not any(abs(fps / o - 1) <= dev for o in others):
+        if others and len(own) >= min_n and not any(abs(fps / o - 1) <= dev for o in others):
             anomalies.append(Anomaly("fps_outlier", "warning",
                                      f"fps {fps:.1f}; other sessions of the mouse: {rates_text(others)}",
                                      data={"fps": fps, "nearest": min(others, key=lambda o: abs(o - fps)),
