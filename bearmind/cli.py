@@ -127,6 +127,12 @@ def _next_hint(paths) -> str:
 
 # --- commands ---
 
+def cmd_gui(args) -> int:
+    from bearmind.gui import app  # lazy: the other commands must work without PySide6
+
+    return app.main([args.series] if args.series else [])
+
+
 def cmd_scan(args) -> int:
     paths = _series(args.series)
     records = scan.scan_series(paths.root)
@@ -481,6 +487,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--sessions", nargs="+", metavar="SID", help="only these sessions")
     sp.add_argument("--once", action="store_true", help="do not wait for people; stop when nothing is ready")
     add("stop", cmd_stop, "ask the runner to stop before its next stage", who=False)
+    sp = sub.add_parser("gui", help="open the BEARMiND window", description="open the BEARMiND window")
+    sp.add_argument("series", metavar="SERIES", nargs="?", help="series folder (default: choose in the window)")
+    sp.set_defaults(func=cmd_gui)
     add("status", cmd_status, "show state of every session and write summary.csv", who=False)
 
     sp = add("thresholds", cmd_thresholds, "set CNMF-E thresholds", who=False)
@@ -529,6 +538,8 @@ def main(argv=None) -> int:
         args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 0
+    if args.command == "gui":  # the series is optional here, so it is not resolved below
+        return args.func(args)
     cwd = os.getcwd()
     try:
         args.series = str(Path(args.series).resolve())  # absolute before the chdir
