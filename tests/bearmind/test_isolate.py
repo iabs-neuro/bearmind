@@ -254,3 +254,16 @@ def test_stall_timeout_zero_disables_the_watchdog(stage, monkeypatch):
     # a stage process start alone takes longer than 0.001 s; with the watchdog off nothing is killed
     res = isolate.run_isolated(spec("busy"), stage.paths, stage.rec, stage.cfg, stage.log, stall_timeout_min=0)
     assert res.metrics["busy_s"] >= 0.5
+
+
+@pytest.mark.slow
+def test_dead_pool_worker_during_parallel_threshold_maps_fails_the_stage(stage):
+    with Descendants() as d:
+        with pytest.raises(isolate.StageCrashed, match=r"^pool worker died$") as ei:
+            run(stage, "maps_worker_killed")
+        ended = time.time()
+    assert ei.value.exit_code == POOL_WORKER_DIED
+    assert ended - json.loads((stage.notes / "killed_at.json").read_text(encoding="utf-8")) < 15
+    rows = tree(stage)
+    assert len(rows) == 4 and survivors(rows) == []
+    assert d.alive() == []

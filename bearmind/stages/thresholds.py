@@ -35,16 +35,8 @@ def _projections(movie):
 
 
 def map_peak_gb(T: int, h: int, w: int, g: int, tsub: int, mem_gb: float) -> float:
-    """Peak RAM of one compute_init_maps call.
-
-    It keeps about 6 float32 copies of a strip (ceil(T / tsub) frames x w columns x rows). The strip has
-    mem_gb worth of rows but never fewer than 4 * g + 10 (the filter margin), so on long movies the peak
-    exceeds mem_gb.
-    """
-    t_ds = math.ceil(T / tsub)
-    budget_rows = mem_gb * 1e9 / (24 * t_ds * w)
-    rows = min(h, max(budget_rows, 4 * g + 10))
-    return 24 * t_ds * w * rows / 1e9
+    """Peak RAM of one compute_init_maps call (the strip model lives in bm_qc, next to the strips)."""
+    return bm_qc.init_maps_peak_bytes(mem_gb, math.ceil(T / tsub), h, w, g) / 1e9
 
 
 def map_workers(T: int, h: int, w: int, gsigs: list, tsub: int, cfg) -> int:
@@ -54,6 +46,8 @@ def map_workers(T: int, h: int, w: int, gsigs: list, tsub: int, cfg) -> int:
         return 1
     mem_gb = mem_budget_gb(cfg)
     peak = max(map_peak_gb(T, h, w, g, tsub, mem_gb) for g in gsigs)
+    # strip RAM only: each worker's baseline (imports) and the returned maps fit in the headroom between
+    # cnmf_ram_budget_gb and physical RAM
     by_ram = math.floor(float(cfg["machine"]["cnmf_ram_budget_gb"]) / peak)
     return int(max(1, min(cap, by_ram)))
 
@@ -176,4 +170,4 @@ def run(paths, rec, cfg) -> StageResult:
         anomalies.append(Anomaly("no_threshold_suggestion", "warning", str(e) or type(e).__name__))
     return StageResult(outputs={"threshold_maps": paths.rel(out)}, anomalies=anomalies,
                        metrics={"suggested": suggested, "gsig_range": gsigs, "n_frames": n_frames,
-                                    "map_workers": n_workers})
+                                "map_workers": n_workers})

@@ -89,6 +89,24 @@ def _maps_from_filtered(filt, thresh_init):
     return np.nan_to_num(cn).astype(np.float32), np.nan_to_num(pnr).astype(np.float32)
 
 
+def init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig):
+    """Rows of one strip of compute_init_maps: the memory budget's worth, at least 8 and at most d1.
+
+    ~6 float32 copies of a strip live at the same time (data, filtered, thresholded, fft buffers); the strip
+    also carries a margin of rows on each side for the filter.
+    """
+    margin = _psf_kernel(gSig).shape[0] // 2 + 1
+    rows = int(max_mem_gb * 1e9 / (6 * 4 * T_ds * d2)) - 2 * margin
+    return int(np.clip(rows, 8, d1))
+
+
+def init_maps_peak_bytes(max_mem_gb, T_ds, d1, d2, gSig):
+    """Peak RAM of one compute_init_maps call: its 6 float32 copies of a strip with the filter margins."""
+    margin = _psf_kernel(gSig).shape[0] // 2 + 1
+    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig)
+    return 6 * 4 * T_ds * d2 * min(d1, rows + 2 * margin)
+
+
 def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_init=2,
                       mirror=True, max_mem_gb=4, verbose=True):
     """
@@ -121,9 +139,7 @@ def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_
 
     psf = _psf_kernel(gSig)
     margin = psf.shape[0] // 2 + 1
-    # ~6 float32 copies of a strip live at the same time (data, filtered, thresholded, fft buffers)
-    rows = int(max_mem_gb * 1e9 / (6 * 4 * T_ds * d2)) - 2 * margin
-    rows = int(np.clip(rows, 8, d1))
+    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig)
 
     out = {'cn': np.zeros((d1, d2), np.float32), 'pnr': np.zeros((d1, d2), np.float32),
            'mean': np.zeros((d1, d2), np.float32)}

@@ -146,3 +146,37 @@ def lingering(paths, rec, cfg):
 
     threading.Thread(target=time.sleep, args=(600,), daemon=False).start()
     return StageResult(metrics={"ok": True})
+
+
+def maps_worker_killed(paths, rec, cfg):
+    """The parallel threshold maps on a small memmap; a pool worker is killed right after the pool starts."""
+    import threading
+
+    import numpy as np
+    import psutil
+
+    from bearmind import pool
+    from bearmind.stages import thresholds
+
+    d = Path(cfg["fake"]["dir"])
+    d.mkdir(parents=True, exist_ok=True)
+    shape = (600, 48, 48)
+    u8 = d / "u8.dat"
+    np.random.default_rng(0).integers(0, 255, shape, dtype=np.uint8).tofile(u8)
+    real = pool.start_pool
+
+    def start(n):
+        dview = real(n)
+        workers = [p.pid for p in dview._pool]
+        _tree(cfg, [os.getpid(), *workers])
+
+        def kill():
+            psutil.Process(workers[0]).kill()
+            (d / "killed_at.json").write_text(json.dumps(time.time()), encoding="utf-8")
+
+        threading.Thread(target=kill).start()
+        return dview
+
+    pool.start_pool = start
+    thresholds._parallel_maps(u8, shape, [3, 4, 5], 1, 1.0, 3)
+    return StageResult()
