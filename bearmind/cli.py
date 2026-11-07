@@ -145,6 +145,7 @@ def cmd_scan(args) -> int:
             if a.code == "registry_recreated":
                 _say(f"[WARN] {r.sid}: {a.message}")
     for r in excluded:
+        # printed here, not taken from ActionResult.warnings: scan prints these lines in its own order
         why = "; ".join(a.message for a in r.anomalies if a.level == "error") or "excluded by a decision"
         _say(f"[WARN] {r.sid}: excluded - {why}")
     odd = scan.read_unrecognized(paths)

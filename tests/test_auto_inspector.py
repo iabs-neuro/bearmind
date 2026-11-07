@@ -43,6 +43,7 @@ def _same(a, b):
     return a == b
 
 
+@pytest.mark.filterwarnings("ignore:.*Re-running reconstruction with default kinetics:UserWarning")
 def test_every_neuron_gets_the_seed(monkeypatch):
     seen = []
 

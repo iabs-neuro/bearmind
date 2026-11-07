@@ -169,3 +169,12 @@ def test_export_summary(series, tmp_path):
     dest = actions.export_summary(series.paths, tmp_path / "out.csv")
     assert dest.is_file()
     assert "sid" in dest.read_text(encoding="utf-8").splitlines()[0].split(",")
+
+
+def test_export_summary_equals_status_csv(series, capsys):
+    from tests.bearmind.test_cli import _status
+
+    _status(series, capsys)
+    from_status = series.paths.summary_csv.read_bytes()
+    dest = actions.export_summary(series.paths, series.root / "copy.csv")
+    assert dest.read_bytes() == from_status

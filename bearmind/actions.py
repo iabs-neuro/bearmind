@@ -15,8 +15,6 @@ from bearmind import config, registry, runner, scan
 from bearmind.registry import STAGES, Decision, State
 from bearmind.stages import WaitingForInput, gate
 
-_MAX_LISTED = 12
-
 
 @dataclass
 class ActionResult:
@@ -292,5 +290,8 @@ def accept_suggested(paths, sids) -> ActionResult:
 
 
 def export_summary(paths, dest: Path) -> Path:
-    runner.summary(paths).to_csv(dest, index=False, encoding="utf-8")
+    """The same table `run_bearmind status` writes to summary.csv (same records, problems, broken files)."""
+    state = runner.series_state(paths)
+    df = runner.summary(paths, state.records, problems=state.problems, broken=state.broken)
+    df.to_csv(dest, index=False, encoding="utf-8", lineterminator="\n")
     return dest
