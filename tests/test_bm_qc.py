@@ -164,3 +164,29 @@ def test_videos_have_even_sides_after_ssub(tmp_path):
     with av.open(str(tmp_path / 'w.mp4')) as c:
         s = c.streams.video[0]
         assert (s.codec_context.height, s.codec_context.width) == (32, 44)
+
+
+@pytest.mark.parametrize("dims", [(456, 435), (437, 521)])
+@pytest.mark.parametrize("ssub_B", [3, 4])
+def test_model_chunker_reads_ssub_B_from_W_when_frame_does_not_divide(dims, ssub_B):
+    """The QC runs before the estimates are saved: a size mismatch here would throw away a whole fit."""
+    from types import SimpleNamespace
+
+    import scipy.sparse as sp
+
+    d1, d2 = dims
+    rng = np.random.default_rng(0)
+    n_ds = ((d1 - 1) // ssub_B + 1) * ((d2 - 1) // ssub_B + 1)
+    T, K = 12, 3
+    est = SimpleNamespace(A=sp.random(d1 * d2, K, density=0.001, format="csc", random_state=1),
+                          C=rng.random((K, T)), W=sp.eye(n_ds, format="csr") * 0.1,
+                          b0=rng.random(d1 * d2), b=None, f=None, idx_components=None)
+    mov = rng.integers(0, 255, (T, d1, d2)).astype(np.uint8)
+    m = bm_qc._ModelChunker(est, mov)
+    assert m.ssub_B == ssub_B
+    Y, B, AC, R = m.chunk(0, 5)
+    assert Y.shape == B.shape == AC.shape == R.shape == (5, d1, d2)
+    assert np.isfinite(B).all() and np.isfinite(R).all()
+    # the ring part is one value per ssub_B x ssub_B block (nearest-neighbour upsampling), cut at the frame edge
+    ring = B[0] - est.b0.reshape((d1, d2), order="F")
+    assert np.allclose(ring[:ssub_B, :ssub_B], ring[0, 0], atol=1e-4)
