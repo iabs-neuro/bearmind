@@ -15,6 +15,10 @@ from bearmind import fileio
 log = logging.getLogger(__name__)
 
 STAGES = ("crop", "mc", "thresholds", "cnmf", "gate", "autoinspect", "export")
+# Optional side stage -> the main stage whose outputs it reads. A side stage runs right after its parent when
+# its checkbox is set; no main stage depends on it (hash or readiness), and a disabled one is never recorded.
+SIDE_STAGES = {"mc_preview": "mc", "cnmf_preview": "cnmf"}
+ALL_STAGES = ("crop", "mc", "mc_preview", "thresholds", "cnmf", "cnmf_preview", "gate", "autoinspect", "export")
 
 
 class State(str, Enum):

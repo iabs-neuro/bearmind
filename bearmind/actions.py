@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bearmind import config, registry, runner, scan
-from bearmind.registry import STAGES, Decision, State
+from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
 from bearmind.stages import WaitingForInput, gate
 
 
@@ -78,6 +78,13 @@ def threshold_error(gsig, min_corr, min_pnr):
     return gsig_error(gsig) or min_corr_error(min_corr) or min_pnr_error(min_pnr)
 
 
+def preview_setting_error(x, name):
+    """preview.tbin / preview.ssub: a whole number of frames / pixels averaged into one."""
+    if isinstance(x, bool) or not isinstance(x, int) or x < 1:
+        return f"{name} must be a whole number >= 1, got {x}"
+    return None
+
+
 # --- state helpers ---
 
 def _records(paths) -> dict:
@@ -141,8 +148,16 @@ def gate_passed(rec) -> bool:
     return g is not None and g.state is State.DONE
 
 
-def failed_stage(rec):
-    return next((s for s in STAGES if rec.stages.get(s) and rec.stages[s].state is State.FAILED), None)
+def failed_stage(rec, paths=None):
+    """The first FAILED stage in ALL_STAGES order. With `paths`, a failed preview the session's config turns off
+    holds nothing and is not offered (the config is read only for a record with a failed side stage)."""
+    cfg = None
+    if paths is not None and any(rec.stages.get(s) and rec.stages[s].state is State.FAILED for s in SIDE_STAGES):
+        try:
+            cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
+        except Exception:  # a broken config is shown by status; every failed stage counts meanwhile
+            cfg = None
+    return runner.first_failed(rec, cfg)
 
 
 def waiting_gate_sids(paths) -> list:
@@ -155,7 +170,7 @@ def waiting_threshold_sids(paths) -> list:
 
 
 def failed_sids(paths) -> list:
-    return [s for s, r in sorted(_records(paths).items()) if not r.excluded and failed_stage(r) is not None]
+    return [s for s, r in sorted(_records(paths).items()) if not r.excluded and failed_stage(r, paths) is not None]
 
 
 def _write_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> None:
@@ -254,13 +269,28 @@ def retry_failed(paths, sids, who: str) -> ActionResult:
     check_sids(recs, sids)
     res = ActionResult()
     for sid in sids:
-        first = failed_stage(recs[sid])
+        first = failed_stage(recs[sid], paths)  # a failed preview: only the preview is reset
         if first is None:
             res.failed[sid] = ("no_failed_stage", "")
             continue
         runner.reset_from(paths, sid, first, who)
         res.ok.append(sid)
     return res
+
+
+def set_previews(paths, enabled: bool, tbin: int | None = None, ssub: int | None = None) -> None:
+    """The preview checkbox and its downsampling, in the series config (section preview); None keeps a setting.
+    The runner rereads the configs on every loop, so a running batch makes the previews of every session whose
+    MC / CNMF-E is done, without running those again. Bad values raise ValueError before anything is written."""
+    patch = {"enabled": bool(enabled)}
+    for name, value in (("tbin", tbin), ("ssub", ssub)):
+        if value is None:
+            continue
+        bad = preview_setting_error(value, name)
+        if bad:
+            raise ValueError(bad)
+        patch[name] = int(value)
+    config.update_yaml(paths.series_config, {"preview": patch})
 
 
 def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> ActionResult:

@@ -27,8 +27,9 @@ pytestmark = [pytest.mark.realdata,
               pytest.mark.skipif(not SERIES, reason="BEARMIND_TEST_SERIES is not set")]
 
 EXPORT_KEYS = ("npz", "json", "timestamps", "filters")
-PREVIEW_KEYS = {"mc": ("preview_raw", "preview_raw_dff", "preview_mc", "preview_mc_dff"),
-                "cnmf": ("preview_cnmf_qc", "residual_png")}
+# outputs of the side stages, made only when preview.enabled was set for the run
+PREVIEW_KEYS = {"mc_preview": ("preview_raw", "preview_raw_dff", "preview_mc", "preview_mc_dff"),
+                "cnmf_preview": ("preview_cnmf_qc",)}
 
 
 @pytest.fixture(params=SERIES, ids=[p.name for p in SERIES])
@@ -78,9 +79,14 @@ def test_export_outputs(series):
 def test_previews_and_summary(series):
     recs = _active(series)
     for r in recs:
+        out = r.stages["cnmf"].outputs.get("residual_png")
+        assert out and (series.root / out).is_file(), f"{r.sid}: residual maps missing"
         for stage, keys in PREVIEW_KEYS.items():
+            st = r.stages.get(stage)
+            if st is None or st.state is not State.DONE:
+                continue
             for k in keys:
-                out = r.stages[stage].outputs.get(k)
+                out = st.outputs.get(k)
                 assert out and (series.root / out).is_file(), f"{r.sid}: preview {k} missing"
     with open(series.summary_csv, encoding="utf-8", newline="") as fh:
         rows = {row["sid"]: row for row in csv.DictReader(fh)}

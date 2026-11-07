@@ -16,18 +16,21 @@ import psutil
 import pytest
 import yaml
 
-from bearmind import config, fileio, provenance, registry, runner
+from bearmind import actions, config, fileio, provenance, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, State,
                                load_record, save_record)
 from bearmind.stages import StageResult, WaitingForInput, gate
 from bearmind.stages import mc as mc_stage
+from bearmind.stages import previews
 
 SIDS = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
 S1, S2, S3 = SIDS
 THRESH = {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}}
 ALL = [(sid, st) for st in STAGES for sid in SIDS]
 ZERO = {"done": 0, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
+SIDE = ("mc_preview", "cnmf_preview")  # side stages: preview videos, made only when preview.enabled
+MC_PREVIEWS = ("raw", "raw_dff", "mc", "mc_dff")
 
 
 def _tail(sid, first):
@@ -95,8 +98,7 @@ class Stubs:
         crop = mc_stage._crop(cfg, rec.parts[0].shape)  # uncropped only without FOV, clipped to the frame
         s = rec.sid
         return StageResult(
-            outputs=self._out(paths, mc_video=paths.mc_video(s), mc_shifts=paths.mc_shifts(s),
-                              preview_mc=paths.preview(s, "mc")),
+            outputs=self._out(paths, mc_video=paths.mc_video(s), mc_shifts=paths.mc_shifts(s)),
             metrics={"max_shift_px": 2.0, "mean_template_corr": 0.9,
                      "crop": None if crop is None else [crop.top, crop.left, crop.height, crop.width]})
 
@@ -109,9 +111,26 @@ class Stubs:
             raise WaitingForInput("thresholds")
         s = rec.sid
         return StageResult(
-            outputs=self._out(paths, estimates=paths.estimates(s),
-                              preview_cnmf_qc=paths.preview(s, "cnmf_qc"), residual_png=paths.residual_png(s)),
+            outputs=self._out(paths, estimates=paths.estimates(s), residual_png=paths.residual_png(s)),
             metrics={"n_components": 100, "missed_cells": 1, "gSig": cfg["cnmf"]["gSig"]})
+
+    @staticmethod
+    def _preview_settings(cfg):
+        prm = previews.preview_params(cfg)  # validates as the real preview stages do
+        if not prm["enabled"]:
+            raise ValueError("preview stage called with preview.enabled false")  # as the real ones
+        return {"tbin": prm["tbin"], "ssub": prm["ssub"], "bytes": 1}
+
+    def _mc_preview(self, paths, rec, cfg):
+        metrics = self._preview_settings(cfg)
+        s = rec.sid
+        return StageResult(outputs=self._out(paths, **{f"preview_{k}": paths.preview(s, k) for k in MC_PREVIEWS}),
+                           metrics=metrics)
+
+    def _cnmf_preview(self, paths, rec, cfg):
+        metrics = self._preview_settings(cfg)
+        return StageResult(outputs=self._out(paths, preview_cnmf_qc=paths.preview(rec.sid, "cnmf_qc")),
+                           metrics=metrics)
 
     def _gate(self, paths, rec, cfg):
         return gate.run(paths, rec, cfg)
@@ -144,7 +163,7 @@ def series(tmp_path, monkeypatch):
         save_record(paths, _record(sid))
         config.update_yaml(paths.session_config(sid), THRESH)
     stubs = Stubs()
-    for st in STAGES:
+    for st in STAGES + SIDE:
         monkeypatch.setitem(runner.STAGE_FUNCS, st, stubs(st))
     return SimpleNamespace(paths=paths, stubs=stubs, temp=temp, tmp=tmp_path)
 
@@ -390,9 +409,7 @@ def test_missing_required_output_reruns(series):
     _run(s)
     assert s.stubs.calls == _tail(S1, "cnmf")
     s.stubs.calls.clear()
-    s.paths.preview(S2, "cnmf_qc").unlink()
-    s.paths.preview(S2, "mc").unlink()
-    s.paths.residual_png(S2).unlink()
+    s.paths.residual_png(S2).unlink()  # a QC picture, not a required output
     assert _run(s) == ZERO and s.stubs.calls == []
 
 
@@ -1508,3 +1525,342 @@ def test_final_heartbeat_keeps_exit_when_the_last_refresh_fails(series, monkeypa
     _run(s)
     hb = _heartbeat(s.paths)
     assert hb["status"] == "idle" and hb["exit"] == "finished" and hb["current"] is None
+
+
+# --- side stages: the preview videos after mc and cnmf (plan 2026-11-06, decision P1) ---
+
+ORDER = ("crop", "mc", "mc_preview", "thresholds", "cnmf", "cnmf_preview", "gate", "autoinspect", "export")
+
+
+def _on(s, **settings):
+    actions.set_previews(s.paths, True, **settings)
+
+
+def _sides_only():
+    return [(sid, "mc_preview") for sid in SIDS] + [(sid, "cnmf_preview") for sid in SIDS]
+
+
+def _summary_row(s, sid):
+    return runner.summary(s.paths).set_index("sid").loc[sid]
+
+
+def test_registry_stage_order():
+    assert registry.ALL_STAGES == ("crop", "mc", "mc_preview", "thresholds", "cnmf", "cnmf_preview", "gate",
+                                   "autoinspect", "export")
+    assert registry.SIDE_STAGES == {"mc_preview": "mc", "cnmf_preview": "cnmf"}
+    assert registry.STAGES == tuple(s for s in registry.ALL_STAGES if s not in registry.SIDE_STAGES)
+
+
+def test_previews_off_by_default(series):
+    s = series
+    res = _run(s)
+    assert s.stubs.calls == ALL and res["done"] == 21
+    df = runner.summary(s.paths)
+    cols = list(df.columns)
+    assert cols.index("mc_preview") == cols.index("mc_max_shift_px") + 1
+    assert cols.index("cnmf_preview") == cols.index("cnmf_n_components") + 1
+    assert set(df["mc_preview"]) == {"off"} and set(df["cnmf_preview"]) == {"off"}
+    for sid in SIDS:
+        assert not set(SIDE) & set(load_record(s.paths, sid).stages)  # nothing written for a disabled stage
+    assert not s.paths.preview(S1, "mc").exists()
+
+
+def test_disabled_previews_never_call_the_stage_functions(series, monkeypatch):
+    """The real preview functions refuse a disabled preview (ValueError): the runner must never call them."""
+    s = series
+    monkeypatch.setitem(runner.STAGE_FUNCS, "mc_preview", "bearmind.stages.previews:mc_previews")
+    monkeypatch.setitem(runner.STAGE_FUNCS, "cnmf_preview", "bearmind.stages.previews:cnmf_preview")
+    assert _run(s) == {"done": 21, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
+    assert runner.series_state(s.paths).failed == {}
+
+
+def test_previews_turned_off_after_the_offer_are_not_started(series, monkeypatch):
+    """The checkbox cleared between next_ready and the start: the stage is not called and not recorded."""
+    s = series
+    real = runner.next_ready
+
+    def racing(*a, **k):
+        job = real(*a, **k)
+        if job is not None and job[1] in SIDE:
+            actions.set_previews(s.paths, False)
+        return job
+
+    monkeypatch.setattr(runner, "next_ready", racing)
+    _on(s)
+    res = _run(s)
+    assert s.stubs.calls == ALL and res["done"] == 21 and res["failed"] == 0
+    assert not set(SIDE) & set(load_record(s.paths, S1).stages)
+
+
+def test_previews_on_run_right_after_parent(series):
+    s = series
+    _on(s)
+    res = _run(s)
+    assert s.stubs.calls == [(sid, st) for st in ORDER for sid in SIDS]
+    assert res == {"done": 27, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
+    for sid in SIDS:
+        rec = load_record(s.paths, sid)
+        assert [rec.stages[x].state for x in SIDE] == [State.DONE] * 2
+        assert rec.stages["mc_preview"].params == {"enabled": True, "tbin": 2, "ssub": 1, "crf": 23, "speed": 4}
+        assert rec.stages["mc_preview"].checks == []
+        assert all((s.paths.root / rec.stages["mc_preview"].outputs[f"preview_{k}"]).is_file() for k in MC_PREVIEWS)
+    row = _summary_row(s, S1)
+    assert row["mc_preview"] == "done" and row["cnmf_preview"] == "done"
+    s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []
+
+
+def test_previews_turned_on_later_rerun_nothing_else(series):
+    s = series
+    _run(s)
+    finished = {(sid, st): load_record(s.paths, sid).stages[st].finished for sid in SIDS for st in STAGES}
+    _on(s)
+    s.stubs.calls.clear()
+    res = _run(s)
+    assert s.stubs.calls == _sides_only()
+    assert res["done"] == 6 and res["failed"] == 0
+    assert {(sid, st): load_record(s.paths, sid).stages[st].finished for sid in SIDS for st in STAGES} == finished
+
+
+def test_old_records_with_preview_outputs_rerun_only_previews(series):
+    """Review focus 1: a series processed before the side stages, whose MC and CNMF-E list preview files."""
+    s = series
+    _run(s)
+    for sid in SIDS:
+        old_mc = {f"preview_{k}": s.paths.rel(_touch(s.paths.preview(sid, k), b"old")) for k in MC_PREVIEWS}
+        old_qc = {"preview_cnmf_qc": s.paths.rel(_touch(s.paths.preview(sid, "cnmf_qc"), b"old"))}
+
+        def add(d, old_mc=old_mc, old_qc=old_qc):
+            d.stages["mc"].outputs.update(old_mc)
+            d.stages["cnmf"].outputs.update(old_qc)
+
+        registry.update_record(s.paths, sid, add)
+    _on(s)
+    s.stubs.calls.clear()
+    res = _run(s)
+    assert s.stubs.calls == _sides_only() and res["done"] == 6
+    assert s.paths.preview(S1, "mc").read_bytes() == b"x"  # the old file is replaced by the side stage's
+
+
+def test_preview_settings_change_remakes_only_previews(series):
+    s = series
+    _on(s)
+    _run(s)
+    s.stubs.calls.clear()
+    _on(s, tbin=4)
+    res = _run(s)
+    assert s.stubs.calls == _sides_only() and res["done"] == 6
+    assert load_record(s.paths, S1).stages["mc_preview"].params["tbin"] == 4
+
+
+def test_preview_failure_does_not_block(series):
+    """Review focus 2: a failed preview (disk full) holds nothing; it is visible in the summary."""
+    s = series
+    s.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    _on(s)
+    res = _run(s)
+    assert _states(s.paths, S1) == [State.DONE] * 7
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc_preview"].state is State.FAILED
+    assert rec.stages["mc_preview"].error == "RuntimeError: disk full"
+    assert rec.stages["cnmf_preview"].state is State.DONE
+    assert res["failed"] == 1 and res["skipped"] == 0 and res["done"] == 26
+    assert runner.series_state(s.paths).failed[S1][0] == "mc_preview"
+    row = _summary_row(s, S1)
+    assert row["mc_preview"] == "failed" and row["worst_check"] == "error"
+    assert row["error"] == "mc_preview: RuntimeError: disk full"
+    s.stubs.calls.clear()
+    assert _run(s) == ZERO  # FAILED with unchanged settings: retried only after a reset
+
+
+def test_retry_resets_only_the_preview(series):
+    s = series
+    s.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    _on(s)
+    _run(s)
+    del s.stubs.fail[(S1, "mc_preview")]
+    finished = load_record(s.paths, S1).stages["mc"].finished
+    runner.reset_from(s.paths, S1, "mc_preview", "viktor")
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc_preview"].state is State.PENDING and rec.stages["cnmf_preview"].state is State.DONE
+    assert _states(s.paths, S1) == [State.DONE] * 7
+    assert (rec.decisions[-1].what, rec.decisions[-1].value) == ("rerun_from", "mc_preview")
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == [(S1, "mc_preview")]
+    assert load_record(s.paths, S1).stages["mc"].finished == finished
+    assert runner.series_state(s.paths).failed == {}
+
+
+def test_mc_failure_skips_its_preview(series):
+    s = series
+    s.stubs.fail[(S1, "mc")] = RuntimeError("boom")
+    _on(s)
+    res = _run(s)
+    rec = load_record(s.paths, S1)
+    assert [rec.stages[x].state for x in SIDE] == [State.SKIPPED] * 2
+    assert res["failed"] == 1 and res["skipped"] == 7  # thresholds .. export and both previews
+    assert runner.series_state(s.paths).failed[S1][0] == "mc"
+
+
+def test_mc_rerun_resets_mc_preview(series):
+    s = series
+    _on(s)
+    _run(s)
+    s.stubs.calls.clear()
+    config.update_yaml(s.paths.series_config, {"mc": {"max_deviation_rigid": 10}})
+    _run(s)
+    assert s.stubs.calls == [(sid, st) for st in ORDER[1:] for sid in SIDS]
+    # a main stage reset from cnmf on resets the CNMF-E preview, not the MC one
+    s.stubs.calls.clear()
+    runner.reset_from(s.paths, S2, "cnmf", "viktor")
+    rec = load_record(s.paths, S2)
+    assert rec.stages["mc_preview"].state is State.DONE and rec.stages["cnmf_preview"].state is State.PENDING
+    _run(s)
+    assert s.stubs.calls == [(S2, st) for st in ("cnmf", "cnmf_preview", "gate", "autoinspect", "export")]
+
+
+def test_running_main_stage_resets_the_previews_that_read_it(series):
+    """MC re-run with the same parameters (its video lost): the preview of the old MC video is stale."""
+    s = series
+    _on(s)
+    _run(s)
+    s.stubs.calls.clear()
+    seen = {}
+
+    def look(paths, rec, cfg):
+        d = load_record(paths, rec.sid)
+        seen.update({x: d.stages[x].state for x in SIDE})
+
+    s.stubs.hooks[(S1, "mc")] = look
+    s.paths.mc_video(S1).unlink()
+    _run(s)
+    assert seen == {"mc_preview": State.PENDING, "cnmf_preview": State.PENDING}
+    assert s.stubs.calls == [(S1, st) for st in ORDER[1:]]
+
+
+def test_missing_preview_file_remakes_only_it(series):
+    s = series
+    _on(s)
+    _run(s)
+    s.stubs.calls.clear()
+    s.paths.preview(S2, "mc").unlink()
+    _run(s)
+    assert s.stubs.calls == [(S2, "mc_preview")]
+
+
+def test_until_includes_side_stages_of_stages_in_range(series):
+    s = series
+    _on(s)
+    _run(s, until="thresholds")
+    assert s.stubs.calls == [(sid, st) for st in ("crop", "mc", "mc_preview", "thresholds") for sid in SIDS]
+
+
+def test_flag_off_keeps_files_and_runs_nothing(series):
+    s = series
+    _on(s)
+    _run(s)
+    s.stubs.calls.clear()
+    actions.set_previews(s.paths, False)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    assert all(s.paths.preview(sid, k).is_file() for sid in SIDS for k in MC_PREVIEWS + ("cnmf_qc",))
+    row = _summary_row(s, S1)
+    assert row["mc_preview"] == "off" and row["cnmf_preview"] == "off"
+    assert load_record(s.paths, S1).stages["mc_preview"].state is State.DONE  # the old record stays as it was
+    # without the checkbox a missing preview video or residual-maps picture re-runs nothing
+    s.paths.preview(S2, "mc").unlink()
+    s.paths.preview(S2, "cnmf_qc").unlink()
+    s.paths.residual_png(S2).unlink()
+    assert _run(s) == ZERO and s.stubs.calls == []
+
+
+def test_a_failed_preview_turned_off_holds_nothing(series):
+    """The checkbox cleared after a preview failed: the preview is off everywhere, its record is kept."""
+    s = series
+    s.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    _on(s)
+    _run(s)
+    actions.set_previews(s.paths, False)
+    assert runner.series_state(s.paths).failed == {}
+    assert actions.failed_sids(s.paths) == []
+    row = _summary_row(s, S1)
+    assert row["mc_preview"] == "off" and row["worst_check"] == "ok" and pd.isna(row["error"])
+    assert load_record(s.paths, S1).stages["mc_preview"].state is State.FAILED
+
+
+def test_invalid_preview_setting_fails_only_the_previews(series):
+    """A hand-edited preview setting the stages refuse: the previews fail, the sessions are processed."""
+    s = series
+    config.update_yaml(s.paths.series_config, {"preview": {"enabled": True, "tbin": 0}})
+    res = _run(s)
+    for sid in SIDS:
+        assert _states(s.paths, sid) == [State.DONE] * 7
+        rec = load_record(s.paths, sid)
+        assert [rec.stages[x].state for x in SIDE] == [State.FAILED] * 2
+        assert "preview.tbin must be an integer >= 1" in rec.stages["mc_preview"].error
+    assert res["failed"] == 6 and runner.schedule_problems(s.paths, registry.all_records(s.paths)) == {}
+    s.stubs.calls.clear()
+    _on(s, tbin=2)  # fixed: other parameters, so the previews are offered again
+    _run(s)
+    assert s.stubs.calls == _sides_only()
+
+
+def test_heartbeat_counts_main_stages_only(series):
+    s = series
+    seen = []
+    s.stubs.hooks[(S1, "mc_preview")] = lambda paths, rec, cfg: seen.append(_heartbeat(paths)["current"])
+    _on(s)
+    _run(s)
+    assert seen == [{"sid": S1, "stage": "mc_preview"}]
+    hb = _heartbeat(s.paths)
+    assert list(hb["by_stage"]) == list(STAGES) and hb["by_stage"] == {st: 3 for st in STAGES}
+    assert hb["counts"]["done"] == 3
+
+
+def test_side_stage_hash_inputs(series):
+    s = series
+    rec = load_record(s.paths, S1)
+    cfg = config.resolve(s.paths, sid=S1)
+    main = {st: runner.stage_hash(rec, st, cfg, s.paths) for st in STAGES}
+    on = copy.deepcopy(cfg)
+    on["preview"]["enabled"] = True
+    assert {st: runner.stage_hash(rec, st, on, s.paths) for st in STAGES} == main  # never a main stage re-run
+    h = runner.stage_hash(rec, "mc_preview", on, s.paths)
+    assert h == config.params_hash({"params": {"enabled": True, "tbin": 2, "ssub": 1, "crf": 23, "speed": 4},
+                                    "upstream": [main["mc"]]})
+
+    def side_hashes(change):
+        c = copy.deepcopy(on)
+        change(c)
+        return {x: runner.stage_hash(rec, x, c, s.paths) for x in SIDE}
+
+    base = side_hashes(lambda c: None)
+    assert all(v != base[k] for k, v in side_hashes(lambda c: c["preview"].update(tbin=4)).items())
+    h = side_hashes(lambda c: c["mc"].update(max_deviation_rigid=10))  # the parent's input
+    assert h["mc_preview"] != base["mc_preview"] and h["cnmf_preview"] != base["cnmf_preview"]
+    h = side_hashes(lambda c: c["cnmf"].update(gSig=6))  # after mc: an input of the CNMF-E preview only
+    assert h["mc_preview"] == base["mc_preview"] and h["cnmf_preview"] != base["cnmf_preview"]
+    h = side_hashes(lambda c: c["autoinspect"].update(ml_threshold=0.5))  # after cnmf: neither
+    assert h == base
+    assert runner.side_enabled("mc_preview", on) and not runner.side_enabled("cnmf_preview", cfg)
+    with pytest.raises(ValueError):
+        runner.side_enabled("mc", on)
+
+
+def test_crashed_preview_process_fails_only_the_preview(series, monkeypatch):
+    """Side stages run isolated like the main ones: a native crash fails the preview with stage_crashed."""
+    s = series
+    save_record(s.paths, _record(S2, excluded=True))
+    notes = s.tmp / "notes"
+    config.update_yaml(s.paths.series_config, {"runner": {"isolate_stages": True, "max_auto_retries": 0},
+                                               "fake": {"dir": str(notes)}, "preview": {"enabled": True}})
+    monkeypatch.setitem(runner.STAGE_FUNCS, "crop", FAKES.format("crop"))
+    monkeypatch.setitem(runner.STAGE_FUNCS, "mc", FAKES.format("mc"))
+    monkeypatch.setitem(runner.STAGE_FUNCS, "mc_preview", FAKES.format("native_crash"))
+    res = _run(s, until="mc")
+    for sid in (S1, S3):
+        rec = load_record(s.paths, sid)
+        assert rec.stages["mc"].state is State.DONE and rec.stages["mc_preview"].state is State.FAILED
+        assert [a.data for a in rec.anomalies if a.code == "stage_crashed"] == [
+            {"exit_code": 0xC0000005, "stage": "mc_preview", "cause": "crash"}]
+    assert res["failed"] == 2 and res["skipped"] == 0

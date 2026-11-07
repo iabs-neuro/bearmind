@@ -16,7 +16,7 @@ from bearmind import cli, config, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, State, load_record, save_record, update_record
 from bearmind.stages import gate
-from tests.bearmind.test_runner import SIDS, THRESH, Stubs, _record
+from tests.bearmind.test_runner import SIDE, SIDS, THRESH, Stubs, _record
 
 S1, S2, S3 = SIDS
 REPO = Path(__file__).resolve().parents[2]
@@ -36,7 +36,7 @@ def series(tmp_path, monkeypatch):
     for sid in SIDS:
         save_record(paths, _record(sid, decided=False))
     stubs = Stubs()
-    for st in STAGES:
+    for st in STAGES + SIDE:
         monkeypatch.setitem(runner.STAGE_FUNCS, st, stubs(st))
     monkeypatch.chdir(tmp_path)  # main() changes the folder; monkeypatch restores it
     return SimpleNamespace(paths=paths, stubs=stubs, root=paths.root, tmp=tmp_path)
@@ -616,3 +616,67 @@ def test_cmd_gui_changes_to_repo_root_and_keeps_series_absolute(tmp_path, monkey
     assert cli.cmd_gui(Namespace(series="s")) == 0
     assert Path(seen["cwd"]) == provenance.REPO_ROOT
     assert seen["argv"] == [str(series.resolve())]
+
+
+# --- preview videos: the previews command, the pv column, retry of a failed preview ---
+
+def _finished_setup(series):
+    """Decided sessions with thresholds: a run goes through to the export."""
+    for sid in SIDS:
+        save_record(series.paths, _record(sid))
+        config.update_yaml(series.paths.session_config(sid), THRESH)
+
+
+def _status_rows(out):
+    head = next(ln for ln in out.splitlines() if ln.startswith("session"))
+    rows = {ln.split()[0]: ln for ln in out.splitlines() if ln.split() and ln.split()[0] in SIDS}
+    return head, rows
+
+
+def test_previews_command(series, capsys):
+    assert _main("previews", series.root, "on", "--tbin", "0") == 2
+    assert "--tbin must be a whole number >= 1, got 0" in capsys.readouterr().out
+    assert _main("previews", series.root, "on", "--ssub", "1.5") == 2
+    assert "--ssub must be a whole number >= 1, got 1.5" in capsys.readouterr().out
+    assert "preview" not in _yaml(series.paths.series_config)  # nothing written
+    assert _main("previews", series.root, "on", "--tbin", "4") == 0
+    assert _yaml(series.paths.series_config)["preview"] == {"enabled": True, "tbin": 4}
+    out = capsys.readouterr().out
+    assert ("[OK] previews on (tbin 4, ssub 1); the next run makes them for every session whose MC / CNMF-E "
+            "is done") in out
+    assert _main("previews", series.root, "off") == 0
+    assert _yaml(series.paths.series_config)["preview"] == {"enabled": False, "tbin": 4}
+    assert "[OK] previews off; existing preview files are kept" in capsys.readouterr().out
+    assert _main("previews", series.root, "maybe") == 2
+
+
+def test_status_previews_column(series, capsys):
+    _finished_setup(series)
+    head, rows = _status_rows(_status(series, capsys))
+    col = head.index("pv")
+    assert col < head.index("chk")
+    assert all(rows[sid][col:col + 3] == "off" for sid in SIDS)
+    assert _main("previews", series.root, "on") == 0
+    assert _main("run", series.root, "--once") == 0
+    head, rows = _status_rows(_status(series, capsys))
+    assert all(rows[sid][col:col + 4] == "DD  " for sid in SIDS)
+
+
+def test_retry_all_failed_covers_a_failed_preview(series, capsys):
+    _finished_setup(series)
+    series.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    assert _main("previews", series.root, "on") == 0
+    assert _main("run", series.root, "--once") == 1  # the series has a failed stage: the preview
+    out = capsys.readouterr().out
+    assert f"{S1} failed at mc_preview: RuntimeError: disk full" in out and "--all-failed" in out
+    head, rows = _status_rows(_status(series, capsys))
+    assert rows[S1][head.index("pv"):].startswith("FD") and "failed mc_preview: RuntimeError: disk full" in rows[S1]
+    del series.stubs.fail[(S1, "mc_preview")]
+    assert _main("retry", series.root, "--all-failed") == 0
+    assert f"[OK] {S1}: reset from mc_preview" in capsys.readouterr().out
+    rec = load_record(series.paths, S1)
+    assert rec.stages["mc_preview"].state is State.PENDING and rec.stages["cnmf_preview"].state is State.DONE
+    assert all(rec.stages[s].state is State.DONE for s in STAGES)
+    series.stubs.calls.clear()
+    assert _main("run", series.root, "--once") == 0
+    assert series.stubs.calls == [(S1, "mc_preview")]

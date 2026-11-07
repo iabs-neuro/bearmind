@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from bearmind import actions
-from bearmind.registry import STAGES, State, load_record, update_record
+from bearmind.registry import STAGES, StageRecord, State, load_record, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
 
 
@@ -197,3 +197,35 @@ def test_cli_gate_all_waiting_calls_the_action_once(series, monkeypatch):
     assert cli.main(["gate", str(series.paths.root), "--all-waiting", "not-needed", "--who", "ann"]) == 0
     assert calls == [[S1, S2, S3]]
     assert all(("manual_inspection", "not_needed", "ann") in _decisions(series.paths, sid) for sid in (S1, S2, S3))
+
+
+def test_retry_failed_preview_only(series):
+    actions.set_previews(series.paths, True)
+    for st in STAGES:
+        _set(series.paths, S1, st, State.DONE)
+
+    def side(rec):
+        rec.stages["mc_preview"] = StageRecord(state=State.FAILED, error="disk full")
+        rec.stages["cnmf_preview"] = StageRecord(state=State.DONE)
+
+    update_record(series.paths, S1, side)
+    assert actions.failed_sids(series.paths) == [S1] and actions.failed_stage(load_record(series.paths, S1),
+                                                                               series.paths) == "mc_preview"
+    res = actions.retry_failed(series.paths, None, "ann")
+    assert res.ok == [S1] and not res.failed
+    states = load_record(series.paths, S1).stages
+    assert states["mc_preview"].state is State.PENDING and states["cnmf_preview"].state is State.DONE
+    assert all(states[s].state is State.DONE for s in STAGES)
+    assert ("rerun_from", "mc_preview", "ann") in _decisions(series.paths, S1)
+
+
+def test_set_previews(series):
+    for bad in ({"tbin": 0}, {"ssub": 2.5}, {"tbin": True}):
+        with pytest.raises(ValueError, match="must be a whole number >= 1"):
+            actions.set_previews(series.paths, True, **bad)
+    cfg = yaml.safe_load(series.paths.series_config.read_text(encoding="utf-8"))
+    assert "preview" not in cfg  # nothing written
+    actions.set_previews(series.paths, True, ssub=2)
+    actions.set_previews(series.paths, False)
+    cfg = yaml.safe_load(series.paths.series_config.read_text(encoding="utf-8"))
+    assert cfg["preview"] == {"enabled": False, "ssub": 2} and cfg["autoinspect"]  # other sections kept

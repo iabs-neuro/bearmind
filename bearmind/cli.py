@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bearmind import actions, config, launcher, monitor, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
-from bearmind.registry import STAGES, State
+from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, State
 from bearmind.stages import gate
 
 OK, BAD_INPUT, BUSY, INTERRUPTED = 0, 2, 3, 130
@@ -27,6 +27,7 @@ _SHORT = {"crop": "crop", "mc": "mc", "thresholds": "thr", "cnmf": "cnmf", "gate
 _LETTER = {State.DONE: "D", State.RUNNING: "R", State.WAITING: "W", State.FAILED: "F", State.SKIPPED: "S",
            State.PENDING: "."}
 _REASON = {"thresholds": "thresholds", "manual_inspection": "manual inspection", "crop_finalize": "crop box"}
+_SIDES = tuple(s for s in ALL_STAGES if s in SIDE_STAGES)  # the letters of the pv column, in this order
 _MAX_LISTED = 12
 _MAX_UNRECOGNIZED = 10
 
@@ -263,11 +264,22 @@ def _heartbeat_line(paths) -> str:
     return f"runner: running PID {hb.get('pid')}{where}"
 
 
-def _row(rec) -> tuple:
+def _pv(rec, on) -> str:
+    """The pv column: "off" when the session's config turns the previews off, else one letter per side stage."""
+    if on is False:
+        return "off"
+    return "".join(_LETTER[rec.stages[s].state] if s in rec.stages else "." for s in _SIDES)
+
+
+def _row(rec, previews_on=None) -> tuple:
     cells, reason = [], ""
-    for s in STAGES:
+    for s in ALL_STAGES:
         st = rec.stages.get(s)
-        cells.append(_LETTER[st.state] if st else ".")
+        if s in SIDE_STAGES:
+            if previews_on is False:
+                continue  # off: an old record holds nothing
+        else:
+            cells.append(_LETTER[st.state] if st else ".")
         if st is None:
             continue
         if st.state is State.WAITING and not reason:
@@ -333,9 +345,11 @@ def cmd_status(args) -> int:
     runner.summary(paths, state.records, problems=state.problems, broken=state.broken)
     rows = []
     for r in state.records:
-        cells, reason = _row(r)
-        rows.append((r.sid, "yes " if r.excluded else "no  ", cells, _check_mark(r), _note(r, reason, state)))
-    rows += [(Path(f).stem, "?   ", ["?"] * len(STAGES), "?", _clip(state.problems[Path(f).stem]))
+        on = state.previews.get(r.sid)
+        cells, reason = _row(r, on)
+        rows.append((r.sid, "yes " if r.excluded else "no  ", cells + [_pv(r, on)], _check_mark(r),
+                     _note(r, reason, state)))
+    rows += [(Path(f).stem, "?   ", ["?"] * (len(STAGES) + 1), "?", _clip(state.problems[Path(f).stem]))
              for f, _ in state.broken]
     _say(_heartbeat_line(paths))
     _say(_waiting_line(state))
@@ -343,9 +357,9 @@ def cmd_status(args) -> int:
     if odd:
         _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
     _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown; "
-         "chk: W warning, E error in a check of a done stage")
+         "chk: W warning, E error in a check of a done stage; pv: MC and CNMF-E preview videos, off when turned off")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
-    head = ("session".ljust(width) + "  excl  " + " ".join(_SHORT[s].ljust(4) for s in STAGES)
+    head = ("session".ljust(width) + "  excl  " + " ".join(x.ljust(4) for x in [_SHORT[s] for s in STAGES] + ["pv"])
             + "  chk  note")
     _say(head)
     _say("-" * len(head))
@@ -485,10 +499,37 @@ def cmd_retry(args) -> int:
         if sid in res.failed:
             _say(f"[WARN] {sid}: no failed stage, skipped")
         else:
-            _say(f"[OK] {sid}: reset from {actions.failed_stage(recs[sid])}")
+            _say(f"[OK] {sid}: reset from {actions.failed_stage(recs[sid], paths)}")
     if res.ok:
         _say(_next_hint(paths))
     return OK if res.ok else 1
+
+
+def _preview_setting(value, name):
+    if value is None:
+        return None
+    try:
+        x = int(value)
+    except ValueError:
+        raise CliError(f"{name} must be a whole number >= 1, got {value}") from None
+    bad = actions.preview_setting_error(x, name)
+    if bad:
+        raise CliError(bad)
+    return x
+
+
+def cmd_previews(args) -> int:
+    paths = _series(args.series)
+    _records(paths)  # a scanned series: a typo in the folder name must not create a config elsewhere
+    tbin, ssub = _preview_setting(args.tbin, "--tbin"), _preview_setting(args.ssub, "--ssub")
+    actions.set_previews(paths, args.state == "on", tbin=tbin, ssub=ssub)
+    if args.state == "off":
+        _say("[OK] previews off; existing preview files are kept")
+        return OK
+    pv = config.resolve(paths)["preview"]
+    _say(f"[OK] previews on (tbin {pv['tbin']}, ssub {pv['ssub']}); the next run makes them for every session "
+         f"whose MC / CNMF-E is done")
+    return OK
 
 
 # --- parser ---
@@ -545,6 +586,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("retry", cmd_retry, "recompute sessions from their failed stage (after disk full, locked file)")
     sp.add_argument("sids", nargs="*", metavar="SID")
     sp.add_argument("--all-failed", action="store_true", help="all sessions that have a failed stage")
+
+    sp = add("previews", cmd_previews, "turn the preview videos (MC and CNMF-E QC) on or off for the series",
+             who=False)
+    sp.add_argument("state", choices=["on", "off"])
+    sp.add_argument("--tbin", metavar="N", help="frames averaged into one preview frame (default 2)")
+    sp.add_argument("--ssub", metavar="N", help="pixels per side averaged into one preview pixel (default 1: full size)")
     return p
 
 

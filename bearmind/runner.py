@@ -8,6 +8,10 @@ The runner writes only the fields it owns (the stage record and that stage's ano
 registry.update_record, so concurrent writers do not lose their changes. Each stage runs in a child
 process of its own (bearmind.isolate): a native crash or a dead CaImAn pool worker fails that stage and the
 batch goes on with the other sessions.
+
+Side stages (registry.SIDE_STAGES: the preview videos) run right after their parent main stage while their
+checkbox is set. Their hash is their settings plus the parent's hash; the main chain never depends on them,
+so a disabled, failed or changed preview holds and re-runs nothing else.
 """
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ except ImportError:  # not Windows
 from bearmind import checks, config, fileio, isolate, naming, provenance, registry
 from bearmind.crop import fitted_size, mouse_frame_shape
 from bearmind.paths import SeriesPaths
-from bearmind.registry import STAGES, Anomaly, Decision, StageRecord, State
+from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, Anomaly, Decision, StageRecord, State
 import bearmind.stages
 import export_estimates_data
 from bearmind.stages import WaitingForInput
@@ -54,6 +58,8 @@ STAGE_FUNCS = {
     "gate": "bearmind.stages.gate:run",
     "autoinspect": "bearmind.stages.autoinspect:run",
     "export": "bearmind.stages.export:run",
+    "mc_preview": "bearmind.stages.previews:mc_previews",
+    "cnmf_preview": "bearmind.stages.previews:cnmf_preview",
 }
 FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
 
@@ -67,7 +73,7 @@ WAIT_CHECKS = {
     "gate": "bearmind.stages.gate:run",
 }
 
-# Outputs that must exist for a DONE stage to count as done; previews are optional.
+# Outputs that must exist for a DONE stage to count as done; the residual-maps picture of cnmf is not one.
 REQUIRED = {
     "crop": (),
     "mc": ("mc_video", "mc_shifts"),
@@ -76,6 +82,8 @@ REQUIRED = {
     "gate": (),
     "autoinspect": ("processed",),
     "export": ("npz", "json", "timestamps"),
+    "mc_preview": ("preview_raw", "preview_raw_dff", "preview_mc", "preview_mc_dff"),
+    "cnmf_preview": ("preview_cnmf_qc",),
 }
 
 HEARTBEAT_S = 30.0
@@ -98,11 +106,44 @@ def _func(spec):
 
 
 def _stages_until(until) -> tuple:
+    """Main stages up to `until` (a main stage)."""
     if until is None:
         return STAGES
     if until not in STAGES:
         raise ValueError(f"unknown stage {until!r}; stages: {', '.join(STAGES)}")
     return STAGES[:STAGES.index(until) + 1]
+
+
+def _offered(until) -> tuple:
+    """Stages a run looks at, in ALL_STAGES order: the main stages up to `until` and their side stages."""
+    main = _stages_until(until)
+    return tuple(s for s in ALL_STAGES if s in main or SIDE_STAGES.get(s) in main)
+
+
+def _sides_of(stage) -> list:
+    """Side stages that read the outputs of the main `stage` or of a later main stage."""
+    i = STAGES.index(stage)
+    return [s for s, parent in SIDE_STAGES.items() if STAGES.index(parent) >= i]
+
+
+def side_enabled(stage: str, cfg: dict) -> bool:
+    """A side stage runs only while its checkbox is set: preview.enabled for both preview stages."""
+    if stage not in SIDE_STAGES:
+        raise ValueError(f"not a side stage: {stage!r}; side stages: {', '.join(SIDE_STAGES)}")
+    pv = cfg.get("preview")
+    return isinstance(pv, dict) and bool(pv.get("enabled"))
+
+
+def _side_off(stage, cfg) -> bool:
+    """The resolved config turns the side stage off; a config that cannot be read (None) does not."""
+    return cfg is not None and not side_enabled(stage, cfg)
+
+
+def first_failed(rec, cfg) -> str | None:
+    """The first FAILED stage in ALL_STAGES order. A side stage its config turns off is skipped: its old record
+    is kept but holds nothing (cfg None: the config cannot be read, every FAILED stage counts)."""
+    return next((s for s in ALL_STAGES if s in rec.stages and rec.stages[s].state is State.FAILED
+                 and not (s in SIDE_STAGES and _side_off(s, cfg))), None)
 
 
 def _what(st) -> str:
@@ -149,12 +190,29 @@ def _file_stat(f) -> dict | None:
 _CROP_WRITTEN = ("box", "box_pos", "box_source")
 
 
+def _side_params(cfg) -> dict:
+    from bearmind.stages.previews import preview_params  # bearmind.video imports PyAV
+
+    try:
+        return preview_params(cfg)
+    except ValueError:
+        # A setting the stages refuse (a hand edit) is offered anyway and fails in the stage, which validates
+        # the same way: it shows as a FAILED preview, and it never makes the session unschedulable.
+        return {"enabled": True, "invalid": copy.deepcopy(cfg.get("preview"))}
+
+
+def _side_hash(params: dict, parent_hash: str) -> str:
+    return config.params_hash({"params": params, "upstream": [parent_hash]})
+
+
 def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     """Resolved inputs of a stage (R25): stored in StageRecord.params and hashed; machine settings excluded.
 
     The crop box and the thresholds are written to the configs after crop / thresholds are done, so they
-    are inputs of MC and CNMF only, never of the stage that produced them.
+    are inputs of MC and CNMF only, never of the stage that produced them. A side stage: its settings.
     """
+    if stage in SIDE_STAGES:
+        return _side_params(cfg)
     if stage == "crop":
         return {"parts": [{"folder": p.folder, "chunks": list(p.chunks), "n_frames": p.n_frames}
                           for p in rec.parts],
@@ -206,7 +264,8 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
 
 
 def _chain(rec, cfg, paths, upto=None):
-    """params and hashes of every stage up to `upto`; each hash covers the hashes of all earlier stages."""
+    """params and hashes of every main stage up to `upto`; each hash covers the hashes of all earlier main
+    stages (never of a side stage)."""
     params, hashes = {}, {}
     for s in STAGES[:STAGES.index(upto) + 1] if upto else STAGES:
         params[s] = stage_params(s, rec, cfg, paths)
@@ -215,7 +274,11 @@ def _chain(rec, cfg, paths, upto=None):
 
 
 def stage_hash(rec, stage: str, cfg: dict, paths) -> str:
-    """params_hash of the stage parameters and of all earlier stages' hashes."""
+    """params_hash of the stage parameters and of all earlier main stages' hashes; a side stage: of its
+    settings and its parent's hash."""
+    if stage in SIDE_STAGES:
+        parent = SIDE_STAGES[stage]
+        return _side_hash(stage_params(stage, rec, cfg, paths), _chain(rec, cfg, paths, parent)[1][parent])
     return _chain(rec, cfg, paths, stage)[1][stage]
 
 
@@ -235,7 +298,7 @@ class _View:
 
     def __init__(self, paths):
         self.paths = paths
-        self._cfg, self._hashes = {}, {}
+        self._cfg, self._hashes, self._side = {}, {}, {}
         self.errors = {}  # sid -> why the session cannot be scheduled now
 
     def cfg(self, rec):
@@ -260,16 +323,35 @@ class _View:
             self._hashes[rec.sid] = h
         return self._hashes[rec.sid]
 
+    def hash(self, rec, stage):
+        """The stage's hash for the current configs; None while the session's hashes cannot be computed."""
+        h = self.hashes(rec)
+        if h is None or stage not in SIDE_STAGES:
+            return None if h is None else h[stage]
+        key = (rec.sid, stage)
+        if key not in self._side:
+            self._side[key] = _side_hash(_side_params(self.cfg(rec)), h[SIDE_STAGES[stage]])
+        return self._side[key]
+
+    def side_on(self, rec, stage) -> bool:
+        cfg = self.cfg(rec)
+        return cfg is not None and side_enabled(stage, cfg)
+
     def current(self, rec, stage) -> bool:
-        st, h = rec.stages.get(stage), self.hashes(rec)
-        return (h is not None and st is not None and st.state is State.DONE and st.params_hash == h[stage]
+        st = rec.stages.get(stage)
+        if st is None or st.state is not State.DONE:
+            return False
+        h = self.hash(rec, stage)
+        return (h is not None and st.params_hash == h
                 and all(_output_ok(self.paths, st.outputs, k) for k in REQUIRED[stage]))
 
     def blocked(self, rec, stage) -> bool:
         """FAILED / SKIPPED with unchanged parameters: retried only after reset_from or a parameter change."""
-        st, h = rec.stages.get(stage), self.hashes(rec)
-        return (st is not None and st.state in (State.FAILED, State.SKIPPED) and h is not None
-                and st.params_hash == h[stage])
+        st = rec.stages.get(stage)
+        if st is None or st.state not in (State.FAILED, State.SKIPPED):
+            return False
+        h = self.hash(rec, stage)
+        return h is not None and st.params_hash == h
 
 
 class _Scope:
@@ -287,20 +369,26 @@ class _Scope:
 
 
 def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
-    """(sid, stage) of the next stage to run, or None: lowest stage index first, then sid order.
+    """(sid, stage) of the next stage to run, or None: lowest index in ALL_STAGES first, then sid order.
 
-    Ready: session not excluded, every earlier stage up to date, the stage itself not up to date and not
-    FAILED/SKIPPED with unchanged parameters. `skip` holds (sid, stage) pairs not to offer now (waiting
-    stages already tried). crop.finalize_mouse is scheduled by run(), not here.
+    Ready: session not excluded, every earlier main stage up to date, the stage itself not up to date and
+    not FAILED/SKIPPED with unchanged parameters. A side stage needs its checkbox set and every main stage up
+    to its parent up to date; a main stage never waits for a side stage. With `until`, a side stage is in
+    range when its parent is. `skip` holds (sid, stage) pairs not to offer now (waiting stages already tried).
+    crop.finalize_mouse is scheduled by run(), not here.
     """
     view = _view or _View(paths)
     scope = _Scope(records, sids)
     recs = sorted((r for r in records if not r.excluded), key=lambda r: r.sid)
-    for i, stage in enumerate(_stages_until(until)):
+    for stage in _offered(until):
+        side = stage in SIDE_STAGES
+        need = STAGES[:STAGES.index(SIDE_STAGES[stage]) + 1] if side else STAGES[:STAGES.index(stage)]
         for r in recs:
             if (r.sid, stage) in skip or not scope.has(r, stage) or view.hashes(r) is None:
                 continue
-            if (all(view.current(r, s) for s in STAGES[:i]) and not view.current(r, stage)
+            if side and not view.side_on(r, stage):
+                continue  # disabled: never offered, nothing recorded; an old record stays as it was
+            if (all(view.current(r, s) for s in need) and not view.current(r, stage)
                     and not view.blocked(r, stage)):
                 return r.sid, stage
     return None
@@ -371,48 +459,75 @@ class SeriesState:
     problems: dict  # sid -> why it cannot be scheduled; broken registry files under their file name
     waiting: list  # (sid, stage, what): waits a person can resolve
     blocked: list  # (sid, stage, what, [blocking sids]): waits only a config fix moves
-    failed: dict  # sid -> (stage, error) of its first FAILED stage, non-excluded sessions
+    failed: dict  # sid -> (stage, error) of its first FAILED stage in ALL_STAGES order, non-excluded sessions
     excluded: list
     finalize_failed: dict  # sid -> why the box of its mouse is not placed (the last finalize failed)
+    # sid -> the previews are on in its resolved config; None when the config cannot be read
+    previews: dict = dataclasses.field(default_factory=dict)
 
 
 def series_state(paths) -> SeriesState:
     records, broken = registry.read_all(paths)
-    problems = schedule_problems(paths, records, broken=broken)
+    view = _View(paths)
+    problems = schedule_problems(paths, records, view, broken=broken)
     person, blocked = _split_waits(_waiting(records, _Scope(records, None), STAGES), records, problems)
     failed = {}
     for r in records:
-        first = next((s for s in STAGES if s in r.stages and r.stages[s].state is State.FAILED), None)
+        first = first_failed(r, view.cfg(r))
         if first is not None and not r.excluded:
             failed[r.sid] = (first, r.stages[first].error)
     finalize_failed = {r.sid: _finalize_failure(r).message for r in records
                        if not r.excluded and _finalize_failure(r) is not None}
     person = [w for w in person if w[0] not in finalize_failed]  # waiting for a retry, not for a person
+    previews = {r.sid: None if view.cfg(r) is None else side_enabled("mc_preview", view.cfg(r)) for r in records}
     return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded],
-                       finalize_failed)
+                       finalize_failed, previews)
 
 
 # --- registry changes made by the runner ---
 
-def _skip_downstream(d, stage) -> int:
+def _skip_downstream(d, stage, cfg) -> int:
+    """A main stage failed: every later main stage, and the enabled side stages that read its outputs or
+    later ones, -> SKIPPED. Returns how many."""
     n = 0
     for s in STAGES[STAGES.index(stage) + 1:]:
         st = d.stages.setdefault(s, StageRecord())
         st.state, st.error = State.SKIPPED, f"skipped: {stage} failed"
         n += 1
+    for s in _sides_of(stage):
+        if side_enabled(s, cfg):  # a disabled side stage is never recorded
+            st = d.stages.setdefault(s, StageRecord())
+            st.state, st.error = State.SKIPPED, f"skipped: {stage} failed"
+            n += 1
     return n
 
 
+def _pending_sides(d, stage) -> None:
+    """The recorded side stages that read the outputs of the main `stage` or of a later one -> PENDING: they
+    show the old outputs, and with unchanged parameters their hash alone would still call them current."""
+    for s in _sides_of(stage):
+        st = d.stages.get(s)
+        if st is not None and st.state is not State.PENDING:
+            st.state, st.error = State.PENDING, None
+
+
 def reset_from(paths, sid: str, stage: str, who: str) -> None:
-    """Re-analysis: the stage and all later ones -> PENDING. Old outputs stay until the stage replaces them."""
-    if stage not in STAGES:
-        raise ValueError(f"unknown stage {stage!r}; stages: {', '.join(STAGES)}")
+    """Re-analysis. A main stage: it, every later main stage and the recorded side stages that read their
+    outputs -> PENDING. A side stage: only itself. Old outputs stay until the stage replaces them."""
+    if stage not in ALL_STAGES:
+        raise ValueError(f"unknown stage {stage!r}; stages: {', '.join(ALL_STAGES)}")
     now = _now()
 
     def reset(d):
-        for s in STAGES[STAGES.index(stage):]:
-            st = d.stages.setdefault(s, StageRecord())
-            st.state, st.error = State.PENDING, None
+        if stage in SIDE_STAGES:
+            st = d.stages.get(stage)
+            if st is not None:  # never recorded: nothing to reset (a disabled side stage stays unrecorded)
+                st.state, st.error = State.PENDING, None
+        else:
+            for s in STAGES[STAGES.index(stage):]:
+                st = d.stages.setdefault(s, StageRecord())
+                st.state, st.error = State.PENDING, None
+            _pending_sides(d, stage)
         d.decisions.append(Decision("rerun_from", stage, who, now))
 
     registry.update_record(paths, sid, reset)
@@ -904,6 +1019,7 @@ def _reset_downstream(d, stage) -> None:
         st = d.stages.setdefault(s, StageRecord())
         if st.state is not State.PENDING:
             st.state, st.error = State.PENDING, None
+    _pending_sides(d, stage)
 
 
 def _record_wait(paths, sid, stage, rec, h, params, w, run_: _Run) -> str:
@@ -975,16 +1091,26 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
     """Run one stage of one session.
 
     Returns 'done' | 'waiting' | 'failed', 'none' (could not start: config or record changed) or 'retry'
-    (the registry lock was busy: the stage is offered again on the next loop, the batch goes on).
+    (the registry lock was busy, or a side stage was turned off since it was offered: the next loop decides
+    again, the batch goes on).
     """
+    side = stage in SIDE_STAGES
     try:
         rec = registry.load_record(paths, sid)
         cfg = config.resolve(paths, sid=sid, mouse=rec.mouse)  # reread before every stage
-        params, hashes = _chain(rec, cfg, paths, stage)
+        if side:
+            if not side_enabled(stage, cfg):  # turned off since next_ready looked: never called, not recorded
+                log.info("%s %s: previews turned off, not started", sid, stage, extra={"sid": sid})
+                return "retry"
+            parent = SIDE_STAGES[stage]
+            params = {stage: stage_params(stage, rec, cfg, paths)}
+            h = _side_hash(params[stage], _chain(rec, cfg, paths, parent)[1][parent])
+        else:
+            params, hashes = _chain(rec, cfg, paths, stage)
+            h = hashes[stage]
     except Exception as e:  # changed since next_ready looked: not started, retried later
         log.error("%s %s: not started: %s", sid, stage, _last_line(e), extra={"sid": sid})
         return "none"
-    h = hashes[stage]
     checked, w = _wait_check(paths, stage, rec, cfg)
     if w is not None:
         return _record_wait(paths, sid, stage, rec, h, params[stage], w, run_)
@@ -996,7 +1122,8 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
     def running(d):
         d.stages[stage] = StageRecord(state=State.RUNNING, params_hash=h, params=params[stage], started=started)
         d.anomalies = [a for a in d.anomalies if a.data.get("stage") != stage]
-        _reset_downstream(d, stage)
+        if not side:  # nothing reads a side stage's outputs
+            _reset_downstream(d, stage)
 
     def ours(d):
         st = d.stages.get(stage)
@@ -1026,10 +1153,13 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             if missing:
                 raise FileNotFoundError(f"required output missing: {', '.join(missing)}")
             anomalies = [dataclasses.replace(a, data={**a.data, "stage": stage}) for a in res.anomalies]
-            series = [r.stages[stage].metrics for r in registry.all_records(paths)
-                      if r.sid != sid and not r.excluded and r.stages.get(stage) is not None
-                      and r.stages[stage].state is State.DONE]
-            found = checks.evaluate(stage, res.metrics, series + [res.metrics], cfg)
+            if side:
+                found = []  # preview videos are for looking at: there is nothing to check
+            else:
+                series = [r.stages[stage].metrics for r in registry.all_records(paths)
+                          if r.sid != sid and not r.excluded and r.stages.get(stage) is not None
+                          and r.stages[stage].state is State.DONE]
+                found = checks.evaluate(stage, res.metrics, series + [res.metrics], cfg)
 
             def done(d):
                 if ours(d):
@@ -1071,7 +1201,8 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
                     st = d.stages[stage]
                     st.state, st.error, st.finished = State.FAILED, last, _now()
                     d.anomalies.extend(crash)
-                    skipped.append(_skip_downstream(d, stage))
+                    # nothing reads a side stage's outputs: its failure skips nothing
+                    skipped.append(0 if side else _skip_downstream(d, stage, cfg))
 
             outcome = _record_outcome(paths, sid, stage, failed, "failed", applied, run_)
             if outcome == "failed":
@@ -1309,18 +1440,27 @@ _KEYS = {  # stage -> [(column, metric of that stage, or a function of the recor
     "export": [("export_n_neurons", "n_neurons"), ("export_median_snr", "median_snr")],
 }
 STAGE_KEYS = _KEYS  # public name for the monitor window
+# a side stage's column follows its parent's key numbers
 SUMMARY_COLUMNS = (["sid", "mouse", "excluded"]
-                   + [c for s in STAGES for c in [s] + [k for k, _ in _KEYS[s]]]
+                   + [c for s in STAGES
+                      for c in [s] + [k for k, _ in _KEYS[s]] + [x for x, p in SIDE_STAGES.items() if p == s]]
                    + ["gSig", "min_corr", "min_pnr", "worst_check", "waiting_for", "error", "anomalies"])
 
 
 def _summary_row(paths, rec, problem=None) -> dict:
     row = {"sid": rec.sid, "mouse": rec.mouse, "excluded": rec.excluded}
     levels, waiting_for, error = [], None, None
-    for s in STAGES:
+    try:
+        cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
+    except Exception:
+        cfg = None
+    for s in ALL_STAGES:
         st = rec.stages.get(s) or StageRecord()
+        if s in SIDE_STAGES and _side_off(s, cfg):
+            row[s] = "off"  # its old record, if any, holds nothing
+            continue
         row[s] = st.state.value
-        for col, key in _KEYS[s]:
+        for col, key in _KEYS.get(s, ()):
             if callable(key):
                 row[col] = key(rec)
             else:
@@ -1332,10 +1472,7 @@ def _summary_row(paths, rec, problem=None) -> dict:
             error = error or f"{s}: {st.error}"
         elif st.state is State.WAITING:
             waiting_for = waiting_for or _what(st)
-    try:
-        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-    except Exception:
-        c = (rec.stages.get("cnmf") or StageRecord()).metrics
+    c = cfg["cnmf"] if cfg is not None else (rec.stages.get("cnmf") or StageRecord()).metrics
     if problem is not None:  # what holds the session now goes before the error of an earlier failure
         error = f"cannot be scheduled: {problem}"
     elif error is None and _finalize_failure(rec) is not None:
