@@ -564,3 +564,24 @@ def test_runner_state_stopping(tmp_series):
     finally:
         stop(p)
     assert not monitor.runner_state(tmp_series).stopping  # nothing stops when nothing runs
+
+
+def test_stale_lock_is_checked_once(tmp_series, monkeypatch):
+    """R2: psutil needs ~60 ms to report a dead PID on Windows; the process a lock names never comes back."""
+    monkeypatch.setattr(monitor, "_LOCK_PROC", {})
+    monkeypatch.setattr(monitor, "_LOCK_GONE", set(), raising=False)
+    p = spawn(tmp_series, "A_M1_1D", "mc", "running")
+    p.kill()
+    p.wait(timeout=20)
+    calls = []
+    real = psutil.Process
+    monkeypatch.setattr(psutil, "Process", lambda pid: (calls.append(pid), real(pid))[1])
+    assert monitor.runner_state(tmp_series).status == "dead"
+    assert monitor.runner_state(tmp_series).status == "dead"
+    assert calls == [p.pid]
+    monkeypatch.setattr(psutil, "Process", real)
+    q = spawn(tmp_series, "-", "", "running")  # a new runner writes a new lock: checked again
+    try:
+        assert monitor.runner_state(tmp_series).alive
+    finally:
+        stop(q)

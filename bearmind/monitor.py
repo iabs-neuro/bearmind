@@ -250,6 +250,9 @@ def _read_json(f: Path):
 # pid -> (psutil.Process, its start time or None): psutil's start time costs tens of ms when it falls back to
 # the slow query, and a PID's start time never changes. One entry: the current lock holder.
 _LOCK_PROC: dict[int, tuple] = {}
+# (pid, create_time) of the lock whose process is gone: it never comes back (a new runner writes a new lock), and
+# psutil needs a system-wide query (~60 ms on Windows) to report a dead PID, on every refresh otherwise
+_LOCK_GONE: set = set()
 
 
 def _holds_lock(lock: dict | None) -> int | None:
@@ -259,6 +262,10 @@ def _holds_lock(lock: dict | None) -> int | None:
         _LOCK_PROC.clear()
         return None
     pid = lock["pid"]
+    key = (pid, str(lock.get("create_time")))  # str: a hand-edited lock may hold anything
+    if key in _LOCK_GONE:
+        return None
+    _LOCK_GONE.clear()  # another lock now
     for other in [p for p in _LOCK_PROC if p != pid]:  # the lock changed hands
         del _LOCK_PROC[other]
     try:
@@ -275,10 +282,15 @@ def _holds_lock(lock: dict | None) -> int | None:
         # Zombies exist on POSIX only, and status() costs a system-wide query on Windows.
         if not p.is_running() or (os.name != "nt" and p.status() == psutil.STATUS_ZOMBIE):
             _LOCK_PROC.pop(pid, None)
+            _LOCK_GONE.add(key)
             return None
         created = lock.get("create_time")
         if started is None or (created is not None and abs(started - float(created)) > _CREATE_TIME_TOL_S):
             return None
+    except psutil.NoSuchProcess:
+        _LOCK_PROC.pop(pid, None)
+        _LOCK_GONE.add(key)
+        return None
     except (psutil.Error, TypeError, ValueError):
         _LOCK_PROC.pop(pid, None)
         return None
