@@ -5,15 +5,21 @@ prints its console messages, the window uses failure_text). Unknown sessions or 
 written, so a typo never leaves a half-applied batch. Every write goes through registry.update_record /
 config.update_yaml, which keeps it safe next to a running runner.
 """
+import csv
 import getpass
+import io
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from bearmind import config, registry, runner, scan, scan_view
+from bearmind import config, fileio, registry, runner, scan, scan_view
 from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
 from bearmind.stages import WaitingForInput, gate
+
+if TYPE_CHECKING:  # threshold_model imports this module
+    from bearmind.threshold_model import Counters
 
 
 @dataclass
@@ -188,9 +194,42 @@ def failed_sids(paths) -> list:
     return [s for s, r in sorted(_records(paths).items()) if not r.excluded and failed_stage(r, paths) is not None]
 
 
-def _write_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> None:
-    config.update_yaml(paths.session_config(sid), {"cnmf": {"gSig": gsig, "min_corr": min_corr,
-                                                            "min_pnr": min_pnr}})
+CHOICE_COLUMNS = ("sid", "mouse", "when", "who", "source", "suggested_gSig", "suggested_min_corr",
+                  "suggested_min_pnr", "suggested_method", "gSig", "min_corr", "min_pnr", "n_blobs",
+                  "single_frac", "n_mirror_blobs")
+
+
+def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, counters, when: str) -> None:
+    """One row per choice, next to the suggestion it answers: the decision log keeps only the chosen values,
+    and the suggestion in the record is replaced when the thresholds stage re-runs."""
+    th = rec.stages.get("thresholds")
+    sug = (th.metrics.get("suggested") if th is not None else None) or {}
+    row = {"sid": rec.sid, "mouse": rec.mouse, "when": when, "who": who, "source": source,
+           "suggested_gSig": sug.get("gSig"), "suggested_min_corr": sug.get("min_corr"),
+           "suggested_min_pnr": sug.get("min_pnr"), "suggested_method": sug.get("method"),
+           "gSig": gsig, "min_corr": min_corr, "min_pnr": min_pnr}
+    if counters is not None:
+        row.update(n_blobs=counters.n_blobs, single_frac=counters.single_frac,
+                   n_mirror_blobs=counters.n_mirror_blobs)
+    target = paths.threshold_choices_csv
+    with fileio.file_lock(target):
+        new = not target.exists() or target.stat().st_size == 0
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, CHOICE_COLUMNS, lineterminator="\n")
+        if new:
+            w.writeheader()
+        w.writerow({k: "" if row.get(k) is None else row[k] for k in CHOICE_COLUMNS})
+        with open(target, "a", encoding="utf-8", newline="") as f:
+            f.write(buf.getvalue())
+
+
+def _write_thresholds(paths, rec, gsig, min_corr, min_pnr, who: str, source: str, counters) -> None:
+    now = datetime.now().isoformat(timespec="milliseconds")
+    config.update_yaml(paths.session_config(rec.sid), {"cnmf": {"gSig": gsig, "min_corr": min_corr,
+                                                                "min_pnr": min_pnr}})
+    value = f"gSig={gsig} min_corr={min_corr} min_pnr={min_pnr}"
+    registry.update_record(paths, rec.sid, lambda r: r.decisions.append(Decision("thresholds", value, who, now)))
+    _log_choice(paths, rec, who, source, gsig, min_corr, min_pnr, counters, now)
 
 
 def _warn_excluded(res: ActionResult, rec) -> None:
@@ -219,6 +258,8 @@ def set_excluded(paths, sids, excluded: bool, who: str) -> ActionResult:
     for sid in sids:
         if not excluded and recs[sid].fps is None:
             res.warnings.append((sid, "no_fps_stays_excluded"))
+        elif not excluded and any(a.code == "not_found_in_scan" for a in recs[sid].anomalies):
+            res.warnings.append((sid, "not_found_stays_excluded"))  # scan.evaluate_excluded always excludes it
     _decide(paths, sids, "exclude", "true" if excluded else "false", who)
     res.ok = sids
     return res
@@ -345,7 +386,8 @@ def set_previews(paths, enabled: bool, tbin: int | None = None, ssub: int | None
     config.update_yaml(paths.series_config, {"preview": patch})
 
 
-def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> ActionResult:
+def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr, *, who: str = "", source: str = "cli",
+                   counters: "Counters | None" = None) -> ActionResult:
     bad = threshold_error(gsig, min_corr, min_pnr)
     if bad:
         raise ValueError(bad)
@@ -353,12 +395,12 @@ def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> ActionResult:
     check_sids(recs, [sid])
     res = ActionResult()
     _warn_excluded(res, recs[sid])
-    _write_thresholds(paths, sid, int(gsig), min_corr, min_pnr)
+    _write_thresholds(paths, recs[sid], int(gsig), min_corr, min_pnr, who, source, counters)
     res.ok.append(sid)
     return res
 
 
-def accept_suggested(paths, sids) -> ActionResult:
+def accept_suggested(paths, sids, *, who: str = "") -> ActionResult:
     recs = _records(paths)
     sids = waiting_threshold_sids(paths) if sids is None else list(sids)
     check_sids(recs, sids)
@@ -374,8 +416,37 @@ def accept_suggested(paths, sids) -> ActionResult:
             res.failed[sid] = ("invalid_suggestion", bad)
             continue
         _warn_excluded(res, recs[sid])
-        _write_thresholds(paths, sid, sug["gSig"], sug["min_corr"], sug["min_pnr"])
+        _write_thresholds(paths, recs[sid], int(sug["gSig"]), sug["min_corr"], sug["min_pnr"], who,
+                          "accept_suggested", None)
         res.ok.append(sid)
+    return res
+
+
+def _has_choice(paths, rec) -> bool:
+    try:
+        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
+    except Exception:  # a broken config is shown by Monitor; here the session has no choice
+        return False
+    return all(c.get(k) is not None for k in ("gSig", "min_corr", "min_pnr"))
+
+
+def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float, who: str) -> ActionResult:
+    """The same thresholds for every session of the mouse that has none. A session with a choice is never
+    overwritten (its CNMF-E would re-run), and an excluded one is left alone: both get a warning."""
+    bad = threshold_error(gsig, min_corr, min_pnr)
+    if bad:
+        raise ValueError(bad)
+    res = ActionResult()
+    for sid, rec in sorted(_records(paths).items()):
+        if rec.mouse != mouse:
+            continue
+        if rec.excluded:
+            res.warnings.append((sid, "excluded_session"))
+        elif _has_choice(paths, rec):
+            res.warnings.append((sid, "already_chosen"))
+        else:
+            _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse", None)
+            res.ok.append(sid)
     return res
 
 

@@ -67,6 +67,8 @@ ACTION_TEXT = {
 _WARNING_TEXT = {
     "excluded_session": "{sid} is excluded: the runner ignores it until you include it.",
     "no_fps_stays_excluded": "{sid} has no frame rate (timestamps missing or unusable): it stays excluded.",
+    "not_found_stays_excluded": "{sid} was not found by the last scan: it stays excluded. "
+                                "Restore the session folder and Rescan.",
     "no_mismatch_error": "{sid} has no frame/timestamp mismatch error; the decision was recorded anyway.",
     "already_confirmed": "{sid}: the stitch is already confirmed; nothing was recorded.",
 }

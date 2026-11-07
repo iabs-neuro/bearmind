@@ -383,7 +383,8 @@ def cmd_thresholds(args) -> int:
     if args.action == "set":
         _check_sids(recs, [args.sid])
         _warn_excluded(recs[args.sid])
-        actions.set_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr)
+        actions.set_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr, who=_who(args),
+                               source="cli")
         _say(f"[OK] {args.sid}: gSig={args.gsig} min_corr={args.min_corr} min_pnr={args.min_pnr}")
         _say(_next_hint(paths))
         return OK
@@ -395,7 +396,7 @@ def cmd_thresholds(args) -> int:
         if not sids:
             _say("[WARN] no session waits for thresholds")
             return OK
-    res = actions.accept_suggested(paths, sids)
+    res = actions.accept_suggested(paths, sids, who=_who(args))
     code = OK
     for sid in sids:
         if sid in res.failed:
@@ -472,6 +473,9 @@ def cmd_decide(args) -> int:
         elif wcode == "no_fps_stays_excluded":
             _say(f"[WARN] {sid} has no frame rate (timestamps missing or unusable): it stays excluded, the "
                  f"stages need the frame rate; the decision is recorded and counts once a rescan finds the rate")
+        elif wcode == "not_found_stays_excluded":
+            _say(f"[WARN] {sid} was not found by the last scan: it stays excluded; the decision is recorded, "
+                 f"restore the session folder and rescan")
     rec = registry.load_record(paths, args.sid)
     _say(f"[OK] {args.sid}: {args.action} recorded; session is now "
          + ("excluded" if rec.excluded else "included"))
@@ -583,7 +587,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_gui)
     add("status", cmd_status, "show state of every session and write summary.csv", who=False)
 
-    sp = add("thresholds", cmd_thresholds, "set CNMF-E thresholds", who=False)
+    sp = add("thresholds", cmd_thresholds, "set CNMF-E thresholds")
     ts = sp.add_subparsers(dest="action", required=True, parser_class=_Parser, metavar="action")
     a = ts.add_parser("accept-suggested", help="use the suggested thresholds")
     a.add_argument("--sessions", nargs="+", metavar="SID",

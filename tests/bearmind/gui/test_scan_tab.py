@@ -817,3 +817,15 @@ def test_failed_scan_refreshes_monitor(qapp, make_series, tmp_path, monkeypatch)
     w.scan._message = lambda *a: None
     assert wait_scan(w.scan) is False
     assert w.monitor.model.rowCount() == 2
+
+
+def test_include_leaves_out_not_found_sessions(qapp, make_series, tmp_path):
+    """A session whose folder the last scan did not find stays excluded whatever is decided: Include does not
+    take it, and the tooltip says to restore the folder and Rescan."""
+    tab = _excluded_three(make_series, tmp_path)
+    registry.update_record(tab.paths, "NOF_H01_1D",
+                           lambda r: r.anomalies.append(Anomaly("not_found_in_scan", "error", "gone")))
+    tab.refresh()
+    select(tab, "NOF_H01_1D")
+    assert not tab.include_button.isEnabled()
+    assert "The session folder was not found by the last scan: restore it and Rescan" in         tab.include_button.toolTip()

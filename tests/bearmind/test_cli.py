@@ -717,3 +717,14 @@ def test_previews_command_names_sessions_with_their_own_setting(series, capsys):
     own = sum(1 for sid in SIDS if naming.mouse_id(sid) == naming.mouse_id(SIDS[0]))
     assert _main("previews", series.root, "on") == 0
     assert f"{own} sessions follow their own mouse config" in capsys.readouterr().out
+
+
+def test_cli_thresholds_set_logs_source_cli(series, capsys):
+    code = _main("thresholds", series.root, "--who", "tester", "set", S1, "--gsig", 5, "--min-corr", 0.7,
+                 "--min-pnr", 9)
+    assert code == 0
+    assert f"[OK] {S1}: gSig=5 min_corr=0.7 min_pnr=9" in capsys.readouterr().out
+    import csv
+    with open(SeriesPaths(series.root).threshold_choices_csv, encoding="utf-8", newline="") as f:
+        (row,) = list(csv.DictReader(f))
+    assert row["source"] == "cli" and row["who"] == "tester" and row["sid"] == S1

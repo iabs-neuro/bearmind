@@ -15,3 +15,7 @@ def test_paths_layout(tmp_path):
     assert p.export_filters("NOF_H01_1D").relative_to(p.root).as_posix() == "6_Export/filters/NOF_H01_1D_filters.mat"
     assert p.preview("NOF_H01_1D", "mc_dff").name == "NOF_H01_1D_mc_dff.mp4"
     assert p.rel(p.estimates("NOF_H01_1D")) == "4_Estimates/NOF_H01_1D_estimates.pickle"
+
+
+def test_threshold_choices_path(tmp_path):
+    assert SeriesPaths(tmp_path).threshold_choices_csv == tmp_path / "_bearmind" / "threshold_choices.csv"

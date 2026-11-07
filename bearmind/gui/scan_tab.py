@@ -35,6 +35,7 @@ LEVEL_INK = {"error": ("ERROR", "#8e0000"), "warning": ("WARN", "#6d5300")}
 FIXED_INK = "#2e7d32"
 INCLUDE_TIP = ("Include works for sessions excluded by you. A session excluded by an anomaly: fix its files and "
                "press Rescan, or use Accept for a frame mismatch.")
+NOT_FOUND_INCLUDE_TIP = "The session folder was not found by the last scan: restore it and Rescan"
 SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 2  # [(text, greyed)] of the Anomalies cell, drawn by _SummaryDelegate
 _DONE_TEXT = {
     "exclude": "Excluded", "include": "Included", "accept_mismatch": "Accepted the frame mismatch of",
@@ -97,6 +98,10 @@ class _SummaryDelegate(QStyledItemDelegate):
                     painter.restore()
                     return
         painter.restore()
+
+
+def _not_found(row) -> bool:
+    return any(a.code == "not_found_in_scan" for a in row.anomalies)
 
 
 class ScanTab(QWidget):
@@ -421,7 +426,7 @@ class ScanTab(QWidget):
         if name == "exclude":
             return [r.sid for r in rows if not r.excluded]
         if name == "include":
-            return [r.sid for r in rows if r.excluded_by == "you"]
+            return [r.sid for r in rows if r.excluded_by == "you" and not _not_found(r)]
         return [r.sid for r in rows]
 
     def _update_buttons(self) -> None:
@@ -430,6 +435,7 @@ class ScanTab(QWidget):
         self.open_folder_button.setEnabled(len(rows) == 1 and bool(rows[0].folder))
         self.exclude_button.setEnabled(free and bool(self._targets("exclude", rows)))
         self.include_button.setEnabled(free and bool(self._targets("include", rows)))
+        self.include_button.setToolTip(NOT_FOUND_INCLUDE_TIP if any(_not_found(r) for r in rows) else INCLUDE_TIP)
         self.accept_button.setEnabled(free and all(
             any(a.code == "frames_ts_mismatch" and a.level == "error" for a in r.anomalies) for r in rows))
         self.stitch_button.setEnabled(free and all(

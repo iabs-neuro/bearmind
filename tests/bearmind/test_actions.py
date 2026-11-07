@@ -1,10 +1,13 @@
 """Actions module: codes, unknown sessions raise before any write, same effects as the CLI commands."""
+import csv
 import re
+import threading
 
 import pytest
 import yaml
 
 from bearmind import actions
+from bearmind.threshold_model import Counters
 from bearmind.registry import STAGES, Anomaly, StageRecord, State, load_record, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
 
@@ -367,3 +370,93 @@ def test_rescan_keeps_stitch_confirmation(make_series, tmp_path):
 def test_failure_text_no_split_english():
     text = actions.failure_text("no_split", "")
     assert text and not re.search("[Ѐ-ӿ]", text)
+
+
+# --- threshold choice log ---
+
+def _choices(paths):
+    with open(paths.threshold_choices_csv, encoding="utf-8", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def test_set_thresholds_writes_choice_log(series):
+    _set(series.paths, S1, "thresholds", State.DONE,
+         suggested={"gSig": 3, "min_corr": 0.8, "min_pnr": 7.0, "method": "mirror_fdr"})
+    counters = Counters(12, 0.25, 3)
+    actions.set_thresholds(series.paths, S1, 4, 0.85, 8, who="ann", source="window", counters=counters)
+    (row,) = _choices(series.paths)
+    assert row["sid"] == S1 and row["mouse"] == load_record(series.paths, S1).mouse
+    assert row["who"] == "ann" and row["source"] == "window" and row["when"]
+    assert (row["suggested_gSig"], row["suggested_min_corr"], row["suggested_min_pnr"],
+            row["suggested_method"]) == ("3", "0.8", "7.0", "mirror_fdr")
+    assert (row["gSig"], row["min_corr"], row["min_pnr"]) == ("4", "0.85", "8")
+    assert (row["n_blobs"], row["single_frac"], row["n_mirror_blobs"]) == ("12", "0.25", "3")
+    assert ("thresholds", "gSig=4 min_corr=0.85 min_pnr=8", "ann") in _decisions(series.paths, S1)
+
+
+def test_set_thresholds_positional_call_unchanged(series):
+    actions.set_thresholds(series.paths, S1, 4, 0.85, 8)
+    cfg = yaml.safe_load(series.paths.session_config(S1).read_text(encoding="utf-8"))
+    assert cfg["cnmf"] == {"gSig": 4, "min_corr": 0.85, "min_pnr": 8}
+    (row,) = _choices(series.paths)
+    assert row["source"] == "cli" and row["who"] == ""
+    assert row["suggested_gSig"] == "" and row["n_blobs"] == ""
+
+
+def test_set_thresholds_invalid_writes_no_log(series):
+    with pytest.raises(ValueError):
+        actions.set_thresholds(series.paths, S1, 4, 92.0, 8)
+    assert not series.paths.threshold_choices_csv.exists()
+
+
+def test_choice_log_concurrent_appends(series):
+    def work(sid):
+        for i in range(20):
+            actions.set_thresholds(series.paths, sid, 3, 0.8, 8 + i)
+    threads = [threading.Thread(target=work, args=(s,)) for s in (S1, S2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    lines = series.paths.threshold_choices_csv.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 41 and sum(1 for ln in lines if ln.startswith("sid,")) == 1
+    assert len(_choices(series.paths)) == 40
+
+
+def test_accept_suggested_logs_source(series):
+    sug = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "robust_bg"}
+    _set(series.paths, S1, "thresholds", State.DONE, suggested=sug)
+    actions.accept_suggested(series.paths, [S1], who="ann")
+    (row,) = _choices(series.paths)
+    assert row["source"] == "accept_suggested" and row["who"] == "ann"
+    assert (row["suggested_gSig"], row["suggested_min_corr"], row["suggested_min_pnr"]) ==         (row["gSig"], row["min_corr"], row["min_pnr"]) == ("4", "0.8", "8.0")
+    assert ("thresholds", "gSig=4 min_corr=0.8 min_pnr=8.0", "ann") in _decisions(series.paths, S1)
+
+
+def test_apply_to_mouse_skips_chosen(series):
+    actions.set_thresholds(series.paths, S1, 3, 0.8, 7)
+    res = actions.apply_to_mouse(series.paths, load_record(series.paths, S1).mouse, 4, 0.85, 8, "ann")
+    assert res.warnings == [(S1, "already_chosen")] and res.ok == [S2]
+    cfg1 = yaml.safe_load(series.paths.session_config(S1).read_text(encoding="utf-8"))
+    cfg2 = yaml.safe_load(series.paths.session_config(S2).read_text(encoding="utf-8"))
+    assert cfg1["cnmf"]["gSig"] == 3 and cfg2["cnmf"]["gSig"] == 4
+    assert [r["source"] for r in _choices(series.paths)][-1] == "window_mouse"
+
+
+def test_apply_to_mouse_skips_excluded(series):
+    update_record(series.paths, S3, lambda r: setattr(r, "excluded", True))
+    res = actions.apply_to_mouse(series.paths, load_record(series.paths, S3).mouse, 4, 0.85, 8, "ann")
+    assert res.warnings == [(S3, "excluded_session")] and res.ok == []
+    assert not series.paths.session_config(S3).exists()
+
+
+def test_apply_to_mouse_invalid_writes_nothing(series):
+    with pytest.raises(ValueError):
+        actions.apply_to_mouse(series.paths, load_record(series.paths, S1).mouse, 4, 92.0, 8, "ann")
+    assert not series.paths.session_config(S1).exists()
+
+
+def test_set_excluded_include_not_found_stays_excluded(series):
+    update_record(series.paths, S1, lambda r: r.anomalies.append(Anomaly("not_found_in_scan", "error", "gone")))
+    res = actions.set_excluded(series.paths, [S1], False, "ann")
+    assert res.warnings == [(S1, "not_found_stays_excluded")]

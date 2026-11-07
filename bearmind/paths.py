@@ -115,6 +115,10 @@ class SeriesPaths:
     def scan_unrecognized_csv(self) -> Path:
         return self._service / "scan_unrecognized.csv"
 
+    @property
+    def threshold_choices_csv(self) -> Path:
+        return self._service / "threshold_choices.csv"
+
     # --- machine temp folder ---
     def temp_dir(self, temp_root, sid: str) -> Path:
         """The session's folder under the machine temp folder, keyed by the series too: two series with the
