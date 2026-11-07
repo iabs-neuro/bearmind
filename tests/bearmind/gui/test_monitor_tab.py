@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QLabel
 
 from bearmind import monitor, registry
 from bearmind.gui import monitor_tab
@@ -202,7 +203,7 @@ def test_progress_bars_counts_text(qapp, series4, live):
     assert t.bars["mc"].caption.text() == "2 done · 1 running"
     assert "wait" in t.bars["thresholds"].caption.text()
     assert t.bars["crop"].caption.text() == "4 done"
-    assert "4 SESSIONS" in t.progress_title.text()
+    assert t.progress_title.text() == "Progress — 4 sessions"  # drawn in capitals by the section font
 
 
 def test_eta_label_mentions_waiting_not_counted(qapp, series4):
@@ -305,3 +306,192 @@ def test_refresh_fast_on_300_sessions(qapp, tmp_path):
     print(f"refresh of 300 sessions: {spent * 1000:.0f} ms")
     assert t.model.rowCount() == 300
     assert spent < 0.2
+
+
+# --- final fix wave ---
+
+def _write_heartbeat(paths, **fields):
+    hb = {"pid": 9, "time": datetime.now().isoformat(timespec="milliseconds"), "current": None, **fields}
+    paths.heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    paths.heartbeat.write_text(json.dumps(hb), encoding="utf-8")
+
+
+@pytest.mark.parametrize("exit_, text, red", [
+    ("finished", "Stopped — finished", False),
+    ("stopped", "Stopped — stop requested", False),
+    ("error: RuntimeError: disk gone", "Stopped — runner error: RuntimeError: disk gone", True),
+    (None, "Stopped", False)])
+def test_header_exit_reason(qapp, series4, exit_, text, red):
+    """I2: why the batch stopped; an old heartbeat without the reason shows plain Stopped."""
+    _write_heartbeat(series4, status="idle", **({} if exit_ is None else {"exit": exit_}))
+    t = tab_for(series4)
+    assert t.header_text() == text
+    assert (monitor_tab.ERROR_INK in t.batch_detail.styleSheet()) == red
+
+
+def test_header_stopping_after_current_stage(qapp, series4):
+    """M5: after Stop the header says so until the running stage ends."""
+    t = tab_for(series4)
+    p = spawn(series4, "LT1_J02_1D", "mc", "running")
+    try:
+        t.refresh()
+        assert t.header_text().startswith("Running")
+        series4.stop_request.write_text("stop\n", encoding="utf-8")
+        t.refresh()
+        assert t.header_text().startswith("Stopping after current stage") and "LT1_J02_1D" in t.header_text()
+    finally:
+        stop(p)
+
+
+def test_header_waiting_for_you_only_when_a_person_can_act(qapp, tmp_path):
+    """M11: a runner that polls only for the crop box is not waiting for you."""
+    paths = SeriesPaths(tmp_path / "series")
+    paths.registry_file("x").parent.mkdir(parents=True)
+    put(paths, "LT1_J01_1D", {"crop": done(), "mc": StageRecord(State.WAITING, error="waiting for crop_finalize")})
+    t = tab_for(paths)
+    p = spawn(paths, "-", "", "waiting")
+    try:
+        t.refresh()
+        assert t.header_text().startswith("Running") and "waiting" in t.header_text()
+        assert "waiting for you" not in t.header_text()
+        put(paths, "LT1_J01_2D", {"cnmf": done(), "gate": StageRecord(State.WAITING,
+                                                                      error="waiting for manual_inspection")})
+        t.refresh()
+        assert "waiting for you" in t.header_text()
+    finally:
+        stop(p)
+
+
+def test_quick_exit_after_start_says_it_ran(qapp, series4):
+    """M3: a runner that starts and ends between two refreshes did start; its exit reason is shown."""
+    def start(series):
+        _write_heartbeat(series4, status="idle", exit="finished")
+        return 9
+
+    seen = []
+    t = tab_for(series4, start=start)
+    t.status_message.connect(seen.append)
+    t.start_button.click()
+    t.refresh()
+    assert seen == ["The batch ran and stopped — finished"] and t.start_button.isEnabled()
+
+
+def test_runner_that_died_after_start_is_reported_after_grace(qapp, series4):
+    def start(series):
+        _write_heartbeat(series4, status="running")  # a pulse, then the process vanished without its lock
+        return 9
+
+    seen = []
+    t = tab_for(series4, start=start)
+    t.status_message.connect(seen.append)
+    t.start_button.click()
+    t.refresh()
+    assert not seen and not t.start_button.isEnabled()
+    t._clock = lambda: time.monotonic() + monitor_tab.START_GRACE_S + 1
+    t.refresh()
+    assert seen[-1].startswith("The batch ran and stopped — ") and "runner_console.log" in seen[-1]
+    assert monitor_tab.DID_NOT_START not in seen
+
+
+def test_unscanned_folder_disables_start_and_actions(qapp, tmp_path):
+    """M3: no Start and no writing action on a folder that is not a scanned series."""
+    t = MonitorTab(tmp_path)
+    assert not t.start_button.isEnabled()
+    assert not any(a.isEnabled() for a in t.menu_actions)
+    t.run_action("export_csv")
+    assert not (tmp_path / "_bearmind").exists()
+
+
+def test_eta_text_wording():
+    """M4."""
+    assert monitor_tab._eta_text(0.0) == "Estimated time left: nothing left"
+    assert monitor_tab._eta_text(None) == "Estimated time left: unknown"
+    assert monitor_tab._eta_text(3600, running=False) == (
+        "Estimated time left: ~1 h 0 min (time waiting for you not counted) (batch not running)")
+    assert "~47 h 59 min" in monitor_tab._eta_text(47 * 3600 + 59 * 60)
+    assert "~3 d 4 h" in monitor_tab._eta_text((3 * 24 + 4) * 3600 + 120)
+
+
+def test_eta_label_says_batch_not_running(qapp, series4, live):
+    assert "(batch not running)" not in tab_for(series4).eta_label.text()
+    series4.heartbeat.unlink()
+    assert tab_for(series4).eta_label.text().endswith(" (batch not running)")
+
+
+def test_interrupted_stage_without_live_batch(qapp, series4):
+    """M6: LT1_J02_1D has MC RUNNING in the registry but no batch is alive."""
+    t = tab_for(series4)
+    item = t.model.item(2, 2)
+    assert item.text() == "interrupted" and item.background().color() == QColor(monitor_tab.CELL_BG["warning"])
+    assert t.bars["mc"].caption.text() == "2 done"
+
+
+def test_unschedulable_row_is_red_with_the_reason(qapp, series4):
+    """I1: a session the batch cannot schedule is a red row, the reason in every tooltip."""
+    f = series4.session_config("LT1_J02_2D")
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("cnmf: [unclosed\n", encoding="utf-8")
+    t = tab_for(series4)
+    i = t._sids.index("LT1_J02_2D")
+    assert "cannot be scheduled: config: " in t.model.item(i, 0).toolTip()
+    for c in range(1, t.model.columnCount()):
+        item = t.model.item(i, c)
+        assert item.background().color() == QColor(monitor_tab.CELL_BG["error"])
+        assert "cannot be scheduled: config: " in item.toolTip()
+    assert t.warnings_header.text() == "Warnings — 0 sessions"
+
+
+def test_section_headers_share_one_style(qapp, series4):
+    """R5: every section header is drawn the same way, in capitals, also after its text changes."""
+    t = tab_for(series4)
+    heads = [w for w in t.findChildren(QLabel) if isinstance(w, monitor_tab._SectionLabel)]
+    assert len(heads) == 6 and t.warnings_header in heads and t.log_title in heads and t.progress_title in heads
+    assert len({h.styleSheet() for h in heads}) == 1
+    assert all(h.font().capitalization() == QFont.Capitalization.AllUppercase for h in heads)
+
+
+def test_running_chip_and_accent_buttons(qapp, series4):
+    """R5: the status is a coloured chip as in the mockup; the two "Waiting for you" buttons are accent."""
+    t = tab_for(series4)
+    assert f"background: {monitor_tab.CHIP['Stopped'][0]}" in t.batch_label.styleSheet()
+    p = spawn(series4, "LT1_J02_1D", "mc", "running")
+    try:
+        t.refresh()
+        style = t.batch_label.styleSheet()
+        assert f"background: {monitor_tab.CHIP['Running'][0]}" in style and "border-radius" in style
+    finally:
+        stop(p)
+    for b in (t.thresholds_button, t.inspection_button):
+        assert monitor_tab.ACCENT in b.styleSheet()
+
+
+def _fully_visible_rows(table) -> int:
+    h = table.viewport().height()
+    return sum(1 for r in range(table.model().rowCount())
+               if 0 <= table.rowViewportPosition(r) and table.rowViewportPosition(r) + table.rowHeight(r) <= h)
+
+
+def test_table_shows_eight_rows_at_the_default_size(qapp, tmp_path):
+    """R3: at 1100x700 (the window's default) the session table gets the room, not the panels below it."""
+    from bearmind.gui.app import MainWindow
+
+    paths = SeriesPaths(tmp_path / "series")
+    paths.registry_file("x").parent.mkdir(parents=True)
+    for i in range(24):
+        sid = f"LT1_J{i // 4 + 1:02d}_{i % 4 + 1}D"
+        put(paths, sid, {"crop": done(), "mc": StageRecord(State.FAILED, error="boom")} if i < 5 else {"crop": done()})
+    paths.logs_dir.mkdir(parents=True)
+    paths.series_log.write_text("".join(f"line {i}\n" for i in range(50)), encoding="utf-8")
+    w = MainWindow(paths.root)
+    w.resize(1100, 700)
+    w.show()
+    qapp.processEvents()
+    try:
+        n = _fully_visible_rows(w.monitor.table)
+        print(f"fully visible table rows at 1100x700: {n}")
+        assert n >= 8
+        assert w.monitor.warnings_scroll.height() >= w.monitor.warnings_scroll.minimumHeight() > 0
+        assert w.monitor.log_view.height() >= w.monitor.log_view.minimumHeight() > 0
+    finally:
+        w.monitor.timer.stop()
+        w.close()

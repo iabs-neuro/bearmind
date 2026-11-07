@@ -78,6 +78,49 @@ def test_panel_lists_errors_first_with_retry(qapp, series4):
     assert len(_retry_buttons(t)) == 1  # only the failed stage has Retry
 
 
+def test_panel_text_does_not_repeat_the_stage(qapp, series4):
+    """R4: the bold "<sid> · CNMF-E" label is followed by what happened, not by the stage again."""
+    texts = [lab.text() for lab in Ui(series4).tab.warnings_list.findChildren(QLabel)]
+    assert "boom. Other sessions continue." in texts
+    assert not [x for x in texts if x.startswith(("CNMF-E:", "MC:"))]
+
+
+def test_already_passed_message_asks_for_nothing(qapp, series4):
+    """M8: the window has no force path, so its text does not ask to confirm."""
+    registry.update_record(series4, S1, lambda r: r.stages.update({"gate": done(gate="not_needed")}))
+    ui = Ui(series4)
+    ui.select(S1)
+    ui.tab.run_action("inspection_not_needed")
+    msg = next(x for x in ui.shown if S1 in x)
+    assert "already passed" in msg and "confirm" not in msg.lower()
+
+
+def test_log_poll_keeps_the_reading_position(qapp, tmp_path):
+    """M9: new lines scroll the view only when it was at the end."""
+    f = tmp_path / "a.log"
+    f.write_text("".join(f"line {i}\n" for i in range(300)), encoding="utf-8")
+    v = LogView()
+    v.resize(400, 150)
+    v.show()
+    v.show_log(f)
+    qapp.processEvents()
+    bar = v.verticalScrollBar()
+    assert bar.maximum() > 0 and bar.value() == bar.maximum()
+    bar.setValue(10)
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write("new 1\nnew 2\n")
+    v.poll()
+    qapp.processEvents()
+    assert bar.value() == 10
+    bar.setValue(bar.maximum())
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write("new 3\n")
+    v.poll()
+    qapp.processEvents()
+    assert bar.value() == bar.maximum() and v.toPlainText().endswith("new 3")
+    v.close()
+
+
 def test_panel_header_counts_sessions(qapp, series4):
     assert Ui(series4).tab.warnings_header.text() == "Warnings — 2 sessions"
 

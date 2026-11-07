@@ -73,10 +73,14 @@ class LogView(QPlainTextEdit):
         self._pos += cut
         self._partial = data[cut:]
         if cut:
+            # a person reading further up keeps the place; at the end, the view follows the new lines
+            bar = self.verticalScrollBar()
+            at_end = bar.value() >= bar.maximum()
             # Python logging writes CRLF on Windows; a lone \r would show as an extra empty line
             text = data[:cut].decode("utf-8", "replace").replace("\r\n", "\n").rstrip("\n")
             self.appendPlainText(text)
-            self._to_end()
+            if at_end:
+                self._to_end()
 
     def _to_end(self) -> None:
         bar = self.verticalScrollBar()

@@ -6,12 +6,15 @@ goes through bearmind.actions; the dialogs (confirm, stage, file, message) are i
 import logging
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QPainter, QStandardItem, QStandardItemModel
+from PySide6.QtGui import (QAction, QBrush, QColor, QDesktopServices, QFont, QPainter, QStandardItem,
+                           QStandardItemModel)
 from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QMenu, QMessageBox, QPushButton, QScrollArea, QTableView, QVBoxLayout, QWidget)
+                               QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QVBoxLayout,
+                               QWidget)
 
 from bearmind import actions, config, launcher, monitor
 from bearmind.gui.logs import LogView
@@ -22,8 +25,23 @@ log = logging.getLogger("bearmind")
 
 START_GRACE_S = 15.0  # after Start the batch has this long to take its lock and write a heartbeat
 SLOW_REFRESH_S = 1.0
-DID_NOT_START = "The batch did not start; see _bearmind/logs/runner_console.log"
-STATUS_COLOR = {"Running": "#2e7d32", "Not responding": "#c62828", "Stopped": "#757575"}
+CONSOLE_LOG = "see _bearmind/logs/runner_console.log"
+DID_NOT_START = f"The batch did not start; {CONSOLE_LOG}"
+RAN_AND_STOPPED = "The batch ran and stopped — {}"
+NO_FINAL_PULSE = f"it ended without a final heartbeat; {CONSOLE_LOG}"
+EXIT_TEXT = {"finished": "finished", "stopped": "stop requested", "interrupted": "interrupted",
+             "nothing_to_do": "nothing to do"}
+MUTED = "#5d6676"
+ERROR_INK = "#c62828"
+ACCENT = "#2f5bd3"  # the mockup's primary buttons
+# status chip (background, ink), the mockup's palette: Running has the colour of running cells
+CHIP = {"Running": ("#bbdefb", "#0d47a1"), "Stopping after current stage": ("#fff3b0", "#6d5300"),
+        "Not responding": ("#ffcdd2", "#8e0000"), "Stopped": ("#eef0f3", MUTED)}
+ACCENT_BUTTON = (f"QPushButton {{ background: {ACCENT}; color: white; border: 1px solid {ACCENT}; "
+                 "border-radius: 6px; padding: 4px 10px; }"
+                 "QPushButton:disabled { background: #aebde9; border-color: #aebde9; color: #f4f6fc; }")
+WARNINGS_MIN_H = 62  # two warning rows with a Retry button; the panel and the log can be dragged larger
+LOG_MIN_H = 52  # about three log lines
 # The cell colours are light and the ink dark in both light and dark system themes, so the table reads the same.
 CELL_BG = {"ok": "#c8e6c9", "warning": "#fff3b0", "error": "#ffcdd2", "running": "#bbdefb", "waiting": "#e1bee7"}
 CELL_INK = "#1d2330"
@@ -62,12 +80,32 @@ def _duration(seconds: float) -> str:
     return f"{m} min" if m < 60 else f"{m // 60} h {m % 60} min"
 
 
-def _eta_text(eta_s) -> str:
+def _eta_duration(seconds: float) -> str:
+    if seconds > 48 * 3600:  # "~999 h 33 min" reads worse than days
+        h = int(seconds // 3600)
+        return f"{h // 24} d {h % 24} h"
+    return _duration(seconds)
+
+
+def _eta_text(eta_s, running: bool = True) -> str:
     if eta_s is None:
-        return "Estimated time left: unknown"
-    m = round(eta_s / 60)
-    left = "less than 1 min" if m < 1 else f"~{_duration(m * 60)}"
-    return f"Estimated time left: {left} (time waiting for you not counted)"
+        left = "unknown"
+    elif eta_s <= 0:
+        left = "nothing left"
+    else:
+        m = round(eta_s / 60)
+        left = ("less than 1 min" if m < 1 else f"~{_eta_duration(m * 60)}") + " (time waiting for you not counted)"
+    text = f"Estimated time left: {left}"
+    return text if running else text + " (batch not running)"
+
+
+def _exit_text(exit_) -> str:
+    """Why the batch stopped, from its final heartbeat ("" when the heartbeat does not say)."""
+    if not exit_:
+        return ""
+    if exit_.startswith("error:"):
+        return "runner error: " + exit_[len("error:"):].strip()
+    return EXIT_TEXT.get(exit_, exit_)
 
 
 def _plural(n: int) -> str:
@@ -125,7 +163,7 @@ class _StageRow(QWidget):
         self.segments = _SegmentBar()
         self.caption = QLabel()
         self.caption.setFixedWidth(150)
-        self.caption.setStyleSheet("color: #5d6676;")
+        self.caption.setStyleSheet(f"color: {MUTED};")
         lay.addWidget(name)
         lay.addWidget(self.segments, 1)
         lay.addWidget(self.caption)
@@ -143,10 +181,31 @@ class _StageRow(QWidget):
         self.caption.setText(" · ".join(parts))
 
 
-def _section_label(text: str) -> QLabel:
-    lab = QLabel(text.upper())
-    lab.setStyleSheet("color: #5d6676; font-size: 11px; font-weight: 600; letter-spacing: 1px;")
-    return lab
+class _SectionLabel(QLabel):
+    """A section header. The capitals come from the font, so a text set later ("Warnings — 3 sessions") is
+    drawn like the others, and text() keeps the words as written."""
+
+    STYLE = f"color: {MUTED};"
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        f = self.font()
+        f.setCapitalization(QFont.Capitalization.AllUppercase)
+        f.setPixelSize(11)
+        f.setWeight(QFont.Weight.DemiBold)
+        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.0)
+        self.setFont(f)
+        self.setStyleSheet(self.STYLE)  # colour only: a font in a style sheet would replace the one above
+
+
+def _section_box(label: QLabel, widget: QWidget) -> QWidget:
+    box = QWidget()
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(2)
+    lay.addWidget(label)
+    lay.addWidget(widget, 1)
+    return box
 
 
 class MonitorTab(QWidget):
@@ -170,18 +229,29 @@ class MonitorTab(QWidget):
         self.last_status = ""
         self._clock = time.monotonic
         self._starting_since: float | None = None
+        self._clicked_at: datetime | None = None  # wall time of the Start click, to the millisecond
         self._alive = False
+        self._scanned = False
         self._cache = monitor.RecordCache()
         self._slow_logged = False
         self._sids: list[str] = []
 
         self.root_layout = QVBoxLayout(self)
+        self.root_layout.setContentsMargins(8, 6, 8, 6)
+        self.root_layout.setSpacing(4)
         self._build_header()
         self._build_progress()
         self._build_waiting()
+        # sessions, warnings and log share a splitter: the table gets the room, the two panels keep a few lines
+        # each and can be dragged larger
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setChildrenCollapsible(False)
         self._build_table()
         self._build_warnings()
         self._build_log()
+        for i, stretch in enumerate((6, 1, 1)):
+            self.splitter.setStretchFactor(i, stretch)
+        self.root_layout.addWidget(self.splitter, 1)
         self._build_actions()
 
         self.timer = QTimer(self)
@@ -193,9 +263,9 @@ class MonitorTab(QWidget):
     # --- construction ---
 
     def _build_header(self) -> None:
-        self.root_layout.addWidget(_section_label("Batch"))
+        self.root_layout.addWidget(_SectionLabel("Batch"))
         row = QHBoxLayout()
-        self.batch_label = QLabel("Stopped")
+        self.batch_label = QLabel("Stopped")  # a chip: its colours are set with the status
         self.batch_detail = QLabel()
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop after current stage")
@@ -211,25 +281,37 @@ class MonitorTab(QWidget):
         self.root_layout.addLayout(row)
 
     def _build_progress(self) -> None:
-        self.progress_title = _section_label("Progress")
-        self.root_layout.addWidget(self.progress_title)
-        self.bars: dict[str, _StageRow] = {}
-        for stage in STAGES:
-            self.bars[stage] = _StageRow(monitor.STAGE_TITLE[stage])
-            self.root_layout.addWidget(self.bars[stage])
+        # the legend and the time left share the header line, and the "Waiting for you" label sits left of its
+        # buttons: at the default 1100x700 (125 % screen scaling) the lines saved are table rows
+        self.progress_title = _SectionLabel("Progress")
         legend = " &nbsp; ".join(f'<span style="color:{c}">&#9632;</span> {t}' for t, c in LEGEND)
         self.legend_label = QLabel(legend)
         self.legend_label.setTextFormat(Qt.TextFormat.RichText)
-        self.legend_label.setStyleSheet("color: #5d6676; font-size: 12px;")
+        self.legend_label.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
         self.eta_label = QLabel()
-        self.root_layout.addWidget(self.legend_label)
-        self.root_layout.addWidget(self.eta_label)
+        head = QHBoxLayout()
+        head.addWidget(self.progress_title)
+        head.addSpacing(16)
+        head.addWidget(self.legend_label)
+        head.addStretch(1)
+        head.addWidget(self.eta_label)
+        self.root_layout.addLayout(head)
+        self.bars: dict[str, _StageRow] = {}
+        bars = QVBoxLayout()
+        bars.setSpacing(2)
+        for stage in STAGES:
+            self.bars[stage] = _StageRow(monitor.STAGE_TITLE[stage])
+            bars.addWidget(self.bars[stage])
+        self.root_layout.addLayout(bars)
 
     def _build_waiting(self) -> None:
-        self.root_layout.addWidget(_section_label("Waiting for you"))
         row = QHBoxLayout()
+        row.addWidget(_SectionLabel("Waiting for you"))
+        row.addSpacing(8)
         self.thresholds_button = QPushButton()
         self.inspection_button = QPushButton()
+        for b in (self.thresholds_button, self.inspection_button):
+            b.setStyleSheet(ACCENT_BUTTON)
         self.thresholds_button.clicked.connect(lambda: self.open_tab.emit("Thresholds"))
         self.inspection_button.clicked.connect(lambda: self.open_tab.emit("Inspection"))
         row.addWidget(self.thresholds_button)
@@ -238,7 +320,6 @@ class MonitorTab(QWidget):
         self.root_layout.addLayout(row)
 
     def _build_table(self) -> None:
-        self.root_layout.addWidget(_section_label("Sessions"))
         self.model = QStandardItemModel(0, 1 + len(STAGES), self)
         self.model.setHorizontalHeaderLabels(["Session"] + [monitor.STAGE_TITLE[s] for s in STAGES])
         self.table = QTableView()
@@ -246,35 +327,33 @@ class MonitorTab(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self._fit_rows()
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.not_scanned_label = QLabel(f'Series not scanned. Run: run_bearmind.bat scan "{self.series}"')
         self.not_scanned_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.root_layout.addWidget(self.table, 1)
-        self.root_layout.addWidget(self.not_scanned_label)
+        box = _section_box(_SectionLabel("Sessions"), self.table)
+        box.layout().addWidget(self.not_scanned_label)
+        self.splitter.addWidget(box)
 
     def _build_warnings(self) -> None:
-        self.warnings_header = _section_label("")
-        self.warnings_header.setText("Warnings — 0 sessions")
+        self.warnings_header = _SectionLabel("Warnings — 0 sessions")
         self.warnings_list = QWidget()
         self._warnings_layout = QVBoxLayout(self.warnings_list)
         self._warnings_layout.setContentsMargins(0, 0, 0, 0)
         self._warnings_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._warnings_sig = None
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setMaximumHeight(140)
-        scroll.setWidget(self.warnings_list)
-        self.root_layout.addWidget(self.warnings_header)
-        self.root_layout.addWidget(scroll)
+        self.warnings_scroll = QScrollArea()
+        self.warnings_scroll.setWidgetResizable(True)
+        self.warnings_scroll.setMinimumHeight(WARNINGS_MIN_H)
+        self.warnings_scroll.setWidget(self.warnings_list)
+        self.splitter.addWidget(_section_box(self.warnings_header, self.warnings_scroll))
 
     def _build_log(self) -> None:
-        self.log_title = _section_label("")
+        self.log_title = _SectionLabel("")
         self.log_view = LogView()
-        self.log_view.setMinimumHeight(110)
-        self.log_view.setMaximumHeight(200)
-        self.root_layout.addWidget(self.log_title)
-        self.root_layout.addWidget(self.log_view)
+        self.log_view.setMinimumHeight(LOG_MIN_H)
+        self.splitter.addWidget(_section_box(self.log_title, self.log_view))
         self.table.selectionModel().selectionChanged.connect(lambda *_: self._show_log_of_selection())
         self._show_log_of_selection()
 
@@ -324,6 +403,8 @@ class MonitorTab(QWidget):
     def run_action(self, name: str) -> None:
         if name not in ACTIONS:
             raise ValueError(f"unknown action {name!r}")
+        if not self._scanned:  # every action writes into the folder (export too: it refreshes summary.csv)
+            return self._say("Not a scanned series: scan it first.")
         if name == "export_csv":
             return self._export_csv()
         who = actions.current_user()
@@ -431,16 +512,33 @@ class MonitorTab(QWidget):
         self.refresh()
 
     def _on_start(self) -> None:
-        if self._starting_since is not None or self._alive:
+        if self._starting_since is not None or self._alive or not self._scanned:
             return
+        # before the start: the runner's heartbeat times are written to the millisecond
+        now = datetime.now()
+        clicked = now.replace(microsecond=now.microsecond // 1000 * 1000)
         try:
             self._start(self.series)
         except RuntimeError as e:  # another batch took the lock between the last refresh and the click
             self.status_message.emit(str(e))
             self.refresh()
             return
-        self._starting_since = self._clock()
+        self._starting_since, self._clicked_at = self._clock(), clicked
         self._update_buttons()
+
+    def _check_start(self, r: monitor.RunnerState) -> None:
+        """After Start, while the batch is not alive. A heartbeat written since the click means the runner ran
+        (it can start and end between two refreshes); with its final heartbeat that is known at once, else
+        after START_GRACE_S without a live batch."""
+        ran = r.heartbeat_time is not None and r.heartbeat_time >= self._clicked_at
+        if ran and r.status == "stopped":
+            msg = RAN_AND_STOPPED.format(_exit_text(r.exit) or CONSOLE_LOG)
+        elif self._clock() - self._starting_since > START_GRACE_S:
+            msg = RAN_AND_STOPPED.format(NO_FINAL_PULSE) if ran else DID_NOT_START
+        else:
+            return
+        self._starting_since = self._clicked_at = None
+        self.status_message.emit(msg)
 
     def _on_stop(self) -> None:
         if not self._alive:
@@ -452,8 +550,14 @@ class MonitorTab(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.series)))
 
     def _update_buttons(self) -> None:
-        self.start_button.setEnabled(not self._alive and self._starting_since is None)
+        self.start_button.setEnabled(self._scanned and not self._alive and self._starting_since is None)
         self.stop_button.setEnabled(self._alive)
+        for act in getattr(self, "menu_actions", ()):  # the actions are built after the first refresh's widgets
+            act.setEnabled(self._scanned)
+
+    def header_text(self) -> str:
+        """The batch line as read: "Stopped — finished", "Running LT1_J05_2D · MC · 6 min   heartbeat 4 s ago"."""
+        return f"{self.batch_label.text()} {self.batch_detail.text()}".strip()
 
     # --- refresh ---
 
@@ -481,7 +585,8 @@ class MonitorTab(QWidget):
     def _refresh(self, now=None) -> None:
         t0 = time.perf_counter()
         view = monitor.series_view(self.paths, now, self._cache)
-        self._show_runner(view.runner)
+        self._scanned = view.scanned
+        self._show_runner(view)
         self._show_progress(view)
         self._show_waiting(view.waiting)
         self._show_table(view)
@@ -543,38 +648,46 @@ class MonitorTab(QWidget):
         if path != self.log_view.path:
             self.log_view.show_log(path)
 
-    def _show_runner(self, r: monitor.RunnerState) -> None:
+    def _show_runner(self, view: monitor.SeriesView) -> None:
+        r = view.runner
         self._alive = r.alive
+        detail, red = "", False
         if r.alive:
-            self._starting_since = None
-            name, detail = "Running", ""
+            self._starting_since = self._clicked_at = None
+            name = "Stopping after current stage" if r.stopping else "Running"
             if r.current:
                 detail = f"{r.current[0]} · {monitor.STAGE_TITLE.get(r.current[1], r.current[1])}"
                 if r.stage_elapsed_s is not None:
                     detail += f" · {_duration(r.stage_elapsed_s)}"
             elif r.status == "waiting":
-                detail = "waiting for you"
+                # the runner also polls for the core's own waits (crop finalize): "you" only for a person's
+                person = view.waiting.get("thresholds", 0) + view.waiting.get("manual_inspection", 0)
+                detail = "waiting for you" if person else "waiting"
             if r.age_s is not None:
                 detail += f"   heartbeat {_age(max(0.0, r.age_s))} ago"
         elif r.status == "dead":
             name = "Not responding"
             detail = "no heartbeat" if r.age_s is None else f"last heartbeat {_age(max(0.0, r.age_s))} ago"
         else:
-            name, detail = "Stopped", ""
-        if not r.alive and self._starting_since is not None and self._clock() - self._starting_since > START_GRACE_S:
-            self._starting_since = None
-            self.status_message.emit(DID_NOT_START)
+            name, why = "Stopped", _exit_text(r.exit)
+            if why:
+                detail, red = f"— {why}", r.exit.startswith("error:")
+        if not r.alive and self._starting_since is not None:
+            self._check_start(r)
+        bg, ink = CHIP[name]
         self.batch_label.setText(name)
-        self.batch_label.setStyleSheet(f"color: {STATUS_COLOR[name]}; font-weight: 600;")
+        self.batch_label.setStyleSheet(f"background: {bg}; color: {ink}; border-radius: 10px; padding: 2px 9px; "
+                                       "font-weight: 600;")
         self.batch_detail.setText(detail.strip())
+        self.batch_detail.setStyleSheet(f"color: {ERROR_INK}; font-weight: 600;" if red else "")
         self._update_buttons()
 
     def _show_progress(self, view: monitor.SeriesView) -> None:
         total = next(iter(view.bars.values())).total
-        self.progress_title.setText(f"PROGRESS — {total} SESSIONS")
+        self.progress_title.setText(f"Progress — {_plural(total)}")
         for stage, row in self.bars.items():
             row.show_bar(view.bars[stage])
-        self.eta_label.setText(_eta_text(view.eta_s))
+        self.eta_label.setText(_eta_text(view.eta_s, view.runner.alive))
 
     def _show_waiting(self, waiting: dict[str, int]) -> None:
         for button, label, key in ((self.thresholds_button, "Thresholds", "thresholds"),
@@ -612,7 +725,12 @@ class MonitorTab(QWidget):
 
     def _fill_row(self, i: int, row: monitor.Row) -> None:
         first = self.model.item(i, 0)
-        tip = row.cells[STAGES[0]].tooltip if row.unreadable else row.mouse
+        if row.unreadable:
+            tip = row.cells[STAGES[0]].tooltip
+        elif row.problem is not None:
+            tip = f"{row.mouse}\ncannot be scheduled: {row.problem}"
+        else:
+            tip = row.mouse
         style = f"first|{row.excluded}"
         if first.text() != row.sid:
             first.setText(row.sid)
@@ -636,6 +754,16 @@ class MonitorTab(QWidget):
                 item.setData(style, _STYLE_ROLE)
                 item.setBackground(QBrush(QColor(bg)) if bg else QBrush())
                 item.setForeground(QBrush(QColor(ink)) if ink else QBrush())
+
+    def _fit_rows(self) -> None:
+        # rows as tall as the text needs (the style's default is taller): more sessions on the screen
+        h = self.table.fontMetrics().height() + 4
+        self.table.verticalHeader().setMinimumSectionSize(h)  # the style's minimum is taller on Windows
+        self.table.verticalHeader().setDefaultSectionSize(h)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fit_rows()  # before the tab is on a screen its font is measured at another scaling
 
     def selected_sids(self) -> list[str]:
         rows = sorted({ix.row() for ix in self.table.selectionModel().selectedIndexes()})

@@ -38,9 +38,10 @@ _FAILURE_TEXT = {
     "manual_result_missing": "The manual inspection result is not found. Save the cleaned file at {detail} "
                              "and repeat.",
     "no_failed_stage": "The session has no failed stage, so nothing was reset.",
-    "already_passed": "Manual inspection already passed. A new decision makes autoinspection and export run "
-                      "again, and autoinspection is not reproducible run to run, so the exported neurons can "
-                      "change. Nothing was recorded; confirm to proceed.",
+    # the window's text (the CLI prints its own): the window has no force path, so it asks for nothing
+    "already_passed": "Manual inspection already passed, so nothing was recorded. A new decision would make "
+                      "autoinspection and export run again, and autoinspection is not reproducible run to run, "
+                      "so the exported neurons could change.",
 }
 
 
