@@ -250,18 +250,18 @@ def test_retry_failed_resets_every_failed_preview(series):
     assert all(states[s].state is State.DONE for s in STAGES)
 
 
+def _sid_of(paths):
+    from bearmind import scan_view
+    return scan_view.scan_view(paths).rows[0].sid
+
+
 def _split_series(make_series, tmp_path):
     from bearmind import scan
     from bearmind.paths import SeriesPaths
     root = make_series(tmp_path / "s", "legacy_split")
     scan.scan_series(root)
     paths = SeriesPaths(root)
-    return paths, scan_view_sid(paths)
-
-
-def scan_view_sid(paths):
-    from bearmind import scan_view
-    return scan_view.scan_view(paths).rows[0].sid
+    return paths, _sid_of(paths)
 
 
 def test_confirm_stitch(make_series, tmp_path):
@@ -271,6 +271,15 @@ def test_confirm_stitch(make_series, tmp_path):
     assert res.ok == [sid] and not res.failed
     assert _decisions(paths, sid)[-1] == ("stitch_confirmed", "true", "ann")
     assert load_record(paths, sid).excluded == excluded
+
+
+def test_confirm_stitch_twice_warns_without_new_decision(make_series, tmp_path):
+    paths, sid = _split_series(make_series, tmp_path)
+    actions.confirm_stitch(paths, [sid], "ann")
+    n = len(load_record(paths, sid).decisions)
+    res = actions.confirm_stitch(paths, [sid], "bob")
+    assert res.warnings == [(sid, "already_confirmed")] and not res.ok and not res.failed
+    assert len(load_record(paths, sid).decisions) == n
 
 
 def test_confirm_stitch_no_split(series):

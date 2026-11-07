@@ -239,14 +239,17 @@ def accept_mismatch(paths, sids, who: str) -> ActionResult:
 
 def confirm_stitch(paths, sids, who: str) -> ActionResult:
     """Mark the stitch of a split recording as reviewed (only for the warning level: an error-level split
-    cannot be stitched, so there is nothing to confirm)."""
+    cannot be stitched, so there is nothing to confirm). A stitch that is already confirmed gets the warning
+    already_confirmed and no second decision."""
     recs = _records(paths)
     sids = list(sids)
     check_sids(recs, sids)
     res = ActionResult()
     todo = []
     for sid in sids:
-        if any(a.code == "split_recording" and a.level == "warning" and not a.data.get("stage")
+        if any(d.what == "stitch_confirmed" and d.value == "true" for d in recs[sid].decisions):
+            res.warnings.append((sid, "already_confirmed"))
+        elif any(a.code == "split_recording" and a.level == "warning" and not a.data.get("stage")
                for a in recs[sid].anomalies):
             todo.append(sid)
         else:
@@ -262,7 +265,9 @@ def confirm_stitch(paths, sids, who: str) -> ActionResult:
 
 def rescan(paths, progress=None):
     """Scan the series again and return the Scan tab's model. Manual decisions stay; the scan re-evaluates
-    the exclusion, so an anomaly-based one clears once the files are fixed."""
+    the exclusion, so an anomaly-based one clears once the files are fixed.
+    Next to a running batch a rescan can flip a session's `excluded` (fixed files re-include it, new errors
+    exclude it); the tab asks for confirmation then."""
     scan.scan_series(paths.root, progress)
     return scan_view.scan_view(paths)
 
