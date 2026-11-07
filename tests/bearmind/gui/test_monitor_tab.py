@@ -545,3 +545,16 @@ def test_mouse_override_shows_partly_checked(qapp, series4):
     t.previews_box.click()  # series off; J01 still overrides
     assert t.previews_box.checkState() == Qt.CheckState.PartiallyChecked
     assert "2 sessions follow their own mouse config" in t.last_status
+
+
+def test_scan_found_no_sessions_text(qapp, tmp_path):
+    """M7: not "Series not scanned" after a scan that recognized nothing; the Scan tab lists the folders."""
+    paths = SeriesPaths(tmp_path / "s")
+    t = MonitorTab(paths.root)
+    assert t.not_scanned_label.text() == "Series not scanned. Open the Scan tab and press Scan."
+    paths.scan_unrecognized_csv.parent.mkdir(parents=True)
+    paths.scan_unrecognized_csv.write_text("path,reason\n", encoding="utf-8")
+    t.refresh()
+    assert t.not_scanned_label.text() == "No sessions recognized in this series. See the Scan tab."
+    assert not t.scan_tab_button.isHidden()
+    t.timer.stop()

@@ -52,6 +52,8 @@ BAR_BG = "#eef0f3"
 _STYLE_ROLE = Qt.ItemDataRole.UserRole + 1
 LEVEL_STYLE = {"error": ("ERROR", "#ffcdd2", "#8e0000"), "warning": ("WARN", "#fff3b0", "#6d5300")}
 MAX_NAMED = 12  # sessions named in a confirmation before "and N more"
+NOT_SCANNED_TEXT = "Series not scanned. Open the Scan tab and press Scan."
+NO_SESSIONS_TEXT = "No sessions recognized in this series. See the Scan tab."
 
 # the same items serve the Actions menu and the table's context menu
 ACTIONS = ("exclude", "include", "accept_mismatch", "rerun_from", "retry_failed", "inspection_not_needed",
@@ -349,7 +351,7 @@ class MonitorTab(QWidget):
         self._fit_rows()
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.not_scanned_label = QLabel("Series not scanned. Open the Scan tab and press Scan.")
+        self.not_scanned_label = QLabel(NOT_SCANNED_TEXT)
         self.scan_tab_button = QPushButton("Open Scan tab")
         self.scan_tab_button.clicked.connect(lambda: self.open_tab.emit("Scan"))
         box = _section_box(_SectionLabel("Sessions"), self.table)
@@ -778,6 +780,8 @@ class MonitorTab(QWidget):
 
     def _show_table(self, view: monitor.SeriesView) -> None:
         self.table.setVisible(view.scanned)
+        # a scan that recognized nothing lists the folders it could not read in the Scan tab
+        self.not_scanned_label.setText(NO_SESSIONS_TEXT if view.found_nothing else NOT_SCANNED_TEXT)
         self.not_scanned_label.setVisible(not view.scanned)
         self.scan_tab_button.setVisible(not view.scanned)
         sids = [r.sid for r in view.rows]

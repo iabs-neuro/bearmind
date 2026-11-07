@@ -103,6 +103,7 @@ class SeriesView:
     warnings: list[WarningItem]
     n_warning_sessions: int
     unreadable_files: list[Path] = field(default_factory=list)
+    found_nothing: bool = False  # not scanned: the scan ran (it wrote its unrecognized list) but found no session
 
 
 # --- reading with a cache ---
@@ -592,7 +593,8 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     records, broken = cache.records(paths)
     if not records and not broken:
         return SeriesView(paths.root, False, rs, [], {s: StageBar(0, 0, 0, 0, 0, 0) for s in STAGES},
-                          None, {"thresholds": 0, "manual_inspection": 0}, [], 0, [])
+                          None, {"thresholds": 0, "manual_inspection": 0}, [], 0, [],
+                          found_nothing=paths.scan_unrecognized_csv.exists())
     problems = _problems(paths, records, rs, cache)
     human = {r.sid: (_human_thresholds(paths, r, cache), cache.gate_waits(paths, r)) for r in records}
     rows = []

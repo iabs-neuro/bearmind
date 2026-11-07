@@ -377,6 +377,17 @@ def test_rows_sorted_by_mouse_then_sid(tmp_series):
 def test_not_scanned_series(tmp_path):
     v = monitor.series_view(SeriesPaths(tmp_path / "nothing"), NOW)
     assert v.scanned is False and v.rows == [] and v.runner.status == "stopped"
+    assert v.found_nothing is False
+
+
+def test_scan_found_no_sessions(tmp_path):
+    """M7: the scan ran (its list of unrecognized folders exists) but recognized no session."""
+    paths = SeriesPaths(tmp_path / "s")
+    paths.scan_unrecognized_csv.parent.mkdir(parents=True)
+    paths.scan_unrecognized_csv.write_text("path,reason\n1_Raw/a,folder name is not a session id\n",
+                                           encoding="utf-8")
+    v = monitor.series_view(paths, NOW)
+    assert v.scanned is False and v.found_nothing is True and v.rows == []
 
 
 def test_thresholds_cache_keyed_on_session_not_object_identity(tmp_series, monkeypatch):
