@@ -50,8 +50,8 @@ def test_mc_stage(tmp_path, make_avi, monkeypatch):
     paths, rec, cfg = _setup(tmp_path, make_avi)
     res = mc_stage.run(paths, rec, cfg)
 
-    assert set(res.outputs) == {"mc_video", "mc_shifts", "preview_raw", "preview_raw_dff",
-                                "preview_mc", "preview_mc_dff"}
+    assert set(res.outputs) == {"mc_video", "mc_shifts"}
+    assert not paths.preview(SID, "raw").parent.exists() or not any(paths.preview(SID, "raw").parent.iterdir())
     for rel in res.outputs.values():
         assert (paths.root / rel).exists(), rel
     assert res.metrics["n_frames"] == T
@@ -142,21 +142,6 @@ def test_mc_waits_for_crop_finalize_before_heavy_work(tmp_path, make_avi, monkey
         mc_stage.run(paths, rec, cfg)
     assert e.value.what == "crop_finalize"
     assert not (tmp_path / "tmp").exists()
-
-
-@pytest.mark.slow
-def test_mc_stage_dff_failure_releases_temp_tif(tmp_path, make_avi, monkeypatch):
-    import bm_qc
-    paths, rec, cfg = _setup(tmp_path, make_avi)
-
-    def bad_dff(movie, out_path=None, fps=None, verbose=False):
-        mm = tifffile.memmap(movie, mode="r")  # held by this frame of the traceback  # noqa: F841
-        raise RuntimeError("dff failed")
-
-    monkeypatch.setattr(bm_qc, "make_dff_video", bad_dff)
-    with pytest.raises(RuntimeError, match="dff failed"):
-        mc_stage.run(paths, rec, cfg)
-    assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
 
 
 @pytest.mark.slow

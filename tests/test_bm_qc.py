@@ -142,3 +142,25 @@ def test_cnmf_qc_video_ssub(tmp_path, monkeypatch):
                             residual_maps=False, video_ssub=ssub, verbose=False)
         assert os.path.getsize(out['video']) > 0
     assert seen == [(130, 162), (66, 82)]
+
+
+def test_block_mean_is_the_video_module_one():
+    from bearmind import video
+    assert bm_qc.block_mean is video.block_mean
+
+
+def test_videos_have_even_sides_after_ssub(tmp_path):
+    """66 x 90 with ssub 2 gives 33 x 45 panels: the files must still be written (yuv420p) with even sides."""
+    import av
+    mov, _ = synthetic_movie(T=40, d=(66, 90))
+    out = bm_qc.make_dff_video(mov, out_path=str(tmp_path / 'v.mp4'), fps=20, f0_window_s=5, ssub=2, verbose=False)
+    with av.open(out) as c:
+        s = c.streams.video[0]
+        assert s.codec_context.height % 2 == 0 and s.codec_context.width % 2 == 0
+    w = bm_qc._VideoWriter(str(tmp_path / 'w.mp4'), (45, 33), 20)  # an odd frame goes in
+    for _ in range(3):
+        w.write(np.zeros((33, 45, 3), np.uint8))
+    w.close()
+    with av.open(str(tmp_path / 'w.mp4')) as c:
+        s = c.streams.video[0]
+        assert (s.codec_context.height, s.codec_context.width) == (32, 44)

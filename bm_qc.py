@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 import imageio_ffmpeg
 from scipy.ndimage import percentile_filter
 
+from bearmind.video import block_mean
+
 from caiman.source_extraction.cnmf.pre_processing import get_noise_fft
 from caiman.summary_images import local_correlations_fft
 from caiman.source_extraction.cnmf.utilities import decimation_matrix
@@ -45,15 +47,6 @@ def open_movie(movie):
             print(f'{movie}: cannot memory-map, loading into RAM')
             return tfl.imread(str(movie))
     return movie
-
-
-def block_mean(img, s):
-    """Mean of s x s pixel blocks of a 2-D image (float32); rows/columns that do not fill a block are dropped."""
-    img = np.asarray(img, dtype=np.float32)
-    if s == 1:
-        return img
-    h, w = img.shape[0] // s * s, img.shape[1] // s * s
-    return img[:h, :w].reshape(h // s, s, w // s, s).mean((1, 3), dtype=np.float32)
 
 
 def _tsub_mean(block, tsub):
@@ -534,12 +527,17 @@ def _grid(panels, ncols):
 
 class _VideoWriter:
     def __init__(self, path, size_wh, fps, crf=18):
+        # yuv420p needs even sides (macro_block_size=1 stops imageio from padding); odd frames are cropped by
+        # a row/column, as the preview writer in bearmind.video does
+        w, h = size_wh
+        self.size = (h - h % 2, w - w % 2)
+        size_wh = (self.size[1], self.size[0])
         self.gen = imageio_ffmpeg.write_frames(path, size_wh, fps=fps, codec='libx264', macro_block_size=1,
                                                pix_fmt_out='yuv420p', output_params=['-crf', str(crf)])
         self.gen.send(None)
 
     def write(self, rgb):
-        self.gen.send(np.ascontiguousarray(rgb))
+        self.gen.send(np.ascontiguousarray(rgb[:self.size[0], :self.size[1]]))
 
     def close(self):
         self.gen.close()

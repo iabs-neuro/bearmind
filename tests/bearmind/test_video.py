@@ -265,3 +265,21 @@ def test_preview_mp4_ssub_halves_the_frame(tmp_path):
     assert abs(float(got.mean()) - 120) <= 2
     write_preview_mp4([frames], tmp_path / "b.mp4", 20.0, tbin=2)
     assert _decode(tmp_path / "b.mp4").shape[1:] == (64, 80)
+
+
+def test_chunks_to_memmap_round_trip(tmp_path):
+    from bearmind.video import chunks_to_memmap
+
+    a = np.random.default_rng(0).integers(0, 255, (7, 5, 6), dtype=np.uint8)
+    mm = chunks_to_memmap([a[:3], a[3:]], tmp_path / "x.dat", a.shape)
+    assert np.array_equal(mm, a)
+    assert not mm.flags.writeable
+
+
+def test_chunks_to_memmap_short_input_removes_file(tmp_path):
+    from bearmind.video import chunks_to_memmap
+
+    a = np.zeros((4, 5, 6), np.uint8)
+    with pytest.raises(ValueError, match="4 frames written, 7 expected"):
+        chunks_to_memmap([a], tmp_path / "x.dat", (7, 5, 6))
+    assert not (tmp_path / "x.dat").exists()

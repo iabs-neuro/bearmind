@@ -86,6 +86,42 @@ def decode_to_memmap(path: Path, out: Path, block: int = 1000) -> np.memmap:
         raise
 
 
+def chunks_to_memmap(chunks: Iterable[np.ndarray], out: Path, shape: tuple[int, int, int]) -> np.memmap:
+    """uint8 C-order (T, h, w) file at `out` written sequentially from `chunks`; returned read-only.
+
+    The file is removed on any error, and a frame count other than shape[0] is an error (a short movie would
+    leave the memmap's tail unwritten).
+    """
+    out = Path(out)
+    n, h, w = (int(x) for x in shape)
+    try:
+        k = 0
+        with open(out, "wb") as f:
+            for block in chunks:
+                block = np.ascontiguousarray(block, dtype=np.uint8)
+                if block.shape[1:] != (h, w):
+                    raise ValueError(f"chunk frames are {block.shape[1:]}, expected {(h, w)}")
+                k += block.shape[0]
+                if k > n:
+                    raise ValueError(f"more than the {n} expected frames")
+                f.write(block.tobytes())
+        if k != n:
+            raise ValueError(f"{k} frames written, {n} expected")
+        return np.memmap(out, dtype=np.uint8, mode="r", shape=(n, h, w))
+    except BaseException:
+        out.unlink(missing_ok=True)
+        raise
+
+
+def block_mean(img, s: int) -> np.ndarray:
+    """Mean of s x s pixel blocks of a 2-D image (float32); rows/columns that do not fill a block are dropped."""
+    img = np.asarray(img, dtype=np.float32)
+    if s == 1:
+        return img
+    h, w = img.shape[0] // s * s, img.shape[1] // s * s
+    return img[:h, :w].reshape(h // s, s, w // s, s).mean((1, 3), dtype=np.float32)
+
+
 def video_info(path: Path) -> tuple[int, int, int, float]:
     """(n_frames, h, w, fps). Counts packets when the container header has no frame count."""
     with av.open(str(path)) as c:
@@ -227,9 +263,7 @@ def _write_mp4(chunks, path, fps, crf, speed, tbin, ssub=1) -> None:
 
         def emit(mean: np.ndarray) -> None:
             nonlocal s
-            if ssub > 1:  # blocks that do not fill ssub x ssub are dropped, as the even-size crop below does
-                h0, w0 = mean.shape[0] // ssub * ssub, mean.shape[1] // ssub * ssub
-                mean = mean[:h0, :w0].reshape(h0 // ssub, ssub, w0 // ssub, ssub).mean((1, 3))
+            mean = block_mean(mean, ssub)  # blocks that do not fill ssub x ssub are dropped
             h, w = mean.shape
             if s is None:
                 s = c.add_stream("libx264", rate=out_rate)

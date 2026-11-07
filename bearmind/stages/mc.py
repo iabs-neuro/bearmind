@@ -15,7 +15,7 @@ import tifffile
 from bearmind import fileio, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
-from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1, write_preview_mp4
+from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1
 
 CHUNK = 1000
 N_CORR_FRAMES = 200
@@ -111,11 +111,6 @@ def _corrected_chunks(tif: Path, shifts: np.ndarray, border_nan: str):
             mm_base.close()
 
 
-def _preview_chunks(video: VideoArray):
-    for a in range(0, video.shape[0], CHUNK):
-        yield video[a:a + CHUNK]
-
-
 def _mean_template_corr(video: VideoArray, template: np.ndarray, gSig_filt=None) -> float:
     """Mean correlation of sampled corrected frames with CaImAn's template.
 
@@ -145,8 +140,6 @@ def run(paths, rec, cfg) -> StageResult:
 
     import caiman.motion_correction as cmc
 
-    import bm_qc
-
     mcfg = dict(cfg["mc"])
     if mcfg.get("pw_rigid"):
         raise ValueError("pw_rigid motion correction is not supported by this stage")
@@ -159,8 +152,6 @@ def run(paths, rec, cfg) -> StageResult:
     dview = None
     gen = None
     result = None
-    pv = cfg["preview"]
-    prev_kw = dict(crf=pv["crf"], speed=pv["speed"], tbin=pv["tbin"])
     try:
         tif = tmp / f"{sid}_crop.tif"
         _write_tif(SessionReader(paths.root, rec, crop=crop), tif)
@@ -181,14 +172,6 @@ def run(paths, rec, cfg) -> StageResult:
         gen.close()
         mc_vid = VideoArray(paths.mc_video(sid))
 
-        paths.preview(sid, "raw").parent.mkdir(parents=True, exist_ok=True)
-        write_preview_mp4(SessionReader(paths.root, rec, crop=None).iter_chunks(CHUNK),
-                          paths.preview(sid, "raw"), fps, **prev_kw)
-        write_preview_mp4(_preview_chunks(mc_vid), paths.preview(sid, "mc"), fps, **prev_kw)
-        # raw dF/F is of the cropped movie before correction (the temp tif), not of the uncropped raw
-        bm_qc.make_dff_video(str(tif), out_path=str(paths.preview(sid, "raw_dff")), fps=fps, verbose=False)
-        bm_qc.make_dff_video(mc_vid, out_path=str(paths.preview(sid, "mc_dff")), fps=fps, verbose=False)
-
         metrics = {
             "max_shift_px": float(np.max(np.abs(shifts))),
             "mean_template_corr": _mean_template_corr(mc_vid, template, mcfg.get("gSig_filt")),
@@ -198,14 +181,10 @@ def run(paths, rec, cfg) -> StageResult:
         outputs = {
             "mc_video": paths.rel(paths.mc_video(sid)),
             "mc_shifts": paths.rel(paths.mc_shifts(sid)),
-            "preview_raw": paths.rel(paths.preview(sid, "raw")),
-            "preview_raw_dff": paths.rel(paths.preview(sid, "raw_dff")),
-            "preview_mc": paths.rel(paths.preview(sid, "mc")),
-            "preview_mc_dff": paths.rel(paths.preview(sid, "mc_dff")),
         }
         result = StageResult(outputs=outputs, metrics=metrics)
     except BaseException as e:
-        # traceback frames (e.g. of make_dff_video) still reference the tif memmap and would block its deletion
+        # traceback frames (e.g. of the writer) still reference the tif memmap and would block its deletion
         traceback.clear_frames(e.__traceback__)
         raise
     finally:

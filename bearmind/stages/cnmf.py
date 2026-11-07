@@ -1,4 +1,6 @@
-"""CNMF-E stage: FFV1 MC video -> CaImAn C-order memmap in the temp folder -> CNMF-E -> estimates + QC previews.
+"""CNMF-E stage: FFV1 MC video -> CaImAn C-order memmap in the temp folder -> CNMF-E -> estimates + residual maps.
+
+The QC video is made by stages.previews from the stored estimates, not here.
 
 bm_qc (CaImAn, cv2, matplotlib: about 7 s) is imported inside the functions that use it: the runner and
 `status` import this module for cnmf_params on every stage-parameter check.
@@ -203,8 +205,8 @@ def run(paths, rec, cfg) -> StageResult:
         est.patch_workers = n_workers  # the pool size can change the result, so it is recorded
 
         qc_base = str(tmp / sid)
-        bm_qc.cnmf_qc(est, movie=images, out_base=qc_base, fps=rec.fps, tmp_dir=str(tmp), verbose=False)
-        _move(qc_base + "_qc.mp4", paths.preview(sid, "cnmf_qc"))
+        bm_qc.cnmf_qc(est, movie=images, out_base=qc_base, fps=rec.fps, tmp_dir=str(tmp), make_video=False,
+                      verbose=False)
         _move(qc_base + "_qc_residual_maps.png", paths.residual_png(sid))
         with open(qc_base + "_qc.json", encoding="utf-8") as f:
             missed = json.load(f).get("residual_excess_outside")
@@ -237,7 +239,6 @@ def run(paths, rec, cfg) -> StageResult:
         }
         outputs = {
             "estimates": paths.rel(out),
-            "preview_cnmf_qc": paths.rel(paths.preview(sid, "cnmf_qc")),
             "residual_png": paths.rel(paths.residual_png(sid)),
         }
         result = StageResult(outputs=outputs, metrics=metrics)

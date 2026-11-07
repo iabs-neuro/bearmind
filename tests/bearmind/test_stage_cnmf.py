@@ -206,12 +206,21 @@ def test_cnmf_on_synthetic(tmp_path, monkeypatch):
     cfg["cnmf"].update(rf=20, stride=10)  # several patches, so the pool and the memmap name are exercised
     env = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     _no_videoarray_reads(monkeypatch)  # no threshold maps here, so imax takes the fallback path too
+    qc_calls = []
+    real_qc = bm_qc.cnmf_qc
+
+    def spy(*a, **k):
+        qc_calls.append(k.get("make_video"))  # not the kwargs: they hold the movie memmap and block its removal
+        return real_qc(*a, **k)
+
+    monkeypatch.setattr(bm_qc, "cnmf_qc", spy)
 
     res = cnmf.run(paths, rec, cfg)
 
-    assert set(res.outputs) == {"estimates", "preview_cnmf_qc", "residual_png"}
+    assert qc_calls == [False]
+    assert set(res.outputs) == {"estimates", "residual_png"}
     assert res.outputs["estimates"] == paths.rel(paths.estimates(SID))
-    assert res.outputs["preview_cnmf_qc"] == paths.rel(paths.preview(SID, "cnmf_qc"))
+    assert not paths.preview(SID, "cnmf_qc").exists()
     assert res.outputs["residual_png"] == paths.rel(paths.residual_png(SID))
     for rel in res.outputs.values():
         assert (paths.root / rel).stat().st_size > 0, rel
