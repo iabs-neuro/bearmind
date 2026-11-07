@@ -347,3 +347,18 @@ def test_rows_sorted_by_mouse_then_sid(tmp_series):
 def test_not_scanned_series(tmp_path):
     v = monitor.series_view(SeriesPaths(tmp_path / "nothing"), NOW)
     assert v.scanned is False and v.rows == [] and v.runner.status == "stopped"
+
+
+def test_thresholds_cache_keyed_on_session_not_object_identity(tmp_series, monkeypatch):
+    rec = put(tmp_series, "A_M1_1D", {"thresholds": done()})
+    calls = []
+    real = config.resolve
+    monkeypatch.setattr(config, "resolve", lambda *a, **k: calls.append(1) or real(*a, **k))
+    cache = monitor.RecordCache()
+    cache.gsig(tmp_series, rec)
+    clone = SessionRecord(**{**rec.__dict__})  # another object for the same session, as after a reread
+    cache.gsig(tmp_series, clone)
+    assert len(calls) == 1  # an id()-keyed cache would resolve again, and could also serve a reused id's value
+    tmp_series.session_config("A_M1_1D").parent.mkdir(parents=True, exist_ok=True)
+    tmp_series.session_config("A_M1_1D").write_text("cnmf:\n  gSig: 7\n", encoding="utf-8")
+    assert cache.gsig(tmp_series, clone) == 7 and len(calls) == 2

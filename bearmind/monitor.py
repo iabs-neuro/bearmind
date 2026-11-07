@@ -140,8 +140,9 @@ class RecordCache:
         return sorted(out, key=lambda r: r.sid), broken
 
     def _thresholds(self, paths, rec) -> tuple:
-        # id(rec): the cached record object is replaced whenever its file is reread
-        key = (id(rec), _sig(paths.series_config), _sig(paths.mouse_config(rec.mouse)),
+        # the thresholds depend on the session's place in the config layers and on the three files only; an
+        # object id would be reused by a later record and serve a stale value
+        key = (rec.sid, rec.mouse, _sig(paths.series_config), _sig(paths.mouse_config(rec.mouse)),
                _sig(paths.session_config(rec.sid)))
         hit = self._th.get(rec.sid)
         if hit is None or hit[0] != key:

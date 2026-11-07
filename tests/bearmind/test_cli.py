@@ -600,3 +600,19 @@ def test_report_of_stopped_run(series, capsys):
     res = {"done": 1, "failed": 0, "skipped": 0, "waiting": 0, "not_recorded": [], "stopped": True}
     cli._report_run(series.paths, res)
     assert "stopped on request; this run: done 1" in capsys.readouterr().out
+
+
+def test_cmd_gui_changes_to_repo_root_and_keeps_series_absolute(tmp_path, monkeypatch):
+    from argparse import Namespace
+
+    from bearmind import provenance
+    from bearmind.gui import app
+
+    seen = {}
+    monkeypatch.setattr(app, "main", lambda argv: seen.update(argv=argv, cwd=os.getcwd()) or 0)
+    series = tmp_path / "s"
+    series.mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert cli.cmd_gui(Namespace(series="s")) == 0
+    assert Path(seen["cwd"]) == provenance.REPO_ROOT
+    assert seen["argv"] == [str(series.resolve())]

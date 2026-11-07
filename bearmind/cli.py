@@ -130,7 +130,9 @@ def _next_hint(paths) -> str:
 def cmd_gui(args) -> int:
     from bearmind.gui import app  # lazy: the other commands must work without PySide6
 
-    return app.main([args.series] if args.series else [])
+    series = str(Path(args.series).resolve()) if args.series else None  # absolute before the chdir
+    os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
+    return app.main([series] if series else [])
 
 
 def cmd_scan(args) -> int:
