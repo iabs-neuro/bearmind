@@ -264,19 +264,26 @@ def _heartbeat_line(paths) -> str:
     return f"runner: running PID {hb.get('pid')}{where}"
 
 
+def _side_off(on, stage) -> bool:
+    """`on`: series_state.previews of the session ({side stage: on}, None when its config cannot be read)."""
+    return on is not None and not on.get(stage, True)
+
+
 def _pv(rec, on) -> str:
-    """The pv column: "off" when the session's config turns the previews off, else one letter per side stage."""
-    if on is False:
+    """The pv column: "off" when the session's config turns every preview off, else one letter per side stage
+    ("-" for one that is off)."""
+    if all(_side_off(on, s) for s in _SIDES):
         return "off"
-    return "".join(_LETTER[rec.stages[s].state] if s in rec.stages else "." for s in _SIDES)
+    return "".join("-" if _side_off(on, s) else _LETTER[rec.stages[s].state] if s in rec.stages else "."
+                   for s in _SIDES)
 
 
-def _row(rec, previews_on=None) -> tuple:
+def _row(rec, on=None) -> tuple:
     cells, reason = [], ""
-    for s in ALL_STAGES:
+    for s in STAGES + _SIDES:  # the main stages first: a main failure or wait is the note, not a preview's
         st = rec.stages.get(s)
         if s in SIDE_STAGES:
-            if previews_on is False:
+            if _side_off(on, s):
                 continue  # off: an old record holds nothing
         else:
             cells.append(_LETTER[st.state] if st else ".")
@@ -357,7 +364,7 @@ def cmd_status(args) -> int:
     if odd:
         _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
     _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown; "
-         "chk: W warning, E error in a check of a done stage; pv: MC and CNMF-E preview videos, off when turned off")
+         "chk: W warning, E error in a check of a done stage; pv: MC and CNMF-E preview videos, off (-) when turned off")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
     head = ("session".ljust(width) + "  excl  " + " ".join(x.ljust(4) for x in [_SHORT[s] for s in STAGES] + ["pv"])
             + "  chk  note")
@@ -499,7 +506,8 @@ def cmd_retry(args) -> int:
         if sid in res.failed:
             _say(f"[WARN] {sid}: no failed stage, skipped")
         else:
-            _say(f"[OK] {sid}: reset from {actions.failed_stage(recs[sid], paths)}")
+            first, *more = actions.retry_stages(recs[sid], paths)  # recs: the states before the reset
+            _say(f"[OK] {sid}: reset from {first}" + (f" and {', '.join(more)}" if more else ""))
     if res.ok:
         _say(_next_hint(paths))
     return OK if res.ok else 1

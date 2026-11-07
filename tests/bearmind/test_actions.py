@@ -229,3 +229,22 @@ def test_set_previews(series):
     actions.set_previews(series.paths, False)
     cfg = yaml.safe_load(series.paths.series_config.read_text(encoding="utf-8"))
     assert cfg["preview"] == {"enabled": False, "ssub": 2} and cfg["autoinspect"]  # other sections kept
+
+
+def test_retry_failed_resets_every_failed_preview(series):
+    actions.set_previews(series.paths, True)
+    for st in STAGES:
+        _set(series.paths, S1, st, State.DONE)
+
+    def side(rec):
+        rec.stages["mc_preview"] = StageRecord(state=State.FAILED, error="disk full")
+        rec.stages["cnmf_preview"] = StageRecord(state=State.FAILED, error="disk full")
+
+    update_record(series.paths, S1, side)
+    rec = load_record(series.paths, S1)
+    assert actions.failed_stage(rec, series.paths) == "mc_preview"
+    assert actions.retry_stages(rec, series.paths) == ["mc_preview", "cnmf_preview"]
+    assert actions.retry_failed(series.paths, [S1], "ann").ok == [S1]
+    states = load_record(series.paths, S1).stages
+    assert states["mc_preview"].state is State.PENDING and states["cnmf_preview"].state is State.PENDING
+    assert all(states[s].state is State.DONE for s in STAGES)

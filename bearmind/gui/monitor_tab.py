@@ -428,7 +428,8 @@ class MonitorTab(QWidget):
             stage = self._choose_stage()
             if stage is None:
                 return
-        if not self._confirm(self._ask_text(name, target, stage)):
+        plan = actions.retry_plan(self.paths, target) if name == "retry_failed" else None
+        if not self._confirm(self._ask_text(name, target, stage, plan)):
             return
         try:
             res = {
@@ -447,7 +448,26 @@ class MonitorTab(QWidget):
         self.refresh()
 
     @staticmethod
-    def _ask_text(name: str, sids, stage) -> str:
+    def _retry_text(sids, plan) -> str:
+        """What a retry resets (plan: sid -> actions.retry_stages): a failed main stage and the later ones, or a
+        failed preview alone."""
+        main = [s for s in sids if plan.get(s) and plan[s][0] in STAGES]
+        alone = [s for s in sids if plan.get(s) and plan[s][0] not in STAGES]
+        parts = []
+        if main or not alone:  # none failed: the action itself says so
+            with_previews = [s for s in main if len(plan[s]) > 1]
+            parts.append(f"The failed stage and the later ones of {_named(main or sids)} will be reset and run again"
+                         + (f", together with {'its' if len(main) == 1 else 'their'} failed preview videos"
+                            if with_previews else "") + ".")
+        if alone:
+            parts.append(f"Only the failed preview videos of {_named(alone)} will be made again; nothing else is "
+                         "reset.")
+        return " ".join(parts + ["Old results stay until the new ones are ready."])
+
+    @staticmethod
+    def _ask_text(name: str, sids, stage, plan=None) -> str:
+        if name == "retry_failed":
+            return MonitorTab._retry_text(list(sids), plan or {})
         who = _named(sids)
         one = len(list(sids)) == 1
         it, they, is_are = ("it", "it", "is") if one else ("them", "they", "are")
@@ -458,8 +478,6 @@ class MonitorTab(QWidget):
             "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: "
                                f"{'the session is' if one else 'the sessions are'} used as {they} {is_are}.",
             "rerun_from": f"{who} will be recomputed from {title}. Old results stay until the new ones are ready.",
-            "retry_failed": f"The failed stage and the later ones of {who} will be reset and run again. "
-                            "Old results stay until the new ones are ready.",
             "inspection_not_needed": f"Manual inspection will be marked as not needed for {who}.",
             "inspection_not_needed_all": f"Manual inspection will be marked as not needed for {who}.",
         }[name]

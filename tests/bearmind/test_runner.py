@@ -1781,7 +1781,8 @@ def test_a_failed_preview_turned_off_holds_nothing(series):
     _on(s)
     _run(s)
     actions.set_previews(s.paths, False)
-    assert runner.series_state(s.paths).failed == {}
+    state = runner.series_state(s.paths)
+    assert state.failed == {} and state.previews[S1] == {"mc_preview": False, "cnmf_preview": False}
     assert actions.failed_sids(s.paths) == []
     row = _summary_row(s, S1)
     assert row["mc_preview"] == "off" and row["worst_check"] == "ok" and pd.isna(row["error"])
@@ -1864,3 +1865,57 @@ def test_crashed_preview_process_fails_only_the_preview(series, monkeypatch):
         assert [a.data for a in rec.anomalies if a.code == "stage_crashed"] == [
             {"exit_code": 0xC0000005, "stage": "mc_preview", "cause": "crash"}]
     assert res["failed"] == 2 and res["skipped"] == 0
+
+
+def test_main_failure_takes_precedence_over_a_failed_preview(series):
+    """Disk full fails a preview and a later main stage: everything names the main failure, one retry resets
+    both, and the next run completes both."""
+    s = series
+    s.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    s.stubs.fail[(S1, "cnmf")] = RuntimeError("disk full too")
+    _on(s)
+    _run(s)
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc_preview"].state is State.FAILED and rec.stages["cnmf"].state is State.FAILED
+    state = runner.series_state(s.paths)
+    assert state.failed[S1] == ("cnmf", "RuntimeError: disk full too")
+    assert state.previews[S1] == {"mc_preview": True, "cnmf_preview": True}
+    assert _summary_row(s, S1)["error"] == "cnmf: RuntimeError: disk full too"
+    assert runner.retry_stages(rec, config.resolve(s.paths, sid=S1)) == ["cnmf", "mc_preview"]
+    assert actions.retry_failed(s.paths, [S1], "viktor").ok == [S1]
+    rec = load_record(s.paths, S1)
+    assert [rec.stages[x].state for x in ("mc_preview", "cnmf", "cnmf_preview", "export")] == [State.PENDING] * 4
+    assert [d.value for d in rec.decisions if d.what == "rerun_from"] == ["cnmf", "mc_preview"]
+    s.stubs.fail.clear()
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == [(S1, st) for st in ("mc_preview", "cnmf", "cnmf_preview", "gate", "autoinspect",
+                                                  "export")]
+    assert runner.series_state(s.paths).failed == {}
+
+
+def test_reset_of_an_unrecorded_preview_changes_nothing(series):
+    s = series
+    before = load_record(s.paths, S1)
+    runner.reset_from(s.paths, S1, "mc_preview", "viktor")
+    after = load_record(s.paths, S1)
+    assert after.decisions == before.decisions and "mc_preview" not in after.stages
+
+
+def test_parent_rerun_while_previews_are_off_remakes_them_when_turned_on(series):
+    """Interpretation 2: MC re-runs with the same parameters while the checkbox is off; once it is set again,
+    the previews of the new MC (and CNMF-E) video are made, the old ones do not count as current."""
+    s = series
+    _on(s)
+    _run(s)
+    actions.set_previews(s.paths, False)
+    s.paths.mc_video(S1).unlink()
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == [(S1, st) for st in STAGES[1:]]
+    rec = load_record(s.paths, S1)
+    assert [rec.stages[x].state for x in SIDE] == [State.PENDING] * 2  # kept, but not current any more
+    _on(s)
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == [(S1, "mc_preview"), (S1, "cnmf_preview")]

@@ -139,11 +139,39 @@ def _side_off(stage, cfg) -> bool:
     return cfg is not None and not side_enabled(stage, cfg)
 
 
+_SIDE_ORDER = tuple(s for s in ALL_STAGES if s in SIDE_STAGES)
+
+
+def _failed_main(rec) -> str | None:
+    return next((s for s in STAGES if s in rec.stages and rec.stages[s].state is State.FAILED), None)
+
+
+def _failed_sides(rec, cfg) -> list:
+    """FAILED side stages that are on. One its config turns off is skipped: its old record is kept but holds
+    nothing (cfg None: the config cannot be read, every FAILED side stage counts)."""
+    return [s for s in _SIDE_ORDER
+            if s in rec.stages and rec.stages[s].state is State.FAILED and not _side_off(s, cfg)]
+
+
 def first_failed(rec, cfg) -> str | None:
-    """The first FAILED stage in ALL_STAGES order. A side stage its config turns off is skipped: its old record
-    is kept but holds nothing (cfg None: the config cannot be read, every FAILED stage counts)."""
-    return next((s for s in ALL_STAGES if s in rec.stages and rec.stages[s].state is State.FAILED
-                 and not (s in SIDE_STAGES and _side_off(s, cfg))), None)
+    """The failure to report: the first FAILED main stage; without one, the first FAILED side stage that is on.
+    A main failure goes first even after a failed preview (disk full fails both): it is what holds the results,
+    and a retry takes the previews along (retry_stages)."""
+    main = _failed_main(rec)
+    if main is not None:
+        return main
+    sides = _failed_sides(rec, cfg)
+    return sides[0] if sides else None
+
+
+def retry_stages(rec, cfg) -> list:
+    """What one retry resets, in this order: the first FAILED main stage (its reset_from also resets the side
+    stages at or after it), then every FAILED side stage that is on and whose parent comes before it. [] when
+    nothing failed."""
+    main = _failed_main(rec)
+    end = len(STAGES) if main is None else STAGES.index(main)
+    sides = [s for s in _failed_sides(rec, cfg) if STAGES.index(SIDE_STAGES[s]) < end]
+    return ([] if main is None else [main]) + sides
 
 
 def _what(st) -> str:
@@ -459,10 +487,10 @@ class SeriesState:
     problems: dict  # sid -> why it cannot be scheduled; broken registry files under their file name
     waiting: list  # (sid, stage, what): waits a person can resolve
     blocked: list  # (sid, stage, what, [blocking sids]): waits only a config fix moves
-    failed: dict  # sid -> (stage, error) of its first FAILED stage in ALL_STAGES order, non-excluded sessions
+    failed: dict  # sid -> (stage, error) of first_failed (a main failure first), non-excluded sessions
     excluded: list
     finalize_failed: dict  # sid -> why the box of its mouse is not placed (the last finalize failed)
-    # sid -> the previews are on in its resolved config; None when the config cannot be read
+    # sid -> {side stage: on in its resolved config}; None when the config cannot be read
     previews: dict = dataclasses.field(default_factory=dict)
 
 
@@ -479,7 +507,8 @@ def series_state(paths) -> SeriesState:
     finalize_failed = {r.sid: _finalize_failure(r).message for r in records
                        if not r.excluded and _finalize_failure(r) is not None}
     person = [w for w in person if w[0] not in finalize_failed]  # waiting for a retry, not for a person
-    previews = {r.sid: None if view.cfg(r) is None else side_enabled("mc_preview", view.cfg(r)) for r in records}
+    previews = {r.sid: None if view.cfg(r) is None else {s: side_enabled(s, view.cfg(r)) for s in _SIDE_ORDER}
+                for r in records}
     return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded],
                        finalize_failed, previews)
 
@@ -521,8 +550,9 @@ def reset_from(paths, sid: str, stage: str, who: str) -> None:
     def reset(d):
         if stage in SIDE_STAGES:
             st = d.stages.get(stage)
-            if st is not None:  # never recorded: nothing to reset (a disabled side stage stays unrecorded)
-                st.state, st.error = State.PENDING, None
+            if st is None:  # never recorded: nothing changes, so no decision either
+                return
+            st.state, st.error = State.PENDING, None
         else:
             for s in STAGES[STAGES.index(stage):]:
                 st = d.stages.setdefault(s, StageRecord())
@@ -1469,9 +1499,11 @@ def _summary_row(paths, rec, problem=None) -> dict:
             levels += [c.level for c in st.checks]
         elif st.state is State.FAILED:
             levels.append("error")
-            error = error or f"{s}: {st.error}"
         elif st.state is State.WAITING:
             waiting_for = waiting_for or _what(st)
+    first = first_failed(rec, cfg)  # a main failure is named before a failed preview
+    if first is not None:
+        error = f"{first}: {rec.stages[first].error}"
     c = cfg["cnmf"] if cfg is not None else (rec.stages.get("cnmf") or StageRecord()).metrics
     if problem is not None:  # what holds the session now goes before the error of an earlier failure
         error = f"cannot be scheduled: {problem}"

@@ -148,16 +148,30 @@ def gate_passed(rec) -> bool:
     return g is not None and g.state is State.DONE
 
 
-def failed_stage(rec, paths=None):
-    """The first FAILED stage in ALL_STAGES order. With `paths`, a failed preview the session's config turns off
-    holds nothing and is not offered (the config is read only for a record with a failed side stage)."""
-    cfg = None
-    if paths is not None and any(rec.stages.get(s) and rec.stages[s].state is State.FAILED for s in SIDE_STAGES):
-        try:
-            cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
-        except Exception:  # a broken config is shown by status; every failed stage counts meanwhile
-            cfg = None
-    return runner.first_failed(rec, cfg)
+def _side_cfg(rec, paths):
+    """The session's config when it has a FAILED side stage (is that preview still on?); else None, not read."""
+    if not any(rec.stages.get(s) and rec.stages[s].state is State.FAILED for s in SIDE_STAGES):
+        return None
+    try:
+        return config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
+    except Exception:  # a broken config is shown by status; every failed preview counts meanwhile
+        return None
+
+
+def failed_stage(rec, paths):
+    """runner.first_failed: the first failed main stage, else the first failed preview that is on."""
+    return runner.first_failed(rec, _side_cfg(rec, paths))
+
+
+def retry_stages(rec, paths) -> list:
+    """runner.retry_stages: what retry_failed resets for the session ([] when nothing failed)."""
+    return runner.retry_stages(rec, _side_cfg(rec, paths))
+
+
+def retry_plan(paths, sids) -> dict:
+    """sid -> retry_stages, for a confirmation that says what will be reset; an unknown sid gets []."""
+    recs = _records(paths)
+    return {sid: retry_stages(recs[sid], paths) if sid in recs else [] for sid in sids}
 
 
 def waiting_gate_sids(paths) -> list:
@@ -269,11 +283,12 @@ def retry_failed(paths, sids, who: str) -> ActionResult:
     check_sids(recs, sids)
     res = ActionResult()
     for sid in sids:
-        first = failed_stage(recs[sid], paths)  # a failed preview: only the preview is reset
-        if first is None:
+        stages = retry_stages(recs[sid], paths)  # a failed preview alone: only the preview is reset
+        if not stages:
             res.failed[sid] = ("no_failed_stage", "")
             continue
-        runner.reset_from(paths, sid, first, who)
+        for stage in stages:
+            runner.reset_from(paths, sid, stage, who)
         res.ok.append(sid)
     return res
 

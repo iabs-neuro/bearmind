@@ -680,3 +680,22 @@ def test_retry_all_failed_covers_a_failed_preview(series, capsys):
     series.stubs.calls.clear()
     assert _main("run", series.root, "--once") == 0
     assert series.stubs.calls == [(S1, "mc_preview")]
+
+
+def test_main_failure_named_before_a_failed_preview(series, capsys):
+    _finished_setup(series)
+    series.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
+    series.stubs.fail[(S1, "cnmf")] = RuntimeError("disk full too")
+    assert _main("previews", series.root, "on") == 0
+    assert _main("run", series.root, "--once") == 1
+    out = capsys.readouterr().out
+    assert f"{S1} failed at cnmf: RuntimeError: disk full too" in out and "failed at mc_preview" not in out
+    head, rows = _status_rows(_status(series, capsys))
+    assert "failed cnmf: RuntimeError: disk full too" in rows[S1]
+    assert rows[S1][head.index("pv"):].startswith("FS")
+    series.stubs.fail.clear()
+    assert _main("retry", series.root, S1) == 0
+    assert f"[OK] {S1}: reset from cnmf and mc_preview" in capsys.readouterr().out
+    assert _main("run", series.root, "--once") == 0
+    rec = load_record(series.paths, S1)
+    assert all(rec.stages[s].state is State.DONE for s in STAGES + SIDE)

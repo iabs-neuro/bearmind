@@ -5,7 +5,7 @@ import pytest
 from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtWidgets import QLabel, QPushButton
 
-from bearmind import monitor, registry
+from bearmind import actions, monitor, registry
 from bearmind.gui.logs import LogView
 from bearmind.gui.monitor_tab import ACTIONS, MonitorTab
 from bearmind.paths import SeriesPaths
@@ -509,3 +509,31 @@ def test_refresh_error_reported_once(qapp, series4, monkeypatch):
     monkeypatch.setattr(monitor, "series_view", boom)
     t.refresh()
     assert len(reports) == 2
+
+
+def test_retry_confirmation_says_what_is_reset(qapp, series4):
+    """A failed preview is made again alone; a failed main stage resets it and the later stages."""
+    actions.set_previews(series4, True)
+    failed = StageRecord(State.FAILED, error="disk full")
+    registry.update_record(series4, S3, lambda r: r.stages.update({"mc_preview": failed}))
+    ui = Ui(series4)
+    ui.select(S3)
+    ui.tab.run_action("retry_failed")
+    assert ui.asked[-1] == (f"Only the failed preview videos of Session {S3} will be made again; nothing else "
+                            "is reset. Old results stay until the new ones are ready.")
+    rec = registry.load_record(series4, S3)
+    assert rec.stages["mc_preview"].state is State.PENDING and rec.stages["mc"].state is State.DONE
+    ui.select(S2)  # its CNMF-E failed
+    ui.tab.run_action("retry_failed")
+    assert ui.asked[-1] == (f"The failed stage and the later ones of Session {S2} will be reset and run again. "
+                            "Old results stay until the new ones are ready.")
+    registry.update_record(series4, S2, lambda r: r.stages.update({"cnmf": StageRecord(State.FAILED, error="x"),
+                                                                    "mc_preview": failed}))
+    registry.update_record(series4, S3, lambda r: r.stages.update({"mc_preview": failed}))
+    ui.tab.refresh()
+    ui.select(S2, S3)
+    ui.tab.run_action("retry_failed")
+    assert ui.asked[-1] == (f"The failed stage and the later ones of Session {S2} will be reset and run again, "
+                            f"together with its failed preview videos. Only the failed preview videos of Session "
+                            f"{S3} will be made again; nothing else is reset. Old results stay until the new ones "
+                            "are ready.")
