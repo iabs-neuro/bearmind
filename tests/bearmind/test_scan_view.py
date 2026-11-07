@@ -179,3 +179,19 @@ def test_broken_registry_file_listed(make_series, tmp_path):
 def test_not_scanned(tmp_path):
     v = scan_view.scan_view(SeriesPaths(tmp_path / "s"))
     assert not v.scanned and v.rows == []
+
+
+def _three_part_line(n_gaps, max_gap_ms):
+    split = Anomaly("split_recording", "warning", "split", data={"gaps_s": [60.0, 30.0]})
+    drops = Anomaly("dropped_frames", "warning", "drops", data={"n_gaps": n_gaps, "max_gap_ms": max_gap_ms})
+    rec = _rec(anomalies=[split, drops], decisions=[Decision("stitch_confirmed", "true", "me", "t")])
+    rec.parts = rec.parts * 3
+    return next(x for x in scan_view._row(rec).anomalies if x.code == "dropped_frames")
+
+
+def test_three_parts_two_pauses_no_drop_reviewed():
+    assert _three_part_line(2, 60000.0).reviewed
+
+
+def test_three_parts_two_pauses_plus_real_drop_stays_unreviewed():
+    assert not _three_part_line(3, 60000.0).reviewed

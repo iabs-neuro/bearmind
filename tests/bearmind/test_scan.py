@@ -393,3 +393,31 @@ def test_progress_called_per_session(make_series, tmp_path):
     calls = []
     scan.scan_series(root, progress=lambda *a: calls.append(a))
     assert calls == [(0, 3, ""), (1, 3, sids[0]), (2, 3, sids[1]), (3, 3, sids[2])]
+
+
+def _registry_files(paths):
+    return {f.name: f.read_bytes() for f in sorted(paths.registry_file("x").parent.glob("*.json"))}
+
+
+def test_progress_does_not_change_registry_files(make_series, tmp_path):
+    root = make_series(tmp_path / "a", "legacy_split")
+    scan.scan_series(root)
+    plain = _registry_files(SeriesPaths(root))
+    calls = []
+    scan.scan_series(root, lambda i, n, sid: calls.append((i, n, sid)))
+    assert calls and plain
+    assert _registry_files(SeriesPaths(root)) == plain
+
+
+def test_progress_raising_leaves_registry_readable(make_series, tmp_path):
+    from bearmind.registry import read_all
+    root = make_series(tmp_path / "s", "legacy_split")
+    paths = SeriesPaths(root)
+
+    def boom(i, n, sid):
+        if i >= 1:
+            raise RuntimeError("stop")
+    with pytest.raises(RuntimeError):
+        scan.scan_series(root, boom)
+    records, broken = read_all(paths)
+    assert records and not broken

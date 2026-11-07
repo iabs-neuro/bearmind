@@ -301,9 +301,13 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
     return parts, mode, n_frames, fps, fps_info, anomalies, nominal
 
 
-def _latest_decision(rec: SessionRecord, what: str):
+def latest_decision(rec: SessionRecord, what: str):
+    """Value of the newest decision of that kind, or None: the latest decision wins."""
     found = [d for d in rec.decisions if d.what == what]
     return found[-1].value if found else None
+
+
+_latest_decision = latest_decision  # old name
 
 
 NO_FPS_MESSAGE = "no frame rate: the stages need it (MC video rate, CNMF-E fr); the session stays excluded"
@@ -326,14 +330,14 @@ def evaluate_excluded(rec: SessionRecord) -> bool:
     already the common length. Anomalies tagged with a stage (data["stage"]) belong to that stage and do
     not exclude the session.
     """
-    if _latest_decision(rec, "accept_mismatch") == "true":
+    if latest_decision(rec, "accept_mismatch") == "true":
         for a in rec.anomalies:
             if a.code == "frames_ts_mismatch" and a.level == "error":
                 a.level, a.auto_fixed = "warning", True
     if rec.fps is None:
         _mark_no_fps(rec)
         return True
-    exclude = _latest_decision(rec, "exclude")
+    exclude = latest_decision(rec, "exclude")
     if exclude is not None:
         return exclude == "true"
     return any(a.level == "error" for a in rec.anomalies if not a.data.get("stage"))

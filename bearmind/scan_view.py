@@ -120,9 +120,10 @@ def _fps_text(rec: SessionRecord) -> str:
 def _is_split_pause(a, gaps: list[float]) -> bool:
     """A dropped_frames line that only reports the pause between the stitched parts.
 
-    The estimate counts that pause as a timestamp gap, so confirming the stitch covers it too.
+    The estimate counts each pause as a timestamp gap, and every pause exceeds the dropped-frames threshold,
+    so a count above the number of pauses means a real drop is in the line and it stays unreviewed.
     """
-    if a.code != "dropped_frames" or not gaps or a.data.get("n_gaps", 0) > len(gaps):
+    if a.code != "dropped_frames" or not gaps or a.data.get("n_gaps", 0) != len(gaps):
         return False
     return abs(a.data.get("max_gap_ms", 0.0) - max(gaps) * 1000.0) <= 0.01 * max(gaps) * 1000.0
 
@@ -141,7 +142,7 @@ def _row(rec: SessionRecord) -> ScanRow:
     shown = [x.short for x in lines[:_SUMMARY_LINES]]
     if len(lines) > _SUMMARY_LINES:
         shown.append(f"and {len(lines) - _SUMMARY_LINES} more")
-    exclude = scan._latest_decision(rec, "exclude")
+    exclude = scan.latest_decision(rec, "exclude")
     excluded_by = "" if not rec.excluded else "you" if exclude == "true" else "anomaly"
     return ScanRow(
         sid=rec.sid, mouse=rec.mouse, mode=rec.mode, n_parts=n_parts,
