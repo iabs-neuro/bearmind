@@ -1,0 +1,13 @@
+{
+ "rows": 64,
+ "excluded": 2,
+ "sessions_per_code": {
+  "dropped_frames": 4,
+  "frames_ts_mismatch": 2
+ },
+ "anomalies": {
+  "frames_ts_mismatch": 2,
+  "dropped_frames": 4
+ },
+ "summary": "Found 64 sessions of 32 mice \u00b7 bonsai 0 \u00b7 legacy 64 \u00b7 excluded 2 \u00b7 with problems 5 \u00b7 unrecognized folders 0"
+}

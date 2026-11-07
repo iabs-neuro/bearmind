@@ -1,0 +1,15 @@
+{
+ "rows": 112,
+ "excluded": 0,
+ "sessions_per_code": {
+  "fps_outlier": 5,
+  "frames_ts_mismatch": 8,
+  "dropped_frames": 1
+ },
+ "anomalies": {
+  "fps_outlier": 5,
+  "frames_ts_mismatch": 8,
+  "dropped_frames": 1
+ },
+ "summary": "Found 112 sessions of 28 mice \u00b7 bonsai 112 \u00b7 legacy 0 \u00b7 excluded 0 \u00b7 with problems 6 \u00b7 unrecognized folders 0"
+}
