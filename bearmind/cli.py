@@ -5,7 +5,6 @@ Exit codes: 0 ok, 1 partial failure, 2 bad input, 3 series busy, 130 interrupted
 config goes through registry.update_record / config.update_yaml, so it is safe next to a running runner.
 """
 import argparse
-import getpass
 import json
 import logging
 import math
@@ -14,10 +13,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import config, provenance, registry, runner, scan
+from bearmind import actions, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
-from bearmind.registry import STAGES, Decision, State
-from bearmind.stages import WaitingForInput, gate
+from bearmind.registry import STAGES, State
+from bearmind.stages import gate
 
 OK, BAD_INPUT, BUSY, INTERRUPTED = 0, 2, 3, 130
 HEARTBEAT_MAX_AGE_S = 120
@@ -43,10 +42,6 @@ class _Parser(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         print(f"[FAILED] {message}", file=sys.stderr)
         raise SystemExit(BAD_INPUT)
-
-
-def _now() -> str:
-    return datetime.now().isoformat(timespec="milliseconds")  # same format as gate.decide
 
 
 def _say(text="") -> None:
@@ -81,28 +76,6 @@ def _number(value: str, name: str) -> float:
         raise argparse.ArgumentTypeError(f"{name} must be a number, got {value}") from None
 
 
-def _gsig_error(x):
-    if isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x != int(x) or x < 1:
-        return f"--gsig must be a whole number >= 1, got {x}"
-    return None
-
-
-def _min_corr_error(x):
-    if not isinstance(x, (int, float)) or not math.isfinite(x) or not 0 < x <= 1:
-        return f"--min-corr must be a number above 0 and at most 1, got {x}"
-    return None
-
-
-def _min_pnr_error(x):
-    if not isinstance(x, (int, float)) or not math.isfinite(x) or x <= 0:
-        return f"--min-pnr must be a finite number above 0, got {x}"
-    return None
-
-
-def _threshold_error(gsig, min_corr, min_pnr):
-    return _gsig_error(gsig) or _min_corr_error(min_corr) or _min_pnr_error(min_pnr)
-
-
 def _checked(error_of, name):
     def parse(value):
         x = _number(value, name)
@@ -132,54 +105,11 @@ def _records(paths) -> dict:
 
 
 def _check_sids(recs: dict, sids) -> None:
-    unknown = [s for s in sids if s not in recs]
-    if unknown:
+    try:
+        actions.check_sids(recs, sids)
+    except actions.UnknownSession as e:
         known = ", ".join(sorted(recs)) if len(recs) <= _MAX_LISTED else "see the list with: status SERIES"
-        raise CliError(f"unknown session {', '.join(unknown)}; known sessions: {known}")
-
-
-def _waiting_for(rec, stage: str):
-    st = rec.stages.get(stage)
-    if st is None or st.state is not State.WAITING:
-        return None
-    return runner._what(st)
-
-
-def _suggested_unset(paths, rec) -> bool:
-    """The thresholds stage is done with a suggestion and the session has no thresholds yet: after
-    run --until thresholds CNMF is PENDING, not WAITING."""
-    th = rec.stages.get("thresholds")
-    if th is None or th.state is not State.DONE or not th.metrics.get("suggested"):
-        return False
-    try:
-        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-    except Exception:  # a broken config is shown by status as "cannot be scheduled"
-        return False
-    return any(c.get(k) is None for k in ("gSig", "min_corr", "min_pnr"))
-
-
-def _gate_waits(paths, rec) -> bool:
-    """The gate waits for a person now: WAITING, or (CNMF done) any state but DONE, since the runner may be
-    checking it at this moment. A passed gate, or one holding a decision that counts, is not taken."""
-    cnmf, g = rec.stages.get("cnmf"), rec.stages.get("gate")
-    if rec.excluded or (g is not None and g.state is State.DONE):
-        return False
-    if (g is None or g.state is not State.WAITING) and (cnmf is None or cnmf.state is not State.DONE):
-        return False
-    try:
-        cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
-    except Exception:  # a broken session config is shown by status; the decision counts once it is fixed
-        cfg = {"gate": {"enabled": True}}
-    try:
-        gate.run(paths, rec, cfg)
-    except WaitingForInput as w:
-        return w.what == "manual_inspection"
-    return False
-
-
-def _gate_passed(rec) -> bool:
-    g = rec.stages.get("gate")
-    return g is not None and g.state is State.DONE
+        raise CliError(f"{e}; known sessions: {known}") from None
 
 
 def _warn_excluded(rec) -> None:
@@ -188,7 +118,7 @@ def _warn_excluded(rec) -> None:
 
 
 def _who(args) -> str:
-    return args.who or getpass.getuser()
+    return args.who or actions.current_user()
 
 
 def _next_hint(paths) -> str:
@@ -384,18 +314,13 @@ def cmd_status(args) -> int:
     return OK
 
 
-def _write_thresholds(paths, sid: str, gsig, min_corr, min_pnr) -> None:
-    config.update_yaml(paths.session_config(sid), {"cnmf": {"gSig": gsig, "min_corr": min_corr,
-                                                            "min_pnr": min_pnr}})
-
-
 def cmd_thresholds(args) -> int:
     paths = _series(args.series)
     recs = _records(paths)
     if args.action == "set":
         _check_sids(recs, [args.sid])
         _warn_excluded(recs[args.sid])
-        _write_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr)
+        actions.set_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr)
         _say(f"[OK] {args.sid}: gSig={args.gsig} min_corr={args.min_corr} min_pnr={args.min_pnr}")
         _say(_next_hint(paths))
         return OK
@@ -403,27 +328,24 @@ def cmd_thresholds(args) -> int:
         _check_sids(recs, args.sessions)
         sids = list(args.sessions)
     else:
-        sids = [s for s, r in sorted(recs.items()) if not r.excluded
-                and (_waiting_for(r, "cnmf") == "thresholds" or _suggested_unset(paths, r))]
+        sids = actions.waiting_threshold_sids(paths)
         if not sids:
             _say("[WARN] no session waits for thresholds")
             return OK
+    res = actions.accept_suggested(paths, sids)
     code = OK
     for sid in sids:
-        th = recs[sid].stages["thresholds"]
-        sug = th.metrics.get("suggested") if th.state is State.DONE else None
-        if not sug:
-            _say(f"[FAILED] {sid}: no threshold suggestion (run the thresholds stage first, "
-                 f"or set values: thresholds SERIES set {sid} --gsig G --min-corr X --min-pnr Y)")
-            code = 1
-            continue
-        bad = _threshold_error(sug.get("gSig"), sug.get("min_corr"), sug.get("min_pnr"))
-        if bad:
-            _say(f"[FAILED] {sid}: suggested thresholds are invalid: {bad.replace('--', '')}")
+        if sid in res.failed:
+            fcode, detail = res.failed[sid]
+            if fcode == "no_suggestion":
+                _say(f"[FAILED] {sid}: no threshold suggestion (run the thresholds stage first, "
+                     f"or set values: thresholds SERIES set {sid} --gsig G --min-corr X --min-pnr Y)")
+            else:
+                _say(f"[FAILED] {sid}: suggested thresholds are invalid: {detail.replace('--', '')}")
             code = 1
             continue
         _warn_excluded(recs[sid])
-        _write_thresholds(paths, sid, sug["gSig"], sug["min_corr"], sug["min_pnr"])
+        sug = recs[sid].stages["thresholds"].metrics["suggested"]
         _say(f"[OK] {sid}: gSig={sug['gSig']} min_corr={sug['min_corr']} min_pnr={sug['min_pnr']}")
     if code != 1 or len(sids) > 1:
         _say(_next_hint(paths))
@@ -442,7 +364,7 @@ def cmd_gate(args) -> int:
     if args.all_waiting == bool(sids):
         raise CliError("give session names or --all-waiting, not both and not neither")
     if args.all_waiting:
-        sids = [s for s, r in sorted(recs.items()) if _gate_waits(paths, r)]
+        sids = actions.waiting_gate_sids(paths)
         if not sids:
             _say("[WARN] no session waits for manual inspection")
             return OK
@@ -450,17 +372,18 @@ def cmd_gate(args) -> int:
     who, code = _who(args), OK
     for sid in sids:
         _warn_excluded(recs[sid])
-        if decision == "not_needed" and _gate_passed(recs[sid]) and not args.force:
-            _say(f"[WARN] {sid}: manual inspection already passed; a new decision makes autoinspection and "
-                 f"export run again, and autoinspection is not reproducible run to run (driada adds unseeded "
-                 f"noise), so the exported neurons can change. Not recorded; to proceed add --force")
-            code = 1
-            continue
-        try:
-            gate.decide(paths, sid, decision, who)
-        except ValueError as e:
-            _say(f"[FAILED] {sid}: {e}")
-            if decision == "cleaned":
+        if decision == "not_needed":
+            res = actions.gate_not_needed(paths, [sid], who, force=args.force)
+        else:
+            res = actions.gate_cleaned(paths, sid, who)
+        if sid in res.failed:
+            fcode, detail = res.failed[sid]
+            if fcode == "already_passed":
+                _say(f"[WARN] {sid}: manual inspection already passed; a new decision makes autoinspection and "
+                     f"export run again, and autoinspection is not reproducible run to run (driada adds unseeded "
+                     f"noise), so the exported neurons can change. Not recorded; to proceed add --force")
+            else:
+                _say(f"[FAILED] {sid}: manual inspection result not found: {detail}")
                 _say("        save the cleaned file at that place, then repeat the command")
             code = 1
         else:
@@ -470,28 +393,24 @@ def cmd_gate(args) -> int:
     return code
 
 
-_DECIDE = {"exclude": ("exclude", "true"), "include": ("exclude", "false"),
-           "accept-mismatch": ("accept_mismatch", "true")}
+_DECIDE = ("exclude", "include", "accept-mismatch")
 
 
 def cmd_decide(args) -> int:
     paths = _series(args.series)
     _check_sids(_records(paths), [args.sid])
-    recs = _records(paths)
-    if args.action == "accept-mismatch" and not any(
-            a.code == "frames_ts_mismatch" and a.level == "error" for a in recs[args.sid].anomalies):
-        _say(f"[WARN] {args.sid} has no frames_ts_mismatch error; the decision is recorded but changes nothing")
-    if args.action == "include" and recs[args.sid].fps is None:
-        _say(f"[WARN] {args.sid} has no frame rate (timestamps missing or unusable): it stays excluded, the "
-             f"stages need the frame rate; the decision is recorded and counts once a rescan finds the rate")
-    what, value = _DECIDE[args.action]
-    now, who = _now(), _who(args)
-
-    def change(rec):
-        rec.decisions.append(Decision(what, value, who, now))
-        rec.excluded = scan.evaluate_excluded(rec)  # the same rule as the scan: the latest decision wins
-
-    rec = registry.update_record(paths, args.sid, change)
+    who = _who(args)
+    if args.action == "accept-mismatch":
+        res = actions.accept_mismatch(paths, [args.sid], who)
+    else:
+        res = actions.set_excluded(paths, [args.sid], args.action == "exclude", who)
+    for sid, wcode in res.warnings:
+        if wcode == "no_mismatch_error":
+            _say(f"[WARN] {sid} has no frames_ts_mismatch error; the decision is recorded but changes nothing")
+        elif wcode == "no_fps_stays_excluded":
+            _say(f"[WARN] {sid} has no frame rate (timestamps missing or unusable): it stays excluded, the "
+                 f"stages need the frame rate; the decision is recorded and counts once a rescan finds the rate")
+    rec = registry.load_record(paths, args.sid)
     _say(f"[OK] {args.sid}: {args.action} recorded; session is now "
          + ("excluded" if rec.excluded else "included"))
     return OK
@@ -500,9 +419,8 @@ def cmd_decide(args) -> int:
 def cmd_rerun(args) -> int:
     paths = _series(args.series)
     _check_sids(_records(paths), args.sids)
-    who = _who(args)
-    for sid in args.sids:
-        runner.reset_from(paths, sid, args.from_stage, who)
+    res = actions.rerun_from(paths, args.sids, args.from_stage, _who(args))
+    for sid in res.ok:
         _say(f"[OK] {sid}: stages from {args.from_stage} on are reset")
     _say(_next_hint(paths))
     return OK
@@ -514,27 +432,22 @@ def cmd_retry(args) -> int:
     if bool(args.sids) == args.all_failed:
         raise CliError("give session names or --all-failed, not both and not neither")
     if args.all_failed:
-        sids = [s for s, r in sorted(recs.items()) if not r.excluded
-                and any(r.stages.get(x) and r.stages[x].state is State.FAILED for x in STAGES)]
+        sids = actions.failed_sids(paths)
         if not sids:
             _say("[OK] no failed sessions")
             return OK
     else:
         _check_sids(recs, args.sids)
         sids = list(args.sids)
-    who, n = _who(args), 0
+    res = actions.retry_failed(paths, sids, _who(args))
     for sid in sids:
-        first = next((s for s in STAGES if recs[sid].stages.get(s) and recs[sid].stages[s].state is State.FAILED),
-                     None)
-        if first is None:
+        if sid in res.failed:
             _say(f"[WARN] {sid}: no failed stage, skipped")
-            continue
-        runner.reset_from(paths, sid, first, who)
-        n += 1
-        _say(f"[OK] {sid}: reset from {first}")
-    if n:
+        else:
+            _say(f"[OK] {sid}: reset from {actions.failed_stage(recs[sid])}")
+    if res.ok:
         _say(_next_hint(paths))
-    return OK if n else 1
+    return OK if res.ok else 1
 
 
 # --- parser ---
@@ -566,9 +479,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="default: every session waiting for thresholds, or with a suggestion and none set")
     s = ts.add_parser("set", help="set thresholds of one session")
     s.add_argument("sid", metavar="SID")
-    s.add_argument("--gsig", type=_checked(_gsig_error, "--gsig"), required=True)
-    s.add_argument("--min-corr", type=_checked(_min_corr_error, "--min-corr"), required=True)
-    s.add_argument("--min-pnr", type=_checked(_min_pnr_error, "--min-pnr"), required=True)
+    s.add_argument("--gsig", type=_checked(actions.gsig_error, "--gsig"), required=True)
+    s.add_argument("--min-corr", type=_checked(actions.min_corr_error, "--min-corr"), required=True)
+    s.add_argument("--min-pnr", type=_checked(actions.min_pnr_error, "--min-pnr"), required=True)
 
     sp = add("gate", cmd_gate, "manual-inspection decision: gate SERIES SID ... (not-needed | cleaned)")
     sp.add_argument("items", nargs="*", metavar="SID... DECISION", help="session names, then not-needed or cleaned")
