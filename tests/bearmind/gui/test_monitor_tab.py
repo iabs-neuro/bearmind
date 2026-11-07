@@ -495,3 +495,27 @@ def test_table_shows_eight_rows_at_the_default_size(qapp, tmp_path):
     finally:
         w.monitor.timer.stop()
         w.close()
+
+
+def test_previews_checkbox_reflects_and_writes_config(qapp, series4):
+    from bearmind import config
+    t = tab_for(series4)
+    assert t.previews_box.text() == "Preview videos" and not t.previews_box.isChecked()
+    t.previews_box.click()
+    assert config.resolve(series4)["preview"]["enabled"] is True
+    assert "Previews on" in t.last_status
+    t.previews_box.click()
+    assert config.resolve(series4)["preview"]["enabled"] is False
+    assert t.last_status.startswith("Previews off")
+    config.update_yaml(series4.series_config, {"preview": {"enabled": True}})  # edited elsewhere
+    t.refresh()
+    assert t.previews_box.isChecked()
+
+
+def test_header_names_a_running_preview_stage(qapp, series4, live):
+    t = tab_for(series4)
+    hb = json.loads(series4.heartbeat.read_text())
+    hb["current"] = {"sid": "LT1_J02_1D", "stage": "cnmf_preview"}
+    series4.heartbeat.write_text(json.dumps(hb), encoding="utf-8")
+    t.refresh()
+    assert "CNMF-E preview" in t.header_text()

@@ -13,18 +13,22 @@ from pathlib import Path
 import psutil
 
 from bearmind import actions, config, fileio, registry, runner
-from bearmind.registry import STAGES, SessionRecord, StageRecord, State
+from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, SessionRecord, StageRecord, State
 from bearmind.runner import wait_reason
 
 STAGE_TITLE = {"crop": "Crop", "mc": "MC", "thresholds": "Thresholds", "cnmf": "CNMF-E",
-               "gate": "Inspection", "autoinspect": "Autoinspect", "export": "Export"}
+               "gate": "Inspection", "autoinspect": "Autoinspect", "export": "Export",
+               "mc_preview": "MC preview", "cnmf_preview": "CNMF-E preview"}
 
 HINTS = {
     "mc_shift": "Check the MC preview.",
     "stage_failed": "Other sessions continue.",
     "no_progress": "stalled: no CPU progress",
     "pool_worker_died": "a CaImAn worker died",
+    # shown in the CNMF-E cell: the panel keeps its six kinds
+    "cnmf_downsampled": "Background downsampled to fit RAM; a tighter crop avoids it.",
 }
+_SIDE_OF = {main: side for side, main in SIDE_STAGES.items()}  # MC -> its preview, CNMF-E -> its QC video
 
 # check name -> panel kind; every other check and anomaly only colours its cell
 _CHECK_KIND = {"mc_max_shift_px": "mc_shift", "cnmf_n_components_vs_median": "cnmf_count",
@@ -180,10 +184,11 @@ class RecordCache:
         hit = self._th.get(rec.sid)
         if hit is None or hit[0] != key:
             try:
-                c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-                val = (c.get("gSig"), c.get("min_corr"), c.get("min_pnr"))
+                cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
+                c = cfg["cnmf"]
+                val = (c.get("gSig"), c.get("min_corr"), c.get("min_pnr"), runner.side_enabled("mc_preview", cfg))
             except Exception:  # a broken config is the core's "cannot be scheduled", not the window's crash
-                val = (None, None, None)
+                val = (None, None, None, None)
             hit = (key, val)
             self._th[rec.sid] = hit
         return hit[1]
@@ -192,7 +197,11 @@ class RecordCache:
         return self._thresholds(paths, rec)[0]
 
     def thresholds_unset(self, paths, rec) -> bool:
-        return any(v is None for v in self._thresholds(paths, rec))
+        return any(v is None for v in self._thresholds(paths, rec)[:3])
+
+    def preview_on(self, paths, rec) -> bool | None:
+        """The session's preview checkbox (preview.enabled); None when its config cannot be read."""
+        return self._thresholds(paths, rec)[3]
 
     def problems(self, paths, records) -> dict:
         """sid -> why the runner cannot schedule the session (runner.schedule_problems, the runner's own
@@ -412,6 +421,12 @@ def _cell(rec, stage, cache, paths, human, alive) -> Cell:
     if stage == "gate" and human[1] and st.state is not State.WAITING:  # e.g. behind a CNMF-E just done
         level, text = "waiting", "waits"
         lines.append("waiting for manual inspection")
+    if stage in _SIDE_OF:
+        side = rec.stages.get(_SIDE_OF[stage]) or StageRecord()
+        off = side.state is State.PENDING and cache.preview_on(paths, rec) is False
+        lines.append(f"preview: {'off' if off else side.state.value}")
+    if any(a.code == "cnmf_downsampled" for a in _live_anomalies(rec, stage)):
+        lines.append(HINTS["cnmf_downsampled"])
     return Cell(st.state.value, level, text, "\n".join([f"{title}: {st.state.value}", *lines]))
 
 
@@ -445,7 +460,7 @@ def _problems(paths, records, rs: RunnerState, cache) -> dict:
     return cache.problems(paths, records)
 
 
-def _warnings(rec) -> list[WarningItem]:
+def _warnings(rec, preview_on) -> list[WarningItem]:
     # the window labels each item "<sid> · <stage>": the text starts with what happened
     out = []
     scan = [a for a in rec.anomalies if a.code in _SCAN_CODES and not a.auto_fixed]
@@ -454,8 +469,11 @@ def _warnings(rec) -> list[WarningItem]:
                                " ; ".join(a.message for a in scan), False))
     if rec.excluded:  # the scan anomalies explain the exclusion; nothing else is shown
         return out
-    for stage in STAGES:
+    for stage in ALL_STAGES:
         st = rec.stages.get(stage) or StageRecord()
+        # a failed preview its config turned off holds nothing (runner.first_failed skips it too)
+        if stage in SIDE_STAGES and preview_on is False:
+            continue
         if st.state is State.FAILED:
             crash = next((a for a in rec.anomalies if a.code == "stage_crashed"
                           and a.data.get("stage") == stage and a.data.get("cause") in HINTS), None)
@@ -471,6 +489,11 @@ def _warnings(rec) -> list[WarningItem]:
                     text += f". {HINTS[kind]}"
                 out.append(WarningItem(_worse([c.level for c in cs]), kind, rec.sid, stage, text, False))
     return out
+
+
+def _preview_if_failed(paths, rec, cache) -> bool | None:
+    return cache.preview_on(paths, rec) if any(
+        s in rec.stages and rec.stages[s].state is State.FAILED for s in SIDE_STAGES) else None
 
 
 def _duration(st):
@@ -574,8 +597,8 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     live = [r for r in records if not r.excluded]
     waiting = {"thresholds": sum(human[r.sid][0] for r in live),
                "manual_inspection": sum(human[r.sid][1] for r in live)}
-    warnings = [w for r in records for w in _warnings(r)]
-    order = {s: i for i, s in enumerate(("",) + STAGES)}
+    warnings = [w for r in records for w in _warnings(r, _preview_if_failed(paths, r, cache))]
+    order = {s: i for i, s in enumerate(("",) + ALL_STAGES)}
     warnings.sort(key=lambda w: (w.level != "error", w.sid, order[w.stage]))
     per_frame = _s_per_frame(records, config.load_defaults().get("monitor", {}).get("eta_s_per_frame", {}))
     return SeriesView(paths.root, True, rs, rows, _bars(records, human, problems, rs.alive),

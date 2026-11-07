@@ -267,7 +267,8 @@ def test_warning_panel_has_only_six_kinds(tmp_series):
         "cnmf": done({}, [check("cnmf", "cnmf_missed_cells", "warning")]),
         "export": done({}, [check("export", "export_median_snr", "warning")])},
         anomalies=[Anomaly("no_metadata", "warning", "x"), Anomaly("broken_last_frame", "warning", "y"),
-                   Anomaly("old_merge_grouping", "warning", "z", data={"stage": "export"})])
+                   Anomaly("old_merge_grouping", "warning", "z", data={"stage": "export"}),
+                   Anomaly("cnmf_downsampled", "warning", "w", data={"stage": "cnmf"})])
     v = view(tmp_series)
     assert v.warnings == [] and v.n_warning_sessions == 0
     cells = v.rows[0].cells
@@ -585,3 +586,83 @@ def test_stale_lock_is_checked_once(tmp_series, monkeypatch):
         assert monitor.runner_state(tmp_series).alive
     finally:
         stop(q)
+
+
+# --- preview side stages and the downsampling (wave A2) ---
+
+def _preview_on(paths, on=True):
+    config.update_yaml(paths.series_config, {"preview": {"enabled": on}})
+
+
+def test_side_stage_titles():
+    assert monitor.STAGE_TITLE["mc_preview"] == "MC preview"
+    assert monitor.STAGE_TITLE["cnmf_preview"] == "CNMF-E preview"
+
+
+def test_downsampled_anomaly_in_cnmf_cell(tmp_series):
+    msg = "background downsampled to fit RAM: ssub_B 3 instead of 2 (predicted 40 GiB at 2, 18 GiB at 3)"
+    put(tmp_series, "A_M1_1D", {"cnmf": done({"n_components": 80})},
+        anomalies=[Anomaly("cnmf_downsampled", "warning", msg, data={"stage": "cnmf"})])
+    put(tmp_series, "A_M1_2D", {"cnmf": done({"n_components": 80})},
+        anomalies=[Anomaly("cnmf_downsampled", "error", "predicted 99 GiB even at ssub_B 4",
+                           data={"stage": "cnmf"})])
+    v = view(tmp_series)
+    c1, c2 = (r.cells["cnmf"] for r in v.rows)
+    assert c1.level == "warning" and "ssub_B 3 instead of 2" in c1.tooltip
+    assert monitor.HINTS["cnmf_downsampled"] == "Background downsampled to fit RAM; a tighter crop avoids it."
+    assert monitor.HINTS["cnmf_downsampled"] in c1.tooltip
+    assert c2.level == "error" and monitor.HINTS["cnmf_downsampled"] in c2.tooltip
+    assert v.warnings == []  # the panel keeps its six kinds
+
+
+def test_failed_preview_in_panel_with_retry(tmp_series):
+    _preview_on(tmp_series)
+    put(tmp_series, "A_M1_1D", {"mc": done({"max_shift_px": 2.0}),
+                                "mc_preview": StageRecord(State.FAILED, error="Traceback" + chr(10) + "OSError: disk full")})
+    v = view(tmp_series)
+    [w] = v.warnings
+    assert (w.kind, w.stage, w.retry, w.level) == ("stage_failed", "mc_preview", True, "error")
+    assert "disk full" in w.text
+    mc = v.rows[0].cells["mc"]
+    assert mc.level == "ok" and "preview: failed" in mc.tooltip
+
+
+def test_failed_preview_that_is_off_is_not_in_panel(tmp_series):
+    put(tmp_series, "A_M1_1D", {"mc": done(), "mc_preview": StageRecord(State.FAILED, error="x")})
+    assert view(tmp_series).warnings == []  # runner.first_failed skips a preview its config turns off
+
+
+def test_preview_line_in_tooltips(tmp_series):
+    put(tmp_series, "A_M1_1D", {"mc": done(), "cnmf": done()})
+    assert "preview: off" in view(tmp_series).rows[0].cells["mc"].tooltip
+    _preview_on(tmp_series)
+    cache = monitor.RecordCache()
+    cells = view(tmp_series, cache).rows[0].cells
+    assert "preview: pending" in cells["mc"].tooltip and "preview: pending" in cells["cnmf"].tooltip
+    registry.update_record(tmp_series, "A_M1_1D", lambda r: r.stages.update(
+        mc_preview=StageRecord(State.RUNNING), cnmf_preview=StageRecord(State.DONE)))
+    cells = view(tmp_series, cache).rows[0].cells
+    assert "preview: running" in cells["mc"].tooltip and "preview: done" in cells["cnmf"].tooltip
+    assert len(view(tmp_series).rows[0].cells) == len(STAGES)  # the table keeps its seven columns
+
+
+def test_side_stages_not_in_bars_or_eta(tmp_series):
+    _preview_on(tmp_series)
+    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES})
+    base = view(tmp_series)
+    assert set(base.bars) == set(STAGES) and base.eta_s == 0.0
+    registry.update_record(tmp_series, "A_M1_1D", lambda r: r.stages.update(
+        mc_preview=StageRecord(State.PENDING), cnmf_preview=StageRecord(State.RUNNING)))
+    v = view(tmp_series)
+    assert set(v.bars) == set(STAGES) and v.eta_s == 0.0
+
+
+def test_runner_current_side_stage_title(tmp_series, alive):
+    put(tmp_series, "A_M1_1D", {"cnmf": done(), "cnmf_preview": StageRecord(State.RUNNING, started=iso(NOW))})
+    alive(current={"sid": "A_M1_1D", "stage": "cnmf_preview"})
+    r = view(tmp_series).runner
+    assert r.current == ("A_M1_1D", "cnmf_preview")
+
+
+def test_crop_eta_default_is_about_90_s_per_session():
+    assert defaults()["crop"] * 18000 == pytest.approx(90, rel=0.2)

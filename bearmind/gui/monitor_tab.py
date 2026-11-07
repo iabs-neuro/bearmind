@@ -12,9 +12,9 @@ from pathlib import Path
 from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (QAction, QBrush, QColor, QDesktopServices, QFont, QPainter, QStandardItem,
                            QStandardItemModel)
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
+                               QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView,
+                               QVBoxLayout, QWidget)
 
 from bearmind import actions, config, launcher, monitor
 from bearmind.gui.logs import LogView
@@ -235,6 +235,7 @@ class MonitorTab(QWidget):
         self._cache = monitor.RecordCache()
         self._slow_logged = False
         self._sids: list[str] = []
+        self._previews_sig = ()  # stat of the series config the checkbox was read from
 
         self.root_layout = QVBoxLayout(self)
         self.root_layout.setContentsMargins(8, 6, 8, 6)
@@ -270,13 +271,16 @@ class MonitorTab(QWidget):
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop after current stage")
         self.folder_button = QPushButton("Open folder")
+        self.previews_box = QCheckBox("Preview videos")
+        self.previews_box.setToolTip("MC previews and the CNMF-E QC video, made by the batch for finished sessions")
+        self.previews_box.clicked.connect(self._on_previews)
         self.start_button.clicked.connect(self._on_start)
         self.stop_button.clicked.connect(self._on_stop)
         self.folder_button.clicked.connect(self._on_folder)
         row.addWidget(self.batch_label)
         row.addWidget(self.batch_detail)
         row.addStretch(1)
-        for b in (self.start_button, self.stop_button, self.folder_button):
+        for b in (self.start_button, self.stop_button, self.folder_button, self.previews_box):
             row.addWidget(b)
         self.root_layout.addLayout(row)
 
@@ -567,6 +571,31 @@ class MonitorTab(QWidget):
     def _on_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.series)))
 
+    def _on_previews(self, checked: bool) -> None:
+        # no confirmation: switching on or off is reversible and deletes nothing
+        try:
+            actions.set_previews(self.paths, checked)
+        except (OSError, ValueError) as e:
+            self._say(f"Previews were not changed: {e}")
+        else:
+            self._say("Previews on: the batch makes them for sessions whose MC / CNMF-E is done" if checked
+                      else "Previews off: existing files are kept")
+        self._sync_previews()
+
+    def _sync_previews(self) -> None:
+        """Show the series config's preview.enabled; read again only when the file changed (resolving parses
+        defaults and merges layers)."""
+        sig = monitor._sig(self.paths.series_config)
+        if sig == self._previews_sig:
+            return
+        self._previews_sig = sig
+        try:
+            on = bool(config.resolve(self.paths)["preview"]["enabled"])
+        except (OSError, KeyError, TypeError, ValueError):  # a config being rewritten: the next refresh reads it
+            self._previews_sig = ()
+            return
+        self.previews_box.setChecked(on)
+
     def _update_buttons(self) -> None:
         self.start_button.setEnabled(self._scanned and not self._alive and self._starting_since is None)
         self.stop_button.setEnabled(self._alive)
@@ -604,6 +633,7 @@ class MonitorTab(QWidget):
         t0 = time.perf_counter()
         view = monitor.series_view(self.paths, now, self._cache)
         self._scanned = view.scanned
+        self._sync_previews()
         self._show_runner(view)
         self._show_progress(view)
         self._show_waiting(view.waiting)

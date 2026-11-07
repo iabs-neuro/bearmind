@@ -537,3 +537,19 @@ def test_retry_confirmation_says_what_is_reset(qapp, series4):
                             f"together with its failed preview videos. Only the failed preview videos of Session "
                             f"{S3} will be made again; nothing else is reset. Old results stay until the new ones "
                             "are ready.")
+
+
+def test_retry_of_a_failed_preview_resets_only_the_preview(qapp, series4):
+    from bearmind import config
+    config.update_yaml(series4.series_config, {"preview": {"enabled": True}})
+    registry.update_record(series4, S3, lambda r: r.stages.update(
+        mc_preview=StageRecord(State.FAILED, error="OSError: disk full")))
+    ui = Ui(series4)
+    texts = [lab.text() for lab in ui.tab.warnings_list.findChildren(QLabel)]
+    assert any(S3 in x and "MC preview" in x for x in texts)
+    btn = next(b for b in _retry_buttons(ui.tab)
+               if "MC preview" in (b.parent().findChildren(QLabel)[1].text()))
+    btn.click()
+    rec = registry.load_record(series4, S3)
+    assert rec.stages["mc_preview"].state is State.PENDING and rec.stages["mc"].state is State.DONE
+    assert "MC preview" in ui.tab.last_status
