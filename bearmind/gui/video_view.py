@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget
 
 from bearmind.video import VideoArray
 
@@ -25,6 +25,33 @@ log = logging.getLogger("bearmind")
 
 CACHE_FRAMES = 64
 PLAY_TICK_MS = 15
+
+# Workers have no Qt parent and live here until joined. A parented QThread is destroyed with its parent,
+# and Qt aborts when that happens while the thread runs; closeEvent reaches only top-level windows, so a view
+# inside a tab cannot rely on it. The registry is joined on view destruction, session change and app quit.
+_LIVE: set = set()
+_quit_hooked = False
+
+
+def _join(worker) -> None:
+    worker.stop()
+    worker.wait()  # at most one frame decode; the file is free after this
+    if worker in _LIVE:
+        _LIVE.discard(worker)
+        worker.deleteLater()
+
+
+def _join_all() -> None:
+    for w in list(_LIVE):
+        _join(w)
+
+
+def _hook_quit() -> None:
+    global _quit_hooked
+    app = QApplication.instance()
+    if app is not None and not _quit_hooked:
+        app.aboutToQuit.connect(_join_all)
+        _quit_hooked = True
 
 
 def position_text(index: int, total: int, fps: float) -> str:
@@ -36,7 +63,7 @@ def position_text(index: int, total: int, fps: float) -> str:
 
 class _Worker(QThread):
     opened = Signal(object, int, int, int)   # token, frames, height, width
-    failed = Signal(object, str)             # token, message
+    failed = Signal(object, str, bool)       # token, message, file is missing
     decoded = Signal(object, int, object)    # token, index, uint8 (h, w)
 
     def __init__(self, path: Path, token, parent=None):
@@ -62,7 +89,7 @@ class _Worker(QThread):
             if len(arr) < 1:
                 raise ValueError("no frames")
         except Exception as e:
-            self.failed.emit(self._token, f"{type(e).__name__}: {e}")
+            self.failed.emit(self._token, f"{type(e).__name__}: {e}", not self._path.exists())
             return
         self.opened.emit(self._token, len(arr), arr.shape[1], arr.shape[2])
         while True:
@@ -137,11 +164,13 @@ class VideoView(QWidget):
         self.image_label.setPixmap(QPixmap())
         self.position_label.setText("")
         self._set_controls(False)
-        if self._path is None:
-            self.image_label.setText("")
-            return
         self.image_label.setText("")
-        self._worker = _Worker(self._path, self._token, self)
+        if self._path is None:
+            return
+        _hook_quit()
+        self._worker = w = _Worker(self._path, self._token)
+        _LIVE.add(w)
+        self.destroyed.connect(lambda *_: _join(w))  # no reference to self: the view is already gone
         self._worker.opened.connect(self._on_opened)
         self._worker.failed.connect(self._on_failed)
         self._worker.decoded.connect(self._on_decoded)
@@ -182,12 +211,13 @@ class VideoView(QWidget):
         self._set_controls(True)
         self.seek(self._index)
 
-    def _on_failed(self, token, msg: str) -> None:
+    def _on_failed(self, token, msg: str, missing: bool) -> None:
         if token != self._token:
             return
         log.warning("MC video %s not opened: %s", self._path, msg)
         self.image_label.setPixmap(QPixmap())
-        self.image_label.setText(f"MC video not found: {self._path}")
+        self.image_label.setText(f"MC video not found: {self._path}" if missing
+                                 else f"MC video cannot be read: {msg}")
         self._set_controls(False)
 
     def _on_decoded(self, token, index: int, frame) -> None:
@@ -196,8 +226,18 @@ class VideoView(QWidget):
         self._cache[index] = frame
         while len(self._cache) > CACHE_FRAMES:
             self._cache.popitem(last=False)
-        if index == self._index:  # a stale request that was already decoding is cached but not shown
+        if index == self._index or self._between_shown_and_target(index):
+            # A decode slower than the frame period makes every result older than the request; showing
+            # the ones that lie on the way keeps the picture moving during playback and drags.
             self._show(index, frame)
+
+    def _between_shown_and_target(self, index: int) -> bool:
+        if self._index in self._cache:
+            return False
+        if self._shown < 0:
+            return True
+        lo, hi = sorted((self._shown, self._index))
+        return lo < index <= hi
 
     # ---- display ----
     def _show(self, index: int, frame: np.ndarray) -> None:
@@ -260,18 +300,14 @@ class VideoView(QWidget):
 
     # ---- lifetime ----
     def _stop_worker(self) -> None:
-        self._pause()
         w, self._worker = self._worker, None
         if w is not None:
-            w.stop()
-            w.wait()  # at most one frame decode; the file is free after this
+            _join(w)
+        try:
+            self._pause()
+        except RuntimeError:  # the timer is already deleted with the widget
+            pass
 
     def closeEvent(self, e) -> None:
         self._stop_worker()
         super().closeEvent(e)
-
-    def __del__(self) -> None:
-        try:
-            self._stop_worker()
-        except RuntimeError:  # the Qt object is already gone
-            pass
