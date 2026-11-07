@@ -279,7 +279,7 @@ def test_not_scanned_message(qapp, tmp_path):
     t = MonitorTab(tmp_path)
     t.show()
     assert t.not_scanned_label.isVisible() and not t.table.isVisible()
-    assert t.not_scanned_label.text().startswith("Series not scanned. Run: run_bearmind.bat scan")
+    assert t.not_scanned_label.text() == "Series not scanned. Open the Scan tab and press Scan."
     assert t.batch_label.text() == "Stopped"
     t.close()
 

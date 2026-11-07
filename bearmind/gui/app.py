@@ -12,9 +12,10 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
 
 from bearmind import config
 from bearmind.gui.monitor_tab import MonitorTab
+from bearmind.gui.scan_tab import ScanTab
 
 TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
-_PHASE = {"Scan": 3, "Thresholds": 4, "Inspection": 5}
+_PHASE = {"Thresholds": 4, "Inspection": 5}
 PLACEHOLDER_TEXT = "This tab is coming in a later version of BEARMiND."
 MAX_RECENT = 10
 
@@ -54,7 +55,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         for name in TAB_NAMES:
-            # the Monitor tab is built when a series is opened
+            # the Monitor and Scan tabs are built when a series is opened
             self.tabs.addTab(_placeholder(name) if name in _PHASE else _hint(), name)
         self._build_menus()
         if series is not None:
@@ -97,22 +98,30 @@ class MainWindow(QMainWindow):
         # update_yaml deep-merges, and a list is replaced as a whole, so the new order is stored verbatim
         config.update_yaml(config.machine_file(), {"gui": {"recent_series": recent[:MAX_RECENT]}})
         self._fill_recent()
-        self._set_monitor(MonitorTab(self.series))
+        self._set_tabs(MonitorTab(self.series), ScanTab(self.series))
         return True
 
-    def _set_monitor(self, tab: MonitorTab) -> None:
-        old = self.tabs.widget(0)
+    def _replace_tab(self, name: str, tab: QWidget) -> None:
+        index = TAB_NAMES.index(name)
+        old = self.tabs.widget(index)
         if isinstance(old, MonitorTab):
             old.timer.stop()
-        self.tabs.removeTab(0)
+        self.tabs.removeTab(index)
         old.deleteLater()
-        self.tabs.insertTab(0, tab, TAB_NAMES[0])
+        self.tabs.insertTab(index, tab, name)
+
+    def _set_tabs(self, monitor_tab: MonitorTab, scan_tab: ScanTab) -> None:
+        self._replace_tab("Monitor", monitor_tab)
+        self._replace_tab("Scan", scan_tab)
         self.tabs.setCurrentIndex(0)
-        self.monitor = tab
+        self.monitor, self.scan = monitor_tab, scan_tab
         self.actions_menu.clear()
-        self.actions_menu.addActions(tab.menu_actions)
-        tab.open_tab.connect(self.show_tab)
-        tab.status_message.connect(self.statusBar().showMessage)
+        self.actions_menu.addActions(monitor_tab.menu_actions)
+        monitor_tab.open_tab.connect(self.show_tab)
+        monitor_tab.status_message.connect(self.statusBar().showMessage)
+        scan_tab.status_message.connect(self.statusBar().showMessage)
+        # a finished scan changes the table and the not-scanned state, which the timer would show only later
+        scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh() if ok else None)
 
     def show_tab(self, name: str) -> None:
         self.tabs.setCurrentIndex(TAB_NAMES.index(name))

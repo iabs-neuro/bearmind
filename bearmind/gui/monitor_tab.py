@@ -66,6 +66,7 @@ _WARNING_TEXT = {
     "excluded_session": "{sid} is excluded: the runner ignores it until you include it.",
     "no_fps_stays_excluded": "{sid} has no frame rate (timestamps missing or unusable): it stays excluded.",
     "no_mismatch_error": "{sid} has no frame/timestamp mismatch error; the decision was recorded anyway.",
+    "already_confirmed": "{sid}: the stitch is already confirmed; nothing was recorded.",
 }
 
 
@@ -348,10 +349,12 @@ class MonitorTab(QWidget):
         self._fit_rows()
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.not_scanned_label = QLabel(f'Series not scanned. Run: run_bearmind.bat scan "{self.series}"')
-        self.not_scanned_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.not_scanned_label = QLabel("Series not scanned. Open the Scan tab and press Scan.")
+        self.scan_tab_button = QPushButton("Open Scan tab")
+        self.scan_tab_button.clicked.connect(lambda: self.open_tab.emit("Scan"))
         box = _section_box(_SectionLabel("Sessions"), self.table)
         box.layout().addWidget(self.not_scanned_label)
+        box.layout().addWidget(self.scan_tab_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.splitter.addWidget(box)
 
     def _build_warnings(self) -> None:
@@ -776,6 +779,7 @@ class MonitorTab(QWidget):
     def _show_table(self, view: monitor.SeriesView) -> None:
         self.table.setVisible(view.scanned)
         self.not_scanned_label.setVisible(not view.scanned)
+        self.scan_tab_button.setVisible(not view.scanned)
         sids = [r.sid for r in view.rows]
         if sids != self._sids:
             self._rebuild(view.rows)
