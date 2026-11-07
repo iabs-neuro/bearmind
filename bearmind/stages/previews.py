@@ -7,16 +7,20 @@ stage-parameter check.
 from __future__ import annotations
 
 import gc
+import logging
 import pickle
 import shutil
 import time
 import traceback
 from pathlib import Path
 
+from bearmind import fileio
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, require_temp_space
 from bearmind.video import (CropBox, SessionReader, chunks_to_memmap, decode_to_memmap, video_info,
                             write_preview_mp4)
+
+log = logging.getLogger(__name__)
 
 CHUNK = 1000
 # One uint8 copy at a time: the cropped raw movie, then the MC movie.
@@ -70,10 +74,18 @@ def _bytes(paths, outputs) -> int:
     return int(sum((paths.root / rel).stat().st_size for rel in outputs.values()))
 
 
+def _remove_written(files) -> None:
+    """The preview files a failed run wrote (or began to write), so it leaves no half-new set; files it had not
+    reached yet stay as they were."""
+    for f in files:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError as e:  # open in a video player: the stage error matters more than this file
+            log.warning("preview file not removed after the failure: %s: %s", f, e)
+
+
 def mc_previews(paths, rec, cfg) -> StageResult:
     """raw, raw dF/F, MC and MC dF/F videos of a session; the dF/F pair is of the cropped movie."""
-    from bearmind.stages.cnmf import _move
-
     prm = preview_params(cfg)
     if not prm["enabled"]:
         raise ValueError("mc_previews called with preview.enabled false")
@@ -90,25 +102,32 @@ def mc_previews(paths, rec, cfg) -> StageResult:
     names = {"raw": "preview_raw", "raw_dff": "preview_raw_dff", "mc": "preview_mc", "mc_dff": "preview_mc_dff"}
     arr = None
     result = None
+    written = []  # Preview/ files this run writes, removed if it fails
+
+    def out(kind):
+        f = paths.preview(sid, kind)
+        written.append(f)
+        return f
+
     tmp.mkdir(parents=True, exist_ok=True)
     try:
         paths.preview(sid, "raw").parent.mkdir(parents=True, exist_ok=True)
-        write_preview_mp4(SessionReader(paths.root, rec, crop=None).iter_chunks(CHUNK),
-                          paths.preview(sid, "raw"), fps, **kw)
+        write_preview_mp4(SessionReader(paths.root, rec, crop=None).iter_chunks(CHUNK), out("raw"), fps, **kw)
 
         def dff(kind):
-            out = tmp / f"{sid}_{kind}.mp4"
-            bm_qc.make_dff_video(arr, out_path=str(out), fps=fps, tbin=tbin, ssub=ssub, verbose=False)
-            _move(out, paths.preview(sid, kind))
+            made = tmp / f"{sid}_{kind}.mp4"
+            bm_qc.make_dff_video(arr, out_path=str(made), fps=fps, tbin=tbin, ssub=ssub, verbose=False)
+            fileio.move(made, out(kind))
 
         arr = chunks_to_memmap(SessionReader(paths.root, rec, crop=crop).iter_chunks(CHUNK),
                                tmp / "raw_crop.dat", (T, h, w))
         dff("raw_dff")
         arr = None
+        gc.collect()  # Windows cannot delete a mapped file: views left in reference cycles must go first
         (tmp / "raw_crop.dat").unlink(missing_ok=True)
 
         arr = decode_to_memmap(paths.mc_video(sid), tmp / "mc_u8.dat")
-        write_preview_mp4((arr[a:a + CHUNK] for a in range(0, T, CHUNK)), paths.preview(sid, "mc"), fps, **kw)
+        write_preview_mp4((arr[a:a + CHUNK] for a in range(0, T, CHUNK)), out("mc"), fps, **kw)
         dff("mc_dff")
         arr = None
 
@@ -120,14 +139,13 @@ def mc_previews(paths, rec, cfg) -> StageResult:
         traceback.clear_frames(e.__traceback__)
         arr = None
         _rmtree(tmp)
+        _remove_written(written)
         raise
     return _finish(result, tmp)
 
 
 def cnmf_preview(paths, rec, cfg) -> StageResult:
     """The CNMF-E QC video (raw | raw - background | A*C | residual) from the stored estimates and MC video."""
-    from bearmind.stages.cnmf import _move
-
     prm = preview_params(cfg)
     if not prm["enabled"]:
         raise ValueError("cnmf_preview called with preview.enabled false")
@@ -150,7 +168,9 @@ def cnmf_preview(paths, rec, cfg) -> StageResult:
         base = str(tmp / sid)
         bm_qc.cnmf_qc(est, movie=u8, out_base=base, fps=rec.fps, tmp_dir=str(tmp), make_video=True,
                       residual_maps=False, video_tbin=tbin, video_ssub=ssub, verbose=False)
-        _move(base + "_qc.mp4", paths.preview(sid, "cnmf_qc"))
+        # its only Preview/ file, moved in last (one replace, or a .partial copy across drives): a failure
+        # leaves no half-written video there
+        fileio.move(base + "_qc.mp4", paths.preview(sid, "cnmf_qc"))
         outputs = {"preview_cnmf_qc": paths.rel(paths.preview(sid, "cnmf_qc"))}
         result = StageResult(outputs=outputs,
                              metrics={"tbin": tbin, "ssub": ssub, "bytes": _bytes(paths, outputs)})

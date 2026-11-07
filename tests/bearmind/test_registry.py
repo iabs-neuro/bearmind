@@ -361,3 +361,24 @@ def test_contenders_take_over_a_dead_lock_one_at_a_time(tmp_path):
     assert len(load_record(paths, "M1_D1").decisions) == 1 + 40
     folder = paths.registry_file("M1_D1").parent
     assert sorted(p.name for p in folder.iterdir()) == ["M1_D1.json"]
+
+
+def test_move_falls_back_to_copy_across_drives(tmp_path, monkeypatch):
+    import errno
+
+    src = tmp_path / "a" / "x.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"video")
+    dst = tmp_path / "b" / "y.mp4"
+    real = os.replace
+
+    def cross_drive(a, b):
+        if Path(a) == src:
+            raise OSError(errno.EXDEV, "The system cannot move the file to a different disk drive")
+        return real(a, b)
+
+    monkeypatch.setattr(fileio.os, "replace", cross_drive)
+    fileio.move(src, dst)
+    assert dst.read_bytes() == b"video"
+    assert not src.exists()
+    assert sorted(p.name for p in dst.parent.iterdir()) == ["y.mp4"]

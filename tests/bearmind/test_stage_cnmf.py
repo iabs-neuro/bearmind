@@ -1,4 +1,3 @@
-import errno
 import os
 import pickle
 import sys
@@ -171,25 +170,6 @@ def test_imax_fallback_uses_decoded_movie(tmp_path, monkeypatch):
     imax = cnmf._imax(paths, SID, gSig=4, tsub=2, dims=(6, 7), movie=mov, mem_gb=3.5)
     assert calls == [(True, 4, 2, 3.5)]
     assert imax[0, 0] == 255 and imax[1, 1] == 127
-
-
-def test_move_falls_back_to_copy_across_drives(tmp_path, monkeypatch):
-    src = tmp_path / "a" / "x.mp4"
-    src.parent.mkdir()
-    src.write_bytes(b"video")
-    dst = tmp_path / "b" / "y.mp4"
-    real = os.replace
-
-    def cross_drive(a, b):
-        if Path(a) == src:
-            raise OSError(errno.EXDEV, "The system cannot move the file to a different disk drive")
-        return real(a, b)
-
-    monkeypatch.setattr(cnmf.os, "replace", cross_drive)
-    cnmf._move(src, dst)
-    assert dst.read_bytes() == b"video"
-    assert not src.exists()
-    assert sorted(p.name for p in dst.parent.iterdir()) == ["y.mp4"]
 
 
 def _no_videoarray_reads(monkeypatch):

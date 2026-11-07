@@ -109,6 +109,9 @@ def test_mc_previews_without_crop_in_record(tmp_path, make_avi):
 def test_mc_previews_failure_cleans_temp(tmp_path, make_avi, monkeypatch):
     import bm_qc
     paths, rec, cfg = _mc_setup(tmp_path, make_avi)
+    paths.preview(SID, "raw").parent.mkdir(parents=True)
+    for kind in ("raw", "raw_dff", "mc", "mc_dff"):  # an older set, e.g. made inside the MC stage
+        paths.preview(SID, kind).write_bytes(b"old")
 
     def bad_dff(movie, out_path=None, **k):
         held = movie[0:1]  # a frame of the traceback keeps the memmap, as in a real writer failure  # noqa: F841
@@ -118,6 +121,9 @@ def test_mc_previews_failure_cleans_temp(tmp_path, make_avi, monkeypatch):
     with pytest.raises(RuntimeError, match="dff failed"):
         previews.mc_previews(paths, rec, cfg)
     assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
+    # the raw preview this run wrote before the failure is removed; the files it had not reached are untouched
+    assert not paths.preview(SID, "raw").exists()
+    assert all(paths.preview(SID, k).read_bytes() == b"old" for k in ("raw_dff", "mc", "mc_dff"))
 
 
 def test_cnmf_preview_writes_qc_video(tmp_path):

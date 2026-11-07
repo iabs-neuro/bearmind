@@ -7,7 +7,6 @@ bm_qc (CaImAn, cv2, matplotlib: about 7 s) is imported inside the functions that
 """
 from __future__ import annotations
 
-import errno
 import gc
 import json
 import math
@@ -21,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from bearmind import pool
+from bearmind import fileio, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
 from bearmind.video import decode_to_memmap, video_info
@@ -125,25 +124,6 @@ def _imax(paths, sid, gSig, tsub, dims, movie, mem_gb) -> np.ndarray:
     return (pnr * 255 / mx).astype(np.uint8)
 
 
-def _move(src, dst) -> None:
-    """os.replace; across drives (temp folder on C:, series elsewhere) copy to <dst>.partial, then replace."""
-    src, dst = Path(src), Path(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.replace(src, dst)
-        return
-    except OSError as e:
-        if e.errno != errno.EXDEV:
-            raise
-    part = dst.with_name(dst.name + ".partial")
-    try:
-        shutil.copyfile(src, part)
-        os.replace(part, dst)
-    finally:
-        part.unlink(missing_ok=True)
-    src.unlink()
-
-
 def _unlink(path) -> None:
     """Delete a temp file; a failure (file still mapped) is left to the rmtree retries in run's finally."""
     try:
@@ -207,7 +187,7 @@ def run(paths, rec, cfg) -> StageResult:
         qc_base = str(tmp / sid)
         bm_qc.cnmf_qc(est, movie=images, out_base=qc_base, fps=rec.fps, tmp_dir=str(tmp), make_video=False,
                       verbose=False)
-        _move(qc_base + "_qc_residual_maps.png", paths.residual_png(sid))
+        fileio.move(qc_base + "_qc_residual_maps.png", paths.residual_png(sid))
         with open(qc_base + "_qc.json", encoding="utf-8") as f:
             missed = json.load(f).get("residual_excess_outside")
 

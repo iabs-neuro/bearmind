@@ -6,7 +6,9 @@ unique per writer, so two writers never share it.
 """
 from __future__ import annotations
 
+import errno
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -199,3 +201,22 @@ def read_text(path, tries: int = 5, step: float = 0.05) -> str:
             if i == tries - 1:
                 raise
             time.sleep(step)
+
+
+def move(src, dst) -> None:
+    """os.replace; across drives (temp folder on C:, series elsewhere) copy to <dst>.partial, then replace."""
+    src, dst = Path(src), Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(src, dst)
+        return
+    except OSError as e:
+        if e.errno != errno.EXDEV:
+            raise
+    part = dst.with_name(dst.name + ".partial")
+    try:
+        shutil.copyfile(src, part)
+        os.replace(part, dst)
+    finally:
+        part.unlink(missing_ok=True)
+    src.unlink()
