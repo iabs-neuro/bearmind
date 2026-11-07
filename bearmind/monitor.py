@@ -502,23 +502,31 @@ def _duration(st):
     return None if a is None or b is None else (b - a).total_seconds()
 
 
-def _s_per_frame(records, defaults) -> dict:
+PER_SESSION = ("crop",)  # the crop reads three windows and builds seed maps: its time does not follow the length
+
+
+def _rates(records, cfg) -> dict:
+    """stage -> (seconds, per_session): seconds per frame, or per session for PER_SESSION stages; the median
+    of finished runs once there are two, else the default."""
     out = {}
+    per_frame, per_session = cfg.get("eta_s_per_frame", {}), cfg.get("eta_s_per_session", {})
     for stage in STAGES:
+        by_session = stage in PER_SESSION
+        defaults = per_session if by_session else per_frame
         hist = []
         for r in records:
             st = r.stages.get(stage)
             d = _duration(st) if st is not None and st.state is State.DONE else None
             if d is not None and r.n_frames > 0:
-                hist.append(d / r.n_frames)
+                hist.append(d if by_session else d / r.n_frames)
         if len(hist) >= 2:
-            out[stage] = statistics.median(hist)
+            out[stage] = (statistics.median(hist), by_session)
         elif stage in defaults:
-            out[stage] = defaults[stage]
+            out[stage] = (defaults[stage], by_session)
     return out
 
 
-def _eta(records, human, now, per_frame, problems, alive):
+def _eta(records, human, now, rates, problems, alive):
     """Seconds of batch work left: 0.0 when nothing is left, None when what is left has no estimate. Waits for
     a person and sessions that cannot be scheduled are not counted."""
     total, left, any_est = 0.0, False, False
@@ -539,9 +547,10 @@ def _eta(records, human, now, per_frame, problems, alive):
             if stage == "gate":  # a check of the decision, no work: a person's wait is cut above
                 any_est = True
                 continue
-            if stage not in per_frame:
+            if stage not in rates:
                 continue
-            t = per_frame[stage] * r.n_frames
+            sec, by_session = rates[stage]
+            t = sec if by_session else sec * r.n_frames
             started = _iso(st.started)
             # an interrupted stage (no live batch) runs again from its start
             if st.state is State.RUNNING and alive and started is not None:
@@ -601,7 +610,7 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     warnings = [w for r in records for w in _warnings(r, _preview_if_failed(paths, r, cache))]
     order = {s: i for i, s in enumerate(("",) + ALL_STAGES)}
     warnings.sort(key=lambda w: (w.level != "error", w.sid, order[w.stage]))
-    per_frame = _s_per_frame(records, config.load_defaults().get("monitor", {}).get("eta_s_per_frame", {}))
+    rates = _rates(records, config.load_defaults().get("monitor", {}))
     return SeriesView(paths.root, True, rs, rows, _bars(records, human, problems, rs.alive),
-                      _eta(records, human, now, per_frame, problems, rs.alive), waiting, warnings,
+                      _eta(records, human, now, rates, problems, rs.alive), waiting, warnings,
                       len({w.sid for w in warnings}), [f for f, _ in broken])

@@ -60,7 +60,9 @@ def view(paths, cache=None):
 
 
 def defaults():
-    return config.load_defaults()["monitor"]["eta_s_per_frame"]
+    """Seconds of each stage for a 1000-frame session (the crop's number is per session, not per frame)."""
+    m = config.load_defaults()["monitor"]
+    return {**m["eta_s_per_frame"], **{k: v / 1000 for k, v in m["eta_s_per_session"].items()}}
 
 
 def spawn(paths, sid, stage, status):
@@ -664,5 +666,20 @@ def test_runner_state_reports_a_current_side_stage(tmp_series, alive):
     assert r.current == ("A_M1_1D", "cnmf_preview")
 
 
-def test_crop_eta_default_is_about_90_s_per_session():
-    assert defaults()["crop"] * 18000 == pytest.approx(90, rel=0.2)
+def test_crop_eta_is_per_session_not_per_frame(tmp_series):
+    m = config.load_defaults()["monitor"]
+    # a short and a long session cost the same default crop time
+    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES if s != "crop"}, n_frames=600)
+    short = view(tmp_series).eta_s
+    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES if s != "crop"}, n_frames=36000)
+    assert short == pytest.approx(m["eta_s_per_session"]["crop"]) == pytest.approx(90, rel=0.2)
+    assert view(tmp_series).eta_s == pytest.approx(short)
+
+
+def test_crop_eta_from_history_is_median_duration(tmp_series):
+    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES if s != "crop"} | {"crop": done(seconds=40)},
+        n_frames=600)
+    put(tmp_series, "A_M1_2D", {s: done() for s in STAGES if s != "crop"} | {"crop": done(seconds=60)},
+        n_frames=36000)
+    put(tmp_series, "A_M1_3D", {s: done() for s in STAGES if s != "crop"}, n_frames=18000)
+    assert view(tmp_series).eta_s == pytest.approx(50.0)
