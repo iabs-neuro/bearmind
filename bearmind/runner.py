@@ -1085,6 +1085,10 @@ def _write_crop_overview(paths) -> None:
         write_overview(paths, [r for r in registry.read_all(paths)[0] if not r.excluded])
     except Exception as e:
         log.warning("crop overview not written: %s", _last_line(e), extra={"console": True})
+        try:
+            paths.crop_overview.unlink(missing_ok=True)  # an old picture would show boxes that no longer hold
+        except OSError:
+            pass  # open in a viewer: the warning above is all that can be done
 
 
 def _record_finalize_failure(paths, sid, mouse, why, ours) -> None:

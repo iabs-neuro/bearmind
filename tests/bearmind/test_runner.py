@@ -2077,3 +2077,19 @@ def test_machine_busy_reports_live_holder_only(series):
         release.set()
         t.join(60)
     assert runner.machine_busy() is None
+
+
+def test_failed_overview_redraw_removes_the_old_picture(series, monkeypatch):
+    s = series
+    png = s.paths.crop_overview
+    png.parent.mkdir(parents=True, exist_ok=True)
+    png.write_bytes(b"old boxes")
+    from bearmind import crop_overview
+
+    def boom(*a, **k):
+        raise RuntimeError("draw failed")
+
+    monkeypatch.setattr(crop_overview, "write_overview", boom)
+    runner._write_crop_overview(s.paths)
+    assert not png.exists()  # a stale picture with outdated boxes must not stay
+    runner._write_crop_overview(s.paths)  # nothing to remove: still quiet
