@@ -266,11 +266,56 @@ def _split_series(make_series, tmp_path):
 
 def test_confirm_stitch(make_series, tmp_path):
     paths, sid = _split_series(make_series, tmp_path)
-    excluded = load_record(paths, sid).excluded
+    rec = load_record(paths, sid)
     res = actions.confirm_stitch(paths, [sid], "ann")
     assert res.ok == [sid] and not res.failed
-    assert _decisions(paths, sid)[-1] == ("stitch_confirmed", "true", "ann")
-    assert load_record(paths, sid).excluded == excluded
+    # I3: the value names the stitch it confirmed: the part folders in stitch order
+    fingerprint = "|".join(p.folder for p in rec.parts)
+    assert _decisions(paths, sid)[-1] == ("stitch_confirmed", fingerprint, "ann")
+    assert load_record(paths, sid).excluded == rec.excluded
+
+
+def _third_part(make_avi, root, sid):
+    """A third part of the legacy split recording, started an hour after the second."""
+    import json
+
+    import numpy as np
+    mini = root / "1_Raw" / sid / "2024_10_15" / "12_00_00" / "Miniscope"
+    mini.mkdir(parents=True)
+    rng = np.random.default_rng(0)
+    for i in range(3):
+        make_avi(mini / f"{i}.avi", rng.integers(0, 255, (10, 16, 16), dtype=np.uint8))
+    (mini / "timeStamps.csv").write_text("Frame Number,Time Stamp (ms),Buffer Index\n"
+                                         + "".join(f"{i},{i * 50},0\n" for i in range(30)), encoding="utf-8")
+    (mini / "metaData.json").write_text(json.dumps({"frameRate": 20}), encoding="utf-8")
+    (mini.parent / "metaData.json").write_text(json.dumps(
+        {"recordingStartTime": {"msecSinceEpoch": 1728989165178 + 2 * 3600_000}}), encoding="utf-8")
+
+
+def _split_line(view):
+    return next(x for x in view.rows[0].anomalies if x.code == "split_recording")
+
+
+def test_confirmation_covers_only_the_stitch_it_confirmed(make_series, make_avi, tmp_path):
+    """I3: a part added after the confirmation (moved in via Explorer) makes the stitch unreviewed again."""
+    paths, sid = _split_series(make_series, tmp_path)
+    actions.confirm_stitch(paths, [sid], "ann")
+    _third_part(make_avi, paths.root, sid)
+    view = actions.rescan(paths)
+    assert view.rows[0].n_parts == 3 and not _split_line(view).reviewed and view.rows[0].level == "warning"
+    res = actions.confirm_stitch(paths, [sid], "bob")
+    assert res.ok == [sid] and not res.warnings
+    assert _split_line(actions.rescan(paths)).reviewed
+
+
+def test_old_true_confirmation_asks_again(make_series, tmp_path):
+    """I3: a decision written before the fingerprint ("true") does not say which stitch it saw."""
+    from bearmind.registry import Decision
+    paths, sid = _split_series(make_series, tmp_path)
+    update_record(paths, sid, lambda r: r.decisions.append(Decision("stitch_confirmed", "true", "ann", "t")))
+    assert not _split_line(actions.rescan(paths)).reviewed
+    res = actions.confirm_stitch(paths, [sid], "bob")
+    assert res.ok == [sid] and not res.warnings
 
 
 def test_confirm_stitch_twice_warns_without_new_decision(make_series, tmp_path):

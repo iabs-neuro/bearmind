@@ -348,6 +348,19 @@ def latest_decision(rec: SessionRecord, what: str):
 _latest_decision = latest_decision  # old name
 
 
+def stitch_fingerprint(parts) -> str:
+    """What a stitch confirmation is about: the part folders in stitch order. A part added, removed or put in
+    another order gives another value, so the old confirmation does not cover the new stitch."""
+    return "|".join(p.folder for p in parts)
+
+
+def stitch_confirmed(rec: SessionRecord) -> bool:
+    """A person confirmed exactly the current stitch. A decision written before the fingerprint ("true") does not
+    say which stitch it saw, so it does not count and the person confirms again."""
+    fingerprint = stitch_fingerprint(rec.parts)
+    return any(d.what == "stitch_confirmed" and d.value == fingerprint for d in rec.decisions)
+
+
 NO_FPS_MESSAGE = "no frame rate: the stages need it (MC video rate, CNMF-E fr); the session stays excluded"
 NOT_FOUND_MESSAGE = "session folder not found by the last scan"
 

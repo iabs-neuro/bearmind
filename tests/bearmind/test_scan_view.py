@@ -2,8 +2,8 @@ import re
 
 from bearmind import monitor, scan, scan_view
 from bearmind.paths import SeriesPaths
-from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, save_record,
-                               update_record)
+from bearmind.registry import (STAGES, Anomaly, Decision, RawPart, SessionRecord, StageRecord, load_record,
+                               save_record, update_record)
 
 CYRILLIC = re.compile("[Ѐ-ӿ]")
 
@@ -76,7 +76,7 @@ def test_split_recording_reviewed(make_series, tmp_path):
     line = next(x for x in row.anomalies if x.code == "split_recording")
     assert row.level == "warning" and line.short.startswith("split recording: 2 parts, pause")
     assert not line.reviewed
-    _decide(paths, row.sid, "stitch_confirmed", "true")
+    _decide(paths, row.sid, "stitch_confirmed", scan.stitch_fingerprint(load_record(paths, row.sid).parts))
     v = scan_view.scan_view(paths)
     assert next(x for x in v.rows[0].anomalies if x.code == "split_recording").reviewed
     assert v.rows[0].level == "ok" and v.n_problems == 0
@@ -191,8 +191,9 @@ def test_not_scanned(tmp_path):
 def _three_part_line(n_gaps, max_gap_ms):
     split = Anomaly("split_recording", "warning", "split", data={"gaps_s": [60.0, 30.0]})
     drops = Anomaly("dropped_frames", "warning", "drops", data={"n_gaps": n_gaps, "max_gap_ms": max_gap_ms})
-    rec = _rec(anomalies=[split, drops], decisions=[Decision("stitch_confirmed", "true", "me", "t")])
+    rec = _rec(anomalies=[split, drops])
     rec.parts = rec.parts * 3
+    rec.decisions = [Decision("stitch_confirmed", scan.stitch_fingerprint(rec.parts), "me", "t")]
     return next(x for x in scan_view._row(rec).anomalies if x.code == "dropped_frames")
 
 

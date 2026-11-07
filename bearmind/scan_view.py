@@ -34,7 +34,7 @@ class AnomalyLine:
     text: str
     short: str
     auto_fixed: bool
-    reviewed: bool
+    reviewed: bool      # split_recording (and its pause) whose current stitch a person confirmed
 
 
 @dataclass
@@ -133,7 +133,7 @@ def _is_split_pause(a, gaps: list[float]) -> bool:
 
 def _row(rec: SessionRecord) -> ScanRow:
     n_parts = len(rec.parts)
-    confirmed = any(d.what == "stitch_confirmed" and d.value == "true" for d in rec.decisions)
+    confirmed = scan.stitch_confirmed(rec)
     mine = [a for a in rec.anomalies if not a.data.get("stage")]
     split = next((a for a in mine if a.code == "split_recording" and a.level == "warning"), None)
     gaps = [g for g in (split.data.get("gaps_s", []) if split else []) if g is not None]

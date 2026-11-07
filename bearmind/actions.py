@@ -239,15 +239,16 @@ def accept_mismatch(paths, sids, who: str) -> ActionResult:
 
 def confirm_stitch(paths, sids, who: str) -> ActionResult:
     """Mark the stitch of a split recording as reviewed (only for the warning level: an error-level split
-    cannot be stitched, so there is nothing to confirm). A stitch that is already confirmed gets the warning
-    already_confirmed and no second decision."""
+    cannot be stitched, so there is nothing to confirm). The decision's value is the stitch it confirms
+    (scan.stitch_fingerprint), so a part added or removed later needs a new confirmation. A stitch that is
+    already confirmed gets the warning already_confirmed and no second decision."""
     recs = _records(paths)
     sids = list(sids)
     check_sids(recs, sids)
     res = ActionResult()
     todo = []
     for sid in sids:
-        if any(d.what == "stitch_confirmed" and d.value == "true" for d in recs[sid].decisions):
+        if scan.stitch_confirmed(recs[sid]):
             res.warnings.append((sid, "already_confirmed"))
         elif any(a.code == "split_recording" and a.level == "warning" and not a.data.get("stage")
                for a in recs[sid].anomalies):
@@ -258,7 +259,7 @@ def confirm_stitch(paths, sids, who: str) -> ActionResult:
     now = datetime.now().isoformat(timespec="milliseconds")
     for sid in todo:
         registry.update_record(paths, sid, lambda rec: rec.decisions.append(
-            Decision("stitch_confirmed", "true", who, now)))
+            Decision("stitch_confirmed", scan.stitch_fingerprint(rec.parts), who, now)))
         res.ok.append(sid)
     return res
 
