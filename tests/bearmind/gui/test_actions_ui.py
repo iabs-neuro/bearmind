@@ -208,6 +208,81 @@ def test_warnings_in_message(qapp, series4):
     assert any(S4 in s and "excluded" in s for s in ui.shown)
 
 
+def test_confirmed_set_is_the_written_set(qapp, series4):
+    ui = Ui(series4)
+    # a session starts failing between the confirmation and the write: it must not be reset
+    def confirm(text):
+        ui.asked.append(text)
+        registry.update_record(series4, S3, lambda r: r.stages.update({"mc": StageRecord(State.FAILED, error="x")}))
+        return True
+
+    ui.tab._confirm = confirm
+    ui.tab.run_action("retry_failed")
+    assert S2 in ui.asked[0] and S3 not in ui.asked[0]
+    assert registry.load_record(series4, S3).stages["mc"].state is State.FAILED
+    assert registry.load_record(series4, S2).stages["cnmf"].state is State.PENDING
+
+
+def test_confirmed_set_is_the_written_set_inspection_all(qapp, series4):
+    registry.update_record(series4, S3, lambda r: r.stages.update({"cnmf": done(n_components=50)}))
+    ui = Ui(series4)
+
+    def confirm(text):
+        ui.asked.append(text)
+        registry.update_record(series4, S1, lambda r: r.stages.update({"cnmf": done(n_components=9)}))
+        return True
+
+    ui.tab._confirm = confirm
+    ui.tab.run_action("inspection_not_needed_all")
+    assert S3 in ui.asked[0] and S1 not in ui.asked[0]
+    assert not any(v == "not_needed" for _, v in _decisions(series4, S1))
+
+
+def test_confirmation_grammar(qapp, series4):
+    ui = Ui(series4, answer=False)
+    ui.select(S1)
+    ui.tab.run_action("exclude")
+    ui.select(S1, S3)
+    ui.tab.run_action("exclude")
+    assert ui.asked[0] == f"Session {S1} will be excluded: the runner skips it until you include it again."
+    assert ui.asked[1] == (f"Sessions {S1}, {S3} will be excluded: the runner skips them until you include "
+                           "them again.")
+    ui.select(S1)
+    ui.tab.run_action("accept_mismatch")
+    assert "the session is used as it is" in ui.asked[2]
+
+
+def test_retry_button_unknown_session_does_not_crash(qapp, series4):
+    ui = Ui(series4)
+    btn = _retry_buttons(ui.tab)[0]
+    (series4.registry_file(S2)).unlink()
+    btn.click()
+    assert "not in the series" in ui.status[-1]
+
+
+def test_refresh_repeat_with_other_error_logs_traceback(qapp, series4, monkeypatch, caplog):
+    t = MonitorTab(series4.root, report=lambda *e: None)
+    errs = iter([RuntimeError("a"), RuntimeError("a"), ValueError("b")])
+
+    def boom(*a, **k):
+        raise next(errs)
+
+    monkeypatch.setattr(monitor, "series_view", boom)
+    with caplog.at_level("WARNING", logger="bearmind"):
+        t.refresh()
+        t.refresh()
+        t.refresh()
+    assert any(r.exc_info and r.exc_info[0] is ValueError for r in caplog.records)
+    assert not any(r.exc_info and r.exc_info[0] is RuntimeError for r in caplog.records)
+
+
+def test_programming_error_in_refresh_fails_the_test(qapp, series4, monkeypatch):
+    t = MonitorTab(series4.root)
+    monkeypatch.setattr(monitor, "series_view", lambda *a, **k: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        t.refresh()
+
+
 def test_export_csv(qapp, series4, tmp_path):
     dest = tmp_path / "out" / "s.csv"
     dest.parent.mkdir()
@@ -215,6 +290,18 @@ def test_export_csv(qapp, series4, tmp_path):
     ui.tab.run_action("export_csv")
     assert dest.is_file() and "sid" in dest.read_text(encoding="utf-8").splitlines()[0]
     assert str(dest) in ui.status[-1]
+
+
+def test_export_overwrite_is_not_asked_twice_and_refusal_writes_nothing(qapp, series4, tmp_path):
+    dest = tmp_path / "s.csv"
+    dest.write_text("old", encoding="utf-8")
+    ui = Ui(series4, answer=False, file=dest)
+    ui.tab.run_action("export_csv")  # the dialog accepted: no second question
+    assert ui.asked == [] and dest.read_text(encoding="utf-8") != "old"
+    dest.write_text("old", encoding="utf-8")
+    t = MonitorTab(series4.root, choose_file=lambda d: None)
+    t.run_action("export_csv")  # the dialog was refused
+    assert dest.read_text(encoding="utf-8") == "old"
 
 
 def test_export_default_name(qapp, series4):
@@ -272,6 +359,21 @@ def test_log_poll_waits_for_the_end_of_a_line(qapp, tmp_path):
         fh.write("o\n")
     v.poll()
     assert v.toPlainText().splitlines() == ["one", "two"]
+
+
+def test_log_poll_crlf_has_no_empty_lines(qapp, tmp_path):
+    f = tmp_path / "a.log"
+    f.write_bytes(b"one\r\n")
+    v = LogView()
+    v.show_log(f)
+    with open(f, "ab") as fh:
+        fh.write(b"two\r\nthree\r\n")
+    v.poll()
+    with open(f, "ab") as fh:
+        fh.write(b"four\r\n")
+    v.poll()
+    assert v.toPlainText() == "one\ntwo\nthree\nfour"
+    assert "\r" not in v.toPlainText()
 
 
 def test_log_truncated_rereads(qapp, tmp_path):

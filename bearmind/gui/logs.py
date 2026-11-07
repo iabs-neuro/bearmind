@@ -73,7 +73,8 @@ class LogView(QPlainTextEdit):
         self._pos += cut
         self._partial = data[cut:]
         if cut:
-            text = data[:cut - 1].decode("utf-8", "replace").replace("\r\n", "\n")
+            # Python logging writes CRLF on Windows; a lone \r would show as an extra empty line
+            text = data[:cut].decode("utf-8", "replace").replace("\r\n", "\n").rstrip("\n")
             self.appendPlainText(text)
             self._to_end()
 

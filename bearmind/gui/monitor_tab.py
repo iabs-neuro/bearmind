@@ -166,7 +166,7 @@ class MonitorTab(QWidget):
         self._message = message or self._show_message
         # the window installs its exception report as sys.excepthook
         self._report = report or (lambda *exc: sys.excepthook(*exc))
-        self._refresh_failed = False
+        self._refresh_failed = None  # (type, message) of the failure reported last, until a refresh succeeds
         self.last_status = ""
         self._clock = time.monotonic
         self._starting_since: float | None = None
@@ -328,18 +328,20 @@ class MonitorTab(QWidget):
             return self._export_csv()
         who = actions.current_user()
         selected = self.selected_sids()
-        if name in ("retry_failed", "inspection_not_needed_all"):
-            # None means "all of them" for actions; the confirmation names who that is
-            sids = selected or None if name == "retry_failed" else None
-            target = sids or (actions.failed_sids(self.paths) if name == "retry_failed"
-                              else actions.waiting_gate_sids(self.paths))
-            if not target:
-                return self._say("No failed sessions." if name == "retry_failed"
-                                 else "No sessions are waiting for manual inspection.")
+        if name == "retry_failed":
+            sids = selected if selected else actions.failed_sids(self.paths)
+            if not sids:
+                return self._say("No failed sessions.")
+        elif name == "inspection_not_needed_all":
+            sids = actions.waiting_gate_sids(self.paths)
+            if not sids:
+                return self._say("No sessions are waiting for manual inspection.")
         else:
-            sids = target = selected
+            sids = selected
             if not sids:
                 return self._say("Select sessions in the table first.")
+        # the sessions named in the confirmation are the ones written, even if the batch moves on meanwhile
+        target = sids
         stage = None
         if name == "rerun_from":
             stage = self._choose_stage()
@@ -355,7 +357,7 @@ class MonitorTab(QWidget):
                 "rerun_from": lambda: actions.rerun_from(self.paths, sids, stage, who),
                 "retry_failed": lambda: actions.retry_failed(self.paths, sids, who),
                 "inspection_not_needed": lambda: actions.gate_not_needed(self.paths, sids, who),
-                "inspection_not_needed_all": lambda: actions.gate_not_needed(self.paths, None, who),
+                "inspection_not_needed_all": lambda: actions.gate_not_needed(self.paths, sids, who),
             }[name]()
         except actions.UnknownSession as e:
             self._message("BEARMiND", f"Not in the series any more: {', '.join(e.unknown)}")
@@ -366,12 +368,14 @@ class MonitorTab(QWidget):
     @staticmethod
     def _ask_text(name: str, sids, stage) -> str:
         who = _named(sids)
+        one = len(list(sids)) == 1
+        it, they, is_are = ("it", "it", "is") if one else ("them", "they", "are")
         title = monitor.STAGE_TITLE.get(stage, stage)
         return {
-            "exclude": f"{who} will be excluded: the runner skips them until you include them again.",
+            "exclude": f"{who} will be excluded: the runner skips {it} until you include {it} again.",
             "include": f"{who} will be included in the batch again.",
-            "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: the sessions are "
-                               "used as they are.",
+            "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: "
+                               f"{'the session is' if one else 'the sessions are'} used as {they} {is_are}.",
             "rerun_from": f"{who} will be recomputed from {title}. Old results stay until the new ones are ready.",
             "retry_failed": f"The failed stage and the later ones of {who} will be reset and run again. "
                             "Old results stay until the new ones are ready.",
@@ -390,6 +394,9 @@ class MonitorTab(QWidget):
             self._say(f"{done} {_plural(len(res.ok))}: {', '.join(res.ok)}")
         else:
             self._say("Nothing was changed.")
+        self._show_problems(res)
+
+    def _show_problems(self, res) -> None:
         lines = [f"{sid}: {actions.failure_text(code, detail)}" for sid, (code, detail) in res.failed.items()]
         lines += [_WARNING_TEXT.get(code, "{sid}: " + code).format(sid=sid) for sid, code in res.warnings]
         if lines:
@@ -400,8 +407,7 @@ class MonitorTab(QWidget):
         dest = self._choose_file(default)
         if dest is None:
             return
-        if Path(dest).exists() and not self._confirm(f"{dest} exists and will be replaced."):
-            return
+        # the save dialog (with its own overwrite prompt) is the confirmation
         try:
             actions.export_summary(self.paths, Path(dest))
         except OSError as e:  # typically the file is open in Excel
@@ -410,12 +416,18 @@ class MonitorTab(QWidget):
         self._say(f"Summary saved: {dest}")
 
     def _retry(self, sid: str, stage: str) -> None:
-        res = actions.retry_failed(self.paths, [sid], actions.current_user())
-        if res.failed:
-            self._report_result("retry_failed", res, None)
-        else:
+        try:
+            res = actions.retry_failed(self.paths, [sid], actions.current_user())
+        except actions.UnknownSession:
+            self._say(f"{sid} is not in the series any more.")
+            self.refresh()
+            return
+        if res.ok:
             text = f"{sid}: reset from {monitor.STAGE_TITLE.get(stage, stage)}"
             self._say(text if self._alive else text + ". Start the batch to run it")
+        else:
+            self._say("Nothing was changed.")
+        self._show_problems(res)
         self.refresh()
 
     def _on_start(self) -> None:
@@ -452,14 +464,19 @@ class MonitorTab(QWidget):
             self._refresh(now)
         except Exception as e:
             first = (str(e).splitlines() or [""])[0]
-            if self._refresh_failed:
-                log.warning("monitor refresh failed again: %s", first)
-                self._say(f"Refresh failed: {type(e).__name__}: {first}")
-            else:
-                self._refresh_failed = True
+            kind = (type(e), str(e))
+            if self._refresh_failed is None:
+                self._refresh_failed = kind
                 self._report(type(e), e, e.__traceback__)
+            else:
+                if kind == self._refresh_failed:
+                    log.warning("monitor refresh failed again: %s", first)
+                else:  # a different failure: keep its traceback in the log, still no dialog
+                    self._refresh_failed = kind
+                    log.error("monitor refresh failed differently", exc_info=(type(e), e, e.__traceback__))
+                self._say(f"Refresh failed: {type(e).__name__}: {first}")
         else:
-            self._refresh_failed = False
+            self._refresh_failed = None
 
     def _refresh(self, now=None) -> None:
         t0 = time.perf_counter()
