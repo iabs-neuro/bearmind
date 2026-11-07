@@ -207,25 +207,29 @@ def write_ffv1(chunks: Iterable[np.ndarray], path: Path, fps: float) -> int:
 
 
 def write_preview_mp4(chunks: Iterable[np.ndarray], path: Path, fps: float, crf: int = 23,
-                      speed: int = 4, tbin: int = 2) -> None:
-    """H.264 preview. Each output frame is the mean of `tbin` input frames; playback is `speed` x faster."""
+                      speed: int = 4, tbin: int = 2, ssub: int = 1) -> None:
+    """H.264 preview. Each output frame is the mean of `tbin` input frames, shrunk by averaging `ssub` x `ssub`
+    pixel blocks (1 = full size); playback is `speed` x faster."""
     path = Path(path)
     tmp = path.with_suffix(".partial.mp4")
     try:
-        _write_mp4(chunks, tmp, fps, crf, speed, tbin)
+        _write_mp4(chunks, tmp, fps, crf, speed, tbin, ssub)
         fileio.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
 
 
-def _write_mp4(chunks, path, fps, crf, speed, tbin) -> None:
+def _write_mp4(chunks, path, fps, crf, speed, tbin, ssub=1) -> None:
     out_rate = _rate(fps * speed / tbin)
     with av.open(str(path), "w", format="mp4") as c:
         s = None
 
         def emit(mean: np.ndarray) -> None:
             nonlocal s
+            if ssub > 1:  # blocks that do not fill ssub x ssub are dropped, as the even-size crop below does
+                h0, w0 = mean.shape[0] // ssub * ssub, mean.shape[1] // ssub * ssub
+                mean = mean[:h0, :w0].reshape(h0 // ssub, ssub, w0 // ssub, ssub).mean((1, 3))
             h, w = mean.shape
             if s is None:
                 s = c.add_stream("libx264", rate=out_rate)

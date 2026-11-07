@@ -95,3 +95,50 @@ def test_dff_video_written(tmp_path):
     mov, _ = synthetic_movie(T=200)
     out = bm_qc.make_dff_video(mov, out_path=str(tmp_path / 'v.mp4'), fps=20, f0_window_s=5, verbose=False)
     assert os.path.getsize(out) > 0
+
+
+def test_block_mean():
+    a = np.arange(35, dtype=np.float32).reshape(5, 7)
+    b = bm_qc.block_mean(a, 2)
+    assert b.shape == (2, 3) and b[0, 0] == a[:2, :2].mean() and b[1, 2] == a[2:4, 4:6].mean()
+    assert np.array_equal(bm_qc.block_mean(a, 1), a)
+
+
+def _video_frame_shapes(monkeypatch):
+    """Records the (h, w) of the first frame each _VideoWriter receives, while still writing."""
+    seen = []
+    orig = bm_qc._VideoWriter
+
+    class Spy(orig):
+        def __init__(self, path, size_wh, fps, crf=18):
+            seen.append((size_wh[1], size_wh[0]))
+            super().__init__(path, size_wh, fps, crf=crf)
+
+    monkeypatch.setattr(bm_qc, '_VideoWriter', Spy)
+    return seen
+
+
+def test_dff_video_ssub(tmp_path, monkeypatch):
+    seen = _video_frame_shapes(monkeypatch)
+    mov, _ = synthetic_movie(T=40, d=(64, 80))
+    for ssub in (1, 2):
+        bm_qc.make_dff_video(mov, out_path=str(tmp_path / f'v{ssub}.mp4'), fps=20, f0_window_s=5,
+                             ssub=ssub, verbose=False)
+    assert seen == [(64, 3 * 80 + 4), (32, 3 * 40 + 4)]
+
+
+def test_cnmf_qc_video_ssub(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import scipy.sparse as sp
+    seen = _video_frame_shapes(monkeypatch)
+    mov, centers, fps, traces, bg = synthetic_movie(T=600, n_cells=5, amp=60., seed=3, return_model=True)
+    T = mov.shape[0]
+    A = sp.csc_matrix(np.stack([f.ravel(order='F') for f in fps], 1))
+    est = SimpleNamespace(A=A, C=traces.astype(np.float32), W=None, b0=None,
+                          b=bg.ravel(order='F')[:, None], f=np.ones((1, T)), idx_components=np.arange(4),
+                          cnmf_dict={'gSig': [3, 3], 'gSiz': [13, 13], 'min_corr': 0.8, 'min_pnr': 6})
+    for ssub in (1, 2):
+        out = bm_qc.cnmf_qc(est, movie=mov, out_base=str(tmp_path / f'qc{ssub}'), fps=20, tmp_dir=str(tmp_path),
+                            residual_maps=False, video_ssub=ssub, verbose=False)
+        assert os.path.getsize(out['video']) > 0
+    assert seen == [(130, 162), (66, 82)]

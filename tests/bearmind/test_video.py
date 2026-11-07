@@ -249,3 +249,19 @@ def test_mc_shifts_written_through_partial(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         mc_stage._save_shifts(out, np.ones((5, 2), np.float32))
     assert not out.exists() and not list(tmp_path.glob("*.partial*"))
+
+
+def _decode(path):
+    import av
+    with av.open(str(path)) as c:
+        return np.stack([f.to_ndarray(format="gray") for f in c.decode(c.streams.video[0])])
+
+
+def test_preview_mp4_ssub_halves_the_frame(tmp_path):
+    frames = np.full((10, 64, 80), 120, np.uint8)
+    write_preview_mp4([frames], tmp_path / "a.mp4", 20.0, tbin=2, ssub=2)
+    got = _decode(tmp_path / "a.mp4")
+    assert got.shape[1:] == (32, 40) and len(got) == 5
+    assert abs(float(got.mean()) - 120) <= 2
+    write_preview_mp4([frames], tmp_path / "b.mp4", 20.0, tbin=2)
+    assert _decode(tmp_path / "b.mp4").shape[1:] == (64, 80)

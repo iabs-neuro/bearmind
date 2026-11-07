@@ -47,6 +47,15 @@ def open_movie(movie):
     return movie
 
 
+def block_mean(img, s):
+    """Mean of s x s pixel blocks of a 2-D image (float32); rows/columns that do not fill a block are dropped."""
+    img = np.asarray(img, dtype=np.float32)
+    if s == 1:
+        return img
+    h, w = img.shape[0] // s * s, img.shape[1] // s * s
+    return img[:h, :w].reshape(h // s, s, w // s, s).mean((1, 3), dtype=np.float32)
+
+
 def _tsub_mean(block, tsub):
     """Temporal block averaging, same as caiman downscale (last incomplete block averaged over existing frames)."""
     block = np.asarray(block, dtype=np.float32)
@@ -632,7 +641,7 @@ class _ModelChunker:
 def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted',
             make_video=True, residual_maps=True, compare_raw_maps=True,
             frame_range=None, video_tbin=2, video_speed=2, gain_res=3, crf=20,
-            tsub=2, chunk=500, tmp_dir=None, max_mem_gb=4, verbose=True):
+            tsub=2, chunk=500, tmp_dir=None, max_mem_gb=4, verbose=True, video_ssub=1):
     """
     Visual and quantitative check of a CNMF-E result.
 
@@ -653,6 +662,7 @@ def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted
         components: 'accepted' (estimates.idx_components), 'all', or an index list
         frame_range: (start, stop) frames for the video (maps always use the whole recording)
         video_tbin: frames averaged per video frame; video_speed: playback speed relative to real time
+        video_ssub: pixels per side averaged per video pixel (1 = full size); residual maps are not affected
         tsub: temporal averaging for residual maps (use the CNMF value)
     """
     if isinstance(estimates, (str, os.PathLike)):
@@ -696,6 +706,7 @@ def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted
     res_lim = sig_hi / gain_res
     lut_gray, lut_sig, lut_res = _lut('gray'), _lut('inferno'), _lut('RdBu_r')
 
+    conts_v = conts if video_ssub == 1 else [(c / video_ssub).astype(np.int32) for c in conts]
     writer = None
     if make_video:
         vid_path = out_base + '_qc.mp4'
@@ -718,11 +729,12 @@ def cnmf_qc(estimates, movie=None, out_base=None, fps=None, components='accepted
             a, b_ = max(t0, span[0]) - t0, min(t1, span[1]) - t0
             Yb, YBb, ACb, Rb = (_tsub_mean(x[a:b_], video_tbin) for x in (Y, Y - B, AC, R))
             for k in range(Yb.shape[0]):
-                res_rgb = _to_rgb(Rb[k], -res_lim, res_lim, lut_res)
-                cv2.drawContours(res_rgb, conts, -1, (90, 90, 90), 1)
-                panels = [_label(_to_rgb(Yb[k], raw_lo, raw_hi, lut_gray), 'raw'),
-                          _label(_to_rgb(YBb[k], 0, sig_hi, lut_sig), 'raw - background'),
-                          _label(_to_rgb(ACb[k], 0, sig_hi, lut_sig), f'A*C ({len(model.sel)} comps)'),
+                res_rgb = _to_rgb(block_mean(Rb[k], video_ssub), -res_lim, res_lim, lut_res)
+                cv2.drawContours(res_rgb, conts_v, -1, (90, 90, 90), 1)
+                panels = [_label(_to_rgb(block_mean(Yb[k], video_ssub), raw_lo, raw_hi, lut_gray), 'raw'),
+                          _label(_to_rgb(block_mean(YBb[k], video_ssub), 0, sig_hi, lut_sig), 'raw - background'),
+                          _label(_to_rgb(block_mean(ACb[k], video_ssub), 0, sig_hi, lut_sig),
+                                 f'A*C ({len(model.sel)} comps)'),
                           _label(res_rgb, f'residual x{gain_res}')]
                 frame = _grid(panels, 2)
                 t_sec = (max(t0, span[0]) + k * video_tbin) / fps
@@ -885,7 +897,7 @@ def compute_f0(movie, fps, f0_window_s=60, f0_percentile=10, f0_bin_s=1.0, f0_ss
 
 def make_dff_video(movie, out_path=None, fps=20, panels=('raw', 'dff', 'hp'), gSig=4,
                    f0_window_s=60, f0_percentile=10, smooth_sigma=1.0,
-                   tbin=2, speed=2, frame_range=None, dff_max=None, chunk=1000, crf=20, verbose=True):
+                   tbin=2, speed=2, frame_range=None, dff_max=None, chunk=1000, crf=20, verbose=True, ssub=1):
     """
     Video for visual inspection of a (motion corrected) movie. Panels, side by side:
         'raw' : movie as is
@@ -900,6 +912,7 @@ def make_dff_video(movie, out_path=None, fps=20, panels=('raw', 'dff', 'hp'), gS
         fps: real imaging rate
         tbin: frames averaged per video frame (noise reduction); speed: playback speed vs real time
         dff_max: upper limit of the dF/F color scale (default: 99.7th percentile of sampled frames)
+        ssub: pixels per side averaged per video pixel (1 = full size); applied after the panels are computed
     """
     mov = open_movie(movie)
     T, d1, d2 = mov.shape
@@ -933,7 +946,7 @@ def make_dff_video(movie, out_path=None, fps=20, panels=('raw', 'dff', 'hp'), gS
             out['dff'] = dff
         if 'hp' in panels:
             out['hp'] = cv2.filter2D(frame, -1, psf, borderType=1)
-        return out
+        return {p: block_mean(img, ssub) for p, img in out.items()}
 
     # fixed scales from sampled frames
     samples = {p: [] for p in panels}

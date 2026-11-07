@@ -101,9 +101,11 @@ runner:
   # a wait on stuck I/O uses no CPU.
   stall_timeout_min: 30
 preview:
-  crf: 23
+  enabled: false   # the checkbox: MC previews and the CNMF-E QC video
+  tbin: 2          # frames averaged per preview frame
+  ssub: 1          # pixels per side averaged per preview pixel (1 = full size)
+  crf: 23          # crf and speed: raw and mc previews; the dF/F and QC videos keep their own
   speed: 4
-  tbin: 2
 # Monitor window model (not stage parameters). eta_s_per_frame: seconds per frame of each stage, used for the
 # time-left estimate until the series has two finished runs of that stage (medians of the tables in
 # docs/superpowers/specs/2026-11-01-e2e-report.md: crop, mc and thresholds from series1; cnmf, autoinspect and
