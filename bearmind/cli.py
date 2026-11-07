@@ -13,7 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import actions, launcher, provenance, registry, runner, scan
+from bearmind import actions, launcher, monitor, provenance, registry, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
 from bearmind.stages import gate
@@ -170,7 +170,11 @@ def cmd_run(args) -> int:
 
 
 def cmd_stop(args) -> int:
-    launcher.request_stop(_series(args.series))
+    paths = _series(args.series)
+    if not monitor.runner_state(paths).alive:
+        _say("[WARN] no runner is running for this series")
+        return OK
+    launcher.request_stop(paths)
     _say("[OK] stop requested; the runner stops before its next stage")
     return OK
 
@@ -182,7 +186,7 @@ def _report_run(paths, res) -> int:
     waiting = sorted({sid for sid, _, _ in st.waiting})
     unrecorded = res.get("not_recorded") or []
     bad = bool(st.failed or st.problems or st.finalize_failed or unrecorded)
-    _say(("[FAILED] " if bad else "[OK] ")
+    _say(("[FAILED] " if bad else "[OK] ") + ("stopped on request; " if res.get("stopped") else "")
          + f"this run: done {res['done']}, failed {res['failed']}, skipped {res['skipped']} | series now: "
          + f"failed {len(st.failed)}, waiting for a person {len(waiting)}, cannot be scheduled {len(st.problems)}, "
          + f"excluded {len(st.excluded)}")

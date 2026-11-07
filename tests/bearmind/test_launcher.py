@@ -104,10 +104,61 @@ def test_start_detached_retries_without_breakaway(tmp_path, monkeypatch):
     pid = launcher.start_detached(tmp_path, cmd=[sys.executable, "-c", "pass"])
     _wait_exit(pid)
     assert len(flags) == 2 and not flags[1] & subprocess.CREATE_BREAKAWAY_FROM_JOB
-    assert flags[1] & subprocess.DETACHED_PROCESS
+    assert flags[1] & subprocess.CREATE_NO_WINDOW and not flags[1] & subprocess.DETACHED_PROCESS
 
 
 def test_request_stop_writes_file(tmp_path):
     paths = SeriesPaths(tmp_path)
     launcher.request_stop(paths)
     assert paths.stop_request.is_file()
+
+
+def test_detached_child_sees_environment(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENBLAS_CORETYPE", raising=False)
+    out = tmp_path / "env.json"
+    code = ("import os, sys, json; open(sys.argv[1], 'w', encoding='utf-8').write(json.dumps("
+            "{k: os.environ.get(k) for k in ('PYTHONPATH', 'OPENBLAS_CORETYPE', 'PYTHONUTF8')} | {'cwd': os.getcwd()}))")
+    pid = launcher.start_detached(tmp_path / "s", cmd=[sys.executable, "-c", code, str(out)])
+    try:
+        assert _wait_for(out)
+        _wait_exit(pid)
+    finally:
+        _kill(pid)
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert got == {"PYTHONPATH": str(REPO), "OPENBLAS_CORETYPE": "Sandybridge", "PYTHONUTF8": "1",
+                   "cwd": str(REPO)}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows consoles")
+def test_children_of_detached_runner_get_no_visible_console(tmp_path):
+    """DETACHED_PROCESS would give every console child of the runner (stage processes, pool workers) a new\n    visible window; the runner has a hidden console instead, which they inherit."""
+    out = tmp_path / "console.json"
+    child = (
+        "import ctypes, json, sys\n"
+        "def f(path):\n"
+        "    k, u = ctypes.windll.kernel32, ctypes.windll.user32\n"
+        "    k.GetConsoleWindow.restype = ctypes.c_void_p\n"
+        "    u.IsWindowVisible.argtypes = [ctypes.c_void_p]\n"
+        "    h = k.GetConsoleWindow()\n"
+        "    open(path, 'w').write(json.dumps({'hwnd': h or 0, 'visible': bool(h and u.IsWindowVisible(h))}))\n"
+        "if __name__ == '__main__':\n"
+        "    import multiprocessing as mp\n"
+        "    p = mp.get_context('spawn').Process(target=f, args=(sys.argv[1],))\n"
+        "    p.start(); p.join()\n")
+    script = tmp_path / "parent.py"
+    script.write_text(child, encoding="utf-8")
+    pid = launcher.start_detached(tmp_path / "s", cmd=[sys.executable, str(script), str(out)])
+    try:
+        assert _wait_for(out, 60)
+        _wait_exit(pid, 60)
+    finally:
+        _kill(pid)
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert got["visible"] is False, got
+
+
+def _kill(pid):
+    try:
+        psutil.Process(pid).kill()
+    except psutil.NoSuchProcess:
+        pass

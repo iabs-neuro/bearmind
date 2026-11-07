@@ -11,7 +11,7 @@ from pathlib import Path
 
 import psutil
 
-from bearmind import config, registry
+from bearmind import config, fileio, registry
 from bearmind.registry import STAGES, SessionRecord, StageRecord, State
 from bearmind.runner import STAGE_KEYS, wait_reason
 
@@ -172,7 +172,7 @@ def _iso(s):
 
 def _read_json(f: Path):
     try:
-        d = json.loads(f.read_text(encoding="utf-8"))
+        d = json.loads(fileio.read_text(f))  # retried: replaced while read
         return d if isinstance(d, dict) else None
     except (OSError, ValueError):
         return None

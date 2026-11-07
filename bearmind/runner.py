@@ -1116,6 +1116,18 @@ def _skip(tried, not_started, records, once, poll_s) -> set:
     return skip | {k for k, t in not_started.items() if once or now - t < poll_s}
 
 
+def _clear_stop_request(paths, tries: int = 5) -> None:
+    """Remove stop.request; on Windows a monitor reading it at that moment makes the removal fail briefly."""
+    for i in range(tries):
+        try:
+            paths.stop_request.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
 def _sleep_unless_stopped(paths, seconds: float) -> None:
     """Sleep in slices of 1 s: a stop request ends a wait that lasts poll_s (30 s) within a second."""
     end = time.monotonic() + seconds
@@ -1246,7 +1258,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         log.info("run started: pid %d, until %s, sessions %s, once %s", os.getpid(), until or "export",
                  "all" if sids is None else ",".join(sids), once)
         # a request left by an earlier run (a killed runner never removed it) must not stop this one
-        paths.stop_request.unlink(missing_ok=True)
+        _clear_stop_request(paths)
         known = {r.sid for r in registry.all_records(paths)}
         for sid in sids or ():
             if sid not in known:
@@ -1254,7 +1266,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         _reset_running(paths)
         result = _loop(paths, run_)
         if result.get("stopped"):
-            paths.stop_request.unlink(missing_ok=True)
+            _clear_stop_request(paths)
         log.info("run finished: %s", ", ".join(f"{k} {v}" for k, v in result.items()))
         return result
     except BaseException as e:

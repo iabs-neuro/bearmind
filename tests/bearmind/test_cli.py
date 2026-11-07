@@ -583,7 +583,20 @@ def test_run_exit_code_for_a_stage_not_recorded(series, capsys, monkeypatch):
     assert f"{S2} mc: not started" in out
 
 
-def test_cli_stop(series, capsys):
+def test_cli_stop(series, capsys, monkeypatch):
+    monkeypatch.setattr(cli.monitor, "runner_state", lambda p: SimpleNamespace(alive=True))
     assert _main("stop", series.root) == 0
     assert "[OK] stop requested; the runner stops before its next stage" in capsys.readouterr().out
     assert series.paths.stop_request.is_file()
+
+
+def test_cli_stop_without_runner(series, capsys):
+    assert _main("stop", series.root) == 0
+    assert "[WARN] no runner is running for this series" in capsys.readouterr().out
+    assert not series.paths.stop_request.exists()
+
+
+def test_report_of_stopped_run(series, capsys):
+    res = {"done": 1, "failed": 0, "skipped": 0, "waiting": 0, "not_recorded": [], "stopped": True}
+    cli._report_run(series.paths, res)
+    assert "stopped on request; this run: done 1" in capsys.readouterr().out

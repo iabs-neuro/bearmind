@@ -161,7 +161,7 @@ def _states(paths, sid):
 
 def _heartbeat(paths):
     try:
-        return json.loads(paths.heartbeat.read_text(encoding="utf-8"))
+        return json.loads(fileio.read_text(paths.heartbeat))  # retried: the file is replaced while we read
     except (OSError, ValueError):
         return None
 
@@ -1429,3 +1429,26 @@ def test_stale_stop_request_removed_at_start(series):
     res = _run(s)
     assert "stopped" not in res and res["done"] == 21
     assert not s.paths.stop_request.exists()
+
+
+def test_sleep_unless_stopped_sleeps_full_time(tmp_path):
+    paths = SeriesPaths(tmp_path)
+    t0 = time.monotonic()
+    runner._sleep_unless_stopped(paths, 1.5)
+    assert 1.4 <= time.monotonic() - t0 < 2.5
+
+
+def test_stop_request_removal_retries_permission_error(series, monkeypatch):
+    s = series
+    s.stubs.hooks[(S1, "crop")] = lambda paths, rec, cfg: paths.stop_request.write_text("stop")
+    real, fails = Path.unlink, []
+
+    def unlink(self, *a, **k):
+        if self.name == "stop.request" and len(fails) < 2:
+            fails.append(1)
+            raise PermissionError("busy")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    res = _run(s)
+    assert res["stopped"] is True and len(fails) == 2 and not s.paths.stop_request.exists()

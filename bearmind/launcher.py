@@ -26,7 +26,9 @@ def runner_command(series_root: Path) -> list[str]:
 def _flags(breakaway: bool) -> int:
     if os.name != "nt":
         return 0
-    f = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    # CREATE_NO_WINDOW, not DETACHED_PROCESS: a runner without a console gives every console child (stage
+    # processes, CaImAn pool workers) a new visible window; with a hidden console they inherit it
+    f = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     return f | subprocess.CREATE_BREAKAWAY_FROM_JOB if breakaway else f
 
 
@@ -41,6 +43,7 @@ def start_detached(series_root: Path, cmd: list[str] | None = None) -> int:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(provenance.REPO_ROOT)
     env.setdefault("OPENBLAS_CORETYPE", "Sandybridge")
+    env["PYTHONUTF8"] = "1"  # series names the redirected (cp1251) console log cannot encode
     with open(paths.logs_dir / "runner_console.log", "ab") as log:
         # a job that forbids breakaway refuses the flag (OSError): start without it, still detached
         for breakaway in (True, False):
