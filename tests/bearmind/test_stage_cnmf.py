@@ -15,10 +15,11 @@ import bm_qc  # noqa: E402  (the stage imports it inside its functions)
 from bearmind import config  # noqa: E402
 from bearmind.config import load_defaults  # noqa: E402
 from bearmind.paths import SeriesPaths  # noqa: E402
-from bearmind.registry import SessionRecord  # noqa: E402
+from bearmind.registry import RawPart, SessionRecord, StageRecord, State  # noqa: E402
 from bearmind.stages import WaitingForInput  # noqa: E402
 from bearmind.stages import cnmf  # noqa: E402
-from bearmind.stages.cnmf import cnmf_params, patch_workers  # noqa: E402
+from bearmind.stages.cnmf import (BackgroundDownsample, background_downsample, cnmf_movie_shape,  # noqa: E402
+                                  cnmf_need_gib, cnmf_params, downsample_anomaly, patch_workers)
 from bearmind.video import VideoArray, decode_to_memmap, write_ffv1  # noqa: E402
 
 SID = "NOF_H01_1D"
@@ -213,6 +214,8 @@ def test_cnmf_on_synthetic(tmp_path, monkeypatch):
     assert m["gSig"] == 3 and m["min_corr"] == 0.8 and m["min_pnr"] == 10
     assert m["patch_workers"] == patch_workers(1000, 1, cfg) == 2  # n_cpus - 1
     assert "missed_cells" in m
+    assert m["ssub_B"] == 2 and m["need_gib"] > 0
+    assert not [a for a in res.anomalies if a.code == "cnmf_downsampled"]
 
     with open(paths.estimates(SID), "rb") as f:
         est = pickle.load(f)
@@ -285,4 +288,99 @@ def test_cnmf_fails_at_once_without_temp_space(tmp_path, monkeypatch):
     with pytest.raises(NotEnoughTempSpace) as e:
         cnmf.run(paths, rec, cfg)
     _check_space_error(e.value, paths.temp_dir(tmp_path / "tmp", SID), 159.2)
+    assert not (tmp_path / "tmp").exists()
+
+
+# --- automatic background downsampling (ssub_B) ---
+
+HOUR = 107107
+
+
+def _cfg(budget=152.96, ssub_B=2):
+    cfg = load_defaults(); cfg["cnmf"]["ssub_B"] = ssub_B
+    cfg["machine"] = {"n_cpus": 32, "ram_gb": 191.2, "cnmf_ram_budget_gb": budget}
+    return cfg
+
+
+def test_downsample_lnof_auto_box():
+    d = background_downsample(HOUR, 567, 520, _cfg())
+    assert (d.ssub_B, d.configured, d.fits) == (3, 2, True)
+    assert d.need_configured_gib == pytest.approx(156.5, abs=0.3) and d.need_gib == pytest.approx(74.0, abs=0.3)
+
+
+def test_downsample_keeps_the_config_when_it_fits():
+    for T, h, w in ((HOUR, 472, 436), (HOUR, 458, 458), (17861, 461, 608), (2000, 608, 608)):
+        assert background_downsample(T, h, w, _cfg()).ssub_B == 2
+
+
+def test_downsample_takes_the_weakest_that_fits():
+    assert background_downsample(HOUR, 567, 520, _cfg(budget=60)).ssub_B == 4     # 74.0 > 60 >= 45.1
+    assert background_downsample(HOUR, 608, 608, _cfg()).ssub_B == 3              # 194.2, 90.8
+
+
+def test_downsample_decision_table_of_the_plan():
+    # (box, need at 2, 3, 4, decision) for T = 107107, budget 152.96
+    table = {(567, 520): (156.5, 74.0, 45.1, 3), (472, 436): (111.7, 54.1, 33.9, 2),
+             (458, 458): (113.7, 55.0, 34.4, 2), (608, 608): (194.2, 90.8, 54.6, 3)}
+    for (h, w), (n2, n3, n4, s) in table.items():
+        for ss, n in ((2, n2), (3, n3), (4, n4)):
+            assert cnmf_need_gib(HOUR, h, w, ss, _cfg()) == pytest.approx(n, abs=0.3)
+        assert background_downsample(HOUR, h, w, _cfg()).ssub_B == s
+
+
+def test_downsample_none_fits():
+    d = background_downsample(HOUR, 567, 520, _cfg(budget=20))
+    assert (d.ssub_B, d.fits) == (4, False)
+
+
+def test_downsample_starts_at_the_configured_value():
+    assert background_downsample(HOUR, 458, 458, _cfg(ssub_B=3)).ssub_B == 3
+
+
+def test_cnmf_params_change_only_ssub_b():
+    cfg = _cfg(); cfg["cnmf"].update(gSig=4, min_corr=0.8, min_pnr=8)
+    base = cnmf_params(cfg, 29.75)
+    assert cnmf_params(cfg, 29.75, (2000, 608, 608)) == base          # sessions that fit: same params, same hash
+    big = cnmf_params(cfg, 29.75, (HOUR, 567, 520))
+    assert big["ssub_B"] == 3 and {k: v for k, v in big.items() if k != "ssub_B"} == {k: v for k, v in base.items() if k != "ssub_B"}
+
+
+def test_downsample_anomaly_levels():
+    cfg = _cfg()
+    assert downsample_anomaly(background_downsample(HOUR, 472, 436, cfg)) is None
+    a = downsample_anomaly(background_downsample(HOUR, 567, 520, cfg))
+    assert (a.code, a.level) == ("cnmf_downsampled", "warning")
+    assert "ssub_B 3 instead of 2" in a.message and a.data["need_gib"] == pytest.approx(74.0, abs=0.3)
+    a = downsample_anomaly(background_downsample(HOUR, 567, 520, _cfg(budget=20)))
+    assert (a.code, a.level) == ("cnmf_downsampled", "error")
+    assert "even at ssub_B 4" in a.message
+
+
+def _mc_rec(metrics, shape=(16, 20)):
+    part = RawPart(folder="x", chunks=[], n_frames=100, shape=shape, timestamps_file=None, ts_format=None,
+                   start_ms=None, metadata_file=None)
+    rec = _rec(100)
+    rec.parts = [part]
+    rec.stages = {"mc": StageRecord(state=State.DONE, metrics=metrics)}
+    return rec
+
+
+def test_movie_shape_from_the_mc_record():
+    assert cnmf_movie_shape(_mc_rec({"n_frames": HOUR, "crop": [0, 0, 567, 520]})) == (HOUR, 567, 520)
+    assert cnmf_movie_shape(_mc_rec({"n_frames": 90, "crop": None})) == (90, 16, 20)
+    assert cnmf_movie_shape(_mc_rec({"crop": None})) == (100, 16, 20)
+    assert cnmf_movie_shape(_rec(100)) is None
+    rec = _mc_rec({"n_frames": 5, "crop": None})
+    rec.stages["mc"].state = State.FAILED
+    assert cnmf_movie_shape(rec) is None
+
+
+def test_run_rejects_an_mc_video_that_differs_from_its_record(tmp_path):
+    mov, _ = synthetic_movie(T=50, n_cells=2)
+    paths, rec, cfg = _setup(tmp_path, mov)
+    rec.stages = {"mc": StageRecord(state=State.DONE, metrics={"n_frames": 60, "crop": None})}
+    rec.parts = [RawPart(folder="x", chunks=[], n_frames=60, shape=mov.shape[1:], timestamps_file=None,
+                         ts_format=None, start_ms=None, metadata_file=None)]
+    with pytest.raises(ValueError, match="run MC again"):
+        cnmf.run(paths, rec, cfg)
     assert not (tmp_path / "tmp").exists()

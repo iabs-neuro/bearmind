@@ -521,6 +521,33 @@ def test_stage_hash_inputs(series):
     assert runner.stage_hash(rec, "autoinspect", cfg, s.paths) != base["autoinspect"]
 
 
+def _hour_record(s):
+    rec = load_record(s.paths, S1)
+    rec.stages["mc"] = StageRecord(state=State.DONE, metrics={"n_frames": 107107, "crop": [0, 0, 567, 520]})
+    return rec
+
+
+def _budget(s, gb):
+    config.update_yaml(Path(os.environ["BEARMIND_HOME"]) / "machine.yaml", {"cnmf_ram_budget_gb": gb})
+    return config.resolve(s.paths, sid=S1)
+
+
+def test_cnmf_stage_params_take_the_downsampling(series):
+    rec = _hour_record(series)
+    cfg = _budget(series, 152.96)
+    assert runner.stage_params("cnmf", rec, cfg, series.paths)["ssub_B"] == 3
+
+
+def test_budget_changes_the_hash_only_near_the_limit(series):
+    s = series
+    rec = _hour_record(s)
+    h1 = runner.stage_hash(rec, "cnmf", _budget(s, 152.96), s.paths)
+    assert h1 != runner.stage_hash(rec, "cnmf", _budget(s, 200), s.paths)
+    _run(s)
+    rec = load_record(s.paths, S1)
+    assert runner.stage_hash(rec, "cnmf", _budget(s, 12.8), s.paths) == runner.stage_hash(rec, "cnmf", _budget(s, 200), s.paths)
+
+
 def test_stage_params_export_threshold_from_autoinspect(series):
     s = series
     _run(s)

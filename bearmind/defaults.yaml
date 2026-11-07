@@ -25,6 +25,14 @@ mc:
   use_cuda: false
 memory:
   patch_gb_per_mframe: {1: 245, 2: 163}
+  # compute_W of CaImAn 1.13.2 (docs/superpowers/specs/2026-10-31-caiman-memory.md): peak bytes per uint8
+  # pixel-frame at ssub_B 2; every large array in it is (pixels / ssub_B^2) x T, so the peak scales as (2 / ssub_B)^2
+  compute_w_bytes_per_px_frame: 5.05
+  # held besides compute_W: the stage process after import caiman (4.65 GiB), idle patch workers (0.67 GiB each),
+  # dense A and C
+  cnmf_base_gib: 8
+  # strongest background downsampling the batch applies by itself
+  max_ssub_B: 4
 thresholds:
   gsig_range: [3, 4, 5, 6, 7]
 # gSig, min_corr, min_pnr come from the session config; gSiz = 4*gSig + 1; fr = session FPS.

@@ -252,10 +252,10 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     if stage == "thresholds":
         return {"gsig_range": cfg["thresholds"]["gsig_range"], "tsub": cfg["cnmf"]["tsub"]}
     if stage == "cnmf":
-        from bearmind.stages.cnmf import cnmf_params  # imports CaImAn
+        from bearmind.stages.cnmf import cnmf_movie_shape, cnmf_params  # imports CaImAn
 
         try:
-            return cnmf_params(cfg, rec.fps)
+            return cnmf_params(cfg, rec.fps, cnmf_movie_shape(rec))
         except WaitingForInput as w:
             return {"waiting_for": w.what}
     if stage == "gate":

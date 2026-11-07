@@ -16,12 +16,13 @@ import re
 import shutil
 import time
 import traceback
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from bearmind import fileio, pool
-from bearmind.registry import Anomaly
+from bearmind.registry import Anomaly, State
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
 from bearmind.video import decode_to_memmap, video_info
 
@@ -43,8 +44,58 @@ def mem_budget_gb(cfg) -> float:
     return float(np.clip(0.1 * float(cfg["machine"]["ram_gb"]), 2, 32))
 
 
-def cnmf_params(cfg, fps) -> dict:
-    """CaImAn params dict: notebook base dict + session thresholds; fr is the session FPS, never divided by tsub."""
+@dataclass(frozen=True)
+class BackgroundDownsample:
+    ssub_B: int                 # the value CNMF-E runs with
+    configured: int             # cnmf.ssub_B of the config
+    need_gib: float             # predicted peak at ssub_B
+    need_configured_gib: float  # predicted peak at the configured value
+    budget_gib: float           # machine.cnmf_ram_budget_gb (GiB: machine.yaml stores total / 1024**3)
+    fits: bool
+
+
+def cnmf_need_gib(T: int, h: int, w: int, ssub_B: int, cfg) -> float:
+    """Predicted CNMF-E peak: compute_W holds (pixels / ssub_B^2) x T arrays, measured at ssub_B 2."""
+    m = cfg["memory"]
+    return (float(m["compute_w_bytes_per_px_frame"]) * T * h * w * (2 / ssub_B) ** 2 / 2**30
+            + float(m["cnmf_base_gib"]))
+
+
+def background_downsample(T: int, h: int, w: int, cfg) -> BackgroundDownsample:
+    """The weakest background downsampling (ssub_B) whose predicted peak fits the machine's RAM budget.
+
+    ssub_B is the lever because compute_W gets the full movie; ssub and tsub only shrink the patch workers.
+    """
+    s0 = int(cfg["cnmf"]["ssub_B"])
+    budget = float(cfg["machine"]["cnmf_ram_budget_gb"])
+    last = max(s0, int(cfg["memory"]["max_ssub_B"]))
+    need0 = cnmf_need_gib(T, h, w, s0, cfg)
+    for s in range(s0, last + 1):
+        need = cnmf_need_gib(T, h, w, s, cfg)
+        if need <= budget:
+            return BackgroundDownsample(s, s0, need, need0, budget, True)
+    return BackgroundDownsample(last, s0, cnmf_need_gib(T, h, w, last, cfg), need0, budget, False)
+
+
+def cnmf_movie_shape(rec) -> tuple[int, int, int] | None:
+    """(T, h, w) of the movie MC wrote, from its DONE record; None while MC is not done."""
+    mc = (getattr(rec, "stages", None) or {}).get("mc")
+    if mc is None or mc.state != State.DONE:
+        return None
+    T = int(mc.metrics.get("n_frames", rec.n_frames))
+    crop = mc.metrics.get("crop")
+    if crop is None and not rec.parts:
+        return None  # no frame size to decide from
+    h, w = (int(crop[2]), int(crop[3])) if crop is not None else (int(x) for x in rec.parts[0].shape)
+    return T, h, w
+
+
+def cnmf_params(cfg, fps, movie_shape=None) -> dict:
+    """CaImAn params dict: notebook base dict + session thresholds; fr is the session FPS, never divided by tsub.
+
+    With the movie shape, ssub_B is the one background_downsample picks: sessions that fit keep the
+    configured value, so their params (and hash) do not change.
+    """
     base = cfg["cnmf"]
     if any(base.get(k) is None for k in ("gSig", "min_corr", "min_pnr")):
         raise WaitingForInput("thresholds")
@@ -52,7 +103,22 @@ def cnmf_params(cfg, fps) -> dict:
     g = int(base["gSig"])
     p.update(gSig=(g, g), gSiz=(4 * g + 1, 4 * g + 1), min_corr=float(base["min_corr"]),
              min_pnr=float(base["min_pnr"]), fr=float(fps))
+    if movie_shape is not None:
+        p["ssub_B"] = background_downsample(*movie_shape, cfg).ssub_B
     return p
+
+
+def downsample_anomaly(d: BackgroundDownsample) -> Anomaly | None:
+    if d.ssub_B == d.configured and d.fits:
+        return None
+    if d.fits:
+        msg = (f"background downsampled to fit RAM: ssub_B {d.ssub_B} instead of {d.configured} "
+               f"(predicted {d.need_configured_gib:.0f} GiB at {d.configured}, {d.need_gib:.0f} GiB at "
+               f"{d.ssub_B}, budget {d.budget_gib:.0f} GiB)")
+    else:
+        msg = (f"predicted {d.need_gib:.0f} GiB even at ssub_B {d.ssub_B} (budget {d.budget_gib:.0f} GiB): "
+               "CNMF-E may run out of memory; a tighter crop helps")
+    return Anomaly("cnmf_downsampled", "warning" if d.fits else "error", msg, data=asdict(d))
 
 
 def check(paths, rec, cfg) -> None:
@@ -133,10 +199,15 @@ def _unlink(path) -> None:
 
 
 def run(paths, rec, cfg) -> StageResult:
-    params = cnmf_params(cfg, rec.fps)  # WaitingForInput before any heavy work
+    shape = cnmf_movie_shape(rec)
+    params = cnmf_params(cfg, rec.fps, shape)  # WaitingForInput before any heavy work
     sid = rec.sid
     mc_path = paths.mc_video(sid)
     T, h, w, _ = video_info(mc_path)
+    if shape is not None and shape != (T, h, w):
+        raise ValueError(f"{mc_path.name} has {T}x{h}x{w} frames, its MC record says "
+                         f"{shape[0]}x{shape[1]}x{shape[2]}: run MC again")
+    downsample = None if shape is None else background_downsample(*shape, cfg)
     tmp = paths.temp_dir(cfg["machine"]["temp_dir"], sid)
     require_temp_space(tmp, TEMP_BYTES_PER_PX_FRAME * T * h * w, "CNMF-E")
 
@@ -216,6 +287,8 @@ def run(paths, rec, cfg) -> StageResult:
             "min_corr": params["min_corr"],
             "min_pnr": params["min_pnr"],
             "patch_workers": n_workers,
+            "ssub_B": int(params["ssub_B"]),
+            "need_gib": round(cnmf_need_gib(T, h, w, int(params["ssub_B"]), cfg), 1),
         }
         outputs = {
             "estimates": paths.rel(out),
@@ -245,6 +318,9 @@ def run(paths, rec, cfg) -> StageResult:
             if not tmp.exists():
                 break
             time.sleep(0.5)
+    anomaly = None if downsample is None else downsample_anomaly(downsample)
+    if anomaly is not None:
+        result.anomalies.append(anomaly)
     if tmp.exists():
         result.anomalies.append(Anomaly("temp_not_removed", "warning", str(tmp)))
     return result
