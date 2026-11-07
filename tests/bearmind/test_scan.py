@@ -215,15 +215,34 @@ def test_accept_mismatch_keeps_large_mismatch_included(make_series, tmp_path):
     assert r.n_frames == 25 and not r.excluded
 
 
-def test_fps_outlier_vs_series_median(make_series, tmp_path):
-    root = make_series(tmp_path / "s", "bonsai", sid="NOF_H01_1D")
-    for sid in ("NOF_H02_1D", "NOF_H03_1D"):
-        make_series(tmp_path / "s", "bonsai", sid=sid)
-    ts = root / "0_TimeStamps" / "NOF_H03_1D_Mini_TS.csv"
-    ts.write_text("".join(f"{i * 1000000}\n" for i in range(30)), encoding="utf-8")  # 10 fps
-    recs = {r.sid: r for r in scan.scan_series(root)}
-    assert "fps_outlier" in codes(recs["NOF_H03_1D"])
-    assert "fps_outlier" not in codes(recs["NOF_H01_1D"])
+def _series_at(make_series, root, rates):
+    """Bonsai sessions at the given frame rates (sid -> fps)."""
+    for sid, fps in rates.items():
+        make_series(root, "bonsai", sid=sid)
+        tick = round(1e7 / fps)  # bonsai timestamps count 100 ns ticks
+        (root / "0_TimeStamps" / f"{sid}_Mini_TS.csv").write_text("".join(f"{i * tick}\n" for i in range(30)),
+                                                                  encoding="utf-8")
+    return {r.sid: r for r in scan.scan_series(root)}
+
+
+def test_fps_outlier_vs_mouse_median(make_series, tmp_path):
+    """R1: mice of one series may be recorded at different rates; a session is compared with its own mouse."""
+    recs = _series_at(make_series, tmp_path / "s", {
+        "NOF_H01_1D": 20, "NOF_H01_2D": 20, "NOF_H01_3D": 20, "NOF_H01_4D": 10,  # one odd session
+        "NOF_H02_1D": 30, "NOF_H02_2D": 30, "NOF_H02_3D": 30})  # a whole mouse at another rate
+    a = codes(recs["NOF_H01_4D"])["fps_outlier"]
+    assert a.message == "fps 10.00 differs from mouse median 20.00" and a.level == "warning"
+    assert a.data["median"] == pytest.approx(20.0)
+    assert [sid for sid, r in recs.items() if "fps_outlier" in codes(r)] == ["NOF_H01_4D"]
+
+
+def test_no_fps_outlier_for_a_mouse_with_few_sessions(make_series, tmp_path):
+    """R1: fewer than checks.min_sessions_for_relative sessions with a rate give no reference."""
+    recs = _series_at(make_series, tmp_path / "s", {
+        "NOF_H01_1D": 20, "NOF_H01_2D": 20, "NOF_H01_3D": 20,
+        "NOF_H02_1D": 10, "NOF_H02_2D": 20,  # two sessions, different rates
+        "NOF_H03_1D": 10})
+    assert not [sid for sid, r in recs.items() if "fps_outlier" in codes(r)]
 
 
 def test_dropped_frames_flag(make_series, tmp_path):

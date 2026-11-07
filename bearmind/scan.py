@@ -369,17 +369,25 @@ def scan_series(series_root: Path) -> list[SessionRecord]:
         cfg_scan = config.resolve(paths, sid=sid)["scan"]
         built[sid] = _build_record(paths, sid, found[sid], cfg_scan)
 
-    # series-level FPS checks
-    fps_list = [b[3] for b in built.values() if b[3]]
-    median = statistics.median(fps_list) if fps_list else None
-    dev = config.resolve(paths)["scan"]["fps_series_dev"]
+    # FPS checks against the session's own mouse: mice of one series may be recorded at different rates (LT1:
+    # six mice at 19.76 fps, the rest at 30.59), which is no anomaly. A mouse with fewer sessions with a rate
+    # than checks.min_sessions_for_relative has no reference.
+    series_cfg = config.resolve(paths)
+    dev = series_cfg["scan"]["fps_series_dev"]
+    min_n = series_cfg["checks"].get("min_sessions_for_relative", 3)
+    rates: dict[str, list] = {}
+    for sid, b in built.items():
+        if b[3]:
+            rates.setdefault(mouse_id(sid), []).append(b[3])
     for sid, (parts, mode, n, fps, info, anomalies, nominal) in built.items():
         if not fps:
             continue
+        own = rates.get(mouse_id(sid), [])
+        median = statistics.median(own) if len(own) >= min_n else None
         if median and abs(fps / median - 1) > dev:
             anomalies.append(Anomaly("fps_outlier", "warning",
-                                     f"fps {fps:.2f} differs from series median {median:.2f}",
-                                     data={"fps": fps, "median": median}))
+                                     f"fps {fps:.2f} differs from mouse median {median:.2f}",
+                                     data={"fps": fps, "median": median, "mouse": mouse_id(sid)}))
         if nominal and abs(fps / nominal - 1) > dev:
             anomalies.append(Anomaly("fps_outlier", "warning",
                                      f"fps {fps:.2f} differs from nominal frameRate {nominal:g}",
