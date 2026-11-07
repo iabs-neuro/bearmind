@@ -657,7 +657,7 @@ def test_side_stages_not_in_bars_or_eta(tmp_series):
     assert set(v.bars) == set(STAGES) and v.eta_s == 0.0
 
 
-def test_runner_current_side_stage_title(tmp_series, alive):
+def test_runner_state_reports_a_current_side_stage(tmp_series, alive):
     put(tmp_series, "A_M1_1D", {"cnmf": done(), "cnmf_preview": StageRecord(State.RUNNING, started=iso(NOW))})
     alive(current={"sid": "A_M1_1D", "stage": "cnmf_preview"})
     r = view(tmp_series).runner

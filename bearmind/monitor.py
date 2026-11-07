@@ -186,6 +186,7 @@ class RecordCache:
             try:
                 cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
                 c = cfg["cnmf"]
+                # one flag (preview.enabled) drives both preview stages today, so mc_preview speaks for both
                 val = (c.get("gSig"), c.get("min_corr"), c.get("min_pnr"), runner.side_enabled("mc_preview", cfg))
             except Exception:  # a broken config is the core's "cannot be scheduled", not the window's crash
                 val = (None, None, None, None)

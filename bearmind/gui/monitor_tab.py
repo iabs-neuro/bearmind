@@ -181,6 +181,21 @@ class _StageRow(QWidget):
         self.caption.setText(" · ".join(parts))
 
 
+PREVIEWS_TIP = "MC previews and the CNMF-E QC video, made by the batch for finished sessions"
+
+
+class _PreviewsBox(QCheckBox):
+    """Partly checked only shows that sessions differ; a click always sets the series value (on or off)."""
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.setTristate(True)
+
+    def nextCheckState(self) -> None:
+        self.setCheckState(Qt.CheckState.Unchecked if self.checkState() == Qt.CheckState.Checked
+                           else Qt.CheckState.Checked)
+
+
 class _SectionLabel(QLabel):
     """A section header. The capitals come from the font, so a text set later ("Warnings — 3 sessions") is
     drawn like the others, and text() keeps the words as written."""
@@ -235,7 +250,6 @@ class MonitorTab(QWidget):
         self._cache = monitor.RecordCache()
         self._slow_logged = False
         self._sids: list[str] = []
-        self._previews_sig = ()  # stat of the series config the checkbox was read from
 
         self.root_layout = QVBoxLayout(self)
         self.root_layout.setContentsMargins(8, 6, 8, 6)
@@ -271,8 +285,8 @@ class MonitorTab(QWidget):
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop after current stage")
         self.folder_button = QPushButton("Open folder")
-        self.previews_box = QCheckBox("Preview videos")
-        self.previews_box.setToolTip("MC previews and the CNMF-E QC video, made by the batch for finished sessions")
+        self.previews_box = _PreviewsBox("Preview videos")
+        self.previews_box.setToolTip(PREVIEWS_TIP)
         self.previews_box.clicked.connect(self._on_previews)
         self.start_button.clicked.connect(self._on_start)
         self.stop_button.clicked.connect(self._on_stop)
@@ -571,30 +585,45 @@ class MonitorTab(QWidget):
     def _on_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.series)))
 
-    def _on_previews(self, checked: bool) -> None:
+    def _on_previews(self, _checked: bool) -> None:
         # no confirmation: switching on or off is reversible and deletes nothing
+        checked = self.previews_box.checkState() == Qt.CheckState.Checked
         try:
             actions.set_previews(self.paths, checked)
         except (OSError, ValueError) as e:
             self._say(f"Previews were not changed: {e}")
         else:
-            self._say("Previews on: the batch makes them for sessions whose MC / CNMF-E is done" if checked
-                      else "Previews off: existing files are kept")
+            text = ("Previews on: the batch makes them for sessions whose MC / CNMF-E is done" if checked
+                    else "Previews off: existing files are kept")
+            own = [v for v in self._session_previews() if v != checked]
+            if own:
+                text += f". {len(own)} sessions follow their own mouse config"
+            self._say(text)
         self._sync_previews()
 
+    def _session_previews(self) -> list:
+        """The effective preview.enabled of each non-excluded session (RecordCache.preview_on: the resolved
+        config, a mouse or session config can override the series one); sessions with an unreadable config
+        are left out."""
+        records, _ = self._cache.records(self.paths)
+        vals = [self._cache.preview_on(self.paths, r) for r in records if not r.excluded]
+        return [v for v in vals if v is not None]
+
     def _sync_previews(self) -> None:
-        """Show the series config's preview.enabled; read again only when the file changed (resolving parses
-        defaults and merges layers)."""
-        sig = monitor._sig(self.paths.series_config)
-        if sig == self._previews_sig:
-            return
-        self._previews_sig = sig
-        try:
-            on = bool(config.resolve(self.paths)["preview"]["enabled"])
-        except (OSError, KeyError, TypeError, ValueError):  # a config being rewritten: the next refresh reads it
-            self._previews_sig = ()
-            return
-        self.previews_box.setChecked(on)
+        """Show what the sessions will do: all agree -> that value; they differ -> partly checked."""
+        vals = set(self._session_previews())
+        if not vals:  # no sessions yet: the series config
+            try:
+                vals = {bool(config.resolve(self.paths)["preview"]["enabled"])}
+            except (OSError, KeyError, TypeError, ValueError):  # a config being rewritten: next refresh
+                return
+        box = self.previews_box
+        if len(vals) > 1:
+            box.setCheckState(Qt.CheckState.PartiallyChecked)
+            box.setToolTip("Differs between sessions: a mouse config overrides it")
+        else:
+            box.setChecked(vals.pop())
+            box.setToolTip(PREVIEWS_TIP)
 
     def _update_buttons(self) -> None:
         self.start_button.setEnabled(self._scanned and not self._alive and self._starting_since is None)

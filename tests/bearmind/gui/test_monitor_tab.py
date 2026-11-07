@@ -519,3 +519,29 @@ def test_header_names_a_running_preview_stage(qapp, series4, live):
     series4.heartbeat.write_text(json.dumps(hb), encoding="utf-8")
     t.refresh()
     assert "CNMF-E preview" in t.header_text()
+
+
+def test_failed_write_returns_the_box_to_the_config_value(qapp, series4, monkeypatch):
+    from bearmind import actions
+    t = tab_for(series4)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(actions, "set_previews", boom)
+    t.previews_box.click()
+    assert not t.previews_box.isChecked() and "not changed" in t.last_status
+
+
+def test_mouse_override_shows_partly_checked(qapp, series4):
+    from PySide6.QtCore import Qt
+    from bearmind import config
+    config.update_yaml(series4.mouse_config("J01"), {"preview": {"enabled": True}})
+    t = tab_for(series4)
+    assert t.previews_box.checkState() == Qt.CheckState.PartiallyChecked
+    assert "mouse config overrides" in t.previews_box.toolTip()
+    t.previews_box.click()  # sets the series value: on
+    assert t.previews_box.checkState() == Qt.CheckState.Checked
+    t.previews_box.click()  # series off; J01 still overrides
+    assert t.previews_box.checkState() == Qt.CheckState.PartiallyChecked
+    assert "2 sessions follow their own mouse config" in t.last_status
