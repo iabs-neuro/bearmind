@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage
 
-from bearmind import config, registry
+from bearmind import actions, config, registry
 from bearmind.registry import State
 
 STATE_TEXT = {"waiting": "waiting", "chosen": "chosen", "cnmf_done": "CNMF-E done", "no_maps": "no maps",
-              "excluded": "excluded"}
+              "excluded": "excluded", "not_needed": "thresholds not needed yet"}
 
 _EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity
 
@@ -39,10 +39,13 @@ class Counters:
 class ThresholdItem:
     sid: str
     mouse: str
-    state: str          # "no_maps" | "waiting" | "chosen" | "cnmf_done" | "excluded"
+    state: str          # "excluded" | "no_maps" | "cnmf_done" | "chosen" | "waiting" | "not_needed"
     reason: str         # for no_maps: last line of the stage error, or "not computed yet"
     suggested: dict | None
     chosen: dict | None  # {"gSig", "min_corr", "min_pnr"} from the resolved config
+    # The batch waits for this session's thresholds: the rule of actions.waiting_threshold_sids. It is
+    # independent of `state`, so a session without maps can wait and the window count equals Monitor's.
+    waiting: bool = False
 
 
 def load_maps(path: Path) -> ThresholdMaps:
@@ -66,7 +69,12 @@ def _group_sizes(mask: np.ndarray) -> np.ndarray:
     return np.bincount(labels.ravel())[1:]
 
 
+def _known(maps: ThresholdMaps, g: int) -> int:
+    return g if g in maps.cn and g in maps.pnr else config.fallback_gsig(maps.gsigs)
+
+
 def counters(maps: ThresholdMaps, g: int, min_corr: float, min_pnr: float, min_blob_px: int) -> Counters:
+    g = _known(maps, g)
     sizes = _group_sizes(passing_mask(maps.cn[g], maps.pnr[g], min_corr, min_pnr))
     n_blobs = int((sizes >= min_blob_px).sum())
     single = float((sizes == 1).sum() / len(sizes)) if len(sizes) else 0.0
@@ -91,6 +99,7 @@ def display_u8(img: np.ndarray, lo_pct: float = 1.0, hi_pct: float = 99.5) -> np
 
 
 def gsig_thumbnail(maps: ThresholdMaps, g: int, size: int = 160) -> np.ndarray:
+    g = _known(maps, g)
     prod = np.nan_to_num(maps.cn[g] * maps.pnr[g], nan=0.0, posinf=0.0, neginf=0.0)
     scale = size / max(prod.shape)
     if scale < 1:
@@ -116,6 +125,8 @@ def _item(paths, rec) -> ThresholdItem:
         chosen = _chosen(config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"])
     except Exception:  # a broken config is shown by Monitor; here the session has no choice
         chosen = None
+    waiting = not rec.excluded and (actions.waiting_for(rec, "cnmf") == "thresholds"
+                                    or actions.suggested_unset(paths, rec))
     reason = ""
     if rec.excluded:
         state = "excluded"
@@ -127,13 +138,17 @@ def _item(paths, rec) -> ThresholdItem:
             reason = "maps file not found"
         else:
             reason = "not computed yet"
+        if cnmf is not None and cnmf.state is State.DONE:
+            reason += " (CNMF-E done)"
     elif cnmf is not None and cnmf.state is State.DONE:
         state = "cnmf_done"
     elif chosen is not None:
         state = "chosen"
-    else:
+    elif waiting:
         state = "waiting"
-    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen)
+    else:
+        state = "not_needed"  # no choice, and the batch does not wait for one (CNMF-E runs, failed or not reached)
+    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen, waiting)
 
 
 def threshold_items(paths) -> list[ThresholdItem]:
@@ -141,19 +156,24 @@ def threshold_items(paths) -> list[ThresholdItem]:
     return [_item(paths, r) for r in sorted(recs, key=lambda r: (r.mouse, r.sid))]
 
 
-def _fallback_gsig(gsigs: list[int]) -> int:
-    return 4 if 4 in gsigs else gsigs[len(gsigs) // 2]  # the rule of the thresholds stage
-
-
 def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str]:
-    if item.chosen is not None:
-        c = item.chosen
-        return int(c["gSig"]), float(c["min_corr"]), float(c["min_pnr"]), "chosen"
-    if item.suggested:
-        s = item.suggested
-        return int(s["gSig"]), float(s["min_corr"]), float(s["min_pnr"]), "suggested"
+    # a stored or suggested gSig outside the maps (range changed since) cannot be shown: the fallback gSig
+    # takes its place, the thresholds stay; source_text says so
+    fb_g = config.fallback_gsig(maps.gsigs)
+    for src, v in (("chosen", item.chosen), ("suggested", item.suggested)):
+        if v:
+            g = int(v["gSig"])
+            return (g if g in maps.gsigs else fb_g), float(v["min_corr"]), float(v["min_pnr"]), src
     fb = cfg["thresholds"]["fallback"]
-    return _fallback_gsig(maps.gsigs), float(fb["min_corr"]), float(fb["min_pnr"]), "fallback"
+    return fb_g, float(fb["min_corr"]), float(fb["min_pnr"]), "fallback"
+
+
+def missing_gsig_note(item: ThresholdItem, maps: ThresholdMaps, source: str) -> str:
+    """Text for the window when the stored/suggested gSig has no map, else an empty string."""
+    v = item.chosen if source == "chosen" else item.suggested if source == "suggested" else None
+    if v and int(v["gSig"]) not in maps.gsigs:
+        return f"gSig {int(v['gSig'])} has no map; showing {config.fallback_gsig(maps.gsigs)}"
+    return ""
 
 
 def source_text(source: str, item: ThresholdItem) -> str:
@@ -167,6 +187,6 @@ def source_text(source: str, item: ThresholdItem) -> str:
 
 
 def slider_range_pnr(maps: ThresholdMaps, g: int) -> float:
-    v = maps.pnr[g]
+    v = maps.pnr[_known(maps, g)]
     v = v[np.isfinite(v)]
     return max(30.0, float(np.percentile(v, 99.9))) if v.size else 30.0

@@ -9,7 +9,7 @@ import traceback
 import numpy as np
 
 import bm_qc
-from bearmind import pool
+from bearmind import config, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, require_temp_space
 from bearmind.stages.cnmf import mem_budget_gb
@@ -111,7 +111,7 @@ def _parallel_maps(u8_path, shape, gsigs, tsub, mem_gb, n_workers):
 def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
     gsigs = [int(g) for g in cfg["thresholds"]["gsig_range"]]
-    g_sug = 4 if 4 in gsigs else gsigs[len(gsigs) // 2]
+    g_sug = config.fallback_gsig(gsigs)
     tsub = cfg["cnmf"]["tsub"]
     mem_gb = mem_budget_gb(cfg)
     tmp_dir = paths.temp_dir(cfg["machine"]["temp_dir"], sid)

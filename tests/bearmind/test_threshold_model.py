@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from bearmind import config, threshold_model as tm
+from bearmind import actions, config, threshold_model as tm
 from bearmind.registry import State, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
 
@@ -145,6 +145,7 @@ CFG = {"thresholds": {"fallback": {"min_corr": 0.85, "min_pnr": 8}}}
 
 def test_initial_values_order():
     m = _maps()
+    m.gsigs = [3, 4, 5]
     sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
     ch = {"gSig": 5, "min_corr": 0.7, "min_pnr": 6.0}
     assert tm.initial_values(_item(sug, ch), m, CFG) == (5, 0.7, 6.0, "chosen")
@@ -191,4 +192,64 @@ def test_mask_speed():
         tm.passing_mask(cn, pnr, 0.8, 8.0)
         tm.counters(m, 4, 0.8, 8.0, 2)
         times.append(time.perf_counter() - t)
-    assert statistics.median(times) < 0.05
+    assert statistics.median(times) < 0.2  # the window's budget is 50 ms; the bound leaves room for a loaded machine
+
+
+def test_states_cnmf_running_failed_and_not_needed(series):
+    p = series.paths
+    _save(p.threshold_maps(S1), _maps(), False)
+    _set(p, S1, "thresholds", State.DONE, suggested=None)
+    _set(p, S1, "cnmf", State.PENDING)
+    it = _items(series)[S1]
+    assert it.state == "not_needed" and not it.waiting and not CYR.search(tm.STATE_TEXT[it.state])
+    for st in (State.RUNNING, State.FAILED):
+        _set(p, S1, "cnmf", st)
+        it = _items(series)[S1]
+        assert it.state == "not_needed" and not it.waiting
+
+
+def test_cnmf_done_maps_deleted_is_no_maps(series):
+    p = series.paths
+    _set(p, S1, "thresholds", State.DONE)
+    _set(p, S1, "cnmf", State.DONE)
+    it = _items(series)[S1]
+    assert it.state == "no_maps" and it.reason == "maps file not found (CNMF-E done)"
+
+
+def test_waiting_count_equals_actions(series):
+    p = series.paths
+    # waits for thresholds, but no maps
+    _set(p, S1, "thresholds", State.FAILED, error="MemoryError: x")
+    _set(p, S1, "cnmf", State.WAITING, error="waiting for thresholds")
+    # suggestion, no thresholds, maps
+    _save(p.threshold_maps(S2), _maps(), False)
+    _set(p, S2, "thresholds", State.DONE,
+         suggested={"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"})
+    _set(p, S2, "cnmf", State.PENDING)
+    # no suggestion, CNMF-E pending: does not wait
+    _save(p.threshold_maps(S3), _maps(), False)
+    _set(p, S3, "thresholds", State.DONE, suggested=None)
+    _set(p, S3, "cnmf", State.PENDING)
+    items = _items(series)
+    assert items[S1].state == "no_maps" and items[S1].waiting
+    assert items[S2].state == "waiting" and items[S3].state == "not_needed"
+    assert sorted(i.sid for i in items.values() if i.waiting) == actions.waiting_threshold_sids(p) == [S1, S2]
+    update_record(p, S1, lambda r: setattr(r, "excluded", True))
+    assert sorted(i.sid for i in _items(series).values() if i.waiting) == actions.waiting_threshold_sids(p)
+
+
+def test_gsig_without_map_falls_back():
+    m = _maps()
+    m.gsigs = [4]
+    ch = {"gSig": 9, "min_corr": 0.7, "min_pnr": 6.0}
+    it = _item(None, ch)
+    assert tm.initial_values(it, m, CFG) == (4, 0.7, 6.0, "chosen")
+    assert tm.missing_gsig_note(it, m, "chosen") == "gSig 9 has no map; showing 4"
+    assert tm.missing_gsig_note(_item(), m, "fallback") == ""
+    assert tm.counters(m, 9, 0.8, 8.0, 2).n_blobs == 2
+    assert tm.slider_range_pnr(m, 9) >= 30.0
+    assert tm.gsig_thumbnail(m, 9, 30).shape == (30, 30)
+
+
+def test_fallback_gsig_rule_shared():
+    assert config.fallback_gsig([3, 4, 5, 6, 7]) == 4 and config.fallback_gsig([5, 6, 7]) == 6

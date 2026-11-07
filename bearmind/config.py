@@ -103,3 +103,10 @@ def update_yaml(path, patch: dict) -> None:
 
 def params_hash(params: dict) -> str:
     return hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def fallback_gsig(gsigs) -> int:
+    """gSig when nothing suggests one: 4, else the middle of the range. One rule for the thresholds stage
+    (its suggestion maps) and the Thresholds window (start values)."""
+    gsigs = list(gsigs)
+    return 4 if 4 in gsigs else gsigs[len(gsigs) // 2]
