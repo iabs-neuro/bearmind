@@ -7,10 +7,16 @@ scan:
   gap_factor: 2.0
   fps_series_dev: 0.05
 crop:
-  n_sample_frames: 300
+  # frames read for detection: three windows of sample_frames / 3 at the start, middle and end of the session
+  sample_frames: 3000
   margin_px: 10
   min_fov_frac: 0.05
   fov_threshold_frac: 0.2
+  # activity: the field covers where calcium transients are (CNMF-E seed maps against their sign-inverted null)
+  # inside the lit area; brightness: the lit area only (the rule before 2026-11)
+  fov_method: activity
+  activity_mass_cut: 0.005
+  activity_margin_px: 20
 # splits_rig is not stored: the MC stage uses ceil(T/500).
 # memory_fact is dropped: it is a CNMF patch parameter that MotionCorrect ignores.
 mc:

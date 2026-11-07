@@ -87,6 +87,33 @@ def test_session_reader_never_decodes_broken_last_frame(tmp_path, make_avi):
     assert np.array_equal(out, f[:11])
 
 
+def test_session_reader_windows(tmp_path, make_avi, monkeypatch):
+    """Windows at the start, middle and end of the stream; chunks outside every window are never decoded."""
+    import bearmind.video as video
+
+    (tmp_path / "d").mkdir()
+    f = np.broadcast_to((np.arange(1000) % 251).astype(np.uint8)[:, None, None], (1000, 24, 32)).copy()
+    names = [f"{i}.avi" for i in range(10)]
+    for i, nm in enumerate(names):
+        make_avi(tmp_path / "d" / nm, f[i * 100:(i + 1) * 100])
+    reader = SessionReader(tmp_path, _rec([_part(names, 1000, chunk_frames=[100] * 10)], 1000))
+    decoded = []
+    real = video._head_frames
+
+    def spy(path, n, broken_tail):
+        decoded.append(path.name)
+        return real(path, n, broken_tail)
+
+    monkeypatch.setattr(video, "_head_frames", spy)
+    out = reader.windows(3, 100)
+    assert out.dtype == np.uint8 and out.shape == (300, 24, 32)
+    want = np.r_[0:100, 450:550, 900:1000]
+    assert np.array_equal(out, f[want])
+    assert decoded == ["0.avi", "4.avi", "5.avi", "9.avi"]
+    assert np.array_equal(reader.windows(3, 400), f)  # shorter than 3 x 400: every frame
+    assert np.array_equal(reader.windows(3, 334), f)
+
+
 def test_crop_applied(tmp_path, make_avi):
     (tmp_path / "d").mkdir()
     f = _frames(10)

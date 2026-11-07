@@ -160,7 +160,8 @@ class SessionReader:
         self.n_frames = int(rec.n_frames)
         self.shape = (self.n_frames, h, w)
 
-    def _iter_frames(self) -> Iterator[np.ndarray]:
+    def _chunk_plan(self) -> Iterator[tuple[Path, int, bool]]:
+        """(path, frames taken from its head, broken tail) of each chunk the stream uses, in stream order."""
         left = self.n_frames
         for part in self.rec.parts:
             # a part stops at its own frame count, so a surplus at its end cannot shift the next part
@@ -177,10 +178,13 @@ class SessionReader:
                 broken = i == last and part.drop_last_frame
                 drop = broken or (i < last and part.drop_chunk_tail)
                 n = min(count - 1 if drop else count, part_left, left)
-                for fr in _head_frames(path, n, broken):
-                    yield fr
+                yield path, n, broken
                 part_left -= n
                 left -= n
+
+    def _iter_frames(self) -> Iterator[np.ndarray]:
+        for path, n, broken in self._chunk_plan():
+            yield from _head_frames(path, n, broken)
 
     def _crop(self, fr: np.ndarray) -> np.ndarray:
         c = self.crop
@@ -206,6 +210,36 @@ class SessionReader:
                 out.append(self._crop(fr))
                 if len(out) == n:
                     break
+        return np.stack(out) if out else np.empty((0,) + self.shape[1:], np.uint8)
+
+    def windows(self, n_windows: int, length: int) -> np.ndarray:
+        """n_windows runs of `length` consecutive frames spread evenly from the start to the end of the stream
+        (three: the start, the middle (T - length) // 2 and the end T - length), in one pass; a session no
+        longer than n_windows * length: every frame.
+
+        A chunk outside every window is not decoded: an hour-long session needs only the few chunks under
+        its windows.
+        """
+        T = self.n_frames
+        if T <= n_windows * length:
+            spans = [(0, T)]
+        elif n_windows == 1:
+            spans = [((T - length) // 2, (T - length) // 2 + length)]
+        else:
+            # gaps of (T - length) / (n_windows - 1) > length frames: the windows never overlap
+            spans = [(s, s + length) for s in (k * (T - length) // (n_windows - 1) for k in range(n_windows))]
+        out = []
+        pos = 0
+        for path, n, broken in self._chunk_plan():
+            if pos >= spans[-1][1]:
+                break
+            hits = [(max(a, pos), min(b, pos + n)) for a, b in spans if a < pos + n and b > pos]
+            if hits:
+                need = hits[-1][1] - pos  # decode the chunk's head up to its last wanted frame
+                for i, fr in enumerate(_head_frames(path, need, broken)):
+                    if any(a <= pos + i < b for a, b in hits):
+                        out.append(self._crop(fr))
+            pos += max(n, 0)
         return np.stack(out) if out else np.empty((0,) + self.shape[1:], np.uint8)
 
 

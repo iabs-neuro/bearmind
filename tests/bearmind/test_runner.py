@@ -860,6 +860,41 @@ def test_cleaned_decision_must_follow_current_cnmf(series):
     assert load_record(s.paths, S1).stages["gate"].params["decision"]["value"] == "cleaned"
 
 
+def _write_projection(paths, rec, cfg):
+    """Crop stub hook: the projection the real detect stage saves for the overview."""
+    import numpy as np
+
+    f = paths.crop_projection(rec.sid)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(f, mean=np.full((16, 16), 50, np.float16), activity=np.zeros((16, 16), np.float16))
+
+
+def test_finalize_writes_the_crop_overview(series):
+    s = series
+    for sid in SIDS:
+        s.stubs.hooks[(sid, "crop")] = _write_projection
+    _run(s)
+    assert s.paths.crop_overview.is_file()
+    assert not list(s.paths.crop_overview.parent.glob("*.partial*"))
+
+
+def test_overview_failure_does_not_stop_the_batch(series, monkeypatch):
+    s = series
+    from bearmind import crop_overview
+
+    def boom(paths, records):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(crop_overview, "write_overview", boom)
+    for sid in SIDS:
+        s.stubs.hooks[(sid, "crop")] = _write_projection
+    res = _run(s)
+    assert res == {"done": 21, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
+    assert all(_states(s.paths, sid) == [State.DONE] * 7 for sid in SIDS)
+    assert "crop overview not written: RuntimeError: disk full" in s.paths.series_log.read_text(encoding="utf-8")
+    assert not s.paths.crop_overview.exists()
+
+
 def test_crop_detection_params_rerun_crop(series):
     """R30: the crop section is an input of crop, except the keys the pipeline writes."""
     s = series

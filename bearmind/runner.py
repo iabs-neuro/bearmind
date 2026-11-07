@@ -1005,7 +1005,19 @@ def _run_finalize(paths, mouse, done, run_: _Run) -> bool:
                 log.error("%s", tb, extra={"sid": r.sid, "session_only": True})
             _record_finalize_failure(paths, r.sid, mouse, last, ours)
         return False
+    _write_crop_overview(paths)
     return True
+
+
+def _write_crop_overview(paths) -> None:
+    """Redraw the series crop overview after a placement of boxes. Only a picture for the author: an error
+    is logged and costs nothing else."""
+    try:
+        from bearmind.crop_overview import write_overview  # matplotlib only when there is something to draw
+
+        write_overview(paths, [r for r in registry.read_all(paths)[0] if not r.excluded])
+    except Exception as e:
+        log.warning("crop overview not written: %s", _last_line(e), extra={"console": True})
 
 
 def _record_finalize_failure(paths, sid, mouse, why, ours) -> None:

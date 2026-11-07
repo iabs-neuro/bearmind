@@ -77,6 +77,13 @@ class SeriesPaths:
     def threshold_maps(self, sid: str) -> Path:
         return self._service / "thresholds" / f"{sid}_maps.npz"
 
+    def crop_projection(self, sid: str) -> Path:
+        return self._service / "crop" / f"{sid}_projection.npz"
+
+    @property
+    def crop_overview(self) -> Path:
+        return self._service / "crop_overview.png"
+
     @property
     def logs_dir(self) -> Path:
         return self._service / "logs"
