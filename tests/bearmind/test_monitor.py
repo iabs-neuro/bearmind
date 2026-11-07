@@ -1,12 +1,14 @@
+import json
 import os
 import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psutil
 import pytest
 
-from bearmind import config, monitor, registry
+from bearmind import actions, config, monitor, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Check, SessionRecord, StageRecord, State
 
@@ -72,6 +74,19 @@ def spawn(paths, sid, stage, status):
 def stop(p):
     p.stdin.close()
     p.wait(timeout=20)
+
+
+@pytest.fixture
+def alive(tmp_series, monkeypatch):
+    """A live batch for the model: a fresh pulse and a lock holder (a stage RUNNING without one is interrupted)."""
+    def pulse(status="running", **fields):
+        hb = {"pid": 1, "time": iso(NOW), "current": None, "status": status, **fields}
+        tmp_series.heartbeat.parent.mkdir(parents=True, exist_ok=True)
+        tmp_series.heartbeat.write_text(json.dumps(hb), encoding="utf-8")
+
+    monkeypatch.setattr(monitor, "_holds_lock", lambda lock: 1)
+    pulse()
+    return pulse
 
 
 def test_runner_state_stopped_without_heartbeat(tmp_series):
@@ -148,7 +163,7 @@ def test_cell_texts_match_mockup(tmp_series):
     config.update_yaml(tmp_series.series_config, {"cnmf": {"gSig": 4}})
     put(tmp_series, "A_M1_1D", {
         "crop": done(),
-        "mc": done({"max_shift_px": 3.2, "crop": [0, 0, 512, 480]}),
+        "mc": done({"max_shift_px": 3.2, "crop": [0, 0, 480, 512]}),
         "thresholds": done({"suggested": {"gSig": 4}}),
         "cnmf": done({"n_components": 231}),
         "gate": done({"gate": "not_needed"}),
@@ -180,10 +195,10 @@ def test_excluded_row_cells(tmp_series):
     # only the other session is estimated: the excluded one has pending stages too
     assert v.eta_s == pytest.approx(sum(defaults()[s] for s in PENDING_STAGES) * 1000)
     registry.update_record(tmp_series, "A_M1_2D", lambda r: setattr(r, "excluded", True))
-    assert view(tmp_series).eta_s is None
+    assert view(tmp_series).eta_s == 0.0  # nothing left
 
 
-def test_bars_count_sessions_per_stage(tmp_series):
+def test_bars_count_sessions_per_stage(tmp_series, alive):
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done()})
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(), "thresholds": done({"suggested": {"gSig": 4}}),
                                 "cnmf": waiting("thresholds")})
@@ -231,14 +246,14 @@ def test_eta_excludes_human_waits(tmp_series):
     d = defaults()
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "thresholds": done({"suggested": {}}),
                                 "cnmf": waiting("thresholds")})
-    assert view(tmp_series).eta_s is None  # nothing but the person's wait
+    assert view(tmp_series).eta_s == 0.0  # nothing but the person's wait: nothing left for the batch
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(), "thresholds": done(),
                                 "cnmf": StageRecord(State.RUNNING, started=iso(NOW))})
     got = view(tmp_series).eta_s
     assert got == pytest.approx(sum(d[s] for s in ("cnmf", "autoinspect", "export")) * 1000)
 
 
-def test_eta_running_stage_minus_elapsed(tmp_series):
+def test_eta_running_stage_minus_elapsed(tmp_series, alive):
     d = defaults()
     put(tmp_series, "A_M1_1D", {"crop": done(),
                                 "mc": StageRecord(State.RUNNING, started=iso(NOW - timedelta(seconds=10)))})
@@ -306,7 +321,7 @@ def test_warning_auto_fixed_mismatch_hidden(tmp_series):
     assert [(x.sid, x.kind) for x in w] == [("A_M1_2D", "scan_data")]
 
 
-def test_failed_session_does_not_hide_others(tmp_series):
+def test_failed_session_does_not_hide_others(tmp_series, alive):
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "cnmf": StageRecord(State.RUNNING)})
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(), "cnmf": StageRecord(State.FAILED, error="boom")})
     put(tmp_series, "A_M1_3D", {"crop": done(), "mc": done(), "cnmf": done()})
@@ -339,7 +354,8 @@ def test_cache_rereads_only_changed(tmp_series, monkeypatch):
     monkeypatch.setattr(config, "resolve", lambda *a, **k: (resolves.append(1), real_resolve(*a, **k))[1])
     cache = monitor.RecordCache()
     view(tmp_series, cache)
-    assert len(reads) == 3 and len(resolves) == 3
+    # per session: one for the thresholds, one in runner.schedule_problems ("cannot be scheduled")
+    assert len(reads) == 3 and len(resolves) == 6
     reads.clear(), resolves.clear()
     view(tmp_series, cache)
     assert reads == [] and resolves == []
@@ -373,3 +389,178 @@ def test_thresholds_cache_keyed_on_session_not_object_identity(tmp_series, monke
     tmp_series.session_config("A_M1_1D").parent.mkdir(parents=True, exist_ok=True)
     tmp_series.session_config("A_M1_1D").write_text("cnmf:\n  gSig: 7\n", encoding="utf-8")
     assert cache.gsig(tmp_series, clone) == 7 and len(calls) == 2
+
+
+# --- final fix wave ---
+
+def _break_session_config(paths, sid):
+    f = paths.session_config(sid)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("cnmf: [unclosed\n", encoding="utf-8")
+
+
+def test_unschedulable_session_is_a_red_row_when_the_batch_is_stopped(tmp_series, monkeypatch):
+    """I1: computed as the runner does when no runner is alive; red row, reason in every tooltip, out of the
+    ETA and out of pending."""
+    put(tmp_series, "A_M1_1D")
+    put(tmp_series, "A_M1_2D", {"crop": done({"box": [0, 0, 480, 512]})})
+    _break_session_config(tmp_series, "A_M1_2D")
+    calls = []
+    real = runner.schedule_problems
+    monkeypatch.setattr(runner, "schedule_problems", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    cache = monitor.RecordCache()
+    v = view(tmp_series, cache)
+    row = next(r for r in v.rows if r.sid == "A_M1_2D")
+    assert row.problem.startswith("config: ")
+    assert all(c.level == "error" and "cannot be scheduled: config: " in c.tooltip for c in row.cells.values())
+    assert row.cells["crop"].text == "512×480"  # what is done stays readable
+    ok = next(r for r in v.rows if r.sid == "A_M1_1D")
+    assert ok.problem is None and ok.cells["crop"].level == "none"
+    assert v.eta_s == pytest.approx(sum(defaults()[s] for s in PENDING_STAGES) * 1000)  # the healthy one only
+    assert (v.bars["crop"].done, v.bars["crop"].failed, v.bars["crop"].pending) == (1, 0, 1)
+    assert (v.bars["mc"].failed, v.bars["mc"].pending) == (1, 1)
+    assert v.warnings == []  # no seventh panel kind
+    view(tmp_series, cache)
+    assert len(calls) == 2  # one per session, then cached until a record or config changes
+    tmp_series.session_config("A_M1_2D").write_text("cnmf:\n  gSig: 4\n", encoding="utf-8")
+    assert next(r for r in view(tmp_series, cache).rows if r.sid == "A_M1_2D").problem is None
+
+
+def test_session_without_fps_cannot_be_scheduled(tmp_series):
+    rec = put(tmp_series, "A_M1_1D")
+    registry.update_record(tmp_series, rec.sid, lambda r: setattr(r, "fps", None))
+    row = view(tmp_series).rows[0]
+    assert "fps_unavailable" in row.problem and row.cells["mc"].level == "error"
+
+
+def test_unschedulable_from_the_live_runner_heartbeat(tmp_series, alive, monkeypatch):
+    put(tmp_series, "A_M1_1D")
+    put(tmp_series, "A_M1_2D")
+    alive(status="waiting", unschedulable={"A_M1_2D": "stage parameters: KeyError: 'mc'",
+                                           "BROKEN_X9_1D": "broken registry file"})
+    monkeypatch.setattr(runner, "schedule_problems", lambda *a, **k: pytest.fail("the live runner has the list"))
+    v = view(tmp_series)
+    assert v.runner.alive and v.runner.unschedulable["A_M1_2D"].startswith("stage parameters")
+    assert {r.sid: r.problem for r in v.rows} == {"A_M1_1D": None, "A_M1_2D": "stage parameters: KeyError: 'mc'"}
+
+
+def test_crop_cell_is_width_by_height_before_and_after_mc(tmp_series):
+    """M1: the crop stage and MC both record [top, left, height, width]; the cell is width×height."""
+    put(tmp_series, "A_M1_1D", {"crop": done({"box": [10, 20, 480, 512]})})
+    put(tmp_series, "A_M1_2D", {"crop": done({"box": [10, 20, 480, 512]}),
+                                "mc": done({"crop": [10, 20, 480, 512]})})
+    put(tmp_series, "A_M1_3D", {"crop": done({"box": None}), "mc": done({"crop": None})})
+    t = {r.sid: r.cells["crop"].text for r in view(tmp_series).rows}
+    assert t == {"A_M1_1D": "512×480", "A_M1_2D": "512×480", "A_M1_3D": "uncropped"}
+
+
+def test_transient_read_error_is_retried_not_cached(tmp_series, monkeypatch):
+    """M2: a PermissionError (the batch replacing the file) is not a broken record."""
+    put(tmp_series, "A_M1_1D", {"mc": done()})
+    real = registry.read_file
+    fail = {"n": 1}
+
+    def flaky(f):
+        if fail["n"]:
+            fail["n"] -= 1
+            raise PermissionError(13, "in use")
+        return real(f)
+
+    monkeypatch.setattr(registry, "read_file", flaky)
+    cache = monitor.RecordCache()
+    assert view(tmp_series, cache).rows[0].unreadable  # nothing read before: shown as unreadable this once
+    row = view(tmp_series, cache).rows[0]
+    assert not row.unreadable and row.cells["mc"].level == "ok"
+    registry.update_record(tmp_series, "A_M1_1D", lambda r: r.stages.update({"mc": StageRecord(State.FAILED)}))
+    fail["n"] = 1
+    assert view(tmp_series, cache).rows[0].cells["mc"].level == "ok"  # the record read last meanwhile
+    assert view(tmp_series, cache).rows[0].cells["mc"].level == "error"  # read again on the next refresh
+
+
+def test_parse_error_stays_cached(tmp_series, monkeypatch):
+    tmp_series.registry_file("A_M1_1D").write_text("{not json", encoding="utf-8")
+    cache = monitor.RecordCache()
+    assert view(tmp_series, cache).rows[0].unreadable
+    reads = []
+    monkeypatch.setattr(registry, "read_file", lambda f: reads.append(f))
+    assert view(tmp_series, cache).rows[0].unreadable and reads == []
+
+
+def test_running_stage_without_a_live_batch_is_interrupted(tmp_series):
+    """M6: a RUNNING stage left by a stopped or dead batch runs again from its start."""
+    put(tmp_series, "A_M1_1D", {"crop": done(),
+                                "mc": StageRecord(State.RUNNING, started=iso(NOW - timedelta(seconds=10)))})
+    v = view(tmp_series)
+    c = v.rows[0].cells["mc"]
+    assert (c.level, c.text) == ("warning", "interrupted") and "interrupted" in c.tooltip
+    assert (v.bars["mc"].running, v.bars["mc"].pending) == (0, 1)
+    rest = sum(defaults()[s] for s in ("thresholds", "cnmf", "autoinspect", "export")) * 1000
+    assert v.eta_s == pytest.approx(defaults()["mc"] * 1000 + rest)  # the whole stage, not minus elapsed
+
+
+def test_manual_inspection_count_is_the_action_set(tmp_series):
+    """M11: the "Manual inspection: N" count and "Inspection not needed for all waiting" use one definition."""
+    put(tmp_series, "A_M1_1D", {"cnmf": done(), "gate": waiting("manual_inspection")})
+    put(tmp_series, "A_M1_2D", {"cnmf": done()})  # the gate not checked yet: the action takes it
+    put(tmp_series, "A_M1_3D", {"mc": waiting("crop_finalize")})
+    put(tmp_series, "A_M1_4D", {"cnmf": done(), "gate": done({"gate": "not_needed"})})
+    v = view(tmp_series)
+    assert v.waiting["manual_inspection"] == len(actions.waiting_gate_sids(tmp_series)) == 2
+    assert v.bars["gate"].waiting == 2
+    g = next(r for r in v.rows if r.sid == "A_M1_2D").cells["gate"]
+    assert (g.level, g.text) == ("waiting", "waits")
+
+
+def test_lock_holder_start_time_read_once_per_pid(tmp_series, monkeypatch):
+    """R2: psutil's create_time can cost tens of ms; a PID's start time does not change."""
+    monkeypatch.setattr(monitor, "_LOCK_PROC", {}, raising=False)
+    calls = []
+    real = psutil.Process.create_time
+    monkeypatch.setattr(psutil.Process, "create_time", lambda self: (calls.append(self.pid), real(self))[1])
+    p = spawn(tmp_series, "-", "", "running")
+    try:
+        assert monitor.runner_state(tmp_series).alive
+        assert monitor.runner_state(tmp_series).alive
+        assert calls == [p.pid]
+    finally:
+        stop(p)
+    assert not monitor.runner_state(tmp_series).alive and p.pid not in monitor._LOCK_PROC
+    q = spawn(tmp_series, "-", "", "running")  # a new lock holder replaces the entry
+    try:
+        assert monitor.runner_state(tmp_series).alive and list(monitor._LOCK_PROC) == [q.pid]
+    finally:
+        stop(q)
+
+
+def test_warning_text_does_not_repeat_the_stage(tmp_series):
+    """R4: the window labels each warning "<sid> · <stage>"; the text after it starts with what happened."""
+    put(tmp_series, "A_M1_1D", {"cnmf": StageRecord(State.FAILED, error="boom")},
+        anomalies=[Anomaly("stage_crashed", "error", "x", data={"stage": "cnmf", "cause": "pool_worker_died"})])
+    put(tmp_series, "A_M1_2D", {"mc": done({}, [check("mc", "mc_max_shift_px", "warning", "max shift 18 px")])})
+    w = {x.sid: x.text for x in view(tmp_series).warnings}
+    assert w == {"A_M1_1D": "a CaImAn worker died. Other sessions continue.",
+                 "A_M1_2D": "max shift 18 px. Check the MC preview."}
+
+
+def test_runner_state_exit_reason(tmp_series):
+    """I2: the final heartbeat says why the batch stopped; an old one without it is plain stopped."""
+    tmp_series.heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    for exit_ in ("finished", "stopped", "error: RuntimeError: x"):
+        tmp_series.heartbeat.write_text(json.dumps({"time": iso(NOW), "status": "idle", "exit": exit_}),
+                                        encoding="utf-8")
+        r = monitor.runner_state(tmp_series, NOW)
+        assert (r.status, r.exit, r.heartbeat_time) == ("stopped", exit_, NOW)
+    tmp_series.heartbeat.write_text(json.dumps({"time": iso(NOW), "status": "idle"}), encoding="utf-8")
+    assert monitor.runner_state(tmp_series, NOW).exit is None
+
+
+def test_runner_state_stopping(tmp_series):
+    """M5: a stop request waits for the running stage to end."""
+    p = spawn(tmp_series, "A_M1_1D", "mc", "running")
+    try:
+        assert not monitor.runner_state(tmp_series).stopping
+        tmp_series.stop_request.write_text("stop\n", encoding="utf-8")
+        assert monitor.runner_state(tmp_series).stopping
+    finally:
+        stop(p)
+    assert not monitor.runner_state(tmp_series).stopping  # nothing stops when nothing runs

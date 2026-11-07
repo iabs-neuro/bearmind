@@ -72,6 +72,16 @@ def tab_for(paths, **kw):
     return MonitorTab(paths.root, **kw)
 
 
+@pytest.fixture
+def live(series4, monkeypatch):
+    """A live batch: a fresh pulse and a lock holder (a stage RUNNING without one shows as interrupted)."""
+    hb = {"pid": 1, "time": datetime.now().isoformat(timespec="milliseconds"), "current": None,
+          "status": "running"}
+    series4.heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    series4.heartbeat.write_text(json.dumps(hb), encoding="utf-8")
+    monkeypatch.setattr(monitor, "_holds_lock", lambda lock: 1)
+
+
 def test_batch_header_states(qapp, series4):
     t = tab_for(series4)
     assert t.batch_label.text() == "Stopped"
@@ -187,7 +197,7 @@ def test_stop_writes_request(qapp, series4):
         stop(p)
 
 
-def test_progress_bars_counts_text(qapp, series4):
+def test_progress_bars_counts_text(qapp, series4, live):
     t = tab_for(series4)
     assert t.bars["mc"].caption.text() == "2 done · 1 running"
     assert "wait" in t.bars["thresholds"].caption.text()
@@ -223,7 +233,7 @@ def test_table_flat_sorted(qapp, series4):
     assert heads == ["Session", "Crop", "MC", "Thresholds", "CNMF-E", "Inspection", "Autoinspect", "Export"]
 
 
-def test_cell_color_text_tooltip(qapp, series4):
+def test_cell_color_text_tooltip(qapp, series4, live):
     t = tab_for(series4)
     view = monitor.series_view(series4)
     for i, row in enumerate(view.rows):

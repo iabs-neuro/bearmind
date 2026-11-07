@@ -109,13 +109,20 @@ def suggested_unset(paths, rec) -> bool:
     return any(c.get(k) is None for k in ("gSig", "min_corr", "min_pnr"))
 
 
-def gate_waits(paths, rec) -> bool:
-    """The gate waits for a person now: WAITING, or (CNMF done) any state but DONE, since the runner may be
-    checking it at this moment. A passed gate, or one holding a decision that counts, is not taken."""
+def gate_may_wait(rec) -> bool:
+    """The part of gate_waits that needs the record only (no file read): not excluded, not passed, and
+    WAITING or behind a finished CNMF-E. The monitor window checks it first on every refresh."""
     cnmf, g = rec.stages.get("cnmf"), rec.stages.get("gate")
     if rec.excluded or (g is not None and g.state is State.DONE):
         return False
-    if (g is None or g.state is not State.WAITING) and (cnmf is None or cnmf.state is not State.DONE):
+    return (g is not None and g.state is State.WAITING) or (cnmf is not None and cnmf.state is State.DONE)
+
+
+def gate_waits(paths, rec) -> bool:
+    """The gate waits for a person now: WAITING, or (CNMF done) any state but DONE, since the runner may be
+    checking it at this moment. A passed gate, or one holding a decision that counts, is not taken. The one
+    definition of "waits for manual inspection": the window's count and its "for all waiting" action use it."""
+    if not gate_may_wait(rec):
         return False
     try:
         cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
