@@ -11,7 +11,9 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from . import config
+import numpy as np
+
+from . import config, fileio
 from .naming import mouse_id, session_id
 from .paths import SeriesPaths
 from .registry import (STAGES, Anomaly, RawPart, SessionRecord, StageRecord, replace_broken, save_record,
@@ -211,7 +213,8 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         try:
             p, ts, err, nominal, an = _read_part(paths, sid, mode, folder, cfg_scan)
         except _Unreadable as e:
-            unreadable.append(Anomaly("unreadable_video", "error", str(e)))
+            # the folder: a session whose only part cannot be read has no parts, and Open folder needs it
+            unreadable.append(Anomaly("unreadable_video", "error", str(e), data={"folder": paths.rel(folder)}))
             continue
         parts.append(p)
         tss.append(ts)
@@ -268,7 +271,7 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         if diff:
             frac = abs(diff) / rows if rows else 1.0
             ok = frac <= cfg_scan["max_mismatch_frac"]
-            label, data = (f"part {k} ({p.folder}): ", {"where": f"part {k} end", "part": k}) if multi \
+            label, data = (f"part {k + 1} ({p.folder}): ", {"where": f"part {k} end", "part": k}) if multi \
                 else ("", {"where": "end"})
             anomalies.append(Anomaly(
                 "frames_ts_mismatch", "warning" if ok else "error",
@@ -296,9 +299,40 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
             if est.n_gaps > 0:
                 anomalies.append(Anomaly(
                     "dropped_frames", "warning",
-                    f"{est.n_gaps} gaps in timestamps (max {est.max_gap_ms:.0f} ms)",
-                    data={"n_gaps": est.n_gaps, "max_gap_ms": est.max_gap_ms}))
+                    f"{plural(est.n_gaps, 'gap')} in timestamps (max {duration_text(est.max_gap_ms)})",
+                    data={"n_gaps": est.n_gaps, "max_gap_ms": est.max_gap_ms,
+                          "n_dropped": _n_dropped(st.t_ms, est, cfg_scan["gap_factor"])}))
     return parts, mode, n_frames, fps, fps_info, anomalies, nominal
+
+
+def _n_dropped(t_ms, est, gap_factor: float) -> int:
+    """Frames missing in the timestamp gaps (each gap counts at least one). A pause between stitched parts is
+    a gap too, so it counts as its length in frames; the Scan tab judges the share of dropped frames by it."""
+    d = np.diff(np.asarray(t_ms, dtype=np.float64))
+    gaps = d[d > gap_factor * est.median_interval_ms] / est.median_interval_ms
+    return int(np.maximum(np.rint(gaps) - 1, 1).sum())
+
+
+def plural(n: int, word: str) -> str:
+    """"1 gap", "3 gaps"."""
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def duration_text(ms: float) -> str:
+    """A gap or pause for a person: "72 ms", "1.5 s", "38 s", "59 min 58 s", "2 h 3 min"."""
+    if ms < 1000:
+        return f"{ms:.0f} ms"
+    s = ms / 1000.0
+    if s < 10:
+        return f"{s:.1f} s"
+    s = round(s)
+    if s < 60:
+        return f"{s} s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m} min {s} s"
+    h, m = divmod(m, 60)
+    return f"{h} h {m} min"
 
 
 def latest_decision(rec: SessionRecord, what: str):
@@ -311,6 +345,7 @@ _latest_decision = latest_decision  # old name
 
 
 NO_FPS_MESSAGE = "no frame rate: the stages need it (MC video rate, CNMF-E fr); the session stays excluded"
+NOT_FOUND_MESSAGE = "session folder not found by the last scan"
 
 
 def _mark_no_fps(rec: SessionRecord) -> None:
@@ -326,9 +361,10 @@ def evaluate_excluded(rec: SessionRecord) -> bool:
     """Re-evaluated on every scan: the user's latest exclude decision, else any error anomaly of the scan.
 
     A session without a frame rate is always excluded (fps_unavailable): no stage can run without it, so an
-    include decision cannot help. An accepted mismatch stays in the record as a warning; n_frames is
-    already the common length. Anomalies tagged with a stage (data["stage"]) belong to that stage and do
-    not exclude the session.
+    include decision cannot help; nor can it for a session whose folder the last scan did not find
+    (not_found_in_scan): there are no files to process. An accepted mismatch stays in the record as a
+    warning; n_frames is already the common length. Anomalies tagged with a stage (data["stage"]) belong to
+    that stage and do not exclude the session.
     """
     if latest_decision(rec, "accept_mismatch") == "true":
         for a in rec.anomalies:
@@ -336,6 +372,8 @@ def evaluate_excluded(rec: SessionRecord) -> bool:
                 a.level, a.auto_fixed = "warning", True
     if rec.fps is None:
         _mark_no_fps(rec)
+        return True
+    if any(a.code == "not_found_in_scan" for a in rec.anomalies):
         return True
     exclude = latest_decision(rec, "exclude")
     if exclude is not None:
@@ -363,12 +401,28 @@ def _recreate(paths: SeriesPaths, f: Path, error: Exception, new_record):
     return rec if replace_broken(paths, rec, kept) else None
 
 
-# (done, total, sid just written; "" right after the folder walk)
+def _mark_not_found(rec: SessionRecord) -> None:
+    """The scan did not find the session's folder (removed or renamed in Explorer). Its stages and decisions
+    stay; it is excluded until a scan finds the folder again, which replaces the scan's anomalies."""
+    if not any(a.code == "not_found_in_scan" and not a.data.get("stage") for a in rec.anomalies):
+        rec.anomalies.append(Anomaly("not_found_in_scan", "error", NOT_FOUND_MESSAGE))
+    rec.excluded = evaluate_excluded(rec)
+
+
+# (done, total, sid): "" right after the folder walk, then the sid being read (done sessions before it),
+# and a last call (total, total, last sid) once everything is written
 ProgressFn = Callable[[int, int, str], None]
 
 
 def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[SessionRecord]:
+    """Scan the series and write its registry; returns the records of the sessions found.
+
+    Raises FileNotFoundError before writing anything when 1_Raw is not a folder (renamed, a junction to a
+    disconnected share): an empty walk would otherwise look like a series without sessions.
+    """
     paths = SeriesPaths(series_root)
+    if not paths.raw_root.is_dir():
+        raise FileNotFoundError(f"1_Raw not found: {paths.raw_root}")
     if not paths.series_config.exists():
         config.update_yaml(paths.series_config, {})
     found, unrecognized = _walk(paths)
@@ -377,7 +431,9 @@ def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[S
     if progress:
         progress(0, total, "")
     built = {}
-    for sid in sorted(found):
+    for i, sid in enumerate(sorted(found)):
+        if progress:  # reading the videos and timestamps is the slow part: name the session being read
+            progress(i, total, sid)
         cfg_scan = config.resolve(paths, sid=sid)["scan"]
         built[sid] = _build_record(paths, sid, found[sid], cfg_scan)
 
@@ -433,16 +489,27 @@ def scan_series(series_root: Path, progress: ProgressFn | None = None) -> list[S
             rec = new_record()
             save_record(paths, rec)
         records.append(rec)
-        if progress:
-            progress(len(records), total, sid)
 
-    out = paths.scan_unrecognized_csv
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w", encoding="utf-8", newline="") as fh:
+    for f in sorted(paths.registry_file("x").parent.glob("*.json")):
+        if f.stem in found:
+            continue
+        try:
+            update_record(paths, f.stem, _mark_not_found)
+        except UNREADABLE:  # listed as an unreadable registry file; there is no record to mark
+            pass
+        except FileNotFoundError:  # removed since the listing
+            pass
+
+    def write_unrecognized(fh):
         w = csv.writer(fh, lineterminator="\n")
         w.writerow(["path", "reason"])
         for d, reason in unrecognized:
             w.writerow([paths.rel(d), reason])
+
+    # atomic and retried: the file may be open in Excel, and a reader must never see half of it
+    fileio.write_atomic(paths.scan_unrecognized_csv, write_unrecognized, newline="")
+    if progress:
+        progress(total, total, max(found, default=""))
     return sorted(records, key=lambda r: r.sid)
 
 

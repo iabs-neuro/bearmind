@@ -20,6 +20,7 @@ ANOMALY_TITLE = {
     "unreadable_video": "unreadable video",
     "fps_unavailable": "no frame rate",
     "registry_recreated": "registry file recreated",
+    "not_found_in_scan": "not found by the last scan",
 }
 
 _RANK = {"ok": 0, "warning": 1, "error": 2}

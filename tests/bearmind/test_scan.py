@@ -1,8 +1,9 @@
-import numpy as np
-import pytest
-
+import os
 import threading
 import time
+
+import numpy as np
+import pytest
 
 from bearmind import scan
 from bearmind.paths import SeriesPaths
@@ -71,6 +72,7 @@ def test_split_part_surplus_frames_do_not_shift_next_part(make_series, make_avi,
     a = codes(r)["frames_ts_mismatch"]
     assert a.level == "warning" and a.auto_fixed
     assert a.data == {"diff": 2, "where": "part 0 end", "part": 0}
+    assert a.message.startswith(f"part 1 ({r.parts[0].folder}): ")  # counted from 1 in texts (M4)
     assert not r.excluded
     frames = np.concatenate(list(SessionReader(root, r).iter_chunks(50)))
     assert frames[:, 0, 0].tolist() == list(range(118)) + list(range(120, 240))
@@ -251,7 +253,10 @@ def test_dropped_frames_flag(make_series, tmp_path):
     vals = [i * 500000 for i in range(30)]
     vals[15:] = [v + 1500000 for v in vals[15:]]
     ts.write_text("".join(f"{v}\n" for v in vals), encoding="utf-8")
-    assert "dropped_frames" in codes(scan.scan_series(root)[0])
+    a = codes(scan.scan_series(root)[0])["dropped_frames"]
+    # one 200 ms interval at 50 ms per frame: 3 frames are missing; "1 gap", not "1 gaps"
+    assert a.message == "1 gap in timestamps (max 200 ms)"
+    assert a.data == {"n_gaps": 1, "max_gap_ms": 200.0, "n_dropped": 3}
 
 
 def test_cyrillic_space_root(make_series, tmp_path):
@@ -386,13 +391,33 @@ def test_rescan_keeps_a_concurrent_update(make_series, tmp_path):
 
 
 def test_progress_called_per_session(make_series, tmp_path):
+    """I2: one call before each session is read (the slow part), one after the writes."""
     root = tmp_path / "s"
     sids = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
     for sid in sids:
         make_series(root, "bonsai", sid=sid)
     calls = []
     scan.scan_series(root, progress=lambda *a: calls.append(a))
-    assert calls == [(0, 3, ""), (1, 3, sids[0]), (2, 3, sids[1]), (3, 3, sids[2])]
+    assert calls == [(0, 3, ""), (0, 3, sids[0]), (1, 3, sids[1]), (2, 3, sids[2]), (3, 3, sids[2])]
+
+
+def test_progress_names_the_session_being_read(make_series, tmp_path, monkeypatch):
+    """I2: while a session's files are read (patched to be slow), the last progress call names it."""
+    root = tmp_path / "s"
+    sids = ["NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D"]
+    for sid in sids:
+        make_series(root, "bonsai", sid=sid)
+    calls, seen = [], []
+    real = scan._build_record
+
+    def slow(paths, sid, items, cfg_scan):
+        seen.append(calls[-1])
+        time.sleep(0.05)
+        return real(paths, sid, items, cfg_scan)
+
+    monkeypatch.setattr(scan, "_build_record", slow)
+    scan.scan_series(root, progress=lambda *a: calls.append(a))
+    assert seen == [(0, 3, sids[0]), (1, 3, sids[1]), (2, 3, sids[2])]
 
 
 def _registry_files(paths):
@@ -421,3 +446,112 @@ def test_progress_raising_leaves_registry_readable(make_series, tmp_path):
         scan.scan_series(root, boom)
     records, broken = read_all(paths)
     assert records and not broken
+
+
+def test_missing_raw_raises_before_any_write(tmp_path):
+    """I1: a series without 1_Raw (renamed, a disconnected share) fails the scan; nothing is written."""
+    root = tmp_path / "s"
+    root.mkdir()
+    with pytest.raises(FileNotFoundError, match="1_Raw not found"):
+        scan.scan_series(root)
+    assert list(root.iterdir()) == []
+
+
+def test_raw_gone_on_rescan_keeps_the_registry(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai")
+    paths = SeriesPaths(root)
+    scan.scan_series(root)
+    before = {f.name: f.read_bytes() for f in (root / "_bearmind").rglob("*") if f.is_file()}
+    (root / "1_Raw").rename(tmp_path / "moved")
+    with pytest.raises(FileNotFoundError, match="1_Raw not found"):
+        scan.scan_series(root)
+    assert {f.name: f.read_bytes() for f in (root / "_bearmind").rglob("*") if f.is_file()} == before
+    assert not load_record(paths, "NOF_H01_1D").excluded
+
+
+@pytest.mark.skipif(os.name != "nt", reason="directory junctions are a Windows feature")
+def test_dangling_raw_junction_raises(tmp_path):
+    import _winapi
+    root = tmp_path / "s"
+    root.mkdir()
+    target = tmp_path / "share"
+    target.mkdir()
+    _winapi.CreateJunction(str(target), str(root / "1_Raw"))
+    target.rmdir()  # the share is gone; the junction stays
+    try:
+        with pytest.raises(FileNotFoundError, match="1_Raw not found"):
+            scan.scan_series(root)
+        assert [p.name for p in root.iterdir()] == ["1_Raw"]
+    finally:
+        os.rmdir(root / "1_Raw")
+
+
+def test_session_not_found_is_excluded_and_comes_back(make_series, tmp_path):
+    """I1: a session folder removed in Explorer: the record stays (stages, decisions) with the error
+    not_found_in_scan, so the batch skips it; a scan that finds the folder again includes it again."""
+    root = make_series(tmp_path / "s", "bonsai")
+    make_series(root, "bonsai", sid="NOF_H02_1D")
+    paths = SeriesPaths(root)
+    scan.scan_series(root)
+
+    def done_crop(r):
+        r.stages["crop"] = StageRecord(state=State.DONE, params_hash="h")
+        r.decisions.append(Decision("exclude", "false", "me", "2026-01-01"))  # an include cannot keep it in
+
+    update_record(paths, "NOF_H02_1D", done_crop)
+    folder = next((root / "1_Raw").rglob("NOF_H02_1D"))
+    folder.rename(tmp_path / "away")
+    calls = []
+    recs = scan.scan_series(root, lambda *a: calls.append(a))
+    assert [r.sid for r in recs] == ["NOF_H01_1D"] and calls[0] == (0, 1, "")
+    r = load_record(paths, "NOF_H02_1D")
+    a = codes(r)["not_found_in_scan"]
+    assert a.level == "error" and a.message == "session folder not found by the last scan"
+    assert r.excluded and r.stages["crop"].params_hash == "h" and r.decisions[-1].what == "exclude"
+    assert not load_record(paths, "NOF_H01_1D").excluded
+    scan.scan_series(root)  # a second scan does not add a second anomaly
+    assert [a.code for a in load_record(paths, "NOF_H02_1D").anomalies].count("not_found_in_scan") == 1
+    (tmp_path / "away").rename(folder)
+    scan.scan_series(root)
+    r = load_record(paths, "NOF_H02_1D")
+    assert "not_found_in_scan" not in codes(r) and not r.excluded
+    assert r.stages["crop"].params_hash == "h"
+
+
+def test_unreadable_registry_file_of_a_missing_session_is_left_alone(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai")
+    paths = SeriesPaths(root)
+    scan.scan_series(root)
+    f = paths.registry_file("NOF_X99_1D")
+    f.write_text("{garbage", encoding="utf-8")
+    scan.scan_series(root)
+    assert f.read_text(encoding="utf-8") == "{garbage"
+
+
+def test_unrecognized_csv_written_atomically_with_retries(make_series, tmp_path, monkeypatch):
+    """I5: scan_unrecognized.csv goes through fileio.write_atomic, which retries a replace that Windows
+    refuses while another program holds the file."""
+    from bearmind import fileio
+    root = make_series(tmp_path / "s", "bonsai")
+    real = os.replace
+    refused = []
+
+    def busy(src, dst):
+        if str(dst).endswith("scan_unrecognized.csv") and len(refused) < 2:
+            refused.append(dst)
+            raise PermissionError("file is open in another program")
+        return real(src, dst)
+
+    monkeypatch.setattr(fileio, "REPLACE_STEP_S", 0.0)
+    monkeypatch.setattr(fileio.os, "replace", busy)
+    scan.scan_series(root)
+    assert len(refused) == 2
+    assert (root / "_bearmind" / "scan_unrecognized.csv").read_text(encoding="utf-8") == "path,reason\n"
+
+
+def test_unreadable_video_keeps_the_session_folder(make_series, tmp_path):
+    """M6: Open folder needs the session folder of a session whose videos cannot be read (it has no parts)."""
+    root = make_series(tmp_path / "s", "bonsai")
+    next((root / "1_Raw").rglob("NOF_H01_1D_1.avi")).write_bytes(bytes(range(256)) * 20)
+    r = scan.scan_series(root)[0]
+    assert r.parts == [] and codes(r)["unreadable_video"].data == {"folder": "1_Raw/HM_NOF_1D/NOF_H01_1D"}

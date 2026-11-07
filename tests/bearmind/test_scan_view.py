@@ -163,7 +163,8 @@ def test_texts_are_english(make_series, tmp_path):
         for x in row.anomalies:
             texts += [x.short, x.text]
     assert texts and not [t for t in texts if CYRILLIC.search(t)]
-    assert set(scan_view.ANOMALY_TITLE) >= {"frames_ts_mismatch", "registry_recreated", "fps_unavailable"}
+    assert set(scan_view.ANOMALY_TITLE) >= {"frames_ts_mismatch", "registry_recreated", "fps_unavailable",
+                                         "not_found_in_scan"}
 
 
 def test_broken_registry_file_listed(make_series, tmp_path):
@@ -195,3 +196,16 @@ def test_three_parts_two_pauses_no_drop_reviewed():
 
 def test_three_parts_two_pauses_plus_real_drop_stays_unreviewed():
     assert not _three_part_line(3, 60000.0).reviewed
+
+
+def test_session_not_found_row(make_series, tmp_path):
+    """I1: a session whose folder the last scan did not find is a red row excluded by anomaly."""
+    root = make_series(tmp_path / "s", "bonsai")
+    make_series(root, "bonsai", sid="NOF_H02_1D")
+    scan.scan_series(root)
+    next((root / "1_Raw").rglob("NOF_H02_1D")).rename(tmp_path / "away")
+    scan.scan_series(root)
+    row = next(r for r in scan_view.scan_view(SeriesPaths(root)).rows if r.sid == "NOF_H02_1D")
+    assert row.excluded and row.excluded_by == "anomaly" and row.level == "error"
+    assert row.summary == "not found by the last scan"
+    assert scan_view.ANOMALY_TITLE["not_found_in_scan"] == "not found by the last scan"
