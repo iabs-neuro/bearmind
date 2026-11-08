@@ -592,6 +592,6 @@ def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float
 def export_summary(paths, dest: Path) -> Path:
     """The same table `run_bearmind status` writes to summary.csv (same records, problems, broken files)."""
     state = runner.series_state(paths)
-    df = runner.summary(paths, state.records, problems=state.problems, broken=state.broken)
+    df = runner.summary(paths, state.records, problems=state.problems, broken=state.broken, view=state.view)
     df.to_csv(dest, index=False, encoding="utf-8", lineterminator="\n")
     return dest
