@@ -39,16 +39,18 @@ INPUT_CHANGED = "golden input changed: the helper no longer builds the recorded 
 # Rows are selected before a click (None: the click takes no selection); "Sort X" clicks the sorting
 # button X. Every Save progress and the final Save results are recorded.
 SESSIONS = {
-    # Delete, Merge, Show sel., Delete in the zoomed view, Revert change, Merge, Save progress,
-    # Discard all, Delete, Merge, Save results
+    # Delete, Merge, Show sel., Delete in the zoomed view, Revert change, Reset view, Merge, Save progress,
+    # Discard all, Delete, Merge, Save results. Revert change returns the zoomed view it was made in; Reset view
+    # then shows the full list the Merge rows refer to (the old window ended Revert change on it by itself).
     "s8": dict(n=8, T=300, end_frame=300, clicks=[
         ([2], "Delete sel."), ([0, 1], "Merge sel."), ([1, 2, 3], "Show sel."), ([1], "Delete sel."),
-        (None, "Revert change"), ([0, 2], "Merge sel."), (None, PROGRESS), (None, "Discard all"),
-        ([5], "Delete sel."), ([0, 3], "Merge sel."), (None, FINAL)]),
+        (None, "Revert change"), (None, "Reset view"), ([0, 2], "Merge sel."), (None, PROGRESS),
+        (None, "Discard all"), ([5], "Delete sel."), ([0, 3], "Merge sel."), (None, FINAL)]),
     "s40": dict(n=40, T=2000, end_frame=None, clicks=[
         ([3, 17], "Delete sel."), ([0, 1, 2], "Merge sel."), ([4, 5, 6, 7, 8, 9, 10, 11, 12], "Show sel."),
-        ([2], "Delete sel."), (None, "Revert change"), ([0, 5], "Merge sel."), (None, PROGRESS),
-        (None, "Discard all"), ([7, 20, 33], "Delete sel."), ([10, 11, 25], "Merge sel."), (None, FINAL)]),
+        ([2], "Delete sel."), (None, "Revert change"), (None, "Reset view"), ([0, 5], "Merge sel."),
+        (None, PROGRESS), (None, "Discard all"), ([7, 20, 33], "Delete sel."), ([10, 11, 25], "Merge sel."),
+        (None, FINAL)]),
     # sorting, then Delete and Merge by row; Reset view after a zoom, then Merge; Merge then Revert;
     # Delete then Revert. Not Revert right after Reset view: that deferred bug is not recorded.
     "s40b": dict(n=40, T=2000, end_frame=None, clicks=[
