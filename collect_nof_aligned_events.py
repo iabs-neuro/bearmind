@@ -37,35 +37,10 @@ import csv
 import glob
 import argparse
 
-# This collector is CPU-only. The local envs ship a broken torch (DLL load
-# crashes 0xc0000139 / 0xc06d007f). ssqueezepy lazily does `import torch`, and
-# the crash is a FATAL native exception that bypasses ssqueezepy's try/except,
-# killing the process. Block torch in sys.modules BEFORE importing ssqueezepy/
-# driada so `import torch` raises a catchable ImportError -> ssqueezepy falls
-# back to its numpy backend (the CPU path we want anyway).
-sys.modules["torch"] = None
+import numpy as np
+import pandas as pd
 
-
-# Backend MUST be selected BEFORE importing driada (-> ssqueezepy), because it is
-# read from the SSQ_GPU env var at import time. Pre-parse --backend.
-def _preparse_backend(argv):
-    backend = "cpu"
-    for i, a in enumerate(argv):
-        if a == "--backend" and i + 1 < len(argv):
-            backend = argv[i + 1]
-        elif a.startswith("--backend="):
-            backend = a.split("=", 1)[1]
-    return backend
-
-
-from wavelet_backend import set_wavelet_backend  # noqa: E402
-_ACTUAL_BACKEND = set_wavelet_backend(_preparse_backend(sys.argv))
-
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from driada.experiment.neuron import Neuron  # noqa: E402
-from event_stats import extract_event_records, RECORD_FIELDS  # noqa: E402
+from event_stats import extract_event_records, RECORD_FIELDS
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -101,6 +76,25 @@ def _session_name(npz_path):
         if base.endswith(suffix):
             return base[: -len(suffix)]
     return base
+
+
+def _cpu_only_wavelet_backend(backend):
+    """Block torch and choose the wavelet backend; main() calls this before anything imports driada.
+
+    Both are process-wide, so they are done here and not on import: a module that imports this one keeps its own
+    torch and its own backend choice.
+    """
+    # This collector is CPU-only. The local envs ship a broken torch (DLL load
+    # crashes 0xc0000139 / 0xc06d007f). ssqueezepy lazily does `import torch`, and
+    # the crash is a FATAL native exception that bypasses ssqueezepy's try/except,
+    # killing the process. Block torch in sys.modules BEFORE importing ssqueezepy/
+    # driada so `import torch` raises a catchable ImportError -> ssqueezepy falls
+    # back to its numpy backend (the CPU path we want anyway).
+    sys.modules["torch"] = None
+    # Backend MUST be selected BEFORE importing driada (-> ssqueezepy), because it is
+    # read from the SSQ_GPU env var at import time.
+    from wavelet_backend import set_wavelet_backend
+    return set_wavelet_backend(backend)
 
 
 def _build_shared_wavelet(fps):
@@ -141,6 +135,8 @@ def collect_session(npz_path, session_name, fps):
     if ca_mat.ndim != 2:
         raise ValueError("Calcium is %dD, expected 2D (neurons x time)" % ca_mat.ndim)
 
+    from driada.experiment.neuron import Neuron  # here: after main() chose the backend
+
     wavelet_shared, rel_wvt_times_shared = _build_shared_wavelet(fps)
 
     rows = []
@@ -177,10 +173,11 @@ def main():
     ap.add_argument("--fps-csv", default=None, help="override fps_data.csv path")
     ap.add_argument("--default-fps", type=float, default=19.76)
     ap.add_argument("--limit", type=int, default=0, help="process at most N sessions (0=all)")
-    ap.add_argument("--backend", default="cpu", help="auto|gpu|cpu (pre-parsed before import)")
+    ap.add_argument("--backend", default="cpu", help="auto|gpu|cpu (set before driada is imported)")
     args = ap.parse_args()
 
-    print("[INFO] wavelet backend: %s" % _ACTUAL_BACKEND)
+    actual_backend = _cpu_only_wavelet_backend(args.backend)
+    print("[INFO] wavelet backend: %s" % actual_backend)
     fps_lookup = load_exact_fps(args.fps_csv)
     print("[INFO] loaded exact FPS for %d names" % len(fps_lookup))
 

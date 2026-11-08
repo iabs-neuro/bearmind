@@ -1,5 +1,5 @@
 from bm_examinator import colornum_Metro as clnm
-from scipy.ndimage.filters import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d
 from scipy.stats import median_abs_deviation as mad
 from scipy.optimize import curve_fit
 from scipy import signal

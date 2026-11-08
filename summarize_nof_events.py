@@ -11,11 +11,13 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 
 def main():
+    # Agg here, not on import: the backend is process-wide, and an importer may want its windows
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--events", default="nof_wavelet_events.csv")
     ap.add_argument("--out-fig", default="figures/nof_event_distributions.png")

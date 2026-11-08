@@ -104,7 +104,7 @@ def test_result_and_output_come_back(stage):
     assert res.anomalies == [Anomaly("note", "warning", "from the child", data={"k": 1})]
     m = res.metrics
     assert m["pid"] != os.getpid() and m["sid"] == SID and m["root"] == str(stage.paths.root)
-    assert m["cwd"] == os.getcwd()  # the old config.py writes config.json into the current folder
+    assert m["cwd"] == os.getcwd()  # the child starts in the parent's folder: a relative path means the same in both
     assert m["coretype"] == "Sandybridge" and m["faulthandler_env"] == "1" and m["faulthandler_on"] is True
     text = log_text(stage)
     assert "fake stage: stdout line" in text and "fake stage: stderr line" in text

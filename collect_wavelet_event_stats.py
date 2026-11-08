@@ -15,32 +15,18 @@ ASCII-only output. Usage:
       --out nof_wavelet_events.csv --backend auto
 """
 import os
-import sys
 import glob
 import argparse
 
-# Backend MUST be selected BEFORE importing auto_inspector (-> driada -> ssqueezepy),
-# because it is read from the SSQ_GPU env var at import time. Pre-parse --backend.
-def _preparse_backend(argv):
-    backend = "auto"
-    for i, a in enumerate(argv):
-        if a == "--backend" and i + 1 < len(argv):
-            backend = argv[i + 1]
-        elif a.startswith("--backend="):
-            backend = a.split("=", 1)[1]
-    return backend
+import numpy as np
+import pandas as pd
 
+from event_stats import extract_event_records
+from naming import extract_session_id
 
-from wavelet_backend import set_wavelet_backend  # noqa: E402
-_ACTUAL_BACKEND = set_wavelet_backend(_preparse_backend(sys.argv))
-
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from auto_inspector import get_neuron_with_spikes  # noqa: E402
-from capcan_validation import load_estimates, fps_map  # noqa: E402
-from event_stats import extract_event_records  # noqa: E402
-from naming import extract_session_id  # noqa: E402
+# auto_inspector and capcan_validation (-> driada -> ssqueezepy) are imported inside the functions: the wavelet
+# backend MUST be selected BEFORE them, because ssqueezepy reads it from the SSQ_GPU env var at import time, and
+# selecting it is process-wide, so main() does it rather than the import of this module.
 
 
 def _session_name(pickle_filename):
@@ -79,6 +65,9 @@ def _build_shared_wavelet(fps):
 
 def collect_session(pickle_path, session_name, fps):
     """Return list of per-event dicts for one session (wavelet detection on RAW traces)."""
+    from auto_inspector import get_neuron_with_spikes
+    from capcan_validation import load_estimates
+
     est = load_estimates(pickle_path)
     comps = list(est.idx_components)
     ef = est.C.shape[1]
@@ -112,10 +101,14 @@ def main():
     ap.add_argument("--experiment", default="NOF")
     ap.add_argument("--out", default="nof_wavelet_events.csv")
     ap.add_argument("--limit", type=int, default=0, help="process at most N sessions (0=all)")
-    ap.add_argument("--backend", default="auto", help="auto|gpu|cpu (pre-parsed before import)")
+    ap.add_argument("--backend", default="auto", help="auto|gpu|cpu (set before driada is imported)")
     args = ap.parse_args()
 
-    print("[INFO] wavelet backend: %s" % _ACTUAL_BACKEND)
+    from wavelet_backend import set_wavelet_backend
+    actual_backend = set_wavelet_backend(args.backend)
+    from capcan_validation import fps_map
+
+    print("[INFO] wavelet backend: %s" % actual_backend)
     pattern = os.path.join(args.raw_path, args.experiment + "_*_estimates.pickle")
     files = sorted(glob.glob(pattern))
     if args.limit > 0:

@@ -578,7 +578,7 @@ def test_heartbeat_logs_and_cwd(series, monkeypatch):
     cwd = os.getcwd()
     _run(s)
     assert os.getcwd() == cwd
-    assert set(s.stubs.cwd) == {str(provenance.REPO_ROOT)}
+    assert set(s.stubs.cwd) == {cwd}  # stages run in the folder the runner was started in
     a, b = seen
     assert a["current"] == {"sid": S1, "stage": "crop"} and a["status"] == "running"
     assert b["time"] != a["time"]  # the background thread keeps the pulse while a stage runs

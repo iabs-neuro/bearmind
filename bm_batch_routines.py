@@ -27,13 +27,8 @@ from time import time
 from scipy.ndimage import gaussian_filter
 from scipy.io import savemat
 
-import warnings
-
 from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
                     update_config, get_session_name_from_path, get_session_config_path)
-
-
-warnings.filterwarnings('ignore')
 
 from naming import extract_session_id
 

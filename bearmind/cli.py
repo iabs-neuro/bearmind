@@ -16,7 +16,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from bearmind import actions, config, launcher, monitor, provenance, registry, runner, scan
+from bearmind import actions, config, launcher, monitor, registry, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, State
 from bearmind.stages import gate
@@ -136,8 +136,7 @@ def cmd_gui(args) -> int:
         app = importlib.import_module("bearmind.gui.app")  # lazy: the other commands must work without PySide6
     except ImportError as e:
         return _gui_cannot_start(e)
-    series = str(Path(args.series).resolve()) if args.series else None  # absolute before the chdir
-    os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
+    series = str(Path(args.series).resolve()) if args.series else None
     return app.main([series] if series else [])
 
 
@@ -746,10 +745,8 @@ def main(argv=None) -> int:
         return e.code if isinstance(e.code, int) else 0
     if args.command == "gui":  # the series is optional here, so it is not resolved below
         return args.func(args)
-    cwd = os.getcwd()
     try:
-        args.series = str(Path(args.series).resolve())  # absolute before the chdir
-        os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
+        args.series = str(Path(args.series).resolve())
         return args.func(args)
     except CliError as e:
         _say(f"[FAILED] {e}")
@@ -763,8 +760,6 @@ def main(argv=None) -> int:
         _say(f"[FAILED] unexpected error: {type(e).__name__}: {_first_line(e)}; "
              f"details in {log_file}")
         return 1
-    finally:
-        os.chdir(cwd)
 
 
 def _log_traceback(log_file: Path) -> None:

@@ -1,8 +1,17 @@
 import json
 import os
 import multiprocessing
+from pathlib import Path
+
 import psutil
 
+# The machine's main config lives next to this file, not in the folder Python started in: the batch's stages and
+# the inspection server run from whatever folder they were started in and must read one file (autoinspection takes
+# its joblib backend from it). Callers name it 'config.json', as before; mouse and session configs keep their paths.
+MAIN_CONFIG = 'config.json'
+CONFIG_PATH = Path(__file__).resolve().parent / MAIN_CONFIG
+
+DATA_PATHWAYS = ('bonsai', 'legacy')
 
 DEFAULT_CONFIG = {
     'ROOT': 'C:\\Users\\1\\HM_NOF_4D',
@@ -22,31 +31,46 @@ DEFAULT_MOUSE_CONFIG = {
 }
 
 
-def create_config(content=DEFAULT_CONFIG, name='config.json'):
+def _config_file(name):
+    # CONFIG_PATH is read at call time, so a test can point the main config elsewhere
+    return CONFIG_PATH if name == MAIN_CONFIG else Path(name)
+
+
+def _is_main(name):
+    return _config_file(name) == CONFIG_PATH
+
+
+def create_config(content=DEFAULT_CONFIG, name=MAIN_CONFIG):
+    content = dict(content)  # the defaults are shared; normalising ROOT must not change them
     if 'ROOT' in content.keys():
         content['ROOT'] = os.path.normpath(content['ROOT'])
     write_config(content, name=name)
 
 
-def write_config(data, name='config.json'):
-    with open(name, 'w+') as fp:
+def write_config(data, name=MAIN_CONFIG):
+    with open(_config_file(name), 'w+') as fp:
         json.dump(data, fp)
 
 
-def read_config(name='config.json'):
-    with open(name, 'r') as fp:
+def read_config(name=MAIN_CONFIG):
+    """A config file as a dict; a machine without its main config yet gets a copy of DEFAULT_CONFIG (nothing is
+    written: only write_config and update_config create files)."""
+    path = _config_file(name)
+    if _is_main(name) and not path.exists():
+        return dict(DEFAULT_CONFIG)
+    with open(path, 'r') as fp:
         config = json.load(fp)
         return config
 
 
-def update_config(new_data, cpath='config.json'):
+def update_config(new_data, cpath=MAIN_CONFIG):
     old_config = read_config(name=cpath)
     if 'ROOT' in new_data.keys():
         new_data['ROOT'] = os.path.normpath(new_data['ROOT'])
     if 'TEMP_PATHWAY' in new_data:
         new_data['TEMP_PATHWAY'] = os.path.normpath(new_data['TEMP_PATHWAY'])
     old_config.update(new_data)
-    if cpath == 'config.json':  # add system info to main config
+    if _is_main(cpath):  # add system info to main config
         system_info = {
             'CPUs': multiprocessing.cpu_count(),
             'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1
@@ -55,10 +79,10 @@ def update_config(new_data, cpath='config.json'):
 
     write_config(old_config, name=cpath)
 
-    if cpath == 'config.json':
-        # read new updated main config
-        global CONFIG
-        CONFIG = read_config()
+    if _is_main(cpath):
+        # in place: bm_examinator and bm_batch_routines hold this dict from `from config import CONFIG`
+        CONFIG.clear()
+        CONFIG.update(read_config())
 
 
 def create_mouse_configs(root=None):
@@ -94,11 +118,14 @@ def create_session_configs(root=None):
 
 def get_session_name_from_path(fname):
     splt_path = os.path.normpath(fname).split(os.sep)
-    if CONFIG['DATA_PATHWAY'] == 'bonsai':
+    pathway = CONFIG['DATA_PATHWAY']
+    if pathway == 'bonsai':
         session_name = splt_path[-2]
-    elif CONFIG['DATA_PATHWAY'] == 'legacy':
+    elif pathway == 'legacy':
         session_name = splt_path[-5]
-      
+    else:
+        raise ValueError(f"unknown DATA_PATHWAY: {pathway!r}; expected one of "
+                         + ", ".join(repr(p) for p in DATA_PATHWAYS))
 
     return session_name
 
@@ -149,8 +176,5 @@ def get_parallelization_backend():
 
     return CONFIG.get('PARALLELIZATION_BACKEND', 'loky')
 
-
-if not os.path.exists('config.json'):
-    create_config()
 
 CONFIG = read_config()

@@ -1569,7 +1569,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     and continues when the decision arrives; once=True returns as soon as no stage is ready. console=True
     prints one ASCII line per event (stage started / done / failed, waits) on stdout.
     """
-    paths = SeriesPaths(Path(series_root).resolve())  # absolute before the chdir below
+    paths = SeriesPaths(Path(series_root).resolve())
     run_ = _Run(paths, until, sids, once, poll_s, console)
     config.resolve(paths)  # a broken series config stops here, before any state changes
     lock = _acquire_lock(paths)
@@ -1578,9 +1578,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
     except BaseException:
         _release_lock(paths, lock)
         raise
-    cwd = os.getcwd()
     try:
-        os.chdir(provenance.REPO_ROOT)  # the old config.py creates config.json in the current folder
         run_.open()
         log.info("run started: pid %d, until %s, sessions %s, once %s", os.getpid(), until or "export",
                  "all" if sids is None else ",".join(sids), once)
@@ -1605,7 +1603,6 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         raise
     finally:
         run_.close()
-        os.chdir(cwd)
         _drop_lock(machine_lock(), mlock)
         _release_lock(paths, lock)
 
