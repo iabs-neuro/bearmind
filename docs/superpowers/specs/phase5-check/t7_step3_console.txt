@@ -1,0 +1,40 @@
+2026-11-08T19:54:07.720 +   0.02s next_ready before {"value": ["NOF_H01_1D", "gate"]}
+2026-11-08T19:54:07.727 +   0.03s runner started {"pid": 3550560}
+2026-11-08T19:54:09.933 +   2.23s state {"sid": "NOF_H01_1D", "stage": "gate", "old": "pending", "new": "running"}
+2026-11-08T19:54:11.289 +   3.59s state {"sid": "NOF_H01_1D", "stage": "gate", "old": "running", "new": "done"}
+2026-11-08T19:54:11.289 +   3.59s state {"sid": "NOF_H01_1D", "stage": "autoinspect", "old": "pending", "new": "running"}
+2026-11-08T19:54:11.289 +   3.59s state {"sid": "NOF_H03_3D", "stage": "gate", "old": "pending", "new": "waiting"}
+2026-11-08T19:56:04.854 + 117.16s state {"sid": "NOF_H01_1D", "stage": "autoinspect", "old": "running", "new": "done"}
+2026-11-08T19:56:04.854 + 117.16s state {"sid": "NOF_H01_1D", "stage": "export", "old": "pending", "new": "running"}
+2026-11-08T19:56:18.906 + 131.21s state {"sid": "NOF_H01_1D", "stage": "export", "old": "running", "new": "done"}
+2026-11-08T19:56:19.157 + 131.46s [OK] runner ended by itself (--once), no forbidden stage {"code": 0, "seconds": 131.5}
+2026-11-08T19:56:19.158 + 131.46s [OK] gate passed with the decision cleaned {"metrics": {"gate": "cleaned", "who": "User", "when": "2026-11-08T19:48:22.208"}, "manual_result_param": {"size": 68727632, "mtime_ns": 1794156502207060200}, "manual_file": {"size": 68727632, "mtime_ns": 1794156502207060200}}
+2026-11-08T19:56:24.784 + 137.09s [OK] autoinspection read the manual result {"n_initial": 220, "n_kept_in_manual_result": 220, "processed_name": "H:\\Projects\\_bearmind_test\\phase5_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_manual_estimates.pickle"}
+2026-11-08T19:56:24.784 + 137.09s [OK] export done, files present {"outputs": {"npz": "6_Export/npz/NOF_H01_1D_data.npz", "json": "6_Export/npz/NOF_H01_1D_metadata.json", "timestamps": "6_Export/npz/NOF_H01_1D_timestamps.csv", "filters": "6_Export/filters/NOF_H01_1D_filters.mat"}, "metrics": {"n_neurons": 139, "component_rule": "ml_or_merged_not_deleted", "n_exported": 139, "n_snr_duplicates_exported": 0, "n_merge_products_dropped": 0, "median_snr": 6.42005010413879}}
+2026-11-08T19:56:24.784 + 137.09s [OK] NOF_H03_3D waits at the gate, nothing else ran for it {"gate": "waiting", "gate_error": "waiting for manual_inspection"}
+    NOF_H01_1D.log 2026-11-08 19:54:09,539 INFO NOF_H01_1D gate: started
+    NOF_H01_1D.log 2026-11-08 19:54:11,202 INFO stage process bearmind.stages.gate:run: exit 0x0 after 2 s, peak commit of its process tree 0.0 GB
+    NOF_H01_1D.log 2026-11-08 19:54:11,215 INFO NOF_H01_1D gate: done (checks: ok)
+    NOF_H01_1D.log 2026-11-08 19:54:11,303 INFO NOF_H01_1D autoinspect: started
+    NOF_H01_1D.log [1/4] Preparing traces for 220 neurons...
+    NOF_H01_1D.log [1/4] Preparing traces for 20 neurons...
+    NOF_H01_1D.log 2026-11-08 19:56:04,786 INFO stage process bearmind.stages.autoinspect:run: exit 0x0 after 113 s, peak commit of its process tree 28.4 GB
+    NOF_H01_1D.log 2026-11-08 19:56:04,805 INFO NOF_H01_1D autoinspect: done (checks: ok)
+    NOF_H01_1D.log 2026-11-08 19:56:04,856 INFO NOF_H01_1D export: started
+    NOF_H01_1D.log 2026-11-08 19:56:18,137 INFO stage process bearmind.stages.export:run: exit 0x0 after 13 s, peak commit of its process tree 0.8 GB
+    NOF_H01_1D.log 2026-11-08 19:56:18,148 INFO NOF_H01_1D export: done (checks: ok)
+    NOF_H03_3D.log 2026-11-08 19:54:11,251 INFO NOF_H03_3D gate: waiting for manual_inspection
+    series.log 2026-11-08 19:54:09,500 INFO run started: pid 3550560, until export, sessions all, once True
+    series.log 2026-11-08 19:54:09,539 INFO NOF_H01_1D gate: started
+    series.log 2026-11-08 19:54:11,202 INFO stage process bearmind.stages.gate:run: exit 0x0 after 2 s, peak commit of its process tree 0.0 GB
+    series.log 2026-11-08 19:54:11,215 INFO NOF_H01_1D gate: done (checks: ok)
+    series.log 2026-11-08 19:54:11,251 INFO NOF_H03_3D gate: waiting for manual_inspection
+    series.log 2026-11-08 19:54:11,303 INFO NOF_H01_1D autoinspect: started
+    series.log 2026-11-08 19:56:04,786 INFO stage process bearmind.stages.autoinspect:run: exit 0x0 after 113 s, peak commit of its process tree 28.4 GB
+    series.log 2026-11-08 19:56:04,805 INFO NOF_H01_1D autoinspect: done (checks: ok)
+    series.log 2026-11-08 19:56:04,856 INFO NOF_H01_1D export: started
+    series.log 2026-11-08 19:56:18,137 INFO stage process bearmind.stages.export:run: exit 0x0 after 13 s, peak commit of its process tree 0.8 GB
+    series.log 2026-11-08 19:56:18,148 INFO NOF_H01_1D export: done (checks: ok)
+    series.log 2026-11-08 19:56:18,183 INFO run finished: done 3, failed 0, waiting 1, skipped 0, not_recorded []
+2026-11-08T19:56:34.774 + 147.08s children of the runner {"seen": 43, "alive_after": 0}
+[OK] written C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_step3.json

@@ -1,0 +1,12 @@
+[speed] hour first document bytes=2085550
+[speed] hour delete rows=[3] time_s=0.0015 patch_bytes=2454
+[speed] hour delete rows=[10, 11] time_s=0.0014 patch_bytes=2444
+[speed] hour delete rows=[50] time_s=0.0014 patch_bytes=2439
+.[speed] short delete rows=[3] time_s=0.0015 patch_bytes=2454
+[speed] short delete rows=[10, 11] time_s=0.0014 patch_bytes=2444
+[speed] short delete rows=[50] time_s=0.0014 patch_bytes=2439
+.[speed] hour merge time_s=1.519 manual_merge_s=1.430 extra_s=0.088 patch_bytes=14078
+.[speed] hour select median_ms=0.057 max_ms=0.150
+.[speed] hour save_results time_s=0.233 result_mb=504 side_files_after_s=13.7 patch_bytes=150
+[speed] open_cold_s=1.169 first_document_bytes=2086537 open_prepared_s=0.115 open_cached_s=0.687 save_s=0.225 next_s=0.106 writer_busy_after_next=True save_during_side_files_s=0.264 writer_busy_after_second_save=True next_waiting_s=0.051 side_files_left_s=13.180
+6 passed, 1 warning in 66.15s (0:01:06)

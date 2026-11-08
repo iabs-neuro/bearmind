@@ -1,0 +1,9 @@
+19:54:09 NOF_H01_1D gate: started
+19:54:11 NOF_H01_1D gate: done (checks: ok)
+19:54:11 NOF_H03_3D gate: waiting for manual_inspection
+19:54:11 NOF_H01_1D autoinspect: started
+19:56:04 NOF_H01_1D autoinspect: done (checks: ok)
+19:56:04 NOF_H01_1D export: started
+19:56:18 NOF_H01_1D export: done (checks: ok)
+[OK] this run: done 3, failed 0, skipped 0 | series now: failed 0, waiting for a person 1, cannot be scheduled 0, excluded 0
+[WARN] 1 sessions wait for a person; see: status H:\Projects\_bearmind_test\phase5_short

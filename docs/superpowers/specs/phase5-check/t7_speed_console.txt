@@ -1,0 +1,29 @@
+[speed] inputs {"processed": {"file": "H:\\Projects\\_bearmind_test\\series_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_processed.pickle", "bytes": 64954483, "load_s": 0.017, "components": 202, "listed": 202, "frames": 2000, "fov": [534, 519]}, "estimates": {"file": "H:\\Projects\\_bearmind_test\\series_short\\4_Estimates\\NOF_H01_1D_estimates.pickle", "bytes": 68768046, "load_s": 0.015, "components": 257, "listed": 222, "frames": 2000}}
+[speed] T=2000 open {'prepare_cold_s': 0.3215022999793291, 'wave_s': 0.004104500054381788, 'prepare_with_contour_cache_s': 0.0607058999594301, 'open_cold_s': 0.36421709996648133, 'open_cached_s': 0.09931619989220053, 'first_document_bytes': 2115964, 'window_on_document_s': [0.042, 0.038, 0.039], 'wave_frac': 0.0}
+[speed] T=2000 delete [([3], 0.0015, 2550, []), ([10, 11], 0.0016, 2540, []), ([50], 0.0016, 2535, [])]
+[speed] T=2000 select {'median_ms': 0.056999968364834785, 'max_ms': 0.16329996287822723, 'data_columns_sent': 0, 'models_changed': ['Div', 'Selection'], 'patch_bytes_20': 6096}
+[speed] T=2000 save_results {'until_free_s': 0.03219639998860657, 'pickle_s': 0.03114189999178052, 'side_files_after_s': 1.11042320006527, 'result_bytes': 64962963, 'patch_bytes': 150}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[speed] T=2000 merge [([3, 4], 1.0, 0.689, 15654), ([10, 11], 1.205, 0.392, 15641)]
+[speed] T=18000 open {'prepare_cold_s': 0.4179682000540197, 'wave_s': 0.02267880004364997, 'prepare_with_contour_cache_s': 0.1450294000096619, 'open_cold_s': 0.4944613000843674, 'open_cached_s': 0.19884369999635965, 'first_document_bytes': 2115958, 'window_on_document_s': [0.054, 0.056, 0.053], 'wave_frac': 0.0}
+[speed] T=18000 delete [([3], 0.0015, 2550, []), ([10, 11], 0.0015, 2540, []), ([50], 0.0016, 2535, [])]
+[speed] T=18000 select {'median_ms': 0.05854998016729951, 'max_ms': 0.18269999418407679, 'data_columns_sent': 0, 'models_changed': ['Div', 'Selection'], 'patch_bytes_20': 6096}
+[speed] T=18000 save_results {'until_free_s': 0.03572160005569458, 'pickle_s': 0.035425799898803234, 'side_files_after_s': 2.3672645000042394, 'result_bytes': 97363918, 'patch_bytes': 150}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[speed] T=18000 merge [([3, 4], 1.082, 0.753, 15656), ([10, 11], 1.319, 0.436, 15643)]
+[speed] T=107107 open {'prepare_cold_s': 0.8427469000453129, 'wave_s': 0.12611569999717176, 'prepare_with_contour_cache_s': 0.5791645999997854, 'open_cold_s': 1.0459706000983715, 'open_cached_s': 0.6562726000556722, 'first_document_bytes': 2102984, 'window_on_document_s': [0.077, 0.077, 0.079], 'wave_frac': 0.0}
+[speed] T=107107 delete [([3], 0.0016, 2550, []), ([10, 11], 0.0015, 2540, []), ([50], 0.0016, 2535, [])]
+[speed] T=107107 select {'median_ms': 0.058999983593821526, 'max_ms': 0.1542000100016594, 'data_columns_sent': 0, 'models_changed': ['Div', 'Selection'], 'patch_bytes_20': 6096}
+[speed] T=107107 save_results {'until_free_s': 0.1559261999791488, 'pickle_s': 0.15564350003842264, 'side_files_after_s': 9.80744030000642, 'result_bytes': 277810876, 'patch_bytes': 150}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[speed] T=107107 merge [([3, 4], 1.224, 0.98, 15594), ([10, 11], 1.485, 0.644, 15585)]
+[OK] written C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_speed.json

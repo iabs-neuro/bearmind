@@ -1,0 +1,34 @@
+{
+ "by_length": {
+  "2000": {
+   "kind": "measured",
+   "open_s": 0.4732999000698328,
+   "select_ms": 0.050550035666674376,
+   "delete_s": 0.13505690003512427,
+   "delete_patch_bytes": 19923201,
+   "save_results_s": 1.6109087000368163,
+   "merge_s": 1.463010000064969,
+   "merge_patch_bytes": 21893505
+  },
+  "18000": {
+   "kind": "tiled copy",
+   "open_s": 0.7772383999545127,
+   "select_ms": 0.04710000939667225,
+   "delete_s": 0.23176894994685426,
+   "delete_patch_bytes": 174292383,
+   "save_results_s": 3.3215981000103056,
+   "merge_s": 1.9975889000343159,
+   "merge_patch_bytes": 191622831
+  },
+  "107107": {
+   "kind": "tiled copy",
+   "open_s": 2.4676269000628963,
+   "select_ms": 0.05355000030249357,
+   "delete_s": 0.8173006500001065,
+   "delete_patch_bytes": 1033999467,
+   "save_results_s": 19.304585099918768,
+   "merge_s": 4.9132936000823975,
+   "merge_patch_bytes": 1136874167
+  }
+ }
+}

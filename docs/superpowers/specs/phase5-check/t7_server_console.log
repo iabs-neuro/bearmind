@@ -1,0 +1,6 @@
+[OK] inspection server: http://localhost:52908
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[OK] NOF_H01_1D: result saved, decision cleaned recorded
+WARNING:bokeh.server.views.ws:Failed sending message as connection was closed
+WARNING:bokeh.server.views.ws:Failed sending message as connection was closed
+[OK] inspection server stopped: no open browser tab for 30 s

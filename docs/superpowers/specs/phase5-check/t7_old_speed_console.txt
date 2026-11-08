@@ -1,0 +1,28 @@
+[save_processed_estimates] Saving estimates WITH cached metrics (202 rows)
+Final results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T2000\NOF_H01_1D saved to NOF_H01_1Dfinal_estimates.pickle
+
+Results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T2000\NOF_H01_1D saved in folder C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T2000
+
+[old] T=2000 {"kind": "measured", "open_s": 0.4732999000698328, "select_ms": 0.050550035666674376, "delete_s": 0.13505690003512427, "delete_patch_bytes": 19923201, "save_results_s": 1.6109087000368163}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[old] T=2000 merge_s=1.463 merge_patch_bytes=21893505
+[save_processed_estimates] Saving estimates WITH cached metrics (202 rows)
+Final results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T18000\NOF_H01_1D saved to NOF_H01_1Dfinal_estimates.pickle
+
+Results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T18000\NOF_H01_1D saved in folder C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T18000
+
+[old] T=18000 {"kind": "tiled copy", "open_s": 0.7772383999545127, "select_ms": 0.04710000939667225, "delete_s": 0.23176894994685426, "delete_patch_bytes": 174292383, "save_results_s": 3.3215981000103056}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[old] T=18000 merge_s=1.998 merge_patch_bytes=191622831
+[save_processed_estimates] Saving estimates WITH cached metrics (202 rows)
+Final results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T107107\NOF_H01_1D saved to NOF_H01_1Dfinal_estimates.pickle
+
+Results for C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T107107\NOF_H01_1D saved in folder C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_T107107
+
+[old] T=107107 {"kind": "tiled copy", "open_s": 2.4676269000628963, "select_ms": 0.05355000030249357, "delete_s": 0.8173006500001065, "delete_patch_bytes": 1033999467, "save_results_s": 19.304585099918768}
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+In setting CNMFParams, non-pathed parameters were used; this is deprecated. In some future version of Caiman, allow_legacy will default to False (and eventually will be removed)
+[old] T=107107 merge_s=4.913 merge_patch_bytes=1136874167
+[OK] written C:\Users\User\AppData\Local\Temp\claude\3fb66d12025b3383\8c6833f1-37e2-4703-88da-d2e058320a8f\scratchpad\t7_out\t7_old_speed.json

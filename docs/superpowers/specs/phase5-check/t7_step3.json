@@ -1,0 +1,528 @@
+{
+ "events": [
+  "2026-11-08T19:54:07.720 +   0.02s next_ready before {\"value\": [\"NOF_H01_1D\", \"gate\"]}",
+  "2026-11-08T19:54:07.727 +   0.03s runner started {\"pid\": 3550560}",
+  "2026-11-08T19:54:09.933 +   2.23s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"gate\", \"old\": \"pending\", \"new\": \"running\"}",
+  "2026-11-08T19:54:11.289 +   3.59s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"gate\", \"old\": \"running\", \"new\": \"done\"}",
+  "2026-11-08T19:54:11.289 +   3.59s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"autoinspect\", \"old\": \"pending\", \"new\": \"running\"}",
+  "2026-11-08T19:54:11.289 +   3.59s state {\"sid\": \"NOF_H03_3D\", \"stage\": \"gate\", \"old\": \"pending\", \"new\": \"waiting\"}",
+  "2026-11-08T19:56:04.854 + 117.16s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"autoinspect\", \"old\": \"running\", \"new\": \"done\"}",
+  "2026-11-08T19:56:04.854 + 117.16s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"export\", \"old\": \"pending\", \"new\": \"running\"}",
+  "2026-11-08T19:56:18.906 + 131.21s state {\"sid\": \"NOF_H01_1D\", \"stage\": \"export\", \"old\": \"running\", \"new\": \"done\"}",
+  "2026-11-08T19:56:19.157 + 131.46s [OK] runner ended by itself (--once), no forbidden stage {\"code\": 0, \"seconds\": 131.5}",
+  "2026-11-08T19:56:19.158 + 131.46s [OK] gate passed with the decision cleaned {\"metrics\": {\"gate\": \"cleaned\", \"who\": \"User\", \"when\": \"2026-11-08T19:48:22.208\"}, \"manual_result_param\": {\"size\": 68727632, \"mtime_ns\": 1794156502207060200}, \"manual_file\": {\"size\": 68727632, \"mtime_ns\": 1794156502207060200}}",
+  "2026-11-08T19:56:24.784 + 137.09s [OK] autoinspection read the manual result {\"n_initial\": 220, \"n_kept_in_manual_result\": 220, \"processed_name\": \"H:\\\\Projects\\\\_bearmind_test\\\\phase5_short\\\\5_Inspection\\\\NOF_H01_1D\\\\NOF_H01_1D_manual_estimates.pickle\"}",
+  "2026-11-08T19:56:24.784 + 137.09s [OK] export done, files present {\"outputs\": {\"npz\": \"6_Export/npz/NOF_H01_1D_data.npz\", \"json\": \"6_Export/npz/NOF_H01_1D_metadata.json\", \"timestamps\": \"6_Export/npz/NOF_H01_1D_timestamps.csv\", \"filters\": \"6_Export/filters/NOF_H01_1D_filters.mat\"}, \"metrics\": {\"n_neurons\": 139, \"component_rule\": \"ml_or_merged_not_deleted\", \"n_exported\": 139, \"n_snr_duplicates_exported\": 0, \"n_merge_products_dropped\": 0, \"median_snr\": 6.42005010413879}}",
+  "2026-11-08T19:56:24.784 + 137.09s [OK] NOF_H03_3D waits at the gate, nothing else ran for it {\"gate\": \"waiting\", \"gate_error\": \"waiting for manual_inspection\"}",
+  "2026-11-08T19:56:34.774 + 147.08s children of the runner {\"seen\": 43, \"alive_after\": 0}"
+ ],
+ "checks": {
+  "runner ended by itself (--once), no forbidden stage": {
+   "ok": true,
+   "code": 0,
+   "seconds": 131.5
+  },
+  "gate passed with the decision cleaned": {
+   "ok": true,
+   "metrics": {
+    "gate": "cleaned",
+    "who": "User",
+    "when": "2026-11-08T19:48:22.208"
+   },
+   "manual_result_param": {
+    "size": 68727632,
+    "mtime_ns": 1794156502207060200
+   },
+   "manual_file": {
+    "size": 68727632,
+    "mtime_ns": 1794156502207060200
+   }
+  },
+  "autoinspection read the manual result": {
+   "ok": true,
+   "n_initial": 220,
+   "n_kept_in_manual_result": 220,
+   "processed_name": "H:\\Projects\\_bearmind_test\\phase5_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_manual_estimates.pickle"
+  },
+  "export done, files present": {
+   "ok": true,
+   "outputs": {
+    "npz": "6_Export/npz/NOF_H01_1D_data.npz",
+    "json": "6_Export/npz/NOF_H01_1D_metadata.json",
+    "timestamps": "6_Export/npz/NOF_H01_1D_timestamps.csv",
+    "filters": "6_Export/filters/NOF_H01_1D_filters.mat"
+   },
+   "metrics": {
+    "n_neurons": 139,
+    "component_rule": "ml_or_merged_not_deleted",
+    "n_exported": 139,
+    "n_snr_duplicates_exported": 0,
+    "n_merge_products_dropped": 0,
+    "median_snr": 6.42005010413879
+   }
+  },
+  "NOF_H03_3D waits at the gate, nothing else ran for it": {
+   "ok": true,
+   "gate": "waiting",
+   "gate_error": "waiting for manual_inspection"
+  }
+ },
+ "transitions": [
+  [
+   "2026-11-08T19:54:09.933",
+   "NOF_H01_1D",
+   "gate",
+   "pending",
+   "running"
+  ],
+  [
+   "2026-11-08T19:54:11.289",
+   "NOF_H01_1D",
+   "gate",
+   "running",
+   "done"
+  ],
+  [
+   "2026-11-08T19:54:11.289",
+   "NOF_H01_1D",
+   "autoinspect",
+   "pending",
+   "running"
+  ],
+  [
+   "2026-11-08T19:54:11.289",
+   "NOF_H03_3D",
+   "gate",
+   "pending",
+   "waiting"
+  ],
+  [
+   "2026-11-08T19:56:04.854",
+   "NOF_H01_1D",
+   "autoinspect",
+   "running",
+   "done"
+  ],
+  [
+   "2026-11-08T19:56:04.854",
+   "NOF_H01_1D",
+   "export",
+   "pending",
+   "running"
+  ],
+  [
+   "2026-11-08T19:56:18.905",
+   "NOF_H01_1D",
+   "export",
+   "running",
+   "done"
+  ]
+ ],
+ "next_ready_before": [
+  "NOF_H01_1D",
+  "gate"
+ ],
+ "log_sizes_before": {
+  "NOF_H01_1D.log": 156144,
+  "NOF_H03_3D.log": 179784,
+  "series.log": 18037
+ },
+ "runner_pid": 3550560,
+ "runner_cmd": [
+  "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe",
+  "-u",
+  "-m",
+  "bearmind",
+  "run",
+  "H:\\Projects\\_bearmind_test\\phase5_short",
+  "--once"
+ ],
+ "runner_returncode": 0,
+ "runner_seconds": 131.5,
+ "violation": null,
+ "stages_after": {
+  "NOF_H01_1D": {
+   "crop": "done",
+   "mc": "done",
+   "thresholds": "done",
+   "cnmf": "done",
+   "gate": "done",
+   "autoinspect": "done",
+   "export": "done",
+   "mc_preview": "done",
+   "cnmf_preview": "done"
+  },
+  "NOF_H03_3D": {
+   "crop": "done",
+   "mc": "done",
+   "thresholds": "done",
+   "cnmf": "done",
+   "gate": "waiting",
+   "autoinspect": "pending",
+   "export": "pending",
+   "mc_preview": "done",
+   "cnmf_preview": "done"
+  }
+ },
+ "gate": {
+  "state": "done",
+  "metrics": {
+   "gate": "cleaned",
+   "who": "User",
+   "when": "2026-11-08T19:48:22.208"
+  },
+  "params": {
+   "enabled": true,
+   "decision": {
+    "what": "manual_inspection",
+    "value": "cleaned",
+    "when": "2026-11-08T19:48:22.208"
+   },
+   "manual_result": {
+    "size": 68727632,
+    "mtime_ns": 1794156502207060200
+   },
+   "cnmf_finished": "2026-11-07T20:31:25.119"
+  }
+ },
+ "autoinspect": {
+  "state": "done",
+  "metrics": {
+   "n_initial": 220,
+   "n_after_merge": 200,
+   "n_deleted": 61,
+   "n_merge_groups": 20,
+   "n_kept": 139,
+   "deleted_frac": 0.2772727272727273,
+   "autoinspection_fps": 20
+  },
+  "outputs": {
+   "processed": "5_Inspection/NOF_H01_1D/NOF_H01_1D_processed.pickle"
+  },
+  "started": "2026-11-08T19:54:11.276",
+  "finished": "2026-11-08T19:56:04.787"
+ },
+ "processed": {
+  "file": "H:\\Projects\\_bearmind_test\\phase5_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_processed.pickle",
+  "name_attr": "H:\\Projects\\_bearmind_test\\phase5_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_manual_estimates.pickle",
+  "components": 200,
+  "metrics_df_rows": 200
+ },
+ "export": {
+  "state": "done",
+  "metrics": {
+   "n_neurons": 139,
+   "component_rule": "ml_or_merged_not_deleted",
+   "n_exported": 139,
+   "n_snr_duplicates_exported": 0,
+   "n_merge_products_dropped": 0,
+   "median_snr": 6.42005010413879
+  },
+  "outputs": {
+   "npz": "6_Export/npz/NOF_H01_1D_data.npz",
+   "json": "6_Export/npz/NOF_H01_1D_metadata.json",
+   "timestamps": "6_Export/npz/NOF_H01_1D_timestamps.csv",
+   "filters": "6_Export/filters/NOF_H01_1D_filters.mat"
+  },
+  "started": "2026-11-08T19:56:04.831",
+  "finished": "2026-11-08T19:56:18.139"
+ },
+ "main_stages_untouched": {
+  "NOF_H01_1D.crop": "2026-11-07T20:21:56.446",
+  "NOF_H03_3D.crop": "2026-11-07T20:22:47.929",
+  "NOF_H01_1D.mc": "2026-11-07T20:24:09.873",
+  "NOF_H03_3D.mc": "2026-11-07T20:25:11.640",
+  "NOF_H01_1D.thresholds": "2026-11-07T20:26:37.579",
+  "NOF_H03_3D.thresholds": "2026-11-07T20:27:44.180",
+  "NOF_H01_1D.cnmf": "2026-11-07T20:31:25.119",
+  "NOF_H03_3D.cnmf": "2026-11-07T20:34:40.885"
+ },
+ "log_lines": {
+  "NOF_H01_1D.log": [
+   "2026-11-08 19:54:09,539 INFO NOF_H01_1D gate: started",
+   "2026-11-08 19:54:11,202 INFO stage process bearmind.stages.gate:run: exit 0x0 after 2 s, peak commit of its process tree 0.0 GB",
+   "2026-11-08 19:54:11,215 INFO NOF_H01_1D gate: done (checks: ok)",
+   "2026-11-08 19:54:11,303 INFO NOF_H01_1D autoinspect: started",
+   "[1/4] Preparing traces for 220 neurons...",
+   "[1/4] Preparing traces for 20 neurons...",
+   "2026-11-08 19:56:04,786 INFO stage process bearmind.stages.autoinspect:run: exit 0x0 after 113 s, peak commit of its process tree 28.4 GB",
+   "2026-11-08 19:56:04,805 INFO NOF_H01_1D autoinspect: done (checks: ok)",
+   "2026-11-08 19:56:04,856 INFO NOF_H01_1D export: started",
+   "2026-11-08 19:56:18,137 INFO stage process bearmind.stages.export:run: exit 0x0 after 13 s, peak commit of its process tree 0.8 GB",
+   "2026-11-08 19:56:18,148 INFO NOF_H01_1D export: done (checks: ok)"
+  ],
+  "NOF_H03_3D.log": [
+   "2026-11-08 19:54:11,251 INFO NOF_H03_3D gate: waiting for manual_inspection"
+  ],
+  "series.log": [
+   "2026-11-08 19:54:09,500 INFO run started: pid 3550560, until export, sessions all, once True",
+   "2026-11-08 19:54:09,539 INFO NOF_H01_1D gate: started",
+   "2026-11-08 19:54:11,202 INFO stage process bearmind.stages.gate:run: exit 0x0 after 2 s, peak commit of its process tree 0.0 GB",
+   "2026-11-08 19:54:11,215 INFO NOF_H01_1D gate: done (checks: ok)",
+   "2026-11-08 19:54:11,251 INFO NOF_H03_3D gate: waiting for manual_inspection",
+   "2026-11-08 19:54:11,303 INFO NOF_H01_1D autoinspect: started",
+   "2026-11-08 19:56:04,786 INFO stage process bearmind.stages.autoinspect:run: exit 0x0 after 113 s, peak commit of its process tree 28.4 GB",
+   "2026-11-08 19:56:04,805 INFO NOF_H01_1D autoinspect: done (checks: ok)",
+   "2026-11-08 19:56:04,856 INFO NOF_H01_1D export: started",
+   "2026-11-08 19:56:18,137 INFO stage process bearmind.stages.export:run: exit 0x0 after 13 s, peak commit of its process tree 0.8 GB",
+   "2026-11-08 19:56:18,148 INFO NOF_H01_1D export: done (checks: ok)",
+   "2026-11-08 19:56:18,183 INFO run finished: done 3, failed 0, waiting 1, skipped 0, not_recorded []"
+  ]
+ },
+ "heartbeat": {
+  "pid": 3550560,
+  "time": "2026-11-08T19:56:18.186",
+  "current": null,
+  "counts": {
+   "done": 1,
+   "running": 0,
+   "waiting_thresholds": 0,
+   "waiting_manual": 1,
+   "waiting_crop": 0,
+   "failed": 0,
+   "skipped": 0,
+   "pending": 0
+  },
+  "by_stage": {
+   "crop": 2,
+   "mc": 2,
+   "thresholds": 2,
+   "cnmf": 2,
+   "gate": 1,
+   "autoinspect": 1,
+   "export": 1
+  },
+  "status": "idle",
+  "unschedulable": {},
+  "exit": "finished"
+ },
+ "children_seen": {
+  "3550312": [
+   "python.exe",
+   1794156851.305784,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=3550560, pipe_handle=8260) --multiprocessing-fork"
+  ],
+  "3546996": [
+   "python.exe",
+   1794156864.14386,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.resource_tracker import main; main(7384, False)"
+  ],
+  "3540276": [
+   "python.exe",
+   1794156864.1572351,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4316, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3545348": [
+   "python.exe",
+   1794156864.163999,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4628, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3550316": [
+   "python.exe",
+   1794156864.1702049,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=7404, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3546844": [
+   "python.exe",
+   1794156864.1760669,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3388, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3550584": [
+   "python.exe",
+   1794156864.181737,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3804, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3547852": [
+   "python.exe",
+   1794156864.187729,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2436, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3543220": [
+   "python.exe",
+   1794156864.192942,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=6040, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3545192": [
+   "python.exe",
+   1794156864.2002947,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3424, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3544452": [
+   "python.exe",
+   1794156864.205032,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4456, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3548684": [
+   "python.exe",
+   1794156864.2099495,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3764, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3543976": [
+   "python.exe",
+   1794156864.2149084,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4640, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3548304": [
+   "python.exe",
+   1794156864.2203107,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=6100, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3550656": [
+   "python.exe",
+   1794156864.2274878,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3244, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551236": [
+   "python.exe",
+   1794156864.2350063,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2356, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551244": [
+   "python.exe",
+   1794156864.242129,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2796, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551252": [
+   "python.exe",
+   1794156864.2486076,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3508, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551260": [
+   "python.exe",
+   1794156864.2534108,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2376, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551268": [
+   "python.exe",
+   1794156864.2589588,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4044, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551276": [
+   "python.exe",
+   1794156864.2642524,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4480, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551284": [
+   "python.exe",
+   1794156864.2689457,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=4288, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551292": [
+   "python.exe",
+   1794156864.2737703,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=7980, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551300": [
+   "python.exe",
+   1794156864.279294,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=6356, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551308": [
+   "python.exe",
+   1794156864.284752,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2852, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551316": [
+   "python.exe",
+   1794156864.2900012,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3860, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551324": [
+   "python.exe",
+   1794156864.2968595,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=5028, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551332": [
+   "python.exe",
+   1794156864.30331,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=6272, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551340": [
+   "python.exe",
+   1794156864.3094363,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=7304, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551348": [
+   "python.exe",
+   1794156864.3147006,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=6380, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551356": [
+   "python.exe",
+   1794156864.3208828,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2400, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551364": [
+   "python.exe",
+   1794156864.3266847,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=7780, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551372": [
+   "python.exe",
+   1794156864.332584,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=2844, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3551380": [
+   "python.exe",
+   1794156864.338342,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from joblib.externals.loky.backend.popen_loky_win32 import main; main(pipe_handle=3032, parent_pid=3550312) --multiprocessing-fork"
+  ],
+  "3552464": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.9372616,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3548892": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.8280091,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3553264": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.3435042,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3552084": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156886.250041,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3552200": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.5307553,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3553276": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.3198676,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3551548": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156885.8175418,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ],
+  "3544000": [
+   "python.exe",
+   1794156964.8596883,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=3550560, pipe_handle=8348) --multiprocessing-fork"
+  ],
+  "3552376": [
+   "ffmpeg-win-x86_64-v7.1.exe",
+   1794156967.055627,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\Lib\\site-packages\\imageio_ffmpeg\\binaries\\ffmpeg-win-x86_64-v7.1.exe -version"
+  ]
+ },
+ "children_alive_after": [],
+ "runner_console_tail": [
+  "19:54:09 NOF_H01_1D gate: started",
+  "19:54:11 NOF_H01_1D gate: done (checks: ok)",
+  "19:54:11 NOF_H03_3D gate: waiting for manual_inspection",
+  "19:54:11 NOF_H01_1D autoinspect: started",
+  "19:56:04 NOF_H01_1D autoinspect: done (checks: ok)",
+  "19:56:04 NOF_H01_1D export: started",
+  "19:56:18 NOF_H01_1D export: done (checks: ok)",
+  "[OK] this run: done 3, failed 0, skipped 0 | series now: failed 0, waiting for a person 1, cannot be scheduled 0, excluded 0",
+  "[WARN] 1 sessions wait for a person; see: status H:\\Projects\\_bearmind_test\\phase5_short"
+ ]
+}

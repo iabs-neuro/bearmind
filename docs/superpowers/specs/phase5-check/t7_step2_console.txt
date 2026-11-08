@@ -1,0 +1,17 @@
+2026-11-08T19:48:07.964 +   0.09s server started {"pid": 3548212}
+2026-11-08T19:48:09.788 +   1.92s [OK] server printed its address {"url": "http://localhost:52908", "seconds": 1.92}
+2026-11-08T19:48:09.792 +   1.92s [OK] lock names the server {"lock": {"alive": true, "url": "http://localhost:52908", "pid": 3548212, "current": [], "prepared": null}}
+2026-11-08T19:48:19.703 +  11.83s [OK] session page answers 200 {"url": "http://localhost:52908/?sid=NOF_H01_1D", "seconds": 9.91, "bytes": 3946, "cache_control": "no-store"}
+2026-11-08T19:48:19.704 +  11.83s page session id taken from the page {"session_id": "13it3ZAqs51F..."}
+2026-11-08T19:48:19.983 +  12.11s [OK] connected page shows the session {"title": "NOF_H01_1D - manual inspection", "seconds": 0.272}
+2026-11-08T19:48:20.218 +  12.35s opened {"n_rows": 222, "wave": ["", false], "buttons": ["Delete sel.", "Discard all", "Merge sel.", "Reset view", "Revert change", "Save progress", "Save results", "Show sel."]}
+2026-11-08T19:48:20.431 +  12.56s [OK] next session prepared while the first is open {"current": ["NOF_H01_1D"], "prepared": "NOF_H03_3D"}
+2026-11-08T19:48:20.856 +  12.98s [OK] Delete removed the row {"deleted": [0], "n_rows": 221}
+2026-11-08T19:48:22.173 +  14.30s [FAILED] Merge replaced two rows by one {"merged": [1, 2], "n_rows": 220}
+2026-11-08T19:48:22.224 +  14.35s [OK] result file written {"file": "H:\\Projects\\_bearmind_test\\phase5_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_manual_estimates.pickle", "seconds_roundtrip": 0.048}
+2026-11-08T19:48:22.224 +  14.35s [OK] decision cleaned recorded {"decisions": [["manual_inspection", "cleaned", "User", "2026-11-08T19:48:22.208"]], "gate_state": "pending"}
+2026-11-08T19:48:23.039 +  15.17s [OK] page says saved and offers Next {"status": "Saved. Decision \u201ccleaned\u201d recorded for NOF_H01_1D. You can close this tab.", "next": ["Next: NOF_H03_3D \u2192", true, false]}
+2026-11-08T19:48:23.040 +  15.17s [OK] lock: next session prepared after save {"current": ["NOF_H01_1D"], "prepared": "NOF_H03_3D"}
+2026-11-08T19:48:24.042 +  16.17s [OK] side files written in 5_Inspection {"files": ["NOF_H01_1D_filters", "NOF_H01_1D_filters_session.mat", "NOF_H01_1D_inspect_cache.npz", "NOF_H01_1D_manual_estimates.pickle", "NOF_H01_1D_traces.csv"], "n_filters": 220}
+2026-11-08T19:48:29.876 +  22.00s [OK] result: one deleted, two merged into one {"bytes": 68727632, "A_cols": 256, "n_kept": 220, "n_bad": 36, "C_dtype": "float64", "compressed": false, "newer_than_estimates": true, "src_A_cols": 257, "src_n_kept": 222}
+ERROR conda.cli.main_run:execute(125): `conda run python -u C:/Users/User/AppData/Local/Temp/claude/3fb66d12025b3383/8c6833f1-37e2-4703-88da-d2e058320a8f/scratchpad/t7_step2.py C:/Users/User/AppData/Local/Temp/claude/3fb66d12025b3383/8c6833f1-37e2-4703-88da-d2e058320a8f/scratchpad/t7_out` failed. (See above for error)

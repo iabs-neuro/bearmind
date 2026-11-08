@@ -1,0 +1,23 @@
+{
+ "file": "H:\\Dataset\\CalciumData\\FOF\\4_Estimates\\FOF_F01_1D_estimates.pickle",
+ "bytes": 3882771226,
+ "rss_gb_start": 0.698679296,
+ "prepare_session_s": 10.455816800007597,
+ "frames": 64300,
+ "components": 2112,
+ "listed": 1880,
+ "time_len": 64300,
+ "peak_gb_after_prepare": 7.046623232,
+ "wave_s": 0.7330612000077963,
+ "wave_frac": 0.028926905132192846,
+ "wave_hint": "Looks like a calcium wave: in 2.89 % of frames at least 30 % of the components fire at once.",
+ "window_on_document_s": 0.3176046999869868,
+ "first_document_bytes": 16200581,
+ "time_axis_points": 1980,
+ "time_axis_whole_session": true,
+ "zoom_last_200_points": 201,
+ "zoom_every_frame": true,
+ "rows_listed": 1880,
+ "peak_gb": 7.046623232,
+ "file_unchanged": true
+}

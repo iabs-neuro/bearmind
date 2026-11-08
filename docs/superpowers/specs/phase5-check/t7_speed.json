@@ -1,0 +1,365 @@
+{
+ "env": {
+  "MKL_NUM_THREADS": "1",
+  "OPENBLAS_NUM_THREADS": "1",
+  "OMP_NUM_THREADS": null,
+  "OPENBLAS_CORETYPE": "Sandybridge",
+  "CONDA_DEFAULT_ENV": "bearmind"
+ },
+ "cpus": 32,
+ "inputs": {
+  "processed": {
+   "file": "H:\\Projects\\_bearmind_test\\series_short\\5_Inspection\\NOF_H01_1D\\NOF_H01_1D_processed.pickle",
+   "bytes": 64954483,
+   "load_s": 0.017,
+   "components": 202,
+   "listed": 202,
+   "frames": 2000,
+   "fov": [
+    534,
+    519
+   ]
+  },
+  "estimates": {
+   "file": "H:\\Projects\\_bearmind_test\\series_short\\4_Estimates\\NOF_H01_1D_estimates.pickle",
+   "bytes": 68768046,
+   "load_s": 0.015,
+   "components": 257,
+   "listed": 222,
+   "frames": 2000
+  }
+ },
+ "by_length": {
+  "2000": {
+   "kind": "measured",
+   "tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "prepare_cold_s": 0.3215022999793291,
+   "wave_s": 0.004104500054381788,
+   "wave_frac": 0.0,
+   "prepare_with_contour_cache_s": 0.0607058999594301,
+   "window_on_document_s": [
+    0.04209639993496239,
+    0.03837640001438558,
+    0.03861029993277043
+   ],
+   "first_document_bytes": 2115964,
+   "open_cold_s": 0.36421709996648133,
+   "open_cached_s": 0.09931619989220053,
+   "delete": [
+    {
+     "rows": [
+      3
+     ],
+     "s": 0.001532500027678907,
+     "patch_bytes": 2550,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "s": 0.0015790000325068831,
+     "patch_bytes": 2540,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      50
+     ],
+     "s": 0.001568299951031804,
+     "patch_bytes": 2535,
+     "bulk_columns_sent": []
+    }
+   ],
+   "select": {
+    "median_ms": 0.056999968364834785,
+    "max_ms": 0.16329996287822723,
+    "data_columns_sent": 0,
+    "models_changed": [
+     "Div",
+     "Selection"
+    ],
+    "patch_bytes_20": 6096
+   },
+   "save_results": {
+    "until_free_s": 0.03219639998860657,
+    "pickle_s": 0.03114189999178052,
+    "side_files_after_s": 1.11042320006527,
+    "result_bytes": 64962963,
+    "patch_bytes": 150
+   },
+   "merge": [
+    {
+     "rows": [
+      3,
+      4
+     ],
+     "components": [
+      4,
+      5
+     ],
+     "s": 1.0001775999553502,
+     "manual_merge_s": 0.6893813000060618,
+     "extra_s": 0.31079629994928837,
+     "patch_bytes": 15654,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "components": [
+      13,
+      14
+     ],
+     "s": 1.2050592999439687,
+     "manual_merge_s": 0.3923969999887049,
+     "extra_s": 0.8126622999552637,
+     "patch_bytes": 15641,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    }
+   ],
+   "merge_tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "rss_gb_after": 0.881844224
+  },
+  "18000": {
+   "kind": "tiled copy",
+   "tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "prepare_cold_s": 0.4179682000540197,
+   "wave_s": 0.02267880004364997,
+   "wave_frac": 0.0,
+   "prepare_with_contour_cache_s": 0.1450294000096619,
+   "window_on_document_s": [
+    0.05381429998669773,
+    0.055735700065270066,
+    0.05302270001266152
+   ],
+   "first_document_bytes": 2115958,
+   "open_cold_s": 0.4944613000843674,
+   "open_cached_s": 0.19884369999635965,
+   "delete": [
+    {
+     "rows": [
+      3
+     ],
+     "s": 0.0015435999957844615,
+     "patch_bytes": 2550,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "s": 0.0015017000259831548,
+     "patch_bytes": 2540,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      50
+     ],
+     "s": 0.0015773000195622444,
+     "patch_bytes": 2535,
+     "bulk_columns_sent": []
+    }
+   ],
+   "select": {
+    "median_ms": 0.05854998016729951,
+    "max_ms": 0.18269999418407679,
+    "data_columns_sent": 0,
+    "models_changed": [
+     "Div",
+     "Selection"
+    ],
+    "patch_bytes_20": 6096
+   },
+   "save_results": {
+    "until_free_s": 0.03572160005569458,
+    "pickle_s": 0.035425799898803234,
+    "side_files_after_s": 2.3672645000042394,
+    "result_bytes": 97363918,
+    "patch_bytes": 150
+   },
+   "merge": [
+    {
+     "rows": [
+      3,
+      4
+     ],
+     "components": [
+      4,
+      5
+     ],
+     "s": 1.0817769999848679,
+     "manual_merge_s": 0.7525904000503942,
+     "extra_s": 0.32918659993447363,
+     "patch_bytes": 15656,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "components": [
+      13,
+      14
+     ],
+     "s": 1.3188288999954239,
+     "manual_merge_s": 0.43583199998829514,
+     "extra_s": 0.8829969000071287,
+     "patch_bytes": 15643,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    }
+   ],
+   "merge_tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "rss_gb_after": 1.154093056
+  },
+  "107107": {
+   "kind": "tiled copy",
+   "tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "prepare_cold_s": 0.8427469000453129,
+   "wave_s": 0.12611569999717176,
+   "wave_frac": 0.0,
+   "prepare_with_contour_cache_s": 0.5791645999997854,
+   "window_on_document_s": [
+    0.07667430001311004,
+    0.0771080000558868,
+    0.07872720004525036
+   ],
+   "first_document_bytes": 2102984,
+   "open_cold_s": 1.0459706000983715,
+   "open_cached_s": 0.6562726000556722,
+   "delete": [
+    {
+     "rows": [
+      3
+     ],
+     "s": 0.0015947999199852347,
+     "patch_bytes": 2550,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "s": 0.001513900002464652,
+     "patch_bytes": 2540,
+     "bulk_columns_sent": []
+    },
+    {
+     "rows": [
+      50
+     ],
+     "s": 0.0015637000324204564,
+     "patch_bytes": 2535,
+     "bulk_columns_sent": []
+    }
+   ],
+   "select": {
+    "median_ms": 0.058999983593821526,
+    "max_ms": 0.1542000100016594,
+    "data_columns_sent": 0,
+    "models_changed": [
+     "Div",
+     "Selection"
+    ],
+    "patch_bytes_20": 6096
+   },
+   "save_results": {
+    "until_free_s": 0.1559261999791488,
+    "pickle_s": 0.15564350003842264,
+    "side_files_after_s": 9.80744030000642,
+    "result_bytes": 277810876,
+    "patch_bytes": 150
+   },
+   "merge": [
+    {
+     "rows": [
+      3,
+      4
+     ],
+     "components": [
+      4,
+      5
+     ],
+     "s": 1.2244708000216633,
+     "manual_merge_s": 0.9798418999416754,
+     "extra_s": 0.24462890007998794,
+     "patch_bytes": 15594,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    },
+    {
+     "rows": [
+      10,
+      11
+     ],
+     "components": [
+      13,
+      14
+     ],
+     "s": 1.4847884000046179,
+     "manual_merge_s": 0.6438804999925196,
+     "extra_s": 0.8409079000120983,
+     "patch_bytes": 15585,
+     "bulk_columns_sent": [
+      "traces",
+      "xs",
+      "ys"
+     ]
+    }
+   ],
+   "merge_tiled_attrs": [
+    "C",
+    "YrA",
+    "S"
+   ],
+   "rss_gb_after": 2.60268032
+  }
+ },
+ "peak_wset_gb": 3.510439936
+}
