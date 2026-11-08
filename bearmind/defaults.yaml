@@ -101,12 +101,15 @@ gate:
 # calcium-wave hint on the session page: a component is active in a frame when its C is above
 # median + k_mad x 1.4826 x MAD of its trace, a frame is a wave frame when at least active_frac of the kept
 # components are active, and the hint shows when the share of wave frames is above warn_frac (null: never).
+# warn_frac 0.015: just above the 99th percentile (0.0142) of the 106 sessions of the May 2026 paper corpus
+# (CC 33, RFC 52, FOF 21; the manual-inspection estimates), 2026-11-08; the scan and its table are in
+# docs/superpowers/specs/wave-frac-2026-11-08.
 inspection:
   port: 0
   idle_exit_s: 600
   webgl: true
   trace_points: 2000
-  wave: {k_mad: 3.0, active_frac: 0.3, warn_frac: null}
+  wave: {k_mad: 3.0, active_frac: 0.3, warn_frac: 0.015}
 # MC checks: provisional, from 6 real sessions (task 17, docs/superpowers/specs/2026-11-01-e2e-report.md):
 # max shift 2.2-4.6 px, template corr 0.82-0.94; a uniform 2 px misalignment lowers the corr to 0.57-0.75.
 # The cnmf / autoinspect / export values are the initial guesses: they need production data.

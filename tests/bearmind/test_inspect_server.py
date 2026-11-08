@@ -37,7 +37,7 @@ from bokeh.models import Button, ColumnDataSource, Div
 from tornado.ioloop import IOLoop
 
 import bm_examinator
-from bearmind import actions, cli, config, inspect_server, runner, scan
+from bearmind import actions, cli, config, inspect_server, monitor, runner, scan, wave
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
@@ -469,6 +469,64 @@ def test_contour_cache_reused(series_est, monkeypatch):
     os.utime(est, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))  # CNMF-E wrote the file again
     srv.build(S1)
     assert len(calls) == 2
+
+
+def _add_wave(paths, sid, start=100, frames=30):
+    """Every component of sid's estimates fires in `frames` frames at once; the session's wave fraction."""
+    f = paths.estimates(sid)
+    est = _load(f)
+    est.C = est.C.copy()
+    est.C[:, start:start + frames] += 3.0 * est.C.max()
+    with open(f, "wb") as fh:
+        pickle.dump(est, fh)
+    frac = wave.wave_frac(est.C, est.idx_components)
+    assert frac >= frames / est.C.shape[1]
+    return frac
+
+
+def _set_wave(paths, **fields):
+    config.update_yaml(paths.series_config, {"inspection": {"wave": fields}})
+
+
+def test_wave_banner_only_in_page(series_est):
+    """Task 6: a session whose share of wave frames is above inspection.wave.warn_frac has the hint in the
+    server's line above the window; Monitor's cells and warnings never mention it."""
+    paths = series_est
+    frac = _add_wave(paths, S1)
+    _set_wave(paths, warn_frac=frac / 2)
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        assert _opened(page, S1)
+        assert page.prepared.wave_frac == frac  # computed while the session was prepared
+        banner = _div(s.document, "wave")
+        assert banner.visible and banner.text == html.escape(wave.wave_text(frac, 0.3))
+        header = s.document.roots[0]
+        assert header.name == "inspection_header" and banner in header.references()
+        assert not CYRILLIC.search(banner.text)
+    view = monitor.series_view(paths)
+    shown = [f"{c.text} {c.tooltip}" for r in view.rows for c in r.cells.values()]
+    shown += [f"{w.kind} {w.text}" for w in view.warnings]
+    assert shown and not any("wave" in t.lower() for t in shown)
+
+
+def test_no_banner_without_threshold(series_est):
+    paths = series_est
+    frac = _add_wave(paths, S1)
+    _set_wave(paths, warn_frac=None)
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        assert _opened(page, S1) and page.prepared.wave_frac == frac
+        banner = _div(s.document, "wave")
+        assert not banner.visible and banner.text == ""
+
+
+def test_wave_hint_rule():
+    w = {"k_mad": 3.0, "active_frac": 0.3, "warn_frac": 0.02}
+    assert inspect_server.wave_hint(0.03, w) == wave.wave_text(0.03, 0.3)
+    assert inspect_server.wave_hint(0.02, w) is None  # above the threshold, not at it
+    assert inspect_server.wave_hint(0.03, {**w, "warn_frac": None}) is None
+    assert inspect_server.wave_hint(None, w) is None  # not computed
+    assert inspect_server.wave_hint(0.03, {**w, "warn_frac": "2%"}) is None  # a typo does not block the page
 
 
 def test_progress_save(series_est):

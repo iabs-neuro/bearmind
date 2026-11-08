@@ -8,7 +8,9 @@ the waiting sessions as links. While a session is open, the next waiting one is 
 so Next after Save results only builds the window. Save results writes the session's manual result
 (SeriesPaths.manual_result) and records the gate decision "cleaned": the batch then picks the session up for
 autoinspection. A save is refused when CNMF-E was recomputed after the session was opened. Without an open
-browser tab for inspection.idle_exit_s the server stops and removes its lock.
+browser tab for inspection.idle_exit_s the server stops and removes its lock. A session page shows the
+calcium-wave hint (bearmind.wave) above the window when inspection.wave.warn_frac is set and the session's share
+of wave frames, computed while the session is prepared, is above it; nothing outside this page shows it.
 
 Page texts are English and name only an exception's type and file: a Windows error text is localized, and the
 series log keeps the whole text. Console lines are ASCII.
@@ -44,7 +46,7 @@ from bokeh.server.server import Server
 from tornado.ioloop import IOLoop, PeriodicCallback
 from tornado.web import OutputTransform
 
-from bearmind import actions, config, naming, provenance, registry, runner
+from bearmind import actions, config, naming, provenance, registry, runner, wave
 # the lock as other processes read it is in a module without Bokeh (the window imports it); its names stay here
 from bearmind.inspect_lock import (UNREADABLE_LOCK_STALE_S, ServerState, _lock_info,  # noqa: F401
                                    same_process as _same_process, server_state, session_url)
@@ -78,6 +80,9 @@ UNKNOWN = "Unknown session {sid}."
 SHORT_TIMESTAMPS = ("{sid} cannot be opened: it has {n_ts} timestamps for {n_frames} frames of traces. Check its "
                     "timestamps file, then rescan the series.")
 CANNOT_OPEN = "{sid} cannot be opened: {what}. Details in the series log."
+# the calcium-wave hint (bearmind.wave.wave_text) is advice, not an error: a warning color, not red
+WAVE_STYLE = {"background-color": "#fff3cd", "color": "#664d03", "border": "1px solid #ffda6a",
+              "border-radius": "4px", "padding": "4px 8px"}
 
 STARTED = "[OK] inspection server: {url}"
 ALREADY_RUNNING = "[FAILED] an inspection server of this series is already running: {url}"
@@ -141,6 +146,21 @@ def _bm():
         import bm_examinator
         _bm_module = bm_examinator
     return _bm_module
+
+
+def wave_hint(frac: float | None, wave_cfg: dict) -> str | None:
+    """The calcium-wave hint of a session page, or None: only when inspection.wave.warn_frac is set and the
+    session's share of wave frames (None: not computed) is above it."""
+    warn = wave_cfg.get("warn_frac")
+    if warn is None or frac is None:
+        return None
+    try:
+        warn, active_frac = float(warn), float(wave_cfg.get("active_frac", 0.3))
+    except (TypeError, ValueError):
+        # a mistyped value in the series config must not keep the session from opening: the hint is advice
+        log.warning("inspection.wave has a value that is not a number: %r; no calcium-wave hint", wave_cfg)
+        return None
+    return wave.wave_text(frac, active_frac) if frac > warn else None
 
 
 def session_time_s(paths, rec) -> np.ndarray:
@@ -410,7 +430,7 @@ class _Page:
         self.doc.clear()
         self.sid, self.claim, self.busy, self.prepared = sid, None, False, prep
         self.doc.title = TITLE.format(sid=sid)
-        self.doc.add_root(self._header(sid))
+        self.doc.add_root(self._header(sid, wave_hint(getattr(prep, "wave_frac", None), srv.wave_cfg)))
         app = _bm().make_app(prep.fname, prep.options["default_fps"], srv.bkapp_kwargs, prepared=prep,
                              final_save=partial(srv.final_save, self, sid, prep.stamp),
                              progress_save=partial(srv.progress_save, sid), refuse_autoinspected=True)
@@ -418,12 +438,13 @@ class _Page:
         log.info("%s opened", sid)
         srv.after_open(self, sid)
 
-    def _header(self, sid):
+    def _header(self, sid, hint: str | None = None):
         self.next_button = Button(label=NEXT_LABEL.format(sid=""), button_type="primary", visible=False,
                                   name="next", width_policy="fit")
         self.next_button.on_event("button_click", self._on_next)
         self.next_text = Div(text="", name="next_text", visible=False)
-        self.wave = Div(text="", name="wave", visible=False)  # the calcium-wave hint (task 6)
+        self.wave = Div(text=html.escape(hint or "", quote=False), name="wave", visible=bool(hint),
+                        styles=WAVE_STYLE)
         self.notes_div = Div(text=self._notes_html(), name="notes", visible=bool(self.notes))
         return column(row(Div(text=f"<b>{html.escape(sid)}</b>", name="session"), self.next_button,
                           self.next_text), self.wave, self.notes_div, name="inspection_header")
@@ -565,6 +586,10 @@ class InspectServer:
         return {"mode": "legacy", "end_frame": None, "enable_gpu_backend": bool(c.get("webgl", True)),
                 "trace_points": int(c.get("trace_points", 2000))}
 
+    @property
+    def wave_cfg(self) -> dict:
+        return self.cfg.get("wave") or {}
+
     # -- sessions --
     def stamp(self, sid: str) -> _Stamp:
         return _stamp_of(self.paths, registry.load_record(self.paths, sid))
@@ -595,7 +620,23 @@ class InspectServer:
         if contours is None and prep.contours is not None:
             self._write_contours(sid, stamp, kwargs, prep.contours)
         prep.sid, prep.stamp = sid, stamp
+        prep.wave_frac = self._wave_frac(sid, prep.estimates)
         return prep
+
+    def _wave_frac(self, sid: str, est) -> float | None:
+        """The session's share of wave frames (bearmind.wave) over the components the window lists. Computed here,
+        with the preparation and off the IOLoop: up to 1.2 s on the May 2026 corpus (64 301 frames, 1 222
+        components). None when it cannot be computed: the hint is advice, and the session opens without it."""
+        w = self.wave_cfg
+        try:
+            frac = wave.wave_frac(est.C, est.idx_components, k_mad=float(w.get("k_mad", 3.0)),
+                                  active_frac=float(w.get("active_frac", 0.3)))
+        except Exception:
+            log.warning("%s: calcium-wave share not computed", sid, exc_info=True)
+            return None
+        # in the series log even without a threshold: the values a later warn_frac can be chosen from
+        log.info("%s: calcium-wave share %.4f (inspection.wave.warn_frac %s)", sid, frac, w.get("warn_frac"))
+        return frac
 
     def _cached_contours(self, sid, stamp, kwargs):
         """Contours of an earlier preparation of the same estimates file (size, mtime) and cthr, or None."""
