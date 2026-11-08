@@ -17,6 +17,7 @@ def FitEvents(fname, opts):
     time = np.genfromtxt(fname, delimiter = ',', skip_header = 1)[:,0]
     spikes = np.zeros(traces.shape)   #this in for non-sparse storage like in traces.csv, as it used to be, just for back compartibility
     events = []                       #this is for sparse storage in pickle 
+    bpl.output_notebook()  # shown inline as well as in the html file
     bpl.output_file(fname.replace('.csv','_events.html'))
     p = bpl.figure(title = fname.split('\\')[-1].split('traces')[0], height = 1000, width = 1800)#, width_policy = 'fit')
     for cell_num, trace in enumerate(traces):
@@ -71,6 +72,7 @@ def FitEvents(fname, opts):
       
 def DrawSpEvents(tr_fname, sp_fname):
     #file reading
+    bpl.output_notebook()  # shown inline as well as in the html file
     bpl.output_file(tr_fname.replace('.csv','_events.html'))
     traces = np.genfromtxt(tr_fname, delimiter = ',', skip_header = 1)[:,1:].T #note the transposition for better iterability
     sp_events = np.genfromtxt(sp_fname, delimiter = ',', skip_header = 1)[:,1:].T
@@ -85,6 +87,7 @@ def DrawSpEvents(tr_fname, sp_fname):
 
 def DrawSpEvents2(tr_fname, sp_fname1, sp_fname2):
     #file reading
+    bpl.output_notebook()  # shown inline as well as in the html file
     bpl.output_file(tr_fname.replace('.csv','_events.html'))
     traces = np.genfromtxt(tr_fname, delimiter = ',', skip_header = 1)[:,1:].T #note the transposition for better iterability
     sp_events1 = np.genfromtxt(sp_fname1, delimiter = ',', skip_header = 1)[:,1:].T

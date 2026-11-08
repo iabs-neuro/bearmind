@@ -1,6 +1,8 @@
 # Stuff needed for plotting and widget callbacks
 import copy
 import html
+import logging
+import traceback
 from dataclasses import dataclass
 from scipy.stats import median_abs_deviation, spearmanr
 
@@ -429,6 +431,29 @@ def SaveResults(estimates, sigma=3):
     savemat(fold + '_session.mat', {"A": np.array(ims)})
 
 
+# bkapp_kwargs the first view is built from, with their defaults
+_FIRST_VIEW_DEFAULTS = {
+    'mode': 'legacy', 'cthr': 0.3, 'start_frame': 0, 'end_frame': None, 'downsampling': 1, 'corr_thr': 0.6,
+    'detect_corner_artifacts': True, 'correlation_method': 'pearson',
+    # capcan mode only
+    'num_sessions': 1, 'match_threshold': 1, 'include_event_based': True, 'include_heavy': False,
+    'color_by_ml_probability': False, 'ml_threshold': 0.5, 'corner_artifact_params': None, 'n_iter': 2,
+}
+
+
+def _first_view_options(bkapp_kwargs, default_fps):
+    """Everything the first view depends on besides the file; end_frame None is the full length."""
+    kw = bkapp_kwargs or {}
+    return {**{k: kw.get(k, v) for k, v in _FIRST_VIEW_DEFAULTS.items()}, 'default_fps': default_fps}
+
+
+def _view_options(bkapp_kwargs):
+    """Options of the traces view used both for the first view and after a merge."""
+    o = _first_view_options(bkapp_kwargs, None)
+    return dict(cthr=o['cthr'], sf=o['start_frame'], ef=o['end_frame'], ds=o['downsampling'],
+                corr_thr=o['corr_thr'])
+
+
 @dataclass
 class PreparedSession:
     """What make_app needs to open a session; a server builds it with prepare_session off its IOLoop thread."""
@@ -436,47 +461,53 @@ class PreparedSession:
     estimates: "Estimates"  # .time set
     data: dict  # the first view of the traces: one row per component of estimates.idx_components
     contours: list | None  # legacy mode: _component_contours of those components; None in capcan mode
+    options: dict  # _first_view_options it was built with; make_app refuses other options
     metric_mapping: dict | None = None  # capcan mode: metric names of data by column number
 
-
-def _view_options(bkapp_kwargs):
-    """Options of the traces view used both for the first view and after a merge; end_frame None is the
-    full length of the traces."""
-    kw = bkapp_kwargs or {}
-    return dict(cthr=kw.get('cthr', 0.3), sf=kw.get('start_frame', 0), ef=kw.get('end_frame', None),
-                ds=kw.get('downsampling', 1), corr_thr=kw.get('corr_thr', 0.6))
+    @property
+    def mode(self):
+        return self.options['mode']
 
 
 def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
-    kw = bkapp_kwargs or {}
-    mode = kw.get('mode', 'legacy')
-    view = _view_options(kw)
-    detect_corner_artifacts = kw.get('detect_corner_artifacts', True)
-    correlation_method = kw.get('correlation_method', 'pearson')
-    if mode == 'legacy':
+    o = _first_view_options(bkapp_kwargs, default_fps)
+    view = _view_options(bkapp_kwargs)
+    if o['mode'] == 'legacy':
         if contours is None:
             idx = estimates.idx_components
             contours = _component_contours(estimates, idx, view['cthr']) if len(idx) else []
-        data = EstimatesToSrcFast(estimates, detect_corner_artifacts=detect_corner_artifacts,
-                                  correlation_method=correlation_method, contours=contours, **view)
-        return PreparedSession(fname, estimates, data, contours)
-    if mode == 'capcan':
+        data = EstimatesToSrcFast(estimates, detect_corner_artifacts=o['detect_corner_artifacts'],
+                                  correlation_method=o['correlation_method'], contours=contours, **view)
+        return PreparedSession(fname, estimates, data, contours, o)
+    if o['mode'] == 'capcan':
         if contours is not None:
             raise ValueError('cached contours are used in legacy mode only')
         data, metric_mapping = EstimatesToSrcFull(
             estimates, default_fps, comps_to_select=[], cthr=view['cthr'], corr_thr=view['corr_thr'],
-            num_sessions=kw.get('num_sessions', 1), match_threshold=kw.get('match_threshold', 1),
+            num_sessions=o['num_sessions'], match_threshold=o['match_threshold'],
             sf=view['sf'], ef=view['ef'], ds=view['ds'],
-            include_event_based=kw.get('include_event_based', True),
-            include_heavy=kw.get('include_heavy', False),
-            color_by_ml_probability=kw.get('color_by_ml_probability', False),
-            ml_threshold=kw.get('ml_threshold', 0.5),
-            detect_corner_artifacts=detect_corner_artifacts,
-            corner_artifact_params=kw.get('corner_artifact_params', None),
-            correlation_method=correlation_method,
-            n_iter=kw.get('n_iter', 2))
-        return PreparedSession(fname, estimates, data, None, metric_mapping)
+            include_event_based=o['include_event_based'],
+            include_heavy=o['include_heavy'],
+            color_by_ml_probability=o['color_by_ml_probability'],
+            ml_threshold=o['ml_threshold'],
+            detect_corner_artifacts=o['detect_corner_artifacts'],
+            corner_artifact_params=o['corner_artifact_params'],
+            correlation_method=o['correlation_method'],
+            n_iter=o['n_iter'])
+        return PreparedSession(fname, estimates, data, None, o, metric_mapping)
     raise ValueError('wrong operation mode!')
+
+
+def _check_prepared(prepared, fname, default_fps, bkapp_kwargs):
+    """A prepared session built for another file or with other options would show the wrong view."""
+    def norm(f):
+        return os.path.normcase(os.path.abspath(str(f)))
+    if norm(prepared.fname) != norm(fname):
+        raise ValueError(f"the prepared session is of {prepared.fname}, not of {fname}")
+    for k, v in _first_view_options(bkapp_kwargs, default_fps).items():
+        if prepared.options.get(k) != v:
+            raise ValueError(f"the prepared session was built with {k}={prepared.options.get(k)!r}, "
+                             f"the window asks for {v!r}")
 
 
 def prepare_session(fname, time=None, default_fps=20, bkapp_kwargs=None, contours=None) -> PreparedSession:
@@ -527,6 +558,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
     """
     if bkapp_kwargs is None:
         bkapp_kwargs = {}
+    if prepared is not None:
+        _check_prepared(prepared, fname, default_fps, bkapp_kwargs)
     operation_mode = bkapp_kwargs.get('mode', 'legacy')
     ml_model_path = bkapp_kwargs.get('ml_model_path', None) if operation_mode == 'capcan' else None
     compress_estimates = bkapp_kwargs.get('compress_estimates', False)
@@ -1357,9 +1390,19 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         status = (Div(text="", name="status")
                   if final_save is not None or progress_save is not None else None)
 
+        def run_save_hook(save, storage):
+            # a failed save must not end the callback: the page says so and the button stays usable
+            try:
+                text = save(storage.estimates)
+            except Exception as e:
+                logging.getLogger(__name__).exception('save failed for %s', fname)
+                first = ''.join(traceback.format_exception_only(type(e), e)).strip().splitlines()[0]
+                text = f'Save failed: {first}'
+            status.text = html.escape(text, quote=False)
+
         def save_callback(event, storage=None):
             if progress_save is not None:
-                status.text = html.escape(progress_save(storage.estimates), quote=False)
+                run_save_hook(progress_save, storage)
                 return
             dt = get_datetime()
             base_name = extract_name_with_pattern(estimates.name)
@@ -1373,7 +1416,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         def final_save_callback(event, storage=None):
             if final_save is not None:
-                status.text = html.escape(final_save(storage.estimates), quote=False)
+                run_save_hook(final_save, storage)
                 return
             base_name = extract_name_with_pattern(estimates.name)
             out_name = base_name + 'final_estimates.pickle'

@@ -3,6 +3,7 @@
 # fails to load (WinError 127) unless torch is imported first.
 import torch  # noqa: F401
 
+import logging
 import os
 import pickle
 import subprocess
@@ -212,3 +213,50 @@ def test_full_length_traces(tmp_path):
         assert len(app.src.data["traces"]) == 3
         for t, tr in zip(app.src.data["times"], app.src.data["traces"]):
             assert len(tr) == 100_000 and np.array_equal(t, time), kwargs
+
+
+@pytest.mark.parametrize("hook, button", [("final_save", "Save results"), ("progress_save", "Save progress")])
+def test_save_hook_error_shown(tmp_path, monkeypatch, caplog, hook, button):
+    inp, cwd = tmp_path / "in", tmp_path / "cwd"
+    inp.mkdir(), cwd.mkdir()
+    path = make_estimates(inp)
+    monkeypatch.chdir(cwd)
+    calls = []
+
+    def save(est):
+        calls.append(est)
+        if len(calls) == 1:
+            raise OSError("disk full\nsecond line")
+        return "Saved"
+
+    app = App(bm_examinator.make_app(str(path), 20, LEGACY, **{hook: save}))
+    with caplog.at_level(logging.ERROR):
+        app.click(button)
+    assert _status(app.doc).text == "Save failed: OSError: disk full"
+    assert [r.exc_info[0] for r in caplog.records if r.exc_info] == [OSError]  # the traceback is logged
+    app.click(button)  # the button still works
+    assert len(calls) == 2 and _status(app.doc).text == "Saved"
+    assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
+
+
+def test_prepared_session_must_match(tmp_path):
+    path = make_estimates(tmp_path)
+    (tmp_path / "other").mkdir()
+    other = make_estimates(tmp_path / "other")
+    prep = bm_examinator.prepare_session(str(path), bkapp_kwargs=LEGACY)
+    assert prep.mode == "legacy" and prep.options["end_frame"] is None and prep.options["cthr"] == 0.3
+    # the same file written another way is the same file
+    assert App(bm_examinator.make_app(str(path).replace("\\", "/"), 20, LEGACY, prepared=prep)).shown() == \
+        list(range(8))
+    for fname, fps, kwargs, what in [
+            (str(other), 20, LEGACY, "prepared session is of"),
+            (str(path), 20, {"mode": "capcan", "end_frame": None}, "mode"),
+            (str(path), 20, {**LEGACY, "cthr": 0.4}, "cthr"),
+            (str(path), 20, {**LEGACY, "start_frame": 10}, "start_frame"),
+            (str(path), 20, {"mode": "legacy", "end_frame": 300}, "end_frame"),
+            (str(path), 20, {**LEGACY, "downsampling": 2}, "downsampling"),
+            (str(path), 20, {**LEGACY, "corr_thr": 0.5}, "corr_thr"),
+            (str(path), 20, {**LEGACY, "correlation_method": "spearman"}, "correlation_method"),
+            (str(path), 25, LEGACY, "default_fps")]:
+        with pytest.raises(ValueError, match=what):
+            bm_examinator.make_app(fname, fps, kwargs, prepared=prep)
