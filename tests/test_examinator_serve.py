@@ -188,7 +188,7 @@ def _autoinspected(folder) -> Path:
 
 def test_refuse_autoinspected(tmp_path, monkeypatch):
     path = _autoinspected(tmp_path)
-    monkeypatch.setattr(bm_examinator, "EstimatesToSrcFast", _boom)  # refused before the first view
+    monkeypatch.setattr(bm_examinator, "_legacy_rows", _boom)  # refused before the first view
     doc = Document()
     bm_examinator.make_app(str(path), 20, LEGACY, refuse_autoinspected=True)(doc)
     models = _models(doc)
@@ -205,14 +205,23 @@ def test_refuse_autoinspected(tmp_path, monkeypatch):
 
 
 def test_full_length_traces(tmp_path):
+    """No frame limit: the browser gets the whole session (decimated), and a zoom shows every frame, also at
+    the session's end."""
     path = make_estimates(tmp_path, n=3, T=100_000)
     for kwargs in (LEGACY, {"mode": "legacy"}):  # end_frame None, and not given at all
         app = App(bm_examinator.make_app(str(path), 20, kwargs))
-        time = app.storage.estimates.time
+        est = app.storage.estimates
+        time = est.time
         assert len(time) == 100_000
         assert len(app.src.data["traces"]) == 3
-        for t, tr in zip(app.src.data["times"], app.src.data["traces"]):
-            assert len(tr) == 100_000 and np.array_equal(t, time), kwargs
+        t = app.time_axis()
+        assert t[0] == time[0] and t[-1] == time[-1], kwargs
+        app.zoom(time[-200], time[-1])
+        t = app.time_axis()
+        assert len(t) >= 200 and np.array_equal(t, time[-len(t):]), kwargs
+        for comp, tr in zip(app.shown(), app.src.data["traces"]):
+            c = est.C[comp]
+            assert np.allclose(tr, ((c - c.min()) / (c.max() - c.min()))[-len(t):], atol=1e-6), kwargs
 
 
 @pytest.mark.parametrize("hook, button", [("final_save", "Save results"), ("progress_save", "Save progress")])

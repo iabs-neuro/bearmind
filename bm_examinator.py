@@ -21,10 +21,12 @@ from matplotlib.widgets import Slider
 from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
-                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup, Spacer)
+                          RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup, Spacer,
+                          CustomJSExpr, IndexFilter, Range1d)
+from bokeh.core.properties import expr
 
 from bokeh.layouts import column, row
-from bokeh.events import Tap
+from bokeh.events import Tap, RangesUpdate
 from bokeh.io import push_notebook
 from glob import glob
 from caiman.source_extraction.cnmf import params
@@ -176,6 +178,109 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return fps
 
 
+def _minmax_positions(Y, n_out):
+    """Bins of the rows of Y (k, n) for keeping at most n_out points, two per bin: (bin starts (1, nb), position
+    of the earlier and of the later of each bin's min and max (k, nb), bin length).
+
+    The last bin is padded with the row's last value; argmin and argmax return the first occurrence, so a
+    position never points into the padding."""
+    k, n = Y.shape
+    b = -(-n // max(n_out // 2, 1))
+    nb = -(-n // b)
+    pad = nb * b - n
+    Z = np.concatenate([Y, np.repeat(Y[:, -1:], pad, axis=1)], axis=1) if pad else Y
+    Z = Z.reshape(k, nb, b)
+    amin, amax = Z.argmin(axis=2), Z.argmax(axis=2)
+    starts = (np.arange(nb) * b)[None, :]
+    return starts, starts + np.minimum(amin, amax), starts + np.maximum(amin, amax), b
+
+
+def decimate_minmax(y: np.ndarray, n_out: int = 2000) -> tuple[np.ndarray, np.ndarray]:
+    """(frame index of every kept point, values): the min and the max of each bin, in time order; at most
+    n_out points; y not longer than n_out is returned whole."""
+    y = np.asarray(y)
+    if len(y) <= n_out:
+        return np.arange(len(y)), y
+    _, first, second, _ = _minmax_positions(y[None, :], n_out)
+    frames = np.stack([first[0], second[0]], axis=1).ravel()
+    return frames, y[frames]
+
+
+def _decimate_rows(Y, n_out):
+    """decimate_minmax of every row of Y (k, n) on one shared time axis: (frames, values (k, <= n_out)).
+
+    Each bin's two values are those decimate_minmax keeps, in the same order, but drawn at the bin's first and
+    last frame rather than at their own: then all rows share one array of frames and the browser gets one time
+    axis. The shift stays within a bin, under a pixel when the whole session is shown; a zoomed-in window is
+    shown at full resolution."""
+    Y = np.asarray(Y)
+    n = Y.shape[1]
+    if n <= n_out:
+        return np.arange(n), Y
+    starts, first, second, b = _minmax_positions(Y, n_out)
+    rows = np.arange(Y.shape[0])[:, None]
+    values = np.stack([Y[rows, first], Y[rows, second]], axis=2).reshape(Y.shape[0], -1)
+    s = starts[0]
+    return np.stack([s, np.minimum(s + b - 1, n - 1)], axis=1).ravel(), values
+
+
+def _hval(tr):
+    """Share of a trace's points at or above its median + 4 MAD (the H-val sort)."""
+    med = np.median(tr)
+    meddev = median_abs_deviation(tr)
+    return np.round(1.0 * len(np.where(tr >= med + 4 * meddev)[0]) / len(tr), 4)
+
+
+def _corr_matrix(trace_data, correlation_method):
+    """Correlations between the rows of trace_data with the diagonal and NaN set to 0, as the Corr sort uses."""
+    n = len(trace_data)
+    if correlation_method == 'pearson':
+        if n == 1:
+            CM = np.array([[1.0]])
+        else:
+            CM = np.corrcoef(trace_data)
+    elif correlation_method == 'spearman':
+        if n == 1:
+            CM = np.array([[1.0]])
+        elif n == 2:
+            # spearmanr returns scalar for 2 variables, wrap in 2x2 matrix
+            corr_val, _ = spearmanr(trace_data, axis=1)
+            CM = np.array([[1.0, corr_val], [corr_val, 1.0]])
+        else:
+            CM, _ = spearmanr(trace_data, axis=1)
+    else:
+        raise ValueError(f"Unknown correlation method: {correlation_method}. Use 'pearson' or 'spearman'")
+    np.fill_diagonal(CM, 0)
+    CM[np.isnan(CM)] = 0
+    return CM
+
+
+def _corr_groups(CM, corr_thr):
+    """(corr_scores, corr_groups) per row of a _corr_matrix: groups of rows correlated above corr_thr."""
+    TCM = CM.copy()
+    TCM[np.where(TCM < corr_thr)] = 0
+
+    nontrivial_ccs = [comp for comp in list(get_ccs_from_adj(TCM)) if len(comp) > 1]
+
+    group_corr_scores = np.zeros(len(nontrivial_ccs))
+    corr_scores = np.zeros(len(CM))
+    corr_groups = np.zeros(len(CM))
+    for i, group in enumerate(nontrivial_ccs):
+        ordered = np.array(sorted(list(group)))
+        subnetwork = CM[ordered, :][:, ordered]  # we take corr values from initial corr matrix
+        nc = len(ordered)
+        group_density = np.sum(subnetwork) / (nc ** 2 - nc)
+        group_corr_scores[i] = group_density
+
+    sorted_nontrivial_ccs = [nontrivial_ccs[i] for i in np.argsort(group_corr_scores)[::-1]] # sort components from highest to lowest score
+    sorted_group_corr_scores = sorted(group_corr_scores)
+    for i, group in enumerate(sorted_nontrivial_ccs):
+        for neuron in group:
+            corr_scores[neuron] = sorted_group_corr_scores[i]
+            corr_groups[neuron] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
+    return corr_scores, corr_groups
+
+
 def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     n_cells = len(estimates.idx_components)
     if n_cells == 0:
@@ -234,12 +339,7 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     times = [estimates.time[sf:ef][::ds] for _ in range(n_cells)]
     colors = [colornum_Metro(i) for i in range(n_cells)]
 
-    hvals = []
-    for tr in traces:
-        med = np.median(tr)
-        meddev = median_abs_deviation(tr)
-        hval = np.round(1.0 * len(np.where(tr >= med + 4 * meddev)[0]) / len(tr), 4)
-        hvals.append(hval)
+    hvals = [_hval(tr) for tr in traces]
 
     dims = estimates.imax.shape
     if contours is None:
@@ -256,48 +356,8 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     ys = [[dims[0] - pt[1] for pt in c] for c in polygons]  # flip for y-axis inversion
 
     # building correlation matrix and assigning corr scores to neurons
-    trace_data = estimates.C[comps_to_select, sf:ef]
-    if correlation_method == 'pearson':
-        if len(comps_to_select) == 1:
-            CM = np.array([[1.0]])
-        else:
-            CM = np.corrcoef(trace_data)
-    elif correlation_method == 'spearman':
-        if len(comps_to_select) == 1:
-            CM = np.array([[1.0]])
-        elif len(comps_to_select) == 2:
-            # spearmanr returns scalar for 2 variables, wrap in 2x2 matrix
-            corr_val, _ = spearmanr(trace_data, axis=1)
-            CM = np.array([[1.0, corr_val], [corr_val, 1.0]])
-        else:
-            CM, _ = spearmanr(trace_data, axis=1)
-    else:
-        raise ValueError(f"Unknown correlation method: {correlation_method}. Use 'pearson' or 'spearman'")
-    np.fill_diagonal(CM, 0)
-    CM[np.isnan(CM)] = 0
-
-    TCM = CM.copy()
-    TCM[np.where(TCM < corr_thr)] = 0
-
-    nontrivial_ccs = [comp for comp in list(get_ccs_from_adj(TCM)) if len(comp) > 1]
-
-    group_corr_scores = np.zeros(len(nontrivial_ccs))
-    corr_scores = np.zeros(len(comps_to_select))
-    corr_groups = np.zeros(len(comps_to_select))
-    for i, group in enumerate(nontrivial_ccs):
-        ordered = np.array(sorted(list(group)))
-        subnetwork = CM[ordered, :][:, ordered]  # we take corr values from initial corr matrix
-        nc = len(ordered)
-        group_density = np.sum(subnetwork) / (nc ** 2 - nc)
-        group_corr_scores[i] = group_density
-        #group_av_nnz = np.mean(subnetwork[np.where(subnetwork != 0)])
-
-    sorted_nontrivial_ccs = [nontrivial_ccs[i] for i in np.argsort(group_corr_scores)[::-1]] # sort components from highest to lowest score
-    sorted_group_corr_scores = sorted(group_corr_scores)
-    for i, group in enumerate(sorted_nontrivial_ccs):
-        for neuron in group:
-            corr_scores[neuron] = sorted_group_corr_scores[i]
-            corr_groups[neuron] = len(sorted_group_corr_scores) - i + 1 # big group number = high corr score
+    CM = _corr_matrix(estimates.C[comps_to_select, sf:ef], correlation_method)
+    corr_scores, corr_groups = _corr_groups(CM, corr_thr)
 
     return dict(xs=xs, ys=ys, times=times, traces=traces, areas=areas,
                 hvals=hvals, colors=colors, corr_scores=corr_scores,
@@ -410,6 +470,88 @@ def EstimatesToSrcFull(est, fps, comps_to_select=[], cthr=0.3,
     return {**technical, **metrics}, {i: mname for i, mname in enumerate(list(metrics.keys()))}
 
 
+# keys of PreparedSession.data that are not columns of the window's data source
+_NOT_COLUMNS = ('base', 'base_recon', 'cm')
+
+
+def _legacy_rows(estimates, comps, cthr=0.3, sf=None, ef=None, ds=1, corr_thr=0.6, correlation_method='pearson',
+                 contours=None):
+    """The window's first view of comps in legacy mode: the per-row values of EstimatesToSrcFast, but each trace
+    kept once, normalized and at full resolution ('base', float32 (rows, frames): the window sends a decimated
+    or zoomed part of it), no per-row copy of the time axis, and the correlation matrix the Corr sort comes
+    from ('cm'), which a merge extends by one row. contours: _component_contours of comps, or None."""
+    comps = [int(c) for c in comps]
+    n = len(comps)
+    if sf is None:
+        sf = 0
+    if ef is None:
+        ef = estimates.C.shape[1]
+    if contours is None:
+        contours = _component_contours(estimates, comps, cthr) if n else []
+    if len(contours) != n:
+        raise ValueError(f"{len(contours)} contours for {n} components")
+
+    X = np.array(estimates.C[comps, sf:ef][:, ::ds], dtype=float)
+    with np.errstate(invalid='ignore', divide='ignore'):  # a flat trace is NaN, as before
+        X -= X.min(axis=1, keepdims=True)
+        X /= X.max(axis=1, keepdims=True)
+    # on the trace drawn at height i, as EstimatesToSrcFast computes it
+    hvals = [_hval(X[i] + i) for i in range(n)]
+    base = X.astype(np.float32)
+    del X
+
+    dims = estimates.imax.shape
+    polygons, areas = [], []
+    for coors in contours:
+        areas.append(calculate_polygon_area(coors))
+        polygons.append(coors[~np.isnan(coors).any(axis=1)])
+    xs = [[pt[0] for pt in c] for c in polygons]
+    ys = [[dims[0] - pt[1] for pt in c] for c in polygons]  # flip for y-axis inversion
+
+    CM = _corr_matrix(estimates.C[comps, sf:ef], correlation_method) if n else np.zeros((0, 0))
+    corr_scores, corr_groups = _corr_groups(CM, corr_thr)
+    return dict(idx=comps, xs=xs, ys=ys, areas=areas, hvals=hvals, colors=[colornum_Metro(i) for i in range(n)],
+                corr_scores=list(corr_scores), corr_groups=list(corr_groups), base=base, cm=CM)
+
+
+def _capcan_rows(data):
+    """EstimatesToSrcFull's view in the window's form: its traces (and reconstructions) without the row
+    offsets as 'base' ('base_recon'), and no per-row copies of the time axis."""
+    def strip(rows):
+        if len(rows) == 0:
+            return np.zeros((0, 0), dtype=np.float32)
+        return np.stack([np.asarray(tr, dtype=float) - i for i, tr in enumerate(rows)]).astype(np.float32)
+    out = {k: v for k, v in data.items() if k not in ('times', 'traces', 'traces_recon')}
+    out['idx'] = [int(c) for c in data['idx']]
+    out['base'] = strip(data['traces'])
+    out['base_recon'] = strip(data['traces_recon']) if data.get('traces_recon') is not None else None
+    out['cm'] = None
+    return out
+
+
+def _pearson_with(C, row, sf, ef):
+    """Pearson correlation of C[row, sf:ef] with every row of C[:, sf:ef], without copying C (an hour-long C
+    is hundreds of MB): sums of products instead of centred copies."""
+    X = C[:, sf:ef]
+    n = X.shape[1]
+    y = X[row] - X[row].mean()
+    mx = X.mean(axis=1)
+    sxx = np.einsum('ij,ij->i', X, X) - n * mx ** 2
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return (X @ y) / np.sqrt(sxx * (y @ y))
+
+
+def _merged_quality(old, cmapping, sel_comps):
+    """A per-component quality value (SNR_comp, r_values) after a merge: an untouched component keeps its value
+    under its new number, the merged component gets the mean of the merged ones without infinite values."""
+    new = np.zeros(len(cmapping) + 1)
+    for oi, ni in cmapping.items():
+        new[ni] = old[oi]
+    merged = old[sel_comps]
+    new[-1] = np.mean(merged[~np.isinf(merged)])
+    return new
+
+
 def SaveResults(estimates, sigma=3):
     # traces timestamping and writing
     stamped_traces = np.concatenate(([estimates.time], estimates.C[estimates.idx_components]), axis=0)
@@ -459,7 +601,9 @@ class PreparedSession:
     """What make_app needs to open a session; a server builds it with prepare_session off its IOLoop thread."""
     fname: str
     estimates: "Estimates"  # .time set
-    data: dict  # the first view of the traces: one row per component of estimates.idx_components
+    # the first view: one row per component of estimates.idx_components; the window's columns plus 'base'
+    # (normalized full-resolution traces), 'base_recon' and 'cm' (see _legacy_rows)
+    data: dict
     contours: list | None  # legacy mode: _component_contours of those components; None in capcan mode
     options: dict  # _first_view_options it was built with; make_app refuses other options
     metric_mapping: dict | None = None  # capcan mode: metric names of data by column number
@@ -476,8 +620,8 @@ def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
         if contours is None:
             idx = estimates.idx_components
             contours = _component_contours(estimates, idx, view['cthr']) if len(idx) else []
-        data = EstimatesToSrcFast(estimates, detect_corner_artifacts=o['detect_corner_artifacts'],
-                                  correlation_method=o['correlation_method'], contours=contours, **view)
+        data = _legacy_rows(estimates, estimates.idx_components, correlation_method=o['correlation_method'],
+                            contours=contours, **view)
         return PreparedSession(fname, estimates, data, contours, o)
     if o['mode'] == 'capcan':
         if contours is not None:
@@ -494,7 +638,7 @@ def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
             corner_artifact_params=o['corner_artifact_params'],
             correlation_method=o['correlation_method'],
             n_iter=o['n_iter'])
-        return PreparedSession(fname, estimates, data, None, o, metric_mapping)
+        return PreparedSession(fname, estimates, _capcan_rows(data), None, o, metric_mapping)
     raise ValueError('wrong operation mode!')
 
 
@@ -524,6 +668,48 @@ def _autoinspected(estimates):
     return getattr(estimates, 'metrics_df', None) is not None
 
 
+SELECT_TEXT = "Select a neuron."  # the metrics panel after a change, until a neuron is selected
+
+# Estimates attributes that a Delete, CaImAn's manual_merge or the window's quality values after a merge replace
+_CHANGED_FIELDS = ('idx_components', 'idx_components_bad', 'A', 'C', 'YrA', 'R', 'S', 'bl', 'c1',
+                   'neurons_sn', 'g', 'nr', 'coordinates', 'SNR_comp', 'r_values')
+
+# The browser draws every trace against one time array and at its row's height: one copy of the time axis is
+# sent, and a Delete or a sort sends only the heights (dummy_id), never the traces.
+_TIME_JS = "return this.data.traces.map(() => time.data.t)"
+_HEIGHT_JS = """
+const rows = this.data["{col}"], heights = this.data.dummy_id
+const out = new Array(rows.length)
+for (let i = 0; i < rows.length; i++) {{
+  const y = rows[i], h = Number(heights[i]), r = new Float64Array(y.length)
+  for (let j = 0; j < y.length; j++) r[j] = y[j] + h
+  out[i] = r
+}}
+return out
+"""
+
+
+@dataclass
+class _Numbering:
+    """Which row of the window's data source shows which component. A Merge renumbers the components (CaImAn
+    drops the merged ones and appends the result) but the rows stay, so no trace or contour is sent again; a
+    row whose component no longer exists stays hidden and comes back with Revert change or Discard all."""
+    slot_of: dict              # component number -> row
+    idx: list                  # row -> component number, -1: no component now
+    corr_scores: list | None   # row -> value (legacy mode); recomputed after a merge, as the old full rebuild did
+    corr_groups: list | None
+    cm: np.ndarray | None      # row x row correlations (diagonal and NaN 0), legacy mode
+
+
+@dataclass
+class _Change:
+    """What Revert change restores: the state before the last Delete or Merge, by reference. A Delete and
+    CaImAn's manual_merge assign new objects and never change the old ones in place, so nothing is copied."""
+    fields: dict               # _CHANGED_FIELDS -> their objects before the change
+    shown: list
+    numbering: _Numbering
+
+
 def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_save=None,
              progress_save=None, refuse_autoinspected=False):
     """
@@ -547,6 +733,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             - compress_estimates: If True, compress estimates before saving (removes bad
                 components, converts to float32, sparse S matrix). Default: False
             - end_frame: last frame shown (exclusive); None (default) is the full length
+            - trace_points: at most this many points per trace are sent to the browser (default 2000):
+                min and max of equal bins for the whole session, every frame of a zoomed-in window
             - Other options: size, cthr, downsampling, corr_thr, etc.
         prepared: PreparedSession of fname; the window does not load the file itself.
         final_save: final_save(estimates) -> str, called by "Save results" instead of writing the files
@@ -640,96 +828,21 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         except Exception:
             return {}, 0.0, 0.0
     # This is the main plotting functions which plots all images and traces and contains all button callbacks
-
-    def slice_cds(cds, comps_to_leave):
-        overall_data = dict(cds.data)
-        show_data = dict()
-        all_comps = overall_data['idx']
-        indices_to_leave = np.array([i for i, comp in enumerate(all_comps) if comp in comps_to_leave])
-        index_mapping = dict(zip(indices_to_leave, range(len(indices_to_leave))))
-
-        for key in overall_data.keys():
-            if key in ('traces', 'traces_recon'):
-                # subtract id vals from trace vals and add new ids
-                if overall_data[key] is not None:
-                    new_traces = [val - i + index_mapping[i] for i, val in enumerate(overall_data[key]) if
-                                  i in indices_to_leave]
-                    show_data.update({key: new_traces})
-                else:
-                    show_data.update({key: None})
-            else:
-                data_part = [val for i, val in enumerate(overall_data[key]) if i in indices_to_leave]
-                show_data.update({key: data_part})
-
-        return show_data
-
-    def sort_cds(cds, metric, order='up'):
-        overall_data = dict(cds.data)
-        if order == 'up':
-            indices = np.argsort(metric)
-        elif order == 'down':
-            indices = np.argsort(metric)[::-1]
-        else:
-            raise ValueError('Wrong order! Only "up" and "down" are supported')
-        #all_comps = overall_data['idx']
-
-        show_data = copy.deepcopy(overall_data)
-
-        #print('indies:',indices)
-        new_traces = [None for _ in range(len(metric))]
-        new_traces_recon = [None for _ in range(len(metric))] if overall_data.get('traces_recon') is not None else None
-        new_ids = np.zeros(len(metric))
-        for i, ind in enumerate(indices):  # we iterate over rows of CDS in the order given by sorted metric
-            # ind = row number in cds
-            # i = index of this row in sorted order
-            current_id = overall_data['dummy_id'][ind]  # current id = current trace height
-            current_trace = np.array(overall_data['traces'][ind])
-            new_id = i  # new height is simply the index of the current row in sorting
-            new_trace = current_trace - current_id + i  # subtract old height and add new one
-            #new_trace = np.full(fill_value=i, shape=1000)
-            new_traces[ind] = new_trace  # write new trace data to the current row in CDS
-            new_ids[ind] = new_id  # write new height to the current row in CDS
-
-            # Handle reconstruction traces with same offset adjustment
-            if new_traces_recon is not None:
-                current_recon = np.array(overall_data['traces_recon'][ind])
-                new_traces_recon[ind] = current_recon - current_id + i
-
-        # actually update our copy of CDS
-        show_data.update({'traces': new_traces,
-                          'dummy_id': new_ids,
-                          'metric': [np.round(x, 2) for x in metric]
-                          })
-        if new_traces_recon is not None:
-            show_data['traces_recon'] = new_traces_recon
-
-        return show_data, indices
-
-    def add_dummy_data(cds, ordering=None):
-        ctraces = dict(cds.data)['traces']
-        #time = dict(cds.data)['times'][0]
-        if ordering is None:
-            hdata = np.arange(len(ctraces))
-        else:
-            hdata = np.arange(len(ctraces))[ordering]
-        #xdata = [-0.05*max(time) for _ in range(len(ctraces))]
-        xdata = [-10 for _ in range(len(ctraces))]
-
-        cds.add(hdata, 'dummy_id')
-        cds.add(xdata, 'dummy_x')
-        cds.add(hdata, 'metric')
-
     def bkapp(doc):
 
         class Storage:
-            def __init__(self):
-                self.estimates = None
-                self.estimates_partial = None
-                self.prev_estimates = None
-                self.prev_estimates_partial = None
-                self.prev_data = None
-                self.prev_data_partial = None
+            """The window's state: one working Estimates, the rows on screen and the record of the last change."""
+
+            def __init__(self, estimates, shown, numbering):
+                self.estimates = estimates  # the working object; the save buttons write it
+                self.shown = shown  # component numbers on screen in row order (ascending): all, or a zoomed set
+                self.numbering = numbering
+                self.undo = None  # _Change of the last Delete or Merge
                 self.feedback_dict = {}  # User feedback: {neuron_idx: {feedback_type, ml_prob, ...}}
+
+            def slot_of(self, comp):
+                """The data source row of a component."""
+                return self.numbering.slot_of[comp]
 
         operation_mode = bkapp_kwargs.get('mode', 'legacy')
         size = bkapp_kwargs.get('size', 500)
@@ -737,6 +850,9 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         cthr = view['cthr']
         ds = view['ds']
         corr_thr = view['corr_thr']
+        correlation_method = bkapp_kwargs.get('correlation_method', 'pearson')
+        trace_points = int(bkapp_kwargs.get('trace_points', 2000))
+        color_by_ml = bkapp_kwargs.get('color_by_ml_probability', False)
 
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
@@ -770,7 +886,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             prep = _prepare(fname, estimates0, default_fps, bkapp_kwargs, None)
         else:
             prep = prepared
-        est_data0 = prep.data
+        data = prep.data
         metric_mapping = prep.metric_mapping
 
         # Extract active deletion metrics for GUI filtering
@@ -778,31 +894,55 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         if operation_mode not in ('legacy', 'capcan'):
             raise ValueError('wrong operation mode!')
+        legacy = operation_mode == 'legacy'
 
-        estimates = copy.deepcopy(estimates0)
+        # Traces stay here at full resolution, one normalized row per data source row (data['base'], then one
+        # block per merge); the browser gets at most trace_points points of each for the time window `win`
+        # (base frames), all on one time array (time_src).
+        sf = start_frame or 0
+        ef = estimates0.C.shape[1] if end_frame is None else end_frame
+        base_time = np.asarray(estimates0.time)[sf:ef][::ds]
+        n_base = len(base_time)
+        base_blocks = [data['base']]
+        recon_blocks = None if data.get('base_recon') is None else [data['base_recon']]
+        win = [0, n_base]
 
-        src = ColumnDataSource(data=copy.deepcopy(est_data0))  # for main view
-        src_partial = ColumnDataSource(data=copy.deepcopy(est_data0))  # for plotting
+        def on_grid(blocks, i0, i1):
+            """(frames, rows): every row of blocks on the base frames i0:i1, at most trace_points points each."""
+            frames, rows = np.arange(i0, i1), []
+            for block in blocks:
+                f, values = _decimate_rows(block[:, i0:i1], trace_points)
+                frames = i0 + f
+                rows.extend(values)
+            return frames, rows
 
-        storage = Storage()
-        storage.estimates = copy.deepcopy(estimates0)
-        storage.estimates_partial = copy.deepcopy(estimates0)
-        storage.prev_estimates = copy.deepcopy(estimates0)
-        storage.prev_estimates_partial = copy.deepcopy(estimates0)
-        storage.prev_data = copy.deepcopy(est_data0)
-        storage.prev_data_partial = copy.deepcopy(est_data0)
+        n0 = len(data['idx'])
+        numbering0 = _Numbering(slot_of={c: k for k, c in enumerate(data['idx'])}, idx=list(data['idx']),
+                                corr_scores=list(data['corr_scores']) if legacy else None,
+                                corr_groups=list(data['corr_groups']) if legacy else None, cm=data['cm'])
+        frames, rows = on_grid(base_blocks, 0, n_base)
+        time_src = ColumnDataSource(data={'t': base_time[frames]})
+        # One data source with a row for every component ever shown; a filter picks the rows on screen, so
+        # Delete, Show sel. and the sorts send row numbers and heights, not data. Lists are copied: rows are
+        # appended to them, and the prepared session must stay as it was built.
+        columns = {k: list(v) for k, v in data.items() if k not in _NOT_COLUMNS}
+        columns.update(idx=list(numbering0.idx), traces=rows, dummy_x=[-10] * n0, dummy_id=list(range(n0)),
+                       metric=list(range(n0)))
+        if recon_blocks is not None:
+            columns['traces_recon'] = on_grid(recon_blocks, 0, n_base)[1]
+        src = ColumnDataSource(data=columns)
+        row_filter = IndexFilter(indices=list(range(n0)))
+
+        # the loaded object is never changed: Discard all starts again from it
+        storage = Storage(copy.copy(estimates0), [int(c) for c in data['idx']], numbering0)
         storage.mode = operation_mode
 
         if operation_mode == 'capcan':
             storage.metric_mapping = metric_mapping
             storage.active_deletion_metrics = active_deletion_metrics
 
-        n_traces0 = len(est_data0['traces'])
-        #storage.ordering = np.arange(n_traces0)
-
-        dims = estimates.imax.shape
+        dims = estimates0.imax.shape
         title = fname.rpartition('/')[-1].partition('_estimates')[0]
-        curr_traces = src_partial.data['traces']
         #title_add = f'       active comps: {len(curr_traces)}'
         title_add = ''
         title += title_add
@@ -819,7 +959,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             if bkapp_kwargs['pathway'] == 'bonsai':
                 imwidth = 608
                 trwidth = 608
-        
+
         try:
             title = get_session_name_from_path(fname)
         except Exception:
@@ -827,7 +967,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         '''
 
         height = int(imwidth * dims[0] / dims[1])
-        imdata = np.flip(estimates.imax, axis=0)  # flip for reverting y-axis
+        imdata = np.flip(estimates0.imax, axis=0)  # flip for reverting y-axis
 
         # main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width=imwidth, height=height, tools=tools1, toolbar_location='below', title=title,
@@ -836,8 +976,14 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         p1.ygrid.grid_line_color = None
         p1.image(image=[imdata], color_mapper=color_mapper, dh=dims[0], dw=dims[1], x=0, y=0, syncable=False)
 
-        p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below', output_backend=backend)
+        # A fixed x range over the whole session and the selection points at x = -10, padded as the automatic
+        # range was: the traces may hold only a zoomed-in window, and Reset must still return to the whole session.
+        lo, hi = min(-10.0, float(base_time[0])), float(base_time[-1])
+        pad = 0.05 * (hi - lo) if hi > lo else 1.0
+        p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below', output_backend=backend,
+                    x_range=Range1d(lo - pad, hi + pad))
 
+        recon_renderer = None
         if not emergency:
             p1.patches('xs',
                        'ys',
@@ -847,41 +993,41 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                        selection_line_color="yellow",
                        line_width=line_width,
                        line_alpha=line_alpha,
-                       source=src_partial)
+                       source=src,
+                       view=CDSView(filter=row_filter))
 
-            # null_source = ColumnDataSource({'times': [], 'traces': [], 'colors': []})
-
-            p2.multi_line('times',
-                          'traces',
+            times = expr(CustomJSExpr(args=dict(time=time_src), code=_TIME_JS))
+            p2.multi_line(xs=times,
+                          ys=expr(CustomJSExpr(code=_HEIGHT_JS.format(col='traces'))),
                           line_color='colors',
                           line_alpha=trace_alpha,
                           selection_line_width=trace_line_width,
-                          source=src_partial)
+                          source=src,
+                          view=CDSView(filter=row_filter))
 
-            # Reconstruction overlay (dark grey, hidden by default)
-            recon_renderer = p2.multi_line('times',
-                          'traces_recon',
-                          line_color='#404040',  # Dark grey
-                          line_alpha=0.9,
-                          line_width=1.5,
-                          source=src_partial,
-                          visible=False)
+            if recon_blocks is not None:
+                # Reconstruction overlay (dark grey, hidden by default)
+                recon_renderer = p2.multi_line(xs=times,
+                                               ys=expr(CustomJSExpr(code=_HEIGHT_JS.format(col='traces_recon'))),
+                                               line_color='#404040',  # Dark grey
+                                               line_alpha=0.9,
+                                               line_width=1.5,
+                                               source=src,
+                                               view=CDSView(filter=row_filter),
+                                               visible=False)
 
-            # add dummy height property to ColumnDataSource to make traces selectable
+            # dummy height property makes traces selectable
             # (since multi_line does not support box selection, we have to plot additional scatter)
-
-            add_dummy_data(src, ordering=None)
-            add_dummy_data(src_partial, ordering=None)
-
             p2.scatter('dummy_x',
                        'dummy_id',
-                       source=src_partial,
+                       source=src,
+                       view=CDSView(filter=row_filter),
                        color='black',
                        size=5)
 
             p2.text(x='dummy_x', y='dummy_id', text='metric',
                     x_offset=5, y_offset=5, anchor="bottom_left",
-                    source=src_partial, text_font_size='8pt')
+                    source=src, view=CDSView(filter=row_filter), text_font_size='8pt')
 
         # this is for points addition
         pts_src = ColumnDataSource({'x': [], 'y': [], 'color': []})
@@ -898,6 +1044,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         metrics_div = Div(
             text="<b>Neuron Metrics</b><br><i>Tap a neuron to see metrics</i>",
+            name="metrics",
             width=metrics_width,
             height=height,
             styles={'overflow-y': 'scroll', 'border': '1px solid #ccc', 'padding': '5px',
@@ -913,7 +1060,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             selected_idx = new[0]
 
             # Get neuron data from source
-            neuron_idx = src_partial.data['idx'][selected_idx]
+            neuron_idx = src.data['idx'][selected_idx]
 
             # Check if neuron has feedback
             feedback_badge = ''
@@ -930,9 +1077,9 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             exclude_keys = ['idx', 'xs', 'ys', 'times', 'traces', 'traces_recon', 'colors', 'dummy_x', 'dummy_id', 'metric']
             metrics_data = {}
 
-            for key in src_partial.data.keys():
+            for key in src.data.keys():
                 if key not in exclude_keys:
-                    value = src_partial.data[key][selected_idx]
+                    value = src.data[key][selected_idx]
                     metrics_data[key] = value
 
             # Try to get feature importances and neuron contributions from ML model
@@ -1054,334 +1201,311 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             metrics_div.text = html
 
         # Attach selection callback to the source
-        src_partial.selected.on_change('indices', on_selection_change)
+        # Attach selection callback to the source
+        src.selected.on_change('indices', on_selection_change)
+
+        def on_ranges(event):
+            """A zoom or pan of the traces plot ended: send every trace on the time window in view, every frame
+            of it when it holds at most trace_points frames."""
+            if event.x0 is None or event.x1 is None:
+                return
+            # one frame beyond each edge, so the lines reach the plot's borders
+            i0 = max(int(np.searchsorted(base_time, event.x0, 'left')) - 1, 0)
+            i1 = min(int(np.searchsorted(base_time, event.x1, 'right')) + 1, n_base)
+            if i1 - i0 < 2 or [i0, i1] == win:
+                return  # nothing of the session in view, or the window already sent
+            win[:] = [i0, i1]
+            frames, rows = on_grid(base_blocks, i0, i1)
+            time_src.data = {'t': base_time[frames]}
+            new = {'traces': rows}
+            if recon_blocks is not None:
+                new['traces_recon'] = on_grid(recon_blocks, i0, i1)[1]
+            src.data.update(new)
+
+        p2.on_event(RangesUpdate, on_ranges)
 
         # Button callbacks
 
-        def sort_callback(event, storage=None, rb=None):
-            # estimates = copy.deepcopy(storage.estimates)
+        def selected_positions(storage):
+            """Positions in storage.shown (rows on screen) of the selected rows."""
+            inds = src.selected.indices
+            inds = [inds] if isinstance(inds, int) else list(inds)
+            position = {storage.slot_of(c): i for i, c in enumerate(storage.shown)}
+            return sorted(position[s] for s in inds if s in position)
 
+        def show_rows(storage):
+            row_filter.indices = [storage.slot_of(c) for c in storage.shown]
+
+        def after_change(storage, select=()):
+            """The rows of storage.shown on screen, the selection, and a metrics panel that names no neuron:
+            the one it named may be deleted or renumbered."""
+            show_rows(storage)
+            src.selected.indices = list(select)
+            metrics_div.text = SELECT_TEXT
+
+        def remember(storage):
+            est = storage.estimates
+            storage.undo = _Change({f: getattr(est, f) for f in _CHANGED_FIELDS if hasattr(est, f)},
+                                   list(storage.shown), storage.numbering)
+
+        def use_numbering(storage, numbering):
+            """Send the columns that depend on the numbering, when a Merge, its Revert or Discard all changes it."""
+            if storage.numbering is numbering:
+                return
+            storage.numbering = numbering
+            n = len(src.data['idx'])
+
+            def full(values, fill):  # rows added after this numbering was made have no component in it
+                return list(values) + [fill] * (n - len(values))
+            new = {'idx': full(numbering.idx, -1)}
+            if legacy:
+                new.update(corr_scores=full(numbering.corr_scores, 0.0),
+                           corr_groups=full(numbering.corr_groups, 0.0))
+            src.data.update(new)
+
+        def add_row(storage, comp, position):
+            """A data source row for comp, a merge's result at position in the list; the only contour computed."""
+            est = storage.estimates
+            coors = _component_contours(est, [comp], cthr)[0]
+            polygon = coors[~np.isnan(coors).any(axis=1)]
+            tr = np.array(est.C[comp, sf:ef][::ds], dtype=float)
+            with np.errstate(invalid='ignore', divide='ignore'):
+                tr -= tr.min()
+                tr /= tr.max()
+            block = tr.astype(np.float32)[None, :]
+            base_blocks.append(block)
+            if legacy or not color_by_ml:
+                color = colornum_Metro(position)
+            else:
+                color = get_ml_probability_color(None)  # grey: a merged neuron has no ML probability
+            row = {k: [np.nan] for k in src.data}  # the file's metrics: none for a merged neuron
+            row.update(idx=[comp], xs=[[pt[0] for pt in polygon]], ys=[[dims[0] - pt[1] for pt in polygon]],
+                       traces=on_grid([block], *win)[1], colors=[color], dummy_x=[-10], dummy_id=[position],
+                       metric=[position])
+            if legacy:
+                # hvals on the trace drawn at its height, as EstimatesToSrcFast computes it
+                row.update(areas=[calculate_polygon_area(coors)], hvals=[_hval(tr + position)],
+                           corr_scores=[0.0], corr_groups=[0.0])
+            if recon_blocks is not None:
+                # no reconstruction for a merged neuron: a flat line, as for any neuron without one
+                recon_blocks.append(np.zeros_like(block))
+                row['traces_recon'] = on_grid([recon_blocks[-1]], *win)[1]
+            src.stream(row)
+            return len(src.data['idx']) - 1
+
+        def merged_numbering(storage, cmapping):
+            """The numbering after CaImAn's merge: untouched components renumbered (cmapping), rows added for the
+            new ones; in legacy mode the Corr groups recomputed over the components now in the list."""
+            est = storage.estimates
+            old = storage.numbering
+            slot_of = {int(cmapping[c]): s for c, s in old.slot_of.items() if c in cmapping}
+            good = [int(c) for c in est.idx_components]
+            new_comps = [c for c in good if c not in slot_of]
+            for c in new_comps:
+                slot_of[c] = add_row(storage, c, good.index(c))
+            n = len(src.data['idx'])
+            idx = [-1] * n
+            for c, s in slot_of.items():
+                idx[s] = c
+            if not legacy:
+                return _Numbering(slot_of, idx, None, None, None)
+            good_slots = [slot_of[c] for c in good]
+            cm = np.zeros((n, n))
+            cm[:len(old.cm), :len(old.cm)] = old.cm
+            if correlation_method == 'pearson':
+                # the other pairs keep their values: one row of correlations, not the whole matrix again
+                for c in new_comps:
+                    r = _pearson_with(est.C, c, sf, ef)[good]
+                    r[np.isnan(r)] = 0
+                    cm[slot_of[c], good_slots] = r
+                    cm[good_slots, slot_of[c]] = r
+                    cm[slot_of[c], slot_of[c]] = 0
+            else:
+                cm[np.ix_(good_slots, good_slots)] = _corr_matrix(est.C[good, sf:ef], correlation_method)
+            scores, groups = _corr_groups(cm[np.ix_(good_slots, good_slots)], corr_thr)
+            corr_scores = list(old.corr_scores) + [0.0] * (n - len(old.corr_scores))
+            corr_groups = list(old.corr_groups) + [0.0] * (n - len(old.corr_groups))
+            for s, a, g in zip(good_slots, scores, groups):
+                corr_scores[s], corr_groups[s] = float(a), float(g)
+            return _Numbering(slot_of, idx, corr_scores, corr_groups, cm)
+
+        # as before, Revert change before any change returns to the file as loaded
+        remember(storage)
+
+        def sort_callback(event, storage=None, rb=None):
             regime = storage.mode
-            estimates_partial = copy.deepcopy(storage.estimates_partial)
-            old_sel_indices = src_partial.selected.indices
-            if len(old_sel_indices) == 0:
-                old_sel_indices = np.arange(len(estimates_partial.idx_components))
-                
+            est = storage.estimates
+            shown = storage.shown
+            slots = [storage.slot_of(c) for c in shown]
             mode = rb.active
+
+            def column(name):
+                return np.array([src.data[name][s] for s in slots])
 
             if regime == 'capcan':
                 # automated metric
                 if mode == 0:
-                    metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
+                    metric = np.arange(len(shown))
                 else:
                     # Use GUI metric mapping (filtered/reordered metrics)
-                    mname = storage.gui_metric_mapping[mode-1]
-                    metric = np.array(src_partial.data[mname])
+                    metric = column(storage.gui_metric_mapping[mode - 1])
 
             elif regime == 'legacy':
                 if mode == 0:
-                    metric = np.arange(len(estimates_partial.idx_components))#[old_sel_indices]
+                    metric = np.arange(len(shown))
                 elif mode == 1:
                     # trace SNR for each component
-                    metric = np.array(estimates_partial.SNR_comp)[estimates_partial.idx_components]#[old_sel_indices]
+                    metric = np.array(est.SNR_comp)[shown]
                 elif mode == 2:
                     # space correlation for each component
-                    metric = np.array(estimates_partial.r_values)[estimates_partial.idx_components]#[old_sel_indices]
+                    metric = np.array(est.r_values)[shown]
                 elif mode == 3:
                     # % of high values (>median + 4*MAD) for each component
-                    metric = np.array(src_partial.data['hvals'])#[estimates_partial.idx_components]
+                    metric = column('hvals')
                 elif mode == 4:
                     # area of each component
-                    metric = np.array(src_partial.data['areas'])
+                    metric = column('areas')
                 elif mode == 5:
                     # correlation with other components from corr matrix (belonging to the same connected component)
-                    metric = np.array(src_partial.data['corr_groups'])
-                elif mode == 6:
-                    # reconstruction: r2 (only in capcan mode with reconstructions)
-                    if 'r2_score' in src_partial.data:
-                        metric = np.array(src_partial.data['r2_score'])
+                    metric = column('corr_groups')
+                elif mode in (6, 7, 8, 9):
+                    # reconstruction: r2, mae, rmse, snr (only in capcan mode with reconstructions)
+                    name = {6: 'r2_score', 7: 'nmae', 8: 'nrmse', 9: 'snr_recon'}[mode]
+                    if name in src.data:
+                        metric = column(name)
                     else:
-                        print("WARNING: r2_score not available, sorting by SNR instead")
-                        metric = np.array(src_partial.data['snrs'])
-                elif mode == 7:
-                    # reconstruction: mae (only in capcan mode with reconstructions)
-                    if 'nmae' in src_partial.data:
-                        metric = np.array(src_partial.data['nmae'])
-                    else:
-                        print("WARNING: nmae not available, sorting by SNR instead")
-                        metric = np.array(src_partial.data['snrs'])
-                elif mode == 8:
-                    # reconstruction: rmse (only in capcan mode with reconstructions)
-                    if 'nrmse' in src_partial.data:
-                        metric = np.array(src_partial.data['nrmse'])
-                    else:
-                        print("WARNING: nrmse not available, sorting by SNR instead")
-                        metric = np.array(src_partial.data['snrs'])
-                elif mode == 9:
-                    # reconstruction: snr (only in capcan mode with reconstructions)
-                    if 'snr_recon' in src_partial.data:
-                        metric = np.array(src_partial.data['snr_recon'])
-                    else:
-                        print("WARNING: snr_recon not available, sorting by SNR instead")
-                        metric = np.array(src_partial.data['snrs'])
+                        print(f"WARNING: {name} not available, sorting by SNR instead")
+                        metric = column('snrs')
                 else:
                     raise ValueError('wrong RadioButton value')
 
             else:
                 raise NotImplementedError()
 
-
-            #print('mode=', mode)
-            #print(metric[indices])
-
-            #print(dict(src.data)['dummy_id'])
-            #old_to_new_mapping = dict(zip(np.arange(len(indices)), indices))
-            sorted_data, indices = sort_cds(src_partial, metric, order=sort_order)
-            #storage.ordering = indices
-
-            src_partial.data = sorted_data
-
-            #src_partial.selected.update(indices=[old_to_new_mapping[ind] for ind in old_sel_indices])
-            #add_dummy_data(src_partial, ordering=indices)
-            #print(dict(src_partial.data)['dummy_id'])
-
+            if sort_order == 'up':
+                indices = np.argsort(metric)
+            elif sort_order == 'down':
+                indices = np.argsort(metric)[::-1]
+            else:
+                raise ValueError('Wrong order! Only "up" and "down" are supported')
+            # The rows keep their order (positions of storage.shown, which a click refers to); only the
+            # heights the traces are drawn at and the labels change.
+            heights = list(src.data['dummy_id'])
+            labels = list(src.data['metric'])
+            for rank, pos in enumerate(indices):
+                heights[slots[pos]] = rank
+            for pos, s in enumerate(slots):
+                labels[s] = np.round(metric[pos], 2)
+            src.data.update(dummy_id=heights, metric=labels)
 
         def del_callback(event, storage=None):
-            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-                src_partial.selected.indices)
-            sel_inds = np.array(sel_inds)
+            sel_inds = selected_positions(storage)
             if len(sel_inds) == 0:
-                # Before the snapshot: an empty click must not overwrite what Revert change restores.
+                # Before the record: an empty click must not overwrite what Revert change restores.
                 return
-            estimates = copy.deepcopy(storage.estimates)
-            estimates_partial = copy.deepcopy(storage.estimates_partial)
-
-            # save previous state
-            storage.prev_estimates = copy.deepcopy(estimates)
-            storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
-            storage.prev_data = dict(src.data)
-            storage.prev_data_partial = dict(src_partial.data)
-
+            estimates = storage.estimates
             if verbose:
                 print('               Delete in progress...')
-            sel_comps = np.array([ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
+            sel_comps = np.array([ind for i, ind in enumerate(storage.shown) if i in sel_inds])
             if verbose:
                 print('sel_inds:', sel_inds)
                 print('num est comp before:', len(estimates.idx_components))
                 print('est comp before:', estimates.idx_components)
-                print('est partial before:', estimates_partial.idx_components)
+                print('shown before:', storage.shown)
                 print('sel_comps:', sel_comps)
-                print('new bad comps:', estimates_partial.idx_components[sel_inds].tolist())
+            remember(storage)
             temp = list(estimates.idx_components_bad) + list(sel_comps)
             estimates.idx_components_bad = np.sort(temp)
-            # print('all bad comps', len(temp))
             estimates.idx_components = [_ for _ in estimates.idx_components if _ not in sel_comps]
             if verbose:
                 print('num est comp after:', len(estimates.idx_components))
                 print('est comp after:', estimates.idx_components)
 
-            # src.data = EstimatesToSrc(estimates, cthr=cthr)
-            src.data = slice_cds(src, estimates.idx_components)
-            add_dummy_data(src)
-            src_partial.data = dict(src.data)
+            # The rows now show the full list.
+            storage.shown = [int(c) for c in estimates.idx_components]
             # No select-all: with every row selected a repeated click acts on all neurons,
             # and a click in toggle mode only clears the selection.
-            src_partial.selected.indices = []
-            storage.estimates = copy.deepcopy(estimates)
-            # The rows now show the full list; the partial list must match them without restore.
-            storage.estimates_partial = copy.deepcopy(estimates)
+            after_change(storage)
 
         def merge_callback(event, storage=None):
-            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-                src_partial.selected.indices)
-            sel_inds = np.array(sel_inds)
+            sel_inds = selected_positions(storage)
             if len(sel_inds) == 0:
-                # Before the snapshot: an empty click must not overwrite what Revert change restores.
+                # Before the record: an empty click must not overwrite what Revert change restores.
                 return
-            estimates = copy.deepcopy(storage.estimates)
-            estimates_partial = copy.deepcopy(storage.estimates_partial)
-
-            # save previous state
-            storage.prev_estimates = copy.deepcopy(estimates)
-            storage.prev_estimates_partial = copy.deepcopy(estimates_partial)
-            storage.prev_data = dict(src.data)
-            storage.prev_data_partial = dict(src_partial.data)
-
+            estimates = storage.estimates
             if verbose:
                 print('               Merge in progress...')
-            sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds]
-            not_sel_comps = [ind for i, ind in enumerate(estimates_partial.idx_components) if i not in sel_inds]
+            sel_comps = [ind for i, ind in enumerate(storage.shown) if i in sel_inds]
             if verbose:
                 print('sel_inds:', sel_inds)
                 print('num est comp before:', len(estimates.idx_components))
                 print('est comp before:', estimates.idx_components)
-                print('est partial before:', estimates_partial.idx_components)
+                print('shown before:', storage.shown)
                 print('sel_comps:', sel_comps)
+            remember(storage)
+            before = storage.undo.fields
+            estimates.manual_merge([sel_comps], params=params.CNMFParams(params_dict=estimates.cnmf_dict))
+            good_neurons = np.setdiff1d(list(range(before['C'].shape[0])), np.array(sel_comps))
+            cmapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
+            estimates.SNR_comp = _merged_quality(before['SNR_comp'], cmapping, sel_comps)
+            estimates.r_values = _merged_quality(before['r_values'], cmapping, sel_comps)
 
-            # print('before:', [c for c in estimates.idx_components if c in sel_comps])
-            if len(sel_inds) != 0:
-                estimates.manual_merge([sel_comps],
-                                       params=params.CNMFParams(params_dict=estimates.cnmf_dict))
-                #estimates.evaluate_components()
-                oest = storage.prev_estimates
-                def get_unmerged_comp_mapping():
-                    nr = oest.C.shape[0]
-                    good_neurons = np.setdiff1d(list(range(nr)), np.array(sel_comps))
-                    mapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
-                    return mapping
-
-                def reassign_quality_metrics():
-                    cmapping = get_unmerged_comp_mapping()
-
-                    old_snr = oest.SNR_comp
-                    new_snr = np.zeros(len(cmapping)+1)
-
-                    # for untouched components
-                    for oi, ni in cmapping.items():
-                        new_snr[ni] = old_snr[oi]
-                    # manual for merged components
-                    merged_snrs = old_snr[sel_comps]
-                    new_snr[-1] = np.mean(merged_snrs[~np.isinf(merged_snrs)])
-                    estimates.SNR_comp = new_snr
-
-                    old_r = oest.r_values
-                    new_r = np.zeros(len(cmapping) + 1)
-
-                    # for untouched components
-                    for oi, ni in cmapping.items():
-                        new_r[ni] = old_r[oi]
-                    # manual for merged components
-                    merged_rs = old_r[sel_comps]
-                    new_r[-1] = np.mean(merged_rs[~np.isinf(merged_rs)])
-                    estimates.r_values = new_r
-
-                reassign_quality_metrics()
-
-                # print('after', [c for c in estimates.idx_components if c in sel_comps])
-                '''
-                merged_data = EstimatesToSrcFast(estimates, cthr=cthr, comps_to_select=[estimates.idx_components[-1]])
-                new_to_old_not_sel_comp_mapping = dict(zip(estimates.idx_components[:-1], not_sel_comps))
-                not_touched_data = slice_cds(src, not_sel_comps)
-                #print(merged_data)
-                #print()
-                #print(not_touched_data)
-                n_not_touched = len(not_touched_data['xs'])
-
-                # put merged data at the top of traces diagram:
-                for i, data in enumerate(merged_data['traces']):
-                    data += n_not_touched + i
-
-                aggregated_data = copy.deepcopy(not_touched_data)
-                # concatenate contents of both dicts
-                for key in not_touched_data.keys():
-                    aggregated_data[key].extend(merged_data[key])
-                
-                #print(aggregated_data)
-                src.data = aggregated_data
-                '''
-                src.data = EstimatesToSrcFast(estimates,
-                                              cthr=cthr,
-                                              sf=start_frame,
-                                              ef=end_frame,
-                                              ds=ds,
-                                              corr_thr=corr_thr)
-
-                add_dummy_data(src)
-                src_partial.data = dict(src.data)
-                # Same as in del_callback: no select-all, partial list follows the shown rows.
-                src_partial.selected.indices = []
-
-                storage.estimates = copy.deepcopy(estimates)
-                storage.estimates_partial = copy.deepcopy(estimates)
+            use_numbering(storage, merged_numbering(storage, cmapping))
+            storage.shown = [int(c) for c in estimates.idx_components]
+            # Same as in del_callback: no select-all.
+            after_change(storage)
 
         def show_callback(event, storage=None):
-            estimates = copy.deepcopy(storage.estimates)
-            estimates_partial = copy.deepcopy(storage.estimates_partial)
-
-            sel_inds = [src_partial.selected.indices] if isinstance(src_partial.selected.indices, int) else list(
-                src_partial.selected.indices)
-            #sel_inds = np.array(sel_inds)
+            sel_inds = selected_positions(storage)
             if verbose:
                 print('               Zoom in progress...')
                 print('sel inds:', sel_inds)
 
             if len(sel_inds) != 0:
-
-                # Row numbers refer to the rows on screen, i.e. to the partial list, not to the full one.
-                estimates_partial.idx_components = np.array(
-                    [ind for i, ind in enumerate(estimates_partial.idx_components) if i in sel_inds])
-
-                part_to_total_mapping = {i: ind for i, ind in enumerate(storage.estimates_partial.idx_components)
-                                         if i in sel_inds}
+                # Row numbers refer to the rows on screen, i.e. to the zoomed list, not to the full one.
+                storage.shown = [ind for i, ind in enumerate(storage.shown) if i in sel_inds]
                 if verbose:
-                    print('est comp num:', len(estimates.idx_components))
-                    print('est comp:', estimates.idx_components)
-                    print('est part:', estimates_partial.idx_components)
-
-                storage.estimates_partial = copy.deepcopy(estimates_partial)
-                #print(estimates_partial.idx_components)
-                #print(src_partial.selected.indices)
-                #show_data = slice_cds(src, estimates_partial.idx_components[np.array(src_partial.selected.indices)])
-                show_data = slice_cds(src, estimates_partial.idx_components)
-                #show_data = slice_cds(src, src_partial.selected.indices)
-                src_partial.data = show_data
-                add_dummy_data(src_partial, ordering=None)
-                # src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
-                src_partial.selected.indices = np.arange(len(estimates_partial.idx_components))
+                    print('est comp:', storage.estimates.idx_components)
+                    print('shown:', storage.shown)
+                show_rows(storage)
+                src.selected.indices = [storage.slot_of(c) for c in storage.shown]
 
         def restore_callback(event, storage=None):
-            estimates = copy.deepcopy(storage.estimates)
             if verbose:
                 print('            Reset in progress...')
-
-            overall_data = dict(src.data)
-            src_partial.data = copy.deepcopy(overall_data)
-            #add_dummy_data(src_partial, ordering=None)
-            if verbose:
-                print('est comp:', estimates.idx_components)
-                print('num est comp:', len(estimates.idx_components))
-            storage.estimates_partial = copy.deepcopy(estimates)
+            storage.shown = [int(c) for c in storage.estimates.idx_components]
+            show_rows(storage)
 
         def revert_callback(event, storage=None):
-            # prev_estimates = copy.deepcopy(storage.prev_estimates)
-            # prev_estimates_partial = copy.deepcopy(storage.prev_estimates)
-            prev_data = storage.prev_data
-            # The partial view must come back from its own snapshot, not from the full one.
-            prev_data_partial = storage.prev_data_partial
-
-            storage.estimates = copy.deepcopy(storage.prev_estimates)
-            storage.estimates_partial = copy.deepcopy(storage.prev_estimates_partial)
-            # src.data = EstimatesToSrc(prev_estimates, cthr=cthr)
-            # src.data = slice_cds(src, prev_estimates.idx_components)
-            # src_partial.data = EstimatesToSrc(prev_estimates_partial, cthr=cthr)
-            # src_partial.data = slice_cds(src, prev_estimates_partial.idx_components)
-
-            src.data = copy.deepcopy(prev_data)
-            src_partial.data = copy.deepcopy(prev_data_partial)
-            #add_dummy_data(src, ordering=storage.ordering)
-            #add_dummy_data(src_partial, ordering=storage.ordering)
+            rec = storage.undo
+            estimates = storage.estimates
+            for f, v in rec.fields.items():
+                setattr(estimates, f, v)
+            # the rows on screen at the change: a zoomed view comes back zoomed (own callback only, see the
+            # Revert change button)
+            storage.shown = list(rec.shown)
+            use_numbering(storage, rec.numbering)
+            # no selection, as after Delete and Merge: a neuron left highlighted under a cleared panel could not
+            # be selected again (no change of the selection), and a click would act on it unseen
+            after_change(storage)
 
         def discard_callback(event, storage=None):
             if verbose:
                 print('Discard in progress...')
-
-            storage.estimates = copy.deepcopy(estimates0)
-            storage.estimates_partial = copy.deepcopy(estimates0)
-            src.data = copy.deepcopy(est_data0)
-            src_partial.data = copy.deepcopy(est_data0)
-            add_dummy_data(src)
-            add_dummy_data(src_partial)
-            src_partial.selected.indices = np.arange(len(storage.estimates.idx_components))
-            # src.data = EstimatesToSrc(estimates, cthr=cthr)
-            # src_partial.data = EstimatesToSrc(estimates_partial, cthr=cthr)
+            # attributes of the working object are replaced, never changed in place: a shallow copy is enough
+            storage.estimates = copy.copy(estimates0)
+            storage.shown = [int(c) for c in data['idx']]
+            use_numbering(storage, numbering0)
+            # as before, every row is selected after Discard all
+            after_change(storage, select=[storage.slot_of(c) for c in storage.shown])
             if verbose:
-                print('est comp:', estimates.idx_components)
-                print('num est comp:', len(estimates.idx_components))
-                print('num est comp bad:', len(estimates.idx_components_bad))
+                print('est comp:', storage.estimates.idx_components)
+                print('num est comp:', len(storage.estimates.idx_components))
+                print('num est comp bad:', len(storage.estimates.idx_components_bad))
 
         def seed_callback(event):
             seeds = [[pts_src.data['x']], [pts_src.data['y']]]
-            seeds_fname = extract_name_with_pattern(estimates.name) + '_seeds.pickle'
+            seeds_fname = extract_name_with_pattern(estimates0.name) + '_seeds.pickle'
             with open(seeds_fname, "wb") as f:
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
@@ -1405,7 +1529,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 run_save_hook(progress_save, storage)
                 return
             dt = get_datetime()
-            base_name = extract_name_with_pattern(estimates.name)
+            base_name = extract_name_with_pattern(estimates0.name)
 
             # remove previous date if it exists
             #if '-' in base_name:
@@ -1418,7 +1542,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             if final_save is not None:
                 run_save_hook(final_save, storage)
                 return
-            base_name = extract_name_with_pattern(estimates.name)
+            base_name = extract_name_with_pattern(estimates0.name)
             out_name = base_name + 'final_estimates.pickle'
             save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
             print(f'Final results for {title} saved to {out_name}\n')
@@ -1430,12 +1554,12 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         def mark_feedback_callback(feedback_type, event, storage=None):
             """Mark current neuron with FP or FN feedback (toggle behavior)"""
-            if len(src_partial.selected.indices) == 0:
+            if len(src.selected.indices) == 0:
                 print("No neuron selected. Please select a neuron first.")
                 return
 
-            selected_idx = src_partial.selected.indices[0]
-            neuron_idx = src_partial.data['idx'][selected_idx]
+            selected_idx = src.selected.indices[0]
+            neuron_idx = src.data['idx'][selected_idx]
 
             # Toggle behavior: if already marked with same type, remove it
             if neuron_idx in storage.feedback_dict:
@@ -1443,7 +1567,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                     del storage.feedback_dict[neuron_idx]
                     print(f"Removed {feedback_type} feedback for neuron #{neuron_idx}")
                     # Trigger metrics refresh to remove badge
-                    on_selection_change('indices', [], src_partial.selected.indices)
+                    on_selection_change('indices', [], src.selected.indices)
                     return
 
             # Capture ALL relevant metrics for this neuron
@@ -1452,7 +1576,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                           'decision', 'is_corner_artifact', 'merge'}
             neuron_metrics = {}
 
-            for key in src_partial.data.keys():
+            for key in src.data.keys():
                 # Skip excluded keys and any failed_* or dummy_* columns
                 if (key in exclude_keys or
                     key.startswith('failed_') or
@@ -1460,7 +1584,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                     continue
 
                 try:
-                    value = src_partial.data[key][selected_idx]
+                    value = src.data[key][selected_idx]
                     # Convert numpy types to native Python types for JSON serialization
                     if hasattr(value, 'item'):
                         value = value.item()
@@ -1470,7 +1594,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
             # Add feedback metadata
             neuron_metrics['feedback_type'] = feedback_type
-            neuron_metrics['session_name'] = estimates.name if hasattr(estimates, 'name') else 'unknown'
+            neuron_metrics['session_name'] = estimates0.name if hasattr(estimates0, 'name') else 'unknown'
             neuron_metrics['timestamp'] = get_datetime()
 
             # Store complete record (overwrites if different type)
@@ -1479,7 +1603,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             print(f"Marked neuron #{neuron_idx} as {feedback_type}")
 
             # Trigger metrics refresh to show badge
-            on_selection_change('indices', [], src_partial.selected.indices)
+            on_selection_change('indices', [], src.selected.indices)
 
 
         def save_feedback_callback(event, storage=None):
@@ -1516,7 +1640,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 from pathlib import Path
 
                 # Extract clean session prefix (e.g., "LNOF_J01_1D" or "HOS_D04_1D_2T") for consistent naming
-                raw_name = estimates.name if hasattr(estimates, 'name') else 'session'
+                raw_name = estimates0.name if hasattr(estimates0, 'name') else 'session'
                 session_prefix = extract_session_id(raw_name) or extract_name_with_pattern(raw_name) or 'session'
 
                 # Determine artifacts folder location
@@ -1732,6 +1856,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                                 partial(sort_callback, storage=storage, rb=radio_button_group))
 
         button_revert = Button(label="Revert change", button_type="danger", width=bwidth, width_policy='fit')
+        # Reset view after the revert: the window has always ended Revert change on the full list, and the golden
+        # record of its decisions (tests/test_examinator_golden.py) selects rows on that list right after it.
         button_revert.on_event('button_click', partial(revert_callback, storage=storage),
                                partial(restore_callback, storage=storage),
                                partial(sort_callback, storage=storage, rb=radio_button_group))
@@ -1755,7 +1881,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         button_save_feedback = Button(label="Save Feedback", button_type="success", width=110, width_policy='fit')
 
         # Reconstruction toggle checkbox (only visible if reconstructions available)
-        has_reconstructions = est_data0.get('traces_recon') is not None
+        has_reconstructions = recon_renderer is not None
         checkbox_recon = CheckboxGroup(
             labels=["Show reconstruction"],
             active=[],
@@ -1765,7 +1891,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         def recon_callback(attr, old, new):
             # Toggle reconstruction overlay visibility
-            recon_renderer.visible = (0 in new)
+            if recon_renderer is not None:
+                recon_renderer.visible = (0 in new)
 
         checkbox_recon.on_change('active', recon_callback)
 

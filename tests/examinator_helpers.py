@@ -3,16 +3,23 @@
 # fails to load (WinError 127) unless torch is imported first.
 import torch  # noqa: F401
 
+import json
 import pickle
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
 from bokeh.document.document import Document
-from bokeh.events import ButtonClick
-from bokeh.models import Button, ColumnDataSource, RadioButtonGroup
+from bokeh.document.events import (ColumnDataChangedEvent, ColumnsPatchedEvent, ColumnsStreamedEvent,
+                                   DocumentPatchedEvent, ModelChangedEvent)
+from bokeh.events import ButtonClick, RangesUpdate
+from bokeh.models import Button, ColumnDataSource, Div, GlyphRenderer, MultiLine, Plot, RadioButtonGroup
+from bokeh.protocol import Protocol
 from caiman.source_extraction.cnmf.estimates import Estimates
 from caiman.source_extraction.cnmf.params import CNMFParams
 from scipy.sparse import csc_matrix
+
+PANEL_TEXT = "<b>Neuron Metrics</b>"  # the metrics panel's text when the window opens starts with it
 
 
 def make_estimates(folder, n=8, T=300) -> Path:
@@ -55,6 +62,34 @@ def make_estimates(folder, n=8, T=300) -> Path:
     return path
 
 
+def message_bytes(msg) -> int:
+    """Size of a Bokeh protocol message as the server writes it: header, metadata, content, buffers."""
+    n = len(msg.header_json) + len(msg.metadata_json) + len(msg.content_json)
+    return n + sum(len(json.dumps(b.ref)) + len(b.to_bytes()) for b in msg.buffers)
+
+
+def patch_doc_bytes(events) -> int:
+    """Size of the PATCH-DOC message built from the document events of one action (0: nothing sent)."""
+    return message_bytes(Protocol().create("PATCH-DOC", events)) if events else 0
+
+
+def changed_columns(events) -> set:
+    """(source, column) of every data column the events send to the browser."""
+    out = set()
+    for e in events:
+        if isinstance(e, (ColumnDataChangedEvent, ColumnsStreamedEvent, ColumnsPatchedEvent)):
+            if isinstance(e, ColumnDataChangedEvent):
+                cols = e.cols if e.cols is not None else list(e.model.data)
+            elif isinstance(e, ColumnsStreamedEvent):
+                cols = list(e.data)
+            else:
+                cols = list(e.patches)
+            out |= {(e.model, c) for c in cols}
+        elif isinstance(e, ModelChangedEvent) and isinstance(e.model, ColumnDataSource) and e.attr == "data":
+            out |= {(e.model, c) for c in e.new}
+    return out
+
+
 class App:
     """make_app(...)(Document()) and handles to what the user clicks."""
 
@@ -65,6 +100,8 @@ class App:
         self.buttons = {}
         self.sorting = []
         sources = []
+        self.panel = None
+        self.traces_plot = None
         for root in doc.roots:
             for m in root.references():
                 if isinstance(m, Button):
@@ -73,12 +110,22 @@ class App:
                     self.sorting.append(m)
                 elif isinstance(m, ColumnDataSource) and "idx" in m.data:
                     sources.append(m)
+                elif isinstance(m, Div) and m.text.startswith(PANEL_TEXT):
+                    self.panel = m
+                elif isinstance(m, GlyphRenderer) and isinstance(m.glyph, MultiLine) and self.traces_plot is None:
+                    self.traces_plot = [p for p in root.references() if isinstance(p, Plot) and m in p.renderers][0]
         assert len(sources) == 1, len(sources)
         self.src = sources[0]
         self.storage = self.buttons["Delete sel."]._event_callbacks["button_click"][0].keywords["storage"]
 
+    def _slots(self):
+        """Data source row of each row on screen, in the window's row order (component numbers ascending)."""
+        return [self.storage.slot_of(c) for c in self.storage.shown]
+
     def select(self, rows):
-        self.src.selected.indices = list(rows)
+        """A click on the rows at these positions of the list on screen (the golden's row numbers)."""
+        slots = self._slots()
+        self.src.selected.indices = [slots[r] for r in rows]
 
     def click(self, label):  # whole chain
         b = self.buttons[label]
@@ -94,8 +141,43 @@ class App:
         b = self.buttons[label]
         b._event_callbacks["button_click"][0](ButtonClick(b))
 
+    def zoom(self, x0, x1):
+        """The browser's message after a zoom or pan of the traces plot to x0..x1 seconds."""
+        p = self.traces_plot
+        p._trigger_event(RangesUpdate(p, x0=x0, x1=x1, y0=p.y_range.start, y1=p.y_range.end))
+
     def shown(self):
-        return [int(i) for i in self.src.data["idx"]]
+        """Component numbers of the rows the browser draws (the view's rows of the data source)."""
+        view = [r for r in self.doc.roots[0].references()
+                if isinstance(r, GlyphRenderer) and r.data_source is self.src][0].view
+        comps = [int(self.src.data["idx"][s]) for s in view.filter.indices]
+        assert comps == [int(c) for c in self.storage.shown], (comps, self.storage.shown)
+        return comps
 
     def partial(self):
-        return [int(i) for i in self.storage.estimates_partial.idx_components]
+        return [int(i) for i in self.storage.shown]
+
+    def time_axis(self):
+        """The one time array the traces are drawn against."""
+        tsrc, = [m for m in self.doc.roots[0].references()
+                 if isinstance(m, ColumnDataSource) and set(m.data) == {"t"}]
+        return np.asarray(tsrc.data["t"])
+
+    def heights(self):
+        """{component: vertical position of its trace} for the rows on screen."""
+        return {int(self.src.data["idx"][s]): float(self.src.data["dummy_id"][s]) for s in self._slots()}
+
+    @contextmanager
+    def events(self):
+        """The document events (what goes to the browser) of the actions inside the block."""
+        self.doc.to_json()  # as after the browser's first pull: every model is known to it
+        got = []
+
+        def keep(event):
+            if isinstance(event, DocumentPatchedEvent):
+                got.append(event)
+        self.doc.on_change(keep)
+        try:
+            yield got
+        finally:
+            self.doc.remove_on_change(keep)
