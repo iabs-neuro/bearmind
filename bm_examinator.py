@@ -662,19 +662,42 @@ class SideFilesFailed(RuntimeError):
 
 _CHILDREN = set()  # side-file processes running now
 _CHILDREN_LOCK = threading.Lock()
+_CHILDREN_STOPPED = [False]  # set by stop_side_files until resume_side_files: no new writer starts meanwhile
+
+
+def _child_report(out: str, returncode: int) -> dict:
+    """The child's report: its last stdout line that is a JSON object. Any other line is not a report: the last
+    one goes to the log as it is, and {} is returned."""
+    lines = [line for line in out.splitlines() if line.strip()]
+    for line in reversed(lines):
+        try:
+            report = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(report, dict):
+            return report
+    if lines:
+        logging.getLogger(__name__).error('the side-file writer (exit code %s) printed no report; its last line: '
+                                          '%r', returncode, lines[-1])
+    return {}
 
 
 def _side_files_child(source, folder, base, sigma=3) -> None:
     """write_side_files of the result pickled at source, in a child process (bearmind.side_files): the side
     files of a session of many components take minutes of Python work, which in a thread of a server would hold
-    its GIL. Raises SideFilesFailed when the child fails."""
+    its GIL. Raises SideFilesFailed when the child fails, and without starting it once stop_side_files began."""
+    # absolute: the child runs in the repo folder
+    source, folder = Path(source).resolve(), Path(folder).resolve()
     cmd = [sys.executable, '-m', 'bearmind.side_files', str(source), str(folder), str(base), str(sigma)]
-    # the repo folder: `-m bearmind` is found from it; UTF-8 pipes: the child's report and traceback are decoded
-    # whatever the console's code page; no console window of its own for a server that runs hidden
-    proc = subprocess.Popen(cmd, cwd=str(Path(__file__).resolve().parent), stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
-                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     with _CHILDREN_LOCK:
+        if _CHILDREN_STOPPED[0]:
+            raise SideFilesFailed(f'side files {base}* in {folder} not written: the writers were stopped', 'stopped')
+        # the repo folder: `-m bearmind` is found from it; UTF-8 pipes: the child's report and traceback are
+        # decoded whatever the console's code page; no console window of its own for a server that runs hidden.
+        # Started under the lock: stop_side_files sees every writer that started before it.
+        proc = subprocess.Popen(cmd, cwd=str(Path(__file__).resolve().parent), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
+                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         _CHILDREN.add(proc)
     try:
         out, err = proc.communicate()
@@ -684,13 +707,7 @@ def _side_files_child(source, folder, base, sigma=3) -> None:
     if proc.returncode == 0:
         return
     out, err = out.decode('utf-8', 'replace'), err.decode('utf-8', 'replace')
-    report = {}
-    for line in reversed(out.splitlines()):
-        try:
-            report = json.loads(line)
-            break
-        except ValueError:
-            continue
+    report = _child_report(out, proc.returncode)
     what = report.get('type') or f'exit code {proc.returncode}'
     if report.get('file'):
         what += f" on {report['file']}"
@@ -699,12 +716,20 @@ def _side_files_child(source, folder, base, sigma=3) -> None:
 
 
 def stop_side_files() -> int:
-    """Kill the side-file processes still running (a stopping server that waited its longest); how many."""
+    """Kill the side-file processes still running (a stopping server that waited its longest); how many. No new
+    writer starts until resume_side_files: a queued job that starts meanwhile fails as stopped."""
     with _CHILDREN_LOCK:
+        _CHILDREN_STOPPED[0] = True
         running = [p for p in _CHILDREN if p.poll() is None]
     for p in running:
         p.kill()
     return len(running)
+
+
+def resume_side_files() -> None:
+    """New side-file writers may start again (after stop_side_files, once its jobs have ended)."""
+    with _CHILDREN_LOCK:
+        _CHILDREN_STOPPED[0] = False
 
 
 def write_side_files_in_background(estimates, folder, base, sigma=3, source=None) -> Future:

@@ -76,16 +76,23 @@ def _filter_images(estimates, kept, sigma):
 
 
 def _write_filters(filters, ims, written):
-    """filter_NNN.tif of each image in the folder filters, then the removal of filter files of an earlier,
-    larger save. written: the names written, filled as it goes."""
+    """filter_NNN.tif of each image in the folder filters, each written whole (_write_whole: a writer stopped in
+    the middle leaves no truncated image), then the removal of filter files of an earlier, larger save and of
+    the .partial images a stopped writer left. written: the names written, filled as it goes."""
     filters.mkdir(exist_ok=True)
     for i, im in enumerate(ims):
         name = f'filter_{i + 1:03d}.tif'
-        tfl.imwrite(filters / name, im)
+        _write_whole(filters / name, lambda p, im=im: tfl.imwrite(p, im))
         written.add(name)
-    for p in filters.glob('filter_*.tif'):
+    for p in list(filters.glob('filter_*.tif')) + list(filters.glob('filter_*.tif.partial')):
         if p.name not in written:
             fileio._unlink(p)
+
+
+def incomplete_marker(folder, base) -> Path:
+    """The file that says a folder's side files are incomplete (their writer was stopped); a complete write of
+    them removes it."""
+    return Path(folder) / f'{base}side_files_INCOMPLETE.txt'
 
 
 def _first_line(e):
@@ -97,7 +104,8 @@ def write_side_files(estimates, folder, base, sigma=3) -> None:
     <base>traces.csv (time_s and one column per component), <base>filters/filter_NNN.tif (footprints smoothed
     with sigma) and <base>filters_session.mat (the same images as one array 'A').
 
-    The folder holds one save: filter files left by an earlier save of more components are removed. A failure
+    The folder holds one save: filter files left by an earlier save of more components are removed, and a
+    complete write removes the folder's incomplete_marker. A failure
     of one of the three does not stop the others; after all were tried, one RuntimeError names what failed and
     the files of an earlier save left in its place."""
     folder = Path(folder)
@@ -129,6 +137,7 @@ def write_side_files(estimates, folder, base, sigma=3) -> None:
         attempt(filters, lambda: _write_filters(filters, ims, written))
         attempt(mat, lambda: _write_whole(mat, lambda p: savemat(p, {"A": np.array(ims)}, appendmat=False)))
     if not failed:
+        fileio._unlink(incomplete_marker(folder, base))  # a complete set now
         return
 
     left = []  # files of an earlier save where this one failed

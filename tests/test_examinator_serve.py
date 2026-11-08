@@ -24,6 +24,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
 import bm_examinator
+from bearmind import side_files
 from examinator_helpers import App, make_estimates
 
 LEGACY = {"mode": "legacy", "end_frame": None}
@@ -610,6 +611,95 @@ def test_side_files_child_failure_named(tmp_path):
         future.result(timeout=300)
     assert info.value.page_what == f"FileNotFoundError on {missing.name}"
     assert "Traceback" in str(info.value)
+
+
+def test_side_files_child_resolves_relative_paths(tmp_path, monkeypatch):
+    """R5: the child runs in the repo folder: relative paths are made absolute before it starts."""
+    monkeypatch.chdir(tmp_path)
+    bm_examinator.write_result(_loaded(tmp_path), Path("out") / f"{SID}_manual_estimates.pickle")
+    future = bm_examinator.write_side_files_in_background(None, Path("side"), f"{SID}_",
+                                                          source=Path("out") / f"{SID}_manual_estimates.pickle")
+    future.result(timeout=300)
+    assert sorted(os.listdir(tmp_path / "side")) == sorted(SIDE_FILES)
+
+
+def test_filter_image_written_whole(tmp_path, monkeypatch):
+    """R6: a filter image is written beside its name and renamed, like the other side files: a writer that stops
+    in the middle of an image leaves no truncated filter_NNN.tif; stale .partial images of a stopped writer go
+    with the next complete write."""
+    est = _loaded(tmp_path)
+    out = tmp_path / "out"
+    real = side_files.tfl.imwrite
+    calls = []
+
+    def stops_at_the_third(path, im, *args, **kwargs):
+        calls.append(path)
+        if len(calls) == 3:
+            Path(path).write_bytes(b"II*\x00half")  # a writer stopped in the middle
+            raise OSError("stopped")
+        return real(path, im, *args, **kwargs)
+
+    monkeypatch.setattr(side_files.tfl, "imwrite", stops_at_the_third)
+    with pytest.raises(RuntimeError):
+        bm_examinator.write_side_files(est, out, f"{SID}_")
+    filters = out / f"{SID}_filters"
+    assert sorted(p.name for p in filters.iterdir()) == ["filter_001.tif", "filter_002.tif"]
+    monkeypatch.undo()
+    (filters / "filter_009.tif.partial").write_bytes(b"left by a stopped writer")
+    bm_examinator.write_side_files(est, out, f"{SID}_")
+    assert sorted(p.name for p in filters.iterdir()) == [f"filter_{i:03d}.tif" for i in range(1, 9)]
+
+
+class _FakeChild:
+    """subprocess.Popen of a side-file child that has printed `out` and ended with `code`."""
+
+    def __init__(self, out, code=1):
+        self.out, self.returncode = out, code
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def communicate(self):
+        return self.out, b"Traceback (most recent call last):\n  ...\nOSError: stopped\n"
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        pass
+
+
+@pytest.mark.parametrize("report", [b"[1, 2]\n", b"null\n", b"\"text\"\n", b"not json\n"])
+def test_child_report_must_be_an_object(tmp_path, monkeypatch, caplog, report):
+    """R7: the child's report line is a JSON object; anything else is not a report: the failure names the exit code
+    and the raw line goes to the log."""
+    monkeypatch.setattr(bm_examinator.subprocess, "Popen", _FakeChild(report))
+    with caplog.at_level(logging.ERROR, logger="bm_examinator"):
+        with pytest.raises(bm_examinator.SideFilesFailed) as info:
+            bm_examinator._side_files_child(tmp_path / "r.pickle", tmp_path / "out", f"{SID}_")
+    assert info.value.page_what == "exit code 1"
+    assert report.decode().strip() in caplog.text
+
+
+def test_no_child_starts_once_the_writers_are_stopped(tmp_path, monkeypatch):
+    """R8: once stop_side_files began, a job that starts after it does not start a writer (it fails as stopped);
+    resume_side_files allows them again."""
+    def must_not_start(*args, **kwargs):
+        raise AssertionError("a writer was started after the stop")
+
+    real = bm_examinator.subprocess.Popen
+    monkeypatch.setattr(bm_examinator.subprocess, "Popen", must_not_start)
+    bm_examinator.stop_side_files()
+    try:
+        with pytest.raises(bm_examinator.SideFilesFailed) as info:
+            bm_examinator._side_files_child(tmp_path / "r.pickle", tmp_path / "out", f"{SID}_")
+        assert info.value.page_what == "stopped"
+    finally:
+        bm_examinator.resume_side_files()
+    monkeypatch.setattr(bm_examinator.subprocess, "Popen", real)
+    source = bm_examinator.write_result(_loaded(tmp_path), tmp_path / "out" / f"{SID}_manual_estimates.pickle")
+    bm_examinator._side_files_child(source, tmp_path / "out", f"{SID}_")
+    assert (tmp_path / "out" / f"{SID}_traces.csv").is_file()
 
 
 def test_side_files_failure_in_future(tmp_path):
