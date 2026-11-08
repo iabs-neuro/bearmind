@@ -559,24 +559,38 @@ def cmd_inspect(args) -> int:
         _check_sids(recs, [args.sid])
     # lazy: Bokeh (and, once a session opens, CaImAn) only for this command
     from bearmind import inspect_server
-    state = inspect_server.server_state(paths)
-    if state.alive:
-        url = state.url or inspect_server.wait_url(paths)
-        if url is None:
-            raise CliError("an inspection server of this series is starting; repeat the command in a moment",
-                           BUSY)
-        _say(f"[OK] inspection server is running: {url}")
+
+    def stopping(_state):
+        _say("[WARN] the inspection server of this series is stopping (it finishes the side files of the last "
+             "save); waiting for it to end")
+
+    def running(state) -> int:
+        _say(f"[OK] inspection server is running: {state.url}")
         if not args.no_browser:
             import webbrowser
-            webbrowser.open(inspect_server.session_url(url, args.sid) if args.sid else url + "/")
+            webbrowser.open(inspect_server.session_url(state.url, args.sid) if args.sid else state.url + "/")
         return OK
+
+    # a server that starts or stops right now is waited for: never a second server, never a dead address
+    state = inspect_server.wait_ready(paths, on_stopping=stopping)
+    if state.available:
+        return running(state)
     # the server draws nothing with matplotlib; a Qt backend would load PySide6 into it (as for the runner)
     os.environ.setdefault("MPLBACKEND", "Agg")
     try:
-        return inspect_server.serve(paths.root, args.sid, args.port, open_browser=not args.no_browser)
+        code = inspect_server.serve(paths.root, args.sid, args.port, open_browser=not args.no_browser,
+                                    quiet_busy=True)
     except KeyboardInterrupt:
         _say("[OK] inspection server stopped by Ctrl+C")
         return INTERRUPTED
+    if code != BUSY:
+        return code
+    # another inspect command started the series' server between the look above and this start
+    state = inspect_server.wait_ready(paths, on_stopping=stopping)
+    if state.available:
+        return running(state)
+    raise CliError("an inspection server of this series is starting or stopping; repeat the command in a moment",
+                   BUSY)
 
 
 def _port(value: str) -> int:

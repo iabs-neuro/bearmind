@@ -25,6 +25,7 @@ import socket
 import sys
 import threading
 import time
+import weakref
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
@@ -63,6 +64,7 @@ OPENING = "Opening {sid}..."
 SAVED = "Saved. Decision “cleaned” recorded for {sid}. You can close this tab."
 OUTDATED = "Result is outdated: CNMF-E was recomputed after this session was opened. Open it again."
 SAVE_FAILED = "Save failed: {what}. Details in the series log."
+DECISION_FAILED = "Result file written, but the decision could not be recorded: {what}. Save again."
 PROGRESS_SAVED = "Progress saved: {name}"
 SIDE_FILES_FAILED = ("Side files of {sid} not all written: {what}. The decision stays; details in the series "
                      "log.")
@@ -88,6 +90,10 @@ UNUSED_SESSION_MS = 15_000
 CHECK_UNUSED_MS = 5_000
 SIDE_FILES_WAIT_S = 600  # a stopping server waits this long for the side files it queued
 URL_WAIT_S = 10.0  # a server that holds the lock writes its address right after it listens
+STOP_WAIT_S = SIDE_FILES_WAIT_S + 60  # how long the inspect command waits for a stopping server to end
+# A reload asks for the new page while the old page's websocket is still open (it closes a moment later): a
+# session held by another tab is asked for again after this long, and refused only if that tab is still there.
+RETRY_OPEN_MS = 1500
 
 
 # --- small helpers ---
@@ -153,18 +159,29 @@ class ServerState:
     pid: int | None
     current: list[str] = field(default_factory=list)  # sessions open in a browser tab
     prepared: str | None = None  # the session prepared in the background
+    # no address yet: its process runs but does not listen yet, or the lock is being written (a new holder
+    # empties it before it writes itself in); worth waiting for
+    starting: bool = False
+    stopping: bool = False  # its process runs, but no longer serves pages (it finishes the side files)
+
+    @property
+    def available(self) -> bool:
+        """A server of the series answers at url."""
+        return self.alive and self.url is not None and not self.stopping
 
 
-def _lock_info(lock: Path, tries: int = 5) -> dict:
+def _lock_info(lock: Path, tries: int = 5) -> dict | None:
+    """The lock's content; {} without a lock file; None when it exists but cannot be read as a lock (its holder
+    is writing it, or nobody will)."""
     for _ in range(tries):
         try:
             info = json.loads(lock.read_text(encoding="utf-8"))
-            return info if isinstance(info, dict) else {}
+            return info if isinstance(info, dict) else None
         except FileNotFoundError:
             return {}
         except (OSError, ValueError):
             time.sleep(0.02)  # its server is rewriting it: look again
-    return {}
+    return None
 
 
 def _same_process(pid, created) -> bool:
@@ -178,24 +195,45 @@ def _same_process(pid, created) -> bool:
 
 
 def server_state(paths) -> ServerState:
-    """The inspection server of the series as its lock describes it; alive: its process runs."""
+    """The inspection server of the series as its lock describes it; alive: its process runs. Use available
+    before opening its address; starting and stopping mean "look again shortly" (wait_ready)."""
     info = _lock_info(paths.inspection_lock)
+    if info is None:
+        return ServerState(alive=False, url=None, pid=None, starting=True)
     pid, url, cur, prep = info.get("pid"), info.get("url"), info.get("current"), info.get("prepared")
-    return ServerState(alive=_same_process(pid, info.get("create_time")),
-                       url=url if isinstance(url, str) else None,
-                       pid=pid if isinstance(pid, int) else None,
+    alive = _same_process(pid, info.get("create_time"))
+    url = url if isinstance(url, str) else None
+    stopping = alive and bool(info.get("stopping"))
+    return ServerState(alive=alive, url=url, pid=pid if isinstance(pid, int) else None,
                        current=[s for s in cur if isinstance(s, str)] if isinstance(cur, list) else [],
-                       prepared=prep if isinstance(prep, str) else None)
+                       prepared=prep if isinstance(prep, str) else None,
+                       starting=alive and url is None and not stopping, stopping=stopping)
+
+
+def wait_ready(paths, start_timeout: float = URL_WAIT_S, stop_timeout: float = STOP_WAIT_S,
+               on_stopping=None) -> ServerState:
+    """The server state once it is settled: available, or no server at all. A starting server is waited for
+    start_timeout, a stopping one (it ends once the side files of its last saves are written) stop_timeout;
+    on_stopping(state) is called once before waiting for a stopping one. After the time it returns the state
+    as it is then (not available)."""
+    t0 = time.monotonic()
+    told = False
+    while True:
+        st = server_state(paths)
+        if st.available or not (st.starting or st.stopping):
+            return st
+        if st.stopping and not told and on_stopping is not None:
+            on_stopping(st)
+            told = True
+        if time.monotonic() - t0 >= (stop_timeout if st.stopping else start_timeout):
+            return st
+        time.sleep(0.1)
 
 
 def wait_url(paths, timeout: float = URL_WAIT_S) -> str | None:
-    """The running server's address; it writes it right after it starts listening."""
-    deadline = time.monotonic() + timeout
-    while True:
-        st = server_state(paths)
-        if st.url or not st.alive or time.monotonic() >= deadline:
-            return st.url
-        time.sleep(0.1)
+    """The address of the series' running server, waiting while it starts; None when none is available."""
+    st = wait_ready(paths, timeout, timeout)
+    return st.url if st.available else None
 
 
 # --- what a prepared session must still match when it is opened or saved ---
@@ -346,10 +384,10 @@ class _Page:
         return not self.connected and time.monotonic() - self.created < CONNECT_GRACE_S
 
     # -- content --
-    def show_message(self, text: str) -> None:
+    def show_message(self, text: str, title: str = INDEX_TITLE) -> None:
         self.sid = None
         self.doc.clear()
-        self.doc.title = INDEX_TITLE
+        self.doc.title = title
         self.doc.add_root(Div(text=html.escape(text, quote=False), name="message"))
 
     def show_index(self) -> None:
@@ -370,13 +408,44 @@ class _Page:
         if not _SID_RE.fullmatch(sid) or not srv.paths.registry_file(sid).is_file():
             return self.show_message(UNKNOWN.format(sid=sid))
         if not srv.claim(self, sid):
-            return self.show_message(SECOND_TAB.format(sid=sid))
+            # most often a reload: the browser asks for the new page while the old page is still connected
+            self.show_message(OPENING.format(sid=sid), TITLE.format(sid=sid))
+            self.doc.add_timeout_callback(partial(self._claim_again, sid), RETRY_OPEN_MS)
+            return
         try:
             prep = srv.preparer.take(sid)
         except Exception as e:
             srv.release(self)
             return self.show_message(srv.open_failure(sid, e))
         self.show(sid, prep)
+
+    def _claim_again(self, sid: str) -> None:
+        """RETRY_OPEN_MS after a refused claim (under the document lock): a tab still holding the session now is
+        another tab."""
+        if not self.server.claim(self, sid):
+            self.show_message(SECOND_TAB.format(sid=sid))
+            return
+        self.doc.add_next_tick_callback(without_document_lock(partial(self._take, sid)))
+
+    def _take(self, sid: str) -> None:
+        """Without the document lock: the session may still be prepared."""
+        prep = err = None
+        try:
+            prep = self.server.preparer.take(sid)
+        except Exception as e:
+            self.server.release(self)
+            err = self.server.open_failure(sid, e)
+        self._next_tick(self._taken, sid, prep, err)
+
+    def _taken(self, sid: str, prep, err) -> None:
+        if err is not None:
+            self.show_message(err)
+            return
+        try:
+            self.show(sid, prep)
+        except Exception as e:
+            log.exception("%s: cannot open", sid)
+            self.show_message(CANNOT_OPEN.format(sid=sid, what=page_error(e)))
 
     def show(self, sid: str, prep) -> None:
         """Replace the document's content with the window of the prepared session (under the document lock, or
@@ -506,16 +575,18 @@ class InspectServer:
     """serve() of one series; tests keep the object to stop it and to reach its pages."""
 
     def __init__(self, series_root, sid: str | None = None, port: int | None = None, open_browser: bool = True,
-                 idle_exit_s: float | None = None):
+                 idle_exit_s: float | None = None, quiet_busy: bool = False):
         self.paths = SeriesPaths(Path(series_root).resolve())
         self.sid, self.port, self.open_browser, self.idle_exit_s = sid, port, open_browser, idle_exit_s
+        self.quiet_busy = quiet_busy  # code 3 without its console line: the inspect command reuses that server
         self.url: str | None = None
         self.started = threading.Event()
         self.stopped = threading.Event()
         self._stop_requested = threading.Event()
         self._lock = threading.RLock()
         self._pages: dict = {}
-        self._side_futures: list = []
+        self._side_futures: set = set()  # side-file jobs not done yet (a stopping server waits for them)
+        self._side_last: dict = {}  # sid -> its last job not done yet
         self._cfg = None
         self._io_loop = None
         self._lock_fh = None
@@ -728,27 +799,55 @@ class InspectServer:
         bm = _bm()
         try:
             bm.write_result(est, self.paths.manual_result(sid))
-            res = actions.gate_cleaned(self.paths, sid, actions.current_user())
         except Exception as e:
             log.exception("%s: save failed", sid)
             return SAVE_FAILED.format(what=page_error(e))
+        # the result is on disk, but without the decision the batch does not take it: the person saves again
+        try:
+            res = actions.gate_cleaned(self.paths, sid, actions.current_user())
+        except Exception as e:
+            log.exception("%s: result written, decision not recorded", sid)
+            return DECISION_FAILED.format(what=page_error(e))
         if sid in res.failed:
             code, detail = res.failed[sid]
-            log.error("%s: decision not recorded: %s %s", sid, code, detail)
-            return SAVE_FAILED.format(what=code)
+            log.error("%s: result written, decision not recorded: %s %s", sid, code, detail)
+            return DECISION_FAILED.format(what=code)
         log.info("%s: manual result saved, decision cleaned recorded", sid)
         _say(f"[OK] {sid}: result saved, decision cleaned recorded")
-        try:
-            future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_")
-        except Exception as e:  # the executor is shut down: the result and the decision stand
-            log.exception("%s: side files not queued", sid)
-            page.add_note(SIDE_FILES_FAILED.format(sid=sid, what=page_error(e)))
-        else:
-            with self._lock:
-                self._side_futures = [f for f in self._side_futures if not f.done()] + [future]
-            future.add_done_callback(partial(page.side_files_done, sid))
+        self._queue_side_files(page, sid, est)
         page.saved(sid)
         return SAVED.format(sid=sid)
+
+    def _queue_side_files(self, page, sid: str, est) -> None:
+        """The side files of this save after those already being written. A queued job of an earlier save of the
+        session is dropped: only the last save's files are kept, and each job holds the large arrays."""
+        bm = _bm()
+        with self._lock:
+            earlier = self._side_last.get(sid)
+            if earlier is not None and earlier.cancel():
+                log.info("%s: side files of an earlier save dropped, this save replaces them", sid)
+            try:
+                future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_")
+            except Exception as e:  # the executor is shut down: the result and the decision stand
+                log.exception("%s: side files not queued", sid)
+                page.add_note(SIDE_FILES_FAILED.format(sid=sid, what=page_error(e)))
+                return
+            self._side_futures.add(future)
+            self._side_last[sid] = future
+        # the page through a weak reference: a finished Future keeps its callbacks, and a closed tab's page holds
+        # its document and the session's data
+        future.add_done_callback(partial(self._side_files_done, weakref.ref(page), sid))
+
+    def _side_files_done(self, page_ref, sid: str, future) -> None:
+        """Done callback (the writer's thread, or here when cancelled): forget the job; a failure goes on the
+        page if the tab is still there."""
+        with self._lock:
+            self._side_futures.discard(future)
+            if self._side_last.get(sid) is future:
+                del self._side_last[sid]
+        page = page_ref()
+        if page is not None:
+            page.side_files_done(sid, future)
 
     def progress_save(self, sid: str, est) -> str:
         """Save progress: a copy in 5_Inspection/<SID>/progress, the date in its name; no decision."""
@@ -774,7 +873,8 @@ class InspectServer:
         try:
             fh = runner._take_lock(self.paths.inspection_lock, {"url": None, "current": [], "prepared": None})
             if fh is None:
-                _say(ALREADY_RUNNING.format(url=wait_url(self.paths) or "address unknown"))
+                if not self.quiet_busy:
+                    _say(ALREADY_RUNNING.format(url=wait_url(self.paths) or "address unknown"))
                 return BUSY
             self._lock_fh = fh
             self._lock_len = fh.tell()
@@ -871,6 +971,9 @@ class InspectServer:
             self._io_loop = None
             if tick is not None:
                 tick.stop()
+            # no address any more, but the lock stays until the side files are written: the inspect command waits
+            # for this server to end instead of opening an address that no longer answers
+            self._rewrite_lock(url=None, stopping=True, current=[], prepared=None)
             if server is not None:
                 server.stop()
             loop.run_until_complete(loop.shutdown_default_executor())
@@ -963,7 +1066,7 @@ def _detach_series_log(handler) -> None:
 
 
 def serve(series_root: Path, sid: str | None = None, port: int | None = None, open_browser: bool = True,
-          idle_exit_s: float | None = None) -> int:
+          idle_exit_s: float | None = None, *, quiet_busy: bool = False) -> int:
     """Run the inspection server of the series in this thread until it is idle (or Ctrl+C).
-    0 normal exit; 2 bad input; 3 already running."""
-    return InspectServer(series_root, sid, port, open_browser, idle_exit_s).run()
+    0 normal exit; 2 bad input; 3 already running (with quiet_busy without its console line)."""
+    return InspectServer(series_root, sid, port, open_browser, idle_exit_s, quiet_busy).run()

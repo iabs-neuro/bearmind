@@ -8,7 +8,9 @@ thread behind. The series folder has Cyrillic letters: no page text may carry a 
 import torch  # noqa: F401
 
 import asyncio
+import gc
 import html
+import json
 import os
 import pickle
 import re
@@ -20,11 +22,14 @@ import threading
 import time
 import urllib.request
 import webbrowser
+import weakref
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
+import psutil
 import pytest
 from bokeh.client import pull_session
 from bokeh.events import ButtonClick
@@ -285,23 +290,62 @@ def test_save_after_cnmf_rerun_is_stale(series_est, capsys, change):
     assert S1 in actions.waiting_gate_sids(paths)
 
 
+def _divs(srv, page):
+    """The Div texts of a tab's page on the server, read under its document lock."""
+    return locked(srv, page, lambda: [d.text for d in _models(page.doc, Div)])
+
+
+def _get(srv, sid):
+    """A browser's request for the page of sid (no websocket): the server's new page."""
+    before = {id(p) for p in srv.pages()}
+    with urllib.request.urlopen(inspect_server.session_url(srv.url, sid), timeout=120) as r:
+        assert r.status == 200
+    page, = [p for p in srv.pages() if id(p) not in before]
+    return page
+
+
 def test_second_tab_same_session_refused(series_est):
+    opening, refused = inspect_server.OPENING.format(sid=S1), inspect_server.SECOND_TAB.format(sid=S1)
     with running(series_est) as srv:
         with tab(srv, S1) as a:
             first = srv.page_of(a.id)
             assert _opened(first, S1)
             with tab(srv, S1) as b:
-                texts = [d.text for d in _models(b.document, Div)]
-                assert texts == [inspect_server.SECOND_TAB.format(sid=S1)]
+                # first "opening": a reload asks for the new page before the old one has closed
+                assert [d.text for d in _models(b.document, Div)] == [opening]
                 assert not _models(b.document, Button)
-                assert srv.page_of(b.id).sid is None
+                second = srv.page_of(b.id)
+                until(lambda: _divs(srv, second) == [refused], timeout=10)
+                assert second.sid is None and not _models(second.doc, Button)
             # another session in a second tab is fine
             with tab(srv, S2) as c:
                 assert _opened(srv.page_of(c.id), S2)
-        # the tab closed: the session can be opened again (a reloaded tab is not a second one)
+        # the tab closed: the session can be opened again
         until(lambda: not first.is_open())
         with tab(srv, S1) as d:
             assert _opened(srv.page_of(d.id), S1)
+
+
+def test_reload_gets_the_session(series_est):
+    """I1: a reload asks for the new page while the old page's websocket is still open; the old one closes
+    right after, and the new page opens the session."""
+    with running(series_est) as srv:
+        with tab(srv, S1) as a:
+            assert _opened(srv.page_of(a.id), S1)
+            new = _get(srv, S1)
+            assert _divs(srv, new) == [inspect_server.OPENING.format(sid=S1)]
+        until(lambda: _opened(new, S1), timeout=10)
+        assert new.doc.title == inspect_server.TITLE.format(sid=S1)
+
+
+def test_open_tab_keeps_the_session(series_est):
+    """I1: the other tab stays connected: the new page is refused once the retry finds it still there."""
+    with running(series_est) as srv:
+        with tab(srv, S1) as a:
+            holder = srv.page_of(a.id)
+            new = _get(srv, S1)
+            until(lambda: _divs(srv, new) == [inspect_server.SECOND_TAB.format(sid=S1)], timeout=10)
+            assert new.sid is None and _opened(holder, S1)
 
 
 def test_second_server_refused(series_est, capsys):
@@ -478,6 +522,166 @@ def test_side_files_failure_on_page(series_est, monkeypatch):
     assert DENIED in paths.series_log.read_text(encoding="utf-8")
 
 
+def _no_decision(paths, sid, who):
+    raise PermissionError(13, DENIED)  # the registry file is held: a localized system text
+
+
+def test_decision_not_recorded_after_result_written(series_est, monkeypatch):
+    """M6: the result file is written, the decision cannot be: the page says so, nothing else is done."""
+    paths = series_est
+    monkeypatch.setattr(actions, "gate_cleaned", _no_decision)
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        text = save(srv, page)
+        assert text == inspect_server.DECISION_FAILED.format(what="PermissionError")
+        assert paths.manual_result(S1).is_file() and _decisions(paths, S1) == []
+        assert not srv._side_futures  # no side files for a save that did not count
+        time.sleep(0.5)
+        assert not locked(srv, page, lambda: page.next_button.visible or page.next_text.visible)
+        monkeypatch.undo()
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)  # "Save again"
+        assert _decisions(paths, S1) == ["cleaned"]
+
+
+def test_newer_save_skips_queued_side_files(series_est, monkeypatch):
+    """M5: side files of a save that has not started yet are dropped when the same session is saved again;
+    only the last save's files matter."""
+    paths = series_est
+    started, release, written = threading.Event(), threading.Event(), []
+    real = bm_examinator.write_side_files
+
+    def gated(est, folder, base, sigma=3):
+        written.append([int(c) for c in bm_examinator.kept_for_side_files(est)])
+        if len(written) == 1:
+            started.set()
+            assert release.wait(60)
+        real(est, folder, base, sigma)
+
+    monkeypatch.setattr(bm_examinator, "write_side_files", gated)
+    try:
+        with running(paths) as srv, tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert started.wait(60)  # the first save's files are being written
+            for row in (0, 0):
+                locked(srv, page, lambda: delete_row(page.doc, row))
+                assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert len(srv._side_futures) == 2  # the running one and the last one; the middle one dropped
+            release.set()
+    finally:
+        release.set()
+    assert written == [list(range(8)), list(range(2, 8))]
+    assert pd.read_csv(paths.inspection_dir(S1) / f"{S1}_traces.csv").shape[1] == 1 + 6
+
+
+def test_closed_tab_is_freed(series_est, monkeypatch):
+    """I2: after Save results the tab is closed and Bokeh discards its session: nothing of the server keeps the
+    page, its document or its prepared session (hundreds of MB on an hour session)."""
+    monkeypatch.setattr(inspect_server, "UNUSED_SESSION_MS", 500)
+    monkeypatch.setattr(inspect_server, "CHECK_UNUSED_MS", 200)
+    with running(series_est) as srv:
+        with tab(srv, S1) as s:
+            key, page = s.id, srv.page_of(s.id)
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            until(lambda: not srv._side_futures, timeout=60)  # written, and forgotten
+            refs = [weakref.ref(page), weakref.ref(page.prepared), weakref.ref(page.doc)]
+            del page
+        until(lambda: srv.page_of(key) is None, timeout=30)
+        until(lambda: (gc.collect(), all(r() is None for r in refs))[1], timeout=30)
+
+
+def test_stopping_server_is_waited_for(series_est, monkeypatch, capsys):
+    """M3: a server that stops (here: while the last save's side files are written) has no address in its lock;
+    the inspect command waits for it to end, then starts a new server, never a dead address."""
+    paths = series_est
+    release = threading.Event()
+    real = bm_examinator.write_side_files
+
+    def slow(*args, **kwargs):
+        assert release.wait(60)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(bm_examinator, "write_side_files", slow)
+    srv = inspect_server.InspectServer(paths.root, port=0, open_browser=False, idle_exit_s=600)
+    t = threading.Thread(target=srv.run, name="t4-inspect-server")
+    t.start()
+    served, out = [], {}
+    cmd = threading.Thread(target=lambda: out.setdefault("code", cli.main(["inspect", str(paths.root),
+                                                                          "--no-browser"])))
+    try:
+        assert srv.started.wait(120)
+        with tab(srv, S1) as s:
+            assert save(srv, srv.page_of(s.id)) == inspect_server.SAVED.format(sid=S1)
+        srv.request_stop()
+        st = until(lambda: (lambda x: x.stopping and x)(inspect_server.server_state(paths)), timeout=30)
+        assert st.alive and st.url is None and not st.available
+        monkeypatch.setattr(inspect_server, "serve", lambda *a, **k: served.append(a) or 0)
+        cmd.start()
+        time.sleep(1.5)
+        assert cmd.is_alive() and served == []  # it waits
+        release.set()
+        cmd.join(60)
+        assert not cmd.is_alive() and out["code"] == 0 and len(served) == 1
+        assert not t.is_alive()  # the old one had ended
+        assert "[OK] inspection server is running" not in capsys.readouterr().out
+    finally:
+        release.set()
+        srv.request_stop()
+        t.join(180)
+        cmd.join(180)
+        assert not t.is_alive() and not cmd.is_alive()
+
+
+def test_two_inspect_commands_at_once(series_est, monkeypatch, capsys):
+    """M4: the other command took the lock between this one's look and its own start: this one opens the
+    running server instead of failing."""
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(url))
+    with running(series_est) as srv:
+        real, calls = inspect_server.server_state, []
+
+        def nothing_at_first(paths):
+            calls.append(1)
+            return inspect_server.ServerState(False, None, None) if len(calls) == 1 else real(paths)
+
+        monkeypatch.setattr(inspect_server, "server_state", nothing_at_first)
+        capsys.readouterr()
+        assert cli.main(["inspect", str(series_est.root), S1]) == 0
+        out = capsys.readouterr().out
+        assert f"[OK] inspection server is running: {srv.url}" in out and "[FAILED]" not in out
+        assert opened == [inspect_server.session_url(srv.url, S1)]
+
+
+def test_empty_lock_means_wait(tmp_path):
+    """M4: a lock read just after its new holder emptied it (before it wrote itself in) is "wait", not
+    "no server"."""
+    paths = SeriesPaths(tmp_path / "s")
+    lock = paths.inspection_lock
+    lock.parent.mkdir(parents=True)
+    lock.write_text("", encoding="utf-8")
+    st = inspect_server.server_state(paths)
+    assert st.starting and not st.alive and not st.available
+    me = psutil.Process()
+
+    def holder_writes():
+        time.sleep(0.5)
+        lock.write_text(json.dumps({"pid": me.pid, "create_time": me.create_time(), "url": "http://localhost:1",
+                                    "current": [], "prepared": None}), encoding="utf-8")
+
+    writer = threading.Thread(target=holder_writes)
+    writer.start()
+    try:
+        st = inspect_server.wait_ready(paths)
+    finally:
+        writer.join(10)
+    assert st.available and st.url == "http://localhost:1"
+    lock.write_text(json.dumps({"pid": 999_999_999, "create_time": 1.0, "url": "http://localhost:1"}),
+                    encoding="utf-8")
+    t0 = time.monotonic()
+    st = inspect_server.wait_ready(paths)  # a dead holder: nothing to wait for
+    assert not st.alive and not st.starting and not st.available and time.monotonic() - t0 < 2
+
+
 def test_page_texts_are_english(series_est, monkeypatch, capsys):
     """Titles, status texts and refusals have no Cyrillic, also when the system's error text is localized
     (K2) and the series folder is Cyrillic; console lines are ASCII."""
@@ -498,7 +702,13 @@ def test_page_texts_are_english(series_est, monkeypatch, capsys):
                 texts += _texts(s.document)
         with tab(srv, S1) as s, tab(srv, S1) as second:
             page = srv.page_of(s.id)
-            texts += _texts(s.document) + _texts(second.document)
+            texts += _texts(s.document) + _texts(second.document)  # the second: "opening", then refused
+            refused = srv.page_of(second.id)
+            until(lambda: _divs(srv, refused) == [inspect_server.SECOND_TAB.format(sid=S1)], timeout=10)
+            texts += locked(srv, refused, lambda: _texts(refused.doc))
+            monkeypatch.setattr(actions, "gate_cleaned", _no_decision)
+            texts.append(save(srv, page))
+            monkeypatch.undo()
             monkeypatch.setattr(bm_examinator, "write_result", denied)
             failed = save(srv, page)
             assert failed == inspect_server.SAVE_FAILED.format(
@@ -511,6 +721,8 @@ def test_page_texts_are_english(series_est, monkeypatch, capsys):
             _set_cnmf(paths, S1, finished=datetime.now().isoformat(timespec="milliseconds"))
             texts.append(save(srv, page))
     assert inspect_server.OUTDATED in texts and inspect_server.SECOND_TAB.format(sid=S1) in texts
+    assert inspect_server.OPENING.format(sid=S1) in texts
+    assert inspect_server.DECISION_FAILED.format(what="PermissionError") in texts
     assert inspect_server.NOT_DONE.format(sid=S2) in texts
     assert inspect_server.UNKNOWN.format(sid="NOF_X99_9D") in texts
     assert html.escape(inspect_server.UNKNOWN.format(sid="../registry/" + S1)) in texts
@@ -550,7 +762,7 @@ def test_cli_inspect_starts_a_server(series_est, monkeypatch):
     calls = []
     monkeypatch.setattr(inspect_server, "serve", lambda *a, **k: calls.append((a, k)) or 0)
     assert cli.main(["inspect", str(series_est.root), S2, "--port", "5123", "--no-browser"]) == 0
-    assert calls == [((series_est.root, S2, 5123), {"open_browser": False})]
+    assert calls == [((series_est.root, S2, 5123), {"open_browser": False, "quiet_busy": True})]
     assert cli.main(["inspect", str(series_est.root), "NOPE_X01_1D"]) == 2  # unknown session
     assert cli.main(["inspect", str(series_est.root), "--port", "70000"]) == 2
     assert len(calls) == 1
@@ -667,7 +879,7 @@ def test_speed_hour_session(tmp_path, monkeypatch):
         until(lambda: srv.preparer.prepared == S2, timeout=300)
 
         numbers["save_s"] = timed_save(page)
-        writer = srv._side_futures[-1]
+        writer, = srv._side_futures
         until(lambda: locked(srv, page, lambda: page.next_button.visible), timeout=60)
         t0 = time.perf_counter()
         locked(srv, page, lambda: click(page.doc, inspect_server.NEXT_LABEL.format(sid=S2)))
