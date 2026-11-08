@@ -191,6 +191,48 @@ def test_real_start_command_smoke(tmp_path):
     assert monitor.runner_state(paths).status == "stopped"
 
 
+def test_spawn_detached_used_by_start(tmp_path, monkeypatch):
+    """Ruling P5-1: start_detached keeps the batch refusals and hands the start itself to spawn_detached, with
+    the runner's console log."""
+    from bearmind import runner
+    monkeypatch.setattr(runner, "machine_busy", lambda: None)
+    calls = []
+    monkeypatch.setattr(launcher, "spawn_detached",
+                        lambda cmd, paths, log_name: (calls.append((cmd, paths.root, log_name)), 77)[1])
+    root = tmp_path / "s"
+    cmd = [sys.executable, "-c", "pass"]
+    assert launcher.start_detached(root, cmd=cmd) == 77
+    assert launcher.start_detached(root) == 77
+    assert calls == [(cmd, root.resolve(), "runner_console.log"),
+                     (launcher.runner_command(root.resolve()), root.resolve(), "runner_console.log")]
+
+
+def test_spawn_detached_appends_to_its_log(tmp_path):
+    """The inspection server's start: no batch refusals (it runs beside a batch), output appended to the named
+    log, the same environment as the runner's."""
+    paths = SeriesPaths(tmp_path / "серия & co")
+    code = "import os; print('child', os.environ['PYTHONUTF8'], os.environ['MPLBACKEND'])"
+    for _ in range(2):
+        pid = launcher.spawn_detached([sys.executable, "-c", code], paths, "inspect_console.log")
+        try:
+            _wait_exit(pid)
+        finally:
+            _kill(pid)
+    text = (paths.logs_dir / "inspect_console.log").read_text(encoding="utf-8")
+    assert text.splitlines() == ["child 1 Agg", "child 1 Agg"]
+    assert not (paths.logs_dir / "runner_console.log").exists()
+
+
+def test_inspect_command(monkeypatch):
+    exe = Path("C:/env/pythonw.exe")
+    monkeypatch.setattr(sys, "executable", str(exe))
+    series = Path("D:/data/серия & co")
+    assert launcher.inspect_command(series) == [str(exe.with_name("python.exe")), "-m", "bearmind", "inspect",
+                                                str(series), "--no-browser"]
+    monkeypatch.setattr(sys, "executable", "C:/env/python.exe")
+    assert launcher.inspect_command(series)[0] == str(Path("C:/env/python.exe"))
+
+
 def test_start_detached_refuses_when_machine_busy(tmp_path, monkeypatch):
     from bearmind import runner
     monkeypatch.setattr(runner, "machine_busy", lambda: ("D:/other", 4242))

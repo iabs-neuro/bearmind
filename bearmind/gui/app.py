@@ -11,26 +11,14 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
                                QVBoxLayout, QWidget)
 
 from bearmind import config
+from bearmind.gui.inspection_tab import InspectionTab
 from bearmind.gui.monitor_tab import MonitorTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.gui.thresholds_tab import ThresholdsTab
 
 TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
-_PHASE = {"Inspection": 5}
-PLACEHOLDER_TEXT = "This tab is coming in a later version of BEARMiND."
 MAX_RECENT = 10
 SCAN_RUNNING = "A scan is running. Wait for it to finish, then try again."
-
-
-def _placeholder(name: str) -> QWidget:
-    page = QWidget()
-    lay = QVBoxLayout(page)
-    lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    for text in (PLACEHOLDER_TEXT, f"Planned for phase {_PHASE[name]}."):
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(label)
-    return page
 
 
 def _hint() -> QWidget:
@@ -56,9 +44,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("BEARMiND")
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
-        for name in TAB_NAMES:
-            # the Monitor, Scan and Thresholds tabs are built when a series is opened
-            self.tabs.addTab(_placeholder(name) if name in _PHASE else _hint(), name)
+        for name in TAB_NAMES:  # every tab is built when a series is opened
+            self.tabs.addTab(_hint(), name)
         self._build_menus()
         if series is not None:
             self.open_series(series)
@@ -103,6 +90,7 @@ class MainWindow(QMainWindow):
             built.append(MonitorTab(series))
             built.append(ScanTab(series))
             built.append(ThresholdsTab(series))
+            built.append(InspectionTab(series))
         except Exception:
             for tab in built:
                 self._retire(tab)
@@ -120,11 +108,11 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _retire(tab: QWidget) -> None:
-        """A tab leaving the window: its timer stops, a running scan ends its writes first and the MC video is
+        """A tab leaving the window: its timers stop, a running scan ends its writes first and the MC video is
         released."""
         if isinstance(tab, MonitorTab):
             tab.timer.stop()
-        if isinstance(tab, (ScanTab, ThresholdsTab)):
+        if isinstance(tab, (ScanTab, ThresholdsTab, InspectionTab)):
             tab.shutdown()
         tab.deleteLater()
 
@@ -135,19 +123,24 @@ class MainWindow(QMainWindow):
         self._retire(old)
         self.tabs.insertTab(index, tab, name)
 
-    def _set_tabs(self, monitor_tab: MonitorTab, scan_tab: ScanTab, thresholds_tab: ThresholdsTab) -> None:
+    def _set_tabs(self, monitor_tab: MonitorTab, scan_tab: ScanTab, thresholds_tab: ThresholdsTab,
+                  inspection_tab: InspectionTab) -> None:
         self._replace_tab("Monitor", monitor_tab)
         self._replace_tab("Scan", scan_tab)
         self._replace_tab("Thresholds", thresholds_tab)
+        self._replace_tab("Inspection", inspection_tab)
         self.tabs.setCurrentIndex(0)
         self.monitor, self.scan, self.thresholds = monitor_tab, scan_tab, thresholds_tab
+        self.inspection = inspection_tab
         self.actions_menu.clear()
         self.actions_menu.addActions(monitor_tab.menu_actions)
         monitor_tab.open_tab.connect(self._open_from_monitor)
-        for tab in (monitor_tab, scan_tab, thresholds_tab):
+        for tab in (monitor_tab, scan_tab, thresholds_tab, inspection_tab):
             tab.status_message.connect(self.statusBar().showMessage)
-        # written thresholds change Monitor's "Thresholds: N sessions" at once, not at its next tick
+        # written thresholds change Monitor's "Thresholds: N sessions" at once, not at its next tick; a "Not
+        # needed" changes its "Manual inspection: N sessions"
         thresholds_tab.decided.connect(monitor_tab.refresh)
+        inspection_tab.decided.connect(monitor_tab.refresh)
         # a finished scan changes the table and the not-scanned state, which the timer would show only later; a
         # failed one may have written records before it failed
         scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh())

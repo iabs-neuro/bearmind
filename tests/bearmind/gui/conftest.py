@@ -22,7 +22,9 @@ def tmp_series(tmp_path):
 @pytest.fixture(autouse=True)
 def _refresh_errors_fail_tests(monkeypatch):
     """A programming error inside refresh() is reported to the window; in tests it must fail the test.
-    A test that passes its own `report` keeps it."""
+    A test that passes its own `report` keeps it. The Inspection tab of a test never starts a real inspection
+    server or browser: one the test does not replace raises."""
+    from bearmind.gui.inspection_tab import InspectionTab
     from bearmind.gui.monitor_tab import MonitorTab
     from bearmind.gui.scan_tab import ScanTab
     from bearmind.gui.thresholds_tab import ThresholdsTab
@@ -30,9 +32,15 @@ def _refresh_errors_fail_tests(monkeypatch):
     def reraise(exc_type, exc, tb):
         raise exc
 
-    for cls in (MonitorTab, ScanTab, ThresholdsTab):
-        def init(self, *a, real=cls.__init__, **k):
+    def no_real(*a, **k):
+        raise AssertionError("a test started a real inspection server or browser")
+
+    for cls in (MonitorTab, ScanTab, ThresholdsTab, InspectionTab):
+        def init(self, *a, real=cls.__init__, inspection=cls is InspectionTab, **k):
             k.setdefault("report", reraise)
+            if inspection:
+                k.setdefault("spawn", no_real)
+                k.setdefault("open_url", no_real)
             real(self, *a, **k)
 
         monkeypatch.setattr(cls, "__init__", init)

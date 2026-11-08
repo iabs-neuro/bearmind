@@ -18,12 +18,33 @@ def test_window_opens_with_series(qapp, tmp_series):
     assert [w.tabs.tabText(i) for i in range(w.tabs.count())] == ["Monitor", "Scan", "Thresholds", "Inspection"]
 
 
-def test_placeholder_tabs_text(qapp, tmp_series):
+def test_no_placeholder_tabs_left(qapp, tmp_series):
+    """Phase 5 builds the last tab: before a series every tab says how to open one, after it every tab is real;
+    Monitor's "Manual inspection: N sessions ->" switches to the Inspection tab."""
+    from bearmind.gui.inspection_tab import InspectionTab
+    from bearmind.gui.scan_tab import ScanTab
+    from bearmind.gui.thresholds_tab import ThresholdsTab
+    from bearmind.paths import SeriesPaths
+    from tests.bearmind.gui.test_monitor_tab import done, put
+
+    blank = MainWindow()
+    for i in range(blank.tabs.count()):
+        assert [lb.text() for lb in blank.tabs.widget(i).findChildren(QLabel)] == \
+            ["Open a series: Series > Open series..."]
+    blank.close()
+    paths = SeriesPaths(tmp_series)
+    paths.registry_file("x").parent.mkdir(parents=True)
+    put(paths, "LT1_J01_1D", {"crop": done(), "mc": done(), "thresholds": done(), "cnmf": done(n_components=5)})
     w = MainWindow(tmp_series)
-    for i, phase in ((3, 5),):  # Thresholds is built with the series since phase 4
-        text = " ".join(lb.text() for lb in w.tabs.widget(i).findChildren(QLabel))
-        assert "coming in a later version" in text and f"phase {phase}" in text
-        assert not re.search("[А-Яа-яЁё]", text)
+    assert [type(w.tabs.widget(i)) for i in (1, 2, 3)] == [ScanTab, ThresholdsTab, InspectionTab]
+    text = " ".join(lb.text() for i in range(w.tabs.count()) for lb in w.tabs.widget(i).findChildren(QLabel))
+    assert "coming in a later version" not in text and not re.search("[А-Яа-яЁё]", text)
+    assert w.monitor.inspection_button.text() == "Manual inspection: 1 session →"
+    w.monitor.inspection_button.click()
+    assert w.tabs.currentIndex() == 3
+    w.thresholds.shutdown()
+    w.inspection.shutdown()
+    w.close()
 
 
 def test_show_tab(qapp, tmp_series):
