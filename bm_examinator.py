@@ -54,6 +54,9 @@ from polygon import get_contours
 import matplotlib.colors as mcolors
 
 AUTOINSPECTED_TEXT = "This file is already autoinspected; open 4_Estimates instead."
+# tooltip of a save button that a server window leaves without a save function
+NO_SAVE_HOOK_TEXT = ("Not available on this page: the inspection server gives this button no place to save, "
+                     "and nothing is written next to the input file.")
 
 
 def colornum_Metro(num):
@@ -213,8 +216,9 @@ def _decimate_rows(Y, n_out):
 
     Each bin's two values are those decimate_minmax keeps, in the same order, but drawn at the bin's first and
     last frame rather than at their own: then all rows share one array of frames and the browser gets one time
-    axis. The shift stays within a bin, under a pixel when the whole session is shown; a zoomed-in window is
-    shown at full resolution."""
+    axis. The shift stays within a bin of frames: under a pixel when the whole session is shown and the bin's
+    frames are evenly spaced in time, but a bin spanning the gap between two stitched recording parts draws a
+    value up to the gap's length away from its own time. A zoomed-in window is shown at full resolution."""
     Y = np.asarray(Y)
     n = Y.shape[1]
     if n <= n_out:
@@ -761,6 +765,9 @@ SELECT_TEXT = "Select a neuron."  # the metrics panel after a change, until a ne
 # Estimates attributes that a Delete, CaImAn's manual_merge or the window's quality values after a merge replace
 _CHANGED_FIELDS = ('idx_components', 'idx_components_bad', 'A', 'C', 'YrA', 'R', 'S', 'bl', 'c1',
                    'neurons_sn', 'g', 'nr', 'coordinates', 'SNR_comp', 'r_values')
+# a field of _CHANGED_FIELDS the object did not have before the change: manual_merge adds nr, which
+# Estimates.__init__ does not define
+_ABSENT = object()
 
 # The browser draws every trace against one time array and at its row's height: one copy of the time axis is
 # sent, and a Delete or a sort sends only the heights (dummy_id), never the traces.
@@ -793,7 +800,7 @@ class _Numbering:
 class _Change:
     """What Revert change restores: the state before the last Delete or Merge, by reference. A Delete and
     CaImAn's manual_merge assign new objects and never change the old ones in place, so nothing is copied."""
-    fields: dict               # _CHANGED_FIELDS -> their objects before the change
+    fields: dict               # _CHANGED_FIELDS -> their objects before the change, _ABSENT if missing
     shown: list
     numbering: _Numbering
 
@@ -830,6 +837,9 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             next to the input; the returned text is shown in the page's status line. None: the notebook
             behaviour.
         progress_save: progress_save(estimates) -> str, the same for "Save progress".
+            With either hook given (server mode) the window writes nothing itself, neither next to the input
+            nor into the working folder: a save button without a hook is disabled (NO_SAVE_HOOK_TEXT as its
+            tooltip) and Save Feedback is hidden (feedback corrections are not part of the batch process).
             A hook gets a shallow copy of the window's working estimates: it may rebind or delete their
             attributes, but must not change their arrays or lists in place, which the window, its undo
             record and a reused PreparedSession share. The copy does not change after the hook returns, so
@@ -844,6 +854,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
     operation_mode = bkapp_kwargs.get('mode', 'legacy')
     ml_model_path = bkapp_kwargs.get('ml_model_path', None) if operation_mode == 'capcan' else None
     compress_estimates = bkapp_kwargs.get('compress_estimates', False)
+    server = final_save is not None or progress_save is not None
 
     # ML model state (lazy-loaded)
     _ml_model = [None]  # Use list to allow modification in nested function
@@ -1338,7 +1349,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         def remember(storage):
             est = storage.estimates
-            storage.undo = _Change({f: getattr(est, f) for f in _CHANGED_FIELDS if hasattr(est, f)},
+            storage.undo = _Change({f: getattr(est, f, _ABSENT) for f in _CHANGED_FIELDS},
                                    list(storage.shown), storage.numbering)
 
         def use_numbering(storage, numbering):
@@ -1485,9 +1496,12 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 raise NotImplementedError()
 
             if sort_order == 'up':
-                indices = np.argsort(metric)
+                indices = np.argsort(metric)  # NaN last
             elif sort_order == 'down':
-                indices = np.argsort(metric)[::-1]
+                indices = np.argsort(metric)
+                # NaN (a merged row has no capcan metrics) stays last; without NaN this is argsort reversed
+                missing = pd.isna(metric[indices])
+                indices = np.concatenate([indices[~missing][::-1], indices[missing]])
             else:
                 raise ValueError('Wrong order! Only "up" and "down" are supported')
             # The rows keep their order (positions of storage.shown, which a click refers to); only the
@@ -1582,7 +1596,10 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             rec = storage.undo
             estimates = storage.estimates
             for f, v in rec.fields.items():
-                setattr(estimates, f, v)
+                if v is not _ABSENT:
+                    setattr(estimates, f, v)
+                elif hasattr(estimates, f):
+                    delattr(estimates, f)  # added by the change: a save after Revert must not carry it
             # the rows on screen at the change: a zoomed view comes back zoomed
             storage.shown = list(rec.shown)
             use_numbering(storage, rec.numbering)
@@ -1593,7 +1610,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         def discard_callback(event, storage=None):
             if verbose:
                 print('Discard in progress...')
-            # attributes of the working object are replaced, never changed in place: a shallow copy is enough
+            # attributes of the working object are replaced, never changed in place: a shallow copy is enough, and a
+            # fresh one has none of the fields a change added (nr)
             storage.estimates = copy.copy(estimates0)
             storage.shown = [int(c) for c in data['idx']]
             use_numbering(storage, numbering0)
@@ -1612,8 +1630,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 print(f'Seeds saved to {seeds_fname}\n')
 
         # The server's save functions report in English text; markup in it is shown, not interpreted.
-        status = (Div(text="", name="status")
-                  if final_save is not None or progress_save is not None else None)
+        status = Div(text="", name="status") if server else None
 
         def run_save_hook(save, storage):
             # a failed save must not end the callback: the page says so and the button stays usable
@@ -1630,6 +1647,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             if progress_save is not None:
                 run_save_hook(progress_save, storage)
                 return
+            if server:
+                return  # the button is disabled; a click that arrives anyway must not write next to the input
             dt = get_datetime()
             base_name = extract_name_with_pattern(estimates0.name)
 
@@ -1645,6 +1664,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             if final_save is not None:
                 run_save_hook(final_save, storage)
                 return
+            if server:
+                return  # see save_callback
             base_name = extract_name_with_pattern(estimates0.name)
             out_name = base_name + 'final_estimates.pickle'
             saved = copy.copy(storage.estimates)  # see save_callback
@@ -1976,11 +1997,19 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         button_save_final = Button(label="Save results", button_type="success", width=bwidth, width_policy='fit')
         button_save_final.on_event('button_click', partial(final_save_callback, storage=storage))
+        if server:
+            # a server window writes only through its hooks, never next to the input or into the working folder
+            for button, hook in ((button_save, progress_save), (button_save_final, final_save)):
+                if hook is None:
+                    button.disabled = True
+                    button.html_attributes = {'title': NO_SAVE_HOOK_TEXT}
 
         # Feedback buttons (toggle behavior)
         button_mark_fp = Button(label="FP", button_type="warning", width=60, width_policy='fit')
         button_mark_fn = Button(label="FN", button_type="primary", width=60, width_policy='fit')
-        button_save_feedback = Button(label="Save Feedback", button_type="success", width=110, width_policy='fit')
+        # it writes next to the input or into the working folder, and feedback is not part of a server's process
+        button_save_feedback = Button(label="Save Feedback", button_type="success", width=110, width_policy='fit',
+                                      visible=not server)
 
         # Reconstruction toggle checkbox (only visible if reconstructions available)
         has_reconstructions = recon_renderer is not None
@@ -2001,7 +2030,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         # Wire feedback button callbacks
         button_mark_fp.on_event('button_click', partial(mark_feedback_callback, 'FP', storage=storage))
         button_mark_fn.on_event('button_click', partial(mark_feedback_callback, 'FN', storage=storage))
-        button_save_feedback.on_event('button_click', partial(save_feedback_callback, storage=storage))
+        if not server:
+            button_save_feedback.on_event('button_click', partial(save_feedback_callback, storage=storage))
 
         doc.add_root(
             column(

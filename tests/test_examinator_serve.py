@@ -177,6 +177,45 @@ def test_progress_save_hook(tmp_path, monkeypatch):
     assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
 
 
+@pytest.mark.parametrize("given, missing", [("final_save", "Save progress"), ("progress_save", "Save results")])
+def test_server_button_without_hook(tmp_path, monkeypatch, given, missing):
+    """With a hook given (server mode) nothing is written next to the input or into the working folder: a save
+    button without a hook is disabled and says why, Save Feedback is hidden (feedback corrections are not part of
+    the new process)."""
+    inp, cwd = tmp_path / "in", tmp_path / "cwd"
+    inp.mkdir(), cwd.mkdir()
+    path = make_estimates(inp)
+    monkeypatch.chdir(cwd)
+    calls = []
+
+    def hook(est):
+        calls.append(est)
+        return "Saved"
+
+    app = App(bm_examinator.make_app(str(path), 20, LEGACY, **{given: hook}))
+    button = app.buttons[missing]
+    title = button.html_attributes.get("title", "")
+    assert button.disabled and title == bm_examinator.NO_SAVE_HOOK_TEXT
+    assert title.isascii() and "next to the input" in title
+    assert not app.buttons["Save Feedback"].visible
+    app.select([2]); app.click("FP")
+    for label in (missing, "Save Feedback"):  # a click that reaches the server anyway
+        app.click(label)
+    assert calls == [] and _status(app.doc).text == ""
+    assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
+    other, = {"Save progress", "Save results"} - {missing}
+    assert not app.buttons[other].disabled
+    app.click(other)
+    assert len(calls) == 1 and _status(app.doc).text == "Saved"
+
+
+def test_notebook_buttons_unchanged(tmp_path):
+    app = App(bm_examinator.make_app(str(make_estimates(tmp_path)), 20, LEGACY))
+    for label in ("Save progress", "Save results", "Save Feedback"):
+        b = app.buttons[label]
+        assert b.visible and not b.disabled and "title" not in b.html_attributes, label
+
+
 def test_no_status_line_without_hooks(tmp_path):
     app = App(bm_examinator.make_app(str(make_estimates(tmp_path)), 20, LEGACY))
     assert not [m for m in _models(app.doc) if isinstance(m, Div) and m.name == "status"]

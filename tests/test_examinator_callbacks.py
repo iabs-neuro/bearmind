@@ -33,7 +33,7 @@ def _normalized(trace):
 
 
 def test_partial_list_matches_the_view_after_each_callback(tmp_path):
-    """Each callback leaves storage.estimates_partial equal to the rows it shows, without restore_callback."""
+    """Each callback leaves storage.shown equal to the rows the browser draws, without restore_callback."""
     app = _open(tmp_path)
     app.select([2]); app.first("Delete sel.")
     assert app.partial() == app.shown() == [0, 1, 3, 4, 5, 6, 7]
@@ -272,6 +272,38 @@ def test_capcan_sort_after_merge(tmp_path):
     assert sorted(heights.values()) == list(range(7))
     app.select([5]); app.click("Delete sel.")
     assert app.shown() == [0, 1, 2, 3, 4, 6]
+
+
+@pytest.mark.parametrize("order", ["up", "down"])
+def test_capcan_nan_sorts_last(tmp_path, order):
+    """The merged row has no capcan metrics (NaN): last in both sort orders, the others in the order asked."""
+    app = _App(bm_examinator.make_app(str(_capcan_estimates(tmp_path)), 20,
+                                      {"mode": "capcan", "end_frame": 300, "sort_order": order}))
+    app.select([0, 1]); app.click("Merge sel.")
+    app.sort("width")
+    heights = app.heights()
+    assert heights[6] == max(heights.values()) and sorted(heights.values()) == list(range(7))
+    width = {c: app.src.data["width"][app.storage.slot_of(c)] for c in heights if c != 6}
+    ranked = [width[c] for c in sorted(width, key=heights.get)]
+    assert ranked == sorted(ranked, reverse=order == "down")
+
+
+def test_revert_of_merge_removes_fields_it_added(tmp_path):
+    """CaImAn's manual_merge adds nr, which the loaded file does not have; Revert change and Discard all
+    return the object without it, so a save after them does not carry it."""
+    app = _open(tmp_path)
+    assert not hasattr(app.storage.estimates, "nr")
+    app.select([0, 1]); app.click("Merge sel.")
+    assert hasattr(app.storage.estimates, "nr")
+    app.click("Revert change")
+    assert not hasattr(app.storage.estimates, "nr")
+    assert app.shown() == list(range(8))
+    app.select([0, 1]); app.click("Merge sel.")
+    app.click("Discard all")
+    assert not hasattr(app.storage.estimates, "nr")
+    app.select([2, 3]); app.click("Merge sel.")
+    app.click("Revert change")
+    assert not hasattr(app.storage.estimates, "nr")
 
 
 def test_capcan_reconstructions_follow_the_rows(tmp_path):
