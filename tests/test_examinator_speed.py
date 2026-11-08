@@ -160,3 +160,29 @@ def test_select_is_cheap(hour):
     # what changes: the selection (in a real session it comes from the browser) and the metrics panel
     assert {type(e.model) for e in events if isinstance(e, ModelChangedEvent)} <= {Selection, Div}
     assert all(isinstance(e, ModelChangedEvent) for e in events)
+
+
+def test_save_results_frees_the_window(hour, tmp_path):
+    """Save results until the window is free, with a final_save as the inspection server's: the result
+    pickled whole and uncompressed, the side files queued for the background thread. The gate decision the
+    server also records is a small JSON write and is not part of this measurement."""
+    out = tmp_path / "5_Inspection" / "NOF_H01_1D"
+    futures = []
+
+    def final_save(est):
+        bm_examinator.write_result(est, out / "NOF_H01_1D_manual_estimates.pickle")
+        futures.append(bm_examinator.write_side_files_in_background(est, out, "NOF_H01_1D_"))
+        return "Saved."
+
+    app = App(bm_examinator.make_app(hour.fname, 20, LEGACY, prepared=hour, final_save=final_save))
+    app.select([3])
+    app.click("Delete sel.")
+    dt, size, _ = _timed(app, "Save results")
+    t0 = time.perf_counter()
+    futures[0].result(timeout=600)  # before the next test measures: the writer competes for the GIL
+    background = time.perf_counter() - t0
+    mb = (out / "NOF_H01_1D_manual_estimates.pickle").stat().st_size / MB
+    print(f"[speed] hour save_results time_s={dt:.3f} result_mb={mb:.0f} side_files_after_s={background:.1f} "
+          f"patch_bytes={size}")
+    assert len(list((out / "NOF_H01_1D_filters").iterdir())) == N_COMP - 1
+    assert dt <= 0.5, dt
