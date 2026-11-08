@@ -8,9 +8,11 @@ the gate decision through bearmind.actions, as Monitor's menu does. The dialogs,
 are injectable for the tests.
 """
 import logging
+import os
 import sys
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import psutil
@@ -48,7 +50,12 @@ STILL_STARTING = "The inspection server is still starting; it opens your session
 SPAWN_FAILED = "The inspection server did not start: {what}; details in gui.log"
 NO_BROWSER = "The browser did not open; open {url} yourself."
 ALREADY_PASSED_ASK = ("Manual inspection of {sid} already passed. Saving a new result makes autoinspection and "
-                      "export run again, and the exported neurons can change. Open anyway?")
+                      "export run again, and the exported neurons can change.{saved} Open anyway?")
+ALREADY_DECIDED_ASK = ("Manual inspection of {sid} is already decided ({value}); the batch takes that decision. "
+                       "Saving a new result replaces it.{saved} Open anyway?")
+# the inspection page's notice of a saved result (inspect_server.SAVED_BEFORE), told before the page opens
+SAVED_BEFORE = (" A result of {sid} was saved {when} by {who}. The inspection page shows the CNMF-E output, not "
+                "that result; Save results replaces it.")
 OUT_OF_DATE_TIP = "CNMF-E of {sid} is out of date: the batch recomputes it first."
 UNSCHEDULABLE_TIP = "{sid} cannot be scheduled: {problem}"
 NOT_DONE_TIP = "CNMF-E of {sid} is not done."
@@ -87,6 +94,23 @@ def _child_runs(key) -> bool:
     pid, created = key
     # pid_exists: a process that ended but whose handle is still open keeps its start time on Windows
     return inspect_lock.same_process(pid, created) and psutil.pid_exists(pid)
+
+
+def _when(iso: str) -> str:
+    """A registry time as the window shows it: date, hours and minutes."""
+    try:
+        return datetime.fromisoformat(iso).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return str(iso)
+
+
+def _error_what(e: BaseException) -> str:
+    """An error's type and the file it concerns, never its text: an OS error's text is in the system's language
+    (the window is English); gui.log has the whole text."""
+    f = getattr(e, "filename2", None) or getattr(e, "filename", None)
+    if isinstance(f, (str, bytes, os.PathLike)):
+        return f"{type(e).__name__} on {Path(os.fsdecode(f)).name}"
+    return type(e).__name__
 
 
 def _spawn_failure(e: BaseException) -> str:
@@ -229,18 +253,18 @@ class InspectionTab(QWidget):
         try:
             self._refresh()
         except Exception as e:
-            first = (str(e).splitlines() or [""])[0]
             kind = (type(e), str(e))
             if self._refresh_failed is None:
                 self._refresh_failed = kind
                 self._report(type(e), e, e.__traceback__)
             else:
                 if kind == self._refresh_failed:
-                    log.warning("inspection tab refresh failed again: %s", first)
+                    log.warning("inspection tab refresh failed again: %s: %s", type(e).__name__, e)
                 else:  # a different failure: keep its traceback in the log, still no dialog
                     self._refresh_failed = kind
                     log.error("inspection tab refresh failed differently", exc_info=(type(e), e, e.__traceback__))
-                self._say(f"Refresh failed: {type(e).__name__}: {first}")
+                # the type and the file only: the error's own text may be in the system's language
+                self._say(f"Refresh failed: {_error_what(e)}; details in gui.log")
         else:
             self._refresh_failed = None
 
@@ -354,8 +378,8 @@ class InspectionTab(QWidget):
             self._message("BEARMiND", why)
             return
         rec = self._records.get(sid)
-        if rec is not None and actions.gate_passed(rec) \
-                and not self._confirm(ALREADY_PASSED_ASK.format(sid=sid)):
+        ask = self._decided_question(rec) if rec is not None else None
+        if ask is not None and not self._confirm(ask):
             return
         if sid not in self._waiting:
             self._waiting.append(sid)
@@ -367,6 +391,21 @@ class InspectionTab(QWidget):
             self._say(STARTING)
             if not self.start_timer.isActive():
                 self.start_timer.start()
+
+    def _decided_question(self, rec) -> str | None:
+        """The question before opening a session whose manual-inspection decision counts already (passed, or the
+        batch takes it on its next look); with the saved result named when that decision is "cleaned". None:
+        no decision counts, nothing to ask."""
+        d = actions.counted_gate_decision(self.paths, rec)
+        passed = actions.gate_passed(rec)
+        if d is None and not passed:
+            return None
+        saved = ""
+        if d is not None and d.value == "cleaned" and self.paths.manual_result(rec.sid).is_file():
+            saved = SAVED_BEFORE.format(sid=rec.sid, when=_when(d.when), who=d.who)
+        if passed:
+            return ALREADY_PASSED_ASK.format(sid=rec.sid, saved=saved)
+        return ALREADY_DECIDED_ASK.format(sid=rec.sid, value=d.value.replace("_", " "), saved=saved)
 
     def show_first_waiting(self) -> None:
         """Monitor's "Manual inspection: N sessions": select the first session in list order that waits for

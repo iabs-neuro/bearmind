@@ -463,7 +463,8 @@ def test_inspection_tab_texts_are_english(qapp, series4, make_ui):
     t.refresh()
     t.open_inspection(S2)
     texts += [t.server_label.text()] + ui.asked + ui.shown + ui.status
-    assert len(ui.asked) == 3 and ui.shown and ui.status
+    # Not needed for S1, which then counts (opening S1 asks), opening S2 (passed) asks
+    assert len(ui.asked) == 4 and ui.shown and ui.status
     texts += [v for k, v in vars(inspection_tab).items() if k.isupper() and isinstance(v, str)]  # every text
     for x in texts:
         assert not CYRILLIC.search(x), x
@@ -502,11 +503,54 @@ def test_refresh_failure_reported_once(qapp, series4, make_ui, monkeypatch):
     monkeypatch.setattr(monitor, "series_view", boom)
     t.refresh()
     t.refresh()
-    assert len(reported) == 1 and said == ["Refresh failed: RuntimeError: registry gone"]
+    assert len(reported) == 1 and said == ["Refresh failed: RuntimeError; details in gui.log"]
     monkeypatch.setattr(monitor, "series_view", real)
     t.refresh()
     assert t._refresh_failed is None
     t.shutdown()
+
+
+def test_refresh_failure_names_type_and_file(qapp, series4, monkeypatch, caplog):
+    """M9: the status bar names the error's type and file, never its text (Windows' is localized); gui.log has
+    the whole text."""
+    t = InspectionTab(series4.root, report=lambda *exc: None, spawn=lambda cmd: 1, open_url=lambda url: None)
+    said = []
+    t.status_message.connect(said.append)
+    target = series4.registry_file(S1)
+
+    def denied(*a, **k):
+        raise PermissionError(13, "Отказано в доступе", str(target))
+
+    monkeypatch.setattr(monitor, "series_view", denied)
+    with caplog.at_level(logging.WARNING, logger="bearmind"):
+        t.refresh()  # the first goes to the window's report
+        t.refresh()
+    assert said == [f"Refresh failed: PermissionError on {target.name}; details in gui.log"]
+    assert not CYRILLIC.search(said[0])
+    assert "Отказано в доступе" in caplog.text
+    t.shutdown()
+
+
+def test_open_asks_when_a_decision_counts(qapp, series4, make_ui):
+    """I2: a session whose latest decision counts already (the batch takes it on its next look, the gate is not
+    passed yet) asks before opening; a saved result is named, with what the page shows."""
+    write_lock(series4)
+    paths = series4
+    result = paths.manual_result(S1)
+    result.parent.mkdir(parents=True, exist_ok=True)
+    result.write_bytes(b"result")  # newer than the estimates, which this fixture does not have
+    actions.gate_cleaned(paths, S1, "ann")
+    d = registry.load_record(paths, S1).decisions[-1]
+    assert actions.counted_gate_decision(paths, registry.load_record(paths, S1)) == d
+    ui = make_ui(paths, answer=False)
+    ui.tab.open_inspection(S1)
+    when = d.when.replace("T", " ")[:16]
+    assert ui.asked == [inspection_tab.ALREADY_DECIDED_ASK.format(
+        sid=S1, value="cleaned", saved=inspection_tab.SAVED_BEFORE.format(sid=S1, when=when, who="ann"))]
+    assert "A result of LT1_J01_1D was saved" in ui.asked[0] and ui.opened == []
+    ui.answer = True
+    ui.tab.open_inspection(S1)
+    assert ui.opened == [inspect_server.session_url(URL, S1)]
 
 
 def test_window_wires_the_inspection_tab(qapp, series4):

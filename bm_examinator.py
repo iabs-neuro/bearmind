@@ -1,6 +1,7 @@
 # Stuff needed for plotting and widget callbacks
 import copy
 import html
+import itertools
 import json
 import logging
 import subprocess
@@ -868,10 +869,11 @@ class _Change:
     fields: dict               # _CHANGED_FIELDS -> their objects before the change, _ABSENT if missing
     shown: list
     numbering: _Numbering
+    version: int               # Storage.version before the change
 
 
 def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_save=None,
-             progress_save=None, refuse_autoinspected=False):
+             progress_save=None, refuse_autoinspected=False, on_change=None):
     """
     Interactive neuron examination GUI.
 
@@ -910,7 +912,11 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             record and a reused PreparedSession share. The copy does not change after the hook returns, so
             a hook may hand it to a background writer (write_side_files_in_background).
         refuse_autoinspected: an autoinspected input (with metrics_df) opens a page with only
-            AUTOINSPECTED_TEXT.
+            AUTOINSPECTED_TEXT, or with this text when it is a str.
+        on_change: on_change(version) -> str | None, called after every change of the working estimates
+            (Delete, Merge, Revert change, Discard all) with the version of the state now in the window: a new
+            number for a new state; the earlier number when Revert change or Discard all returns to an earlier
+            state (0: as loaded). A text it returns goes to the status line (server mode).
     """
     if bkapp_kwargs is None:
         bkapp_kwargs = {}
@@ -1007,6 +1013,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 self.shown = shown  # component numbers on screen in row order (ascending): all, or a zoomed set
                 self.numbering = numbering
                 self.undo = None  # _Change of the last Delete or Merge
+                self.version = 0  # of the working estimates, for on_change: 0 as loaded
                 self.feedback_dict = {}  # User feedback: {neuron_idx: {feedback_type, ml_prob, ...}}
 
             def slot_of(self, comp):
@@ -1049,7 +1056,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         else:
             estimates0 = prepared.estimates
         if refuse_autoinspected and _autoinspected(estimates0):
-            doc.add_root(Div(text=AUTOINSPECTED_TEXT))
+            text = refuse_autoinspected if isinstance(refuse_autoinspected, str) else AUTOINSPECTED_TEXT
+            doc.add_root(Div(text=html.escape(text, quote=False)))
             return
         if prepared is None:
             prep = _prepare(fname, estimates0, default_fps, bkapp_kwargs, None)
@@ -1412,15 +1420,27 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         def after_change(storage, select=()):
             """The rows of storage.shown on screen, the selection, and a metrics panel that names no neuron:
-            the one it named may be deleted or renumbered."""
+            the one it named may be deleted or renumbered; then on_change hears of the new state."""
             show_rows(storage)
             src.selected.indices = list(select)
             metrics_div.text = SELECT_TEXT
+            if on_change is None:
+                return
+            try:
+                text = on_change(storage.version)
+            except Exception:
+                # the change itself is done: a failing listener must not leave the window half updated
+                logging.getLogger(__name__).exception('on_change failed for %s', fname)
+                return
+            if text is not None and status is not None:
+                status.text = html.escape(text, quote=False)
+
+        new_versions = itertools.count(1)
 
         def remember(storage):
             est = storage.estimates
             storage.undo = _Change({f: getattr(est, f, _ABSENT) for f in _CHANGED_FIELDS},
-                                   list(storage.shown), storage.numbering)
+                                   list(storage.shown), storage.numbering, storage.version)
 
         def use_numbering(storage, numbering):
             """Send the columns that depend on the numbering, when a Merge, its Revert or Discard all changes it."""
@@ -1600,6 +1620,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 print('shown before:', storage.shown)
                 print('sel_comps:', sel_comps)
             remember(storage)
+            storage.version = next(new_versions)
             temp = list(estimates.idx_components_bad) + list(sel_comps)
             estimates.idx_components_bad = np.sort(temp)
             estimates.idx_components = [_ for _ in estimates.idx_components if _ not in sel_comps]
@@ -1629,6 +1650,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 print('shown before:', storage.shown)
                 print('sel_comps:', sel_comps)
             remember(storage)
+            storage.version = next(new_versions)
             before = storage.undo.fields
             # never inside a server's widened BLAS region (see _BLAS_LOCK); free in the notebook
             with _BLAS_LOCK:
@@ -1675,6 +1697,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                     delattr(estimates, f)  # added by the change: a save after Revert must not carry it
             # the rows on screen at the change: a zoomed view comes back zoomed
             storage.shown = list(rec.shown)
+            storage.version = rec.version
             use_numbering(storage, rec.numbering)
             # no selection, as after Delete and Merge: a neuron left highlighted under a cleared panel could not
             # be selected again (no change of the selection), and a click would act on it unseen
@@ -1687,6 +1710,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             # fresh one has none of the fields a change added (nr)
             storage.estimates = copy.copy(estimates0)
             storage.shown = [int(c) for c in data['idx']]
+            storage.version = 0
             use_numbering(storage, numbering0)
             # as before, every row is selected after Discard all
             after_change(storage, select=[storage.slot_of(c) for c in storage.shown])

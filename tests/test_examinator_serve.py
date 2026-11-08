@@ -192,6 +192,29 @@ def test_merge_waits_for_a_widened_blas_region(tmp_path):
     assert done.is_set() and app.shown()[-1] == 6  # merged after the region ended, the merged one last
 
 
+def test_on_change_reports_versions(tmp_path):
+    """I1: on_change hears of every change of the working estimates with the version of the state in the window:
+    a new number for a new state, the earlier one when Revert change or Discard all returns to it; its text goes
+    to the status line. Selection, zoom and sorting are not changes."""
+    heard = []
+
+    def on_change(version):
+        heard.append(version)
+        return f"state {version}"
+
+    app = App(bm_examinator.make_app(str(make_estimates(tmp_path)), 20, LEGACY, final_save=lambda e: "saved",
+                                     on_change=on_change))
+    app.select([1, 2]); app.click("Show sel."); app.click("Reset view"); app.sort("SNR")
+    assert heard == []
+    app.select([2]); app.click("Delete sel.")
+    app.select([0, 1]); app.click("Merge sel.")
+    app.click("Revert change")  # back to the state after the Delete
+    app.click("Discard all")  # back to the file as loaded
+    app.select([4]); app.click("Delete sel.")
+    assert heard == [1, 2, 1, 0, 3]
+    assert _status(app.doc).text == "state 3"
+
+
 def test_final_save_hook_called_and_text_shown(tmp_path, monkeypatch):
     inp, cwd = tmp_path / "in", tmp_path / "cwd"
     inp.mkdir(), cwd.mkdir()

@@ -67,9 +67,27 @@ INDEX_HEAD = "Sessions waiting for manual inspection:"
 NONE_WAITING = "No session waits for manual inspection."
 NEXT_LABEL = "Next: {sid} →"
 NO_MORE = "No more sessions wait for manual inspection."
+OPEN_ELSEWHERE = "The remaining waiting session is open in another tab: {sids}."
+OPEN_ELSEWHERE_MANY = "The remaining waiting sessions are open in other tabs: {sids}."
+NONE_OPENABLE = "No other waiting session can be opened now; see the notes above."
+SKIPPED = "{text} Next skips it."
 OPENING = "Opening {sid}..."
 SAVED = "Saved. Decision “cleaned” recorded for {sid}. You can close this tab."
+CHANGED_SINCE_SAVE = "Changed since the last save: press Save results again."
+SAVED_BEFORE = ("A result of {sid} was saved {when} by {who}. This window shows the CNMF-E output, not that "
+                "result; Save results replaces it.")
+CNMF_OUT_OF_DATE = ("CNMF-E of {sid} is out of date: the batch recomputes it, so a result saved here would not "
+                    "count.")
+AUTOINSPECTED = "The CNMF-E output of {sid} is already autoinspected and cannot be inspected here."
+# Save results refused because the estimates file or the CNMF-E record changed after the session was opened; "Open
+# it again" only where a new page can open it now.
 OUTDATED = "Result is outdated: CNMF-E was recomputed after this session was opened. Open it again."
+OUTDATED_RUNNING = "Result is outdated: CNMF-E of this session is running again. Nothing was saved."
+OUTDATED_RESET = ("Result is outdated: CNMF-E of this session was reset after it was opened; the batch recomputes "
+                  "it. Nothing was saved.")
+OUTDATED_FAILED = "Result is outdated: CNMF-E of this session was run again and failed. Nothing was saved."
+OUTDATED_GONE = ("Result is outdated: the CNMF-E output this session was opened from is gone. Nothing was "
+                 "saved.")
 SAVE_FAILED = "Save failed: {what}. Details in the series log."
 DECISION_FAILED = "Result file written, but the decision could not be recorded: {what}. Save again."
 PROGRESS_SAVED = "Progress saved: {name}"
@@ -80,6 +98,8 @@ NOT_DONE = "CNMF-E of {sid} is not done yet."
 UNKNOWN = "Unknown session {sid}."
 SHORT_TIMESTAMPS = ("{sid} cannot be opened: it has {n_ts} timestamps for {n_frames} frames of traces. Check its "
                     "timestamps file, then rescan the series.")
+PART_TIMESTAMPS = ("{sid} cannot be opened: a part of it has {n_frames} frames but {n_rows} timestamp rows. Rescan "
+                   "the series.")
 CANNOT_OPEN = "{sid} cannot be opened: {what}. Details in the series log."
 # the calcium-wave hint (bearmind.wave.wave_text) is advice, not an error: a warning color, not red
 WAVE_STYLE = {"background-color": "#fff3cd", "color": "#664d03", "border": "1px solid #ffda6a",
@@ -251,9 +271,37 @@ class _ShortTimestamps(Exception):
         self.sid, self.n_ts, self.n_frames = sid, n_ts, n_frames
 
 
+class _PartTimestamps(Exception):
+    def __init__(self, sid, n_frames, n_rows):
+        super().__init__(f"{sid}: a part has {n_frames} frames but {n_rows} timestamp rows")
+        self.sid, self.n_frames, self.n_rows = sid, n_frames, n_rows
+
+
 # LoadEstimates' refusal of timestamps shorter than the traces; the page names the two lengths, not the path
 _SHORT_RE = re.compile(r"(\d+) timestamps for (\d+) frames$")
+# session_timestamps' refusal of a part with fewer timestamp rows than frames (its message starts with a folder)
+_PART_RE = re.compile(r"(\d+) frames but (\d+) timestamp rows; rescan the series$")
 _SID_RE = re.compile(r"[\w-]+")
+
+
+def _when(iso: str) -> str:
+    """A registry time as a page shows it: date, hours and minutes."""
+    try:
+        return datetime.fromisoformat(iso).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return str(iso)
+
+
+def outdated_text(now: _Stamp) -> str:
+    """Why Save results is refused when the stamp changed, by what CNMF-E is now: recomputed (a new page opens
+    the new output), running, reset or failed (no page can open it now), or its output gone."""
+    if now.cnmf_state == State.RUNNING.value:
+        return OUTDATED_RUNNING
+    if now.cnmf_state == State.FAILED.value:
+        return OUTDATED_FAILED
+    if now.cnmf_state != State.DONE.value:
+        return OUTDATED_RESET
+    return OUTDATED if now.size is not None else OUTDATED_GONE
 
 
 # --- background preparation ---
@@ -264,14 +312,20 @@ class Preparer:
 
     build(sid) -> PreparedSession with .stamp; stamp(sid) -> the current stamp. take() hands the prepared
     session over, or waits for the one being prepared, or prepares it in the caller's thread; a prepared session
-    whose stamp changed meanwhile (CNMF-E ran again) is prepared again."""
+    whose stamp changed meanwhile (CNMF-E ran again) is prepared again.
 
-    def __init__(self, build, stamp):
+    A failed preparation is remembered with failure_key(sid) (default: the stamp) taken before it began: until
+    that key changes, prepare() skips the session and take() raises the same error at once, without reading the
+    estimates again (a session that cannot be opened would otherwise be read again on every Next)."""
+
+    def __init__(self, build, stamp, failure_key=None):
         self._build, self._stamp = build, stamp
+        self._failure_key = failure_key or stamp
         self._cv = threading.Condition()
         self._wanted: str | None = None
         self._busy: str | None = None
         self._ready: dict = {}
+        self._failed: dict = {}  # sid -> (failure key before its build, the exception)
         self._closed = False
         self._thread = threading.Thread(target=self._work, name="bearmind-inspect-prepare", daemon=True)
         self._thread.start()
@@ -281,12 +335,47 @@ class Preparer:
         with self._cv:
             return next(iter(self._ready), None)
 
+    def failed(self, sid: str):
+        """The error of sid's last preparation when it failed and nothing it depends on changed since; else
+        None."""
+        with self._cv:
+            remembered = self._failed.get(sid)
+        if remembered is None:
+            return None
+        try:
+            key = self._failure_key(sid)
+        except Exception:
+            return None  # cannot tell: a new attempt says what is wrong now
+        return remembered[1] if key == remembered[0] else None
+
     def prepare(self, sid: str) -> None:
+        with self._cv:
+            if self._closed or sid in self._ready or sid == self._busy:
+                return
+        if self.failed(sid) is not None:
+            return
         with self._cv:
             if self._closed or sid in self._ready or sid == self._busy:
                 return
             self._wanted = sid
             self._cv.notify_all()
+
+    def _build_noted(self, sid: str):
+        """build(sid), remembering a failure with the failure key taken before the build began."""
+        try:
+            key = self._failure_key(sid)
+        except Exception:
+            key = None
+        try:
+            prep = self._build(sid)
+        except Exception as e:
+            if key is not None:
+                with self._cv:
+                    self._failed[sid] = (key, e)
+            raise
+        with self._cv:
+            self._failed.pop(sid, None)
+        return prep
 
     def take_ready(self, sid: str):
         """The prepared session of sid when it is ready now and its stamp still holds, handed over at once;
@@ -314,7 +403,10 @@ class Preparer:
             prep = self._ready.pop(sid, None)
         if prep is not None and prep.stamp == self._stamp(sid):
             return prep
-        return self._build(sid)
+        e = self.failed(sid)
+        if e is not None:
+            raise e
+        return self._build_noted(sid)
 
     def _work(self):
         while True:
@@ -327,9 +419,9 @@ class Preparer:
                 self._ready.clear()  # one prepared session at a time
             prep = None
             try:
-                prep = self._build(sid)
+                prep = self._build_noted(sid)
             except Exception:
-                # take() prepares it again in the page's thread, which shows the error
+                # remembered (_build_noted): take() raises it for the page to show, Next skips the session
                 log.warning("%s: background preparation failed", sid, exc_info=True)
             with self._cv:
                 self._busy = None
@@ -359,7 +451,10 @@ class _Page:
         self.busy = False
         self.notes: list[str] = []  # side-file failures; kept when Next opens another session
         self.prepared = None
+        self.version = 0  # of the window's working estimates (make_app's on_change)
+        self.saved_version = None  # the version Save results saved last; None: not saved on this page
         self.next_button = self.next_text = self.notes_div = self.wave = None
+        self.out_of_date = self.saved_before = None
 
     # -- state the server reads --
     def session(self):
@@ -461,27 +556,40 @@ class _Page:
         """Replace the document's content with the window of the prepared session (under the document lock, or
         before the document has a session)."""
         srv = self.server
+        saved_before, out_of_date = srv.session_notices(sid)
         self.doc.clear()
         self.sid, self.claim, self.busy, self.prepared = sid, None, False, prep
+        self.version, self.saved_version = 0, None
         self.doc.title = TITLE.format(sid=sid)
-        self.doc.add_root(self._header(sid, wave_hint(getattr(prep, "wave_frac", None), srv.wave_cfg)))
-        app = _bm().make_app(prep.fname, prep.options["default_fps"], srv.bkapp_kwargs, prepared=prep,
+        # the settings the session was prepared with: the config is read at each preparation
+        kwargs = getattr(prep, "bkapp_kwargs", None) or srv.bkapp_kwargs
+        wave_cfg = getattr(prep, "wave_cfg", None)
+        hint = wave_hint(getattr(prep, "wave_frac", None), srv.wave_cfg if wave_cfg is None else wave_cfg)
+        self.doc.add_root(self._header(sid, hint, saved_before, out_of_date))
+        app = _bm().make_app(prep.fname, prep.options["default_fps"], kwargs, prepared=prep,
                              final_save=partial(srv.final_save, self, sid, prep.stamp),
-                             progress_save=partial(srv.progress_save, sid), refuse_autoinspected=True)
+                             progress_save=partial(srv.progress_save, sid),
+                             refuse_autoinspected=AUTOINSPECTED.format(sid=sid), on_change=partial(self.changed, sid))
         app(self.doc)
         log.info("%s opened", sid)
         srv.after_open(self, sid)
 
-    def _header(self, sid, hint: str | None = None):
+    def _header(self, sid, hint: str | None = None, saved_before: str | None = None,
+                out_of_date: str | None = None):
         self.next_button = Button(label=NEXT_LABEL.format(sid=""), button_type="primary", visible=False,
                                   name="next", width_policy="fit")
         self.next_button.on_event("button_click", self._on_next)
         self.next_text = Div(text="", name="next_text", visible=False)
+        self.out_of_date = Div(text=html.escape(out_of_date or "", quote=False), name="out_of_date",
+                               visible=bool(out_of_date), styles=WAVE_STYLE)
+        self.saved_before = Div(text=html.escape(saved_before or "", quote=False), name="saved_before",
+                                visible=bool(saved_before), styles=WAVE_STYLE)
         self.wave = Div(text=html.escape(hint or "", quote=False), name="wave", visible=bool(hint),
                         styles=WAVE_STYLE)
         self.notes_div = Div(text=self._notes_html(), name="notes", visible=bool(self.notes))
         return column(row(Div(text=f"<b>{html.escape(sid)}</b>", name="session"), self.next_button,
-                          self.next_text), self.wave, self.notes_div, name="inspection_header")
+                          self.next_text), self.out_of_date, self.saved_before, self.wave, self.notes_div,
+                      name="inspection_header")
 
     def _notes_html(self) -> str:
         return "<br>".join(html.escape(n, quote=False) for n in self.notes)
@@ -493,6 +601,10 @@ class _Page:
             self.notes_div.text = self._notes_html()
             self.notes_div.visible = True
 
+    def add_note_once(self, text: str) -> None:
+        if text not in self.notes:
+            self.add_note(text)
+
     def _next_tick(self, fn, *args) -> None:
         """Run fn(*args) under the document lock; nothing if the tab is gone (the series log has what matters)."""
         try:
@@ -500,27 +612,68 @@ class _Page:
         except Exception:
             log.debug("page gone, not updated", exc_info=True)
 
-    # -- after Save results --
+    # -- changes and Save results --
+    def changed(self, sid: str, version: int) -> str | None:
+        """on_change of the window (its callback, under the document lock). After a save, a change hides Next,
+        which would drop the change, until the next save; a change back to the saved state (Revert change)
+        offers it again. Returns the status line's new text, or None."""
+        self.version = version
+        if self.sid != sid or self.saved_version is None:
+            return None
+        if version == self.saved_version:
+            self.saved(sid)
+            return SAVED.format(sid=sid)
+        self.next_button.visible = False
+        self.next_text.visible = False
+        return CHANGED_SINCE_SAVE
+
+    def _saved_now(self) -> bool:
+        return self.saved_version is not None and self.version == self.saved_version
+
     def saved(self, sid: str) -> None:
-        """Save results of sid succeeded (in its callback, under the document lock): offer the next session."""
+        """Save results of sid succeeded (in its callback, under the document lock): what the window shows is
+        what was saved; offer the next session."""
+        self.saved_version = self.version
+        if self.saved_before is not None:
+            self.saved_before.visible = False  # this page's save replaced that result
         if self.next_button is not None:
             self.next_button.visible = False
         if self.next_text is not None:
             self.next_text.visible = False
         self.server.background(self._find_next, sid)
 
+    def _pick_next(self, current: str | None):
+        """(the session Next offers after current, notes on waiting sessions skipped because they cannot be
+        opened, the text when there is none). Skipped are those whose last preparation failed with nothing
+        changed since (Preparer.failed)."""
+        srv = self.server
+        order, held = srv.next_order(current, self)
+        notes = []
+        for s in order:
+            e = srv.preparer.failed(s)
+            if e is None:
+                return s, notes, None
+            notes.append(SKIPPED.format(text=srv.open_failure(s, e, logged=False)))
+        if held:
+            text = (OPEN_ELSEWHERE if len(held) == 1 else OPEN_ELSEWHERE_MANY).format(sids=", ".join(held))
+        else:
+            text = NONE_OPENABLE if notes else NO_MORE
+        return None, notes, text
+
     def _find_next(self, sid: str) -> None:
-        nxt = self.server.next_waiting(sid, self)
+        nxt, notes, text = self._pick_next(sid)
         if nxt is not None:
             self.server.preparer.prepare(nxt)
-        self._next_tick(self._offer_next, sid, nxt)
+        self._next_tick(self._offer_next, sid, nxt, notes, text)
 
-    def _offer_next(self, sid: str, nxt: str | None) -> None:
-        if self.sid != sid or self.busy:
-            return  # the page has moved on meanwhile
+    def _offer_next(self, sid: str, nxt: str | None, notes=(), text: str | None = None) -> None:
+        for n in notes:
+            self.add_note_once(n)
+        if self.sid != sid or self.busy or not self._saved_now():
+            return  # the page has moved on, or changed since the save
         if nxt is None:
             self.next_button.visible = False
-            self.next_text.text = html.escape(NO_MORE)
+            self.next_text.text = html.escape(text or NO_MORE)
             self.next_text.visible = True
         else:
             self.next_button.label = NEXT_LABEL.format(sid=nxt)
@@ -544,32 +697,51 @@ class _Page:
         self.doc.add_next_tick_callback(without_document_lock(self._next_work))
 
     def _next_work(self) -> None:
-        """Without the document lock: the next session may still be prepared; the page stays responsive."""
+        """Without the document lock: the next session may still be prepared; the page stays responsive. A
+        session that cannot be opened is skipped with a note, and the one after it is offered, not opened."""
         srv, current = self.server, self.sid
-        nxt = prep = err = None
+        nxt = prep = err = offer = text = None
+        notes = []
         try:
             # the waiting list now, not when the button was offered: a session decided meanwhile is skipped
-            nxt = srv.next_waiting(current, self)
+            nxt, notes, text = self._pick_next(current)
             if nxt is not None:
                 if srv.claim(self, nxt, next_=True):
-                    prep = srv.preparer.take(nxt)
+                    try:
+                        prep = srv.preparer.take(nxt)
+                    except Exception as e:
+                        srv.release_claim(self)
+                        notes.append(SKIPPED.format(text=srv.open_failure(nxt, e)))
+                        # its failure is remembered now: the order after it skips it
+                        offer, more, text = self._pick_next(nxt)
+                        notes += more
+                        nxt = None
                 else:
                     err = SECOND_TAB.format(sid=nxt)
         except Exception as e:
             srv.release_claim(self)
             err = srv.open_failure(nxt, e) if nxt else CANNOT_OPEN.format(sid=current, what=page_error(e))
-        self._next_tick(self._next_done, current, nxt, prep, err)
+        if offer is not None:
+            srv.preparer.prepare(offer)
+        self._next_tick(self._next_done, current, nxt, prep, err, notes, offer, text)
 
-    def _next_done(self, current, nxt, prep, err) -> None:
+    def _next_done(self, current, nxt, prep, err, notes=(), offer=None, text=None) -> None:
         self.busy = False
+        for n in notes:
+            self.add_note_once(n)
         if self.sid != current:
             self.server.release_claim(self)
             return
         if err is not None or nxt is None:
             self.server.release_claim(self)
-            self.next_button.visible = nxt is not None
             self.next_button.disabled = False
-            self.next_text.text = html.escape(err if err is not None else NO_MORE)
+            if offer is not None:
+                self.next_button.label = NEXT_LABEL.format(sid=offer)
+                self.next_button.visible = True
+                self.next_text.visible = False
+                return
+            self.next_button.visible = nxt is not None
+            self.next_text.text = html.escape(err if err is not None else (text or NO_MORE))
             self.next_text.visible = True
             return
         try:
@@ -614,11 +786,28 @@ class InspectServer:
             self._cfg = config.resolve(self.paths)["inspection"]
         return self._cfg
 
-    @property
-    def bkapp_kwargs(self) -> dict:
-        c = self.cfg
+    def read_cfg(self) -> dict:
+        """The series' inspection settings read again (each preparation does it: a new warn_frac or trace_points
+        needs no restart); the settings read last when the config cannot be read now, which the log says."""
+        try:
+            cfg = config.resolve(self.paths)["inspection"]
+        except Exception:
+            if self._cfg is None:
+                raise
+            log.warning("the series config cannot be read now: the inspection settings read before are used",
+                        exc_info=True)
+            return self._cfg
+        self._cfg = cfg
+        return cfg
+
+    @staticmethod
+    def _kwargs_of(c: dict) -> dict:
         return {"mode": "legacy", "end_frame": None, "enable_gpu_backend": bool(c.get("webgl", True)),
                 "trace_points": int(c.get("trace_points", 2000))}
+
+    @property
+    def bkapp_kwargs(self) -> dict:
+        return self._kwargs_of(self.cfg)
 
     @property
     def wave_cfg(self) -> dict:
@@ -628,9 +817,18 @@ class InspectServer:
     def stamp(self, sid: str) -> _Stamp:
         return _stamp_of(self.paths, registry.load_record(self.paths, sid))
 
+    def failure_key(self, sid: str):
+        """What a failed preparation of sid depends on (Preparer): its stamp, its record (a rescan rewrites it)
+        and its timestamps files."""
+        rec = registry.load_record(self.paths, sid)
+        files = [self.paths.registry_file(sid)] + [self.paths.root / p.timestamps_file for p in rec.parts
+                                                   if p.timestamps_file]
+        return _stamp_of(self.paths, rec), [runner._file_stat(f) for f in files]
+
     def build(self, sid: str):
         """The PreparedSession of sid, with .sid and .stamp (taken before the file is read: a CNMF-E that writes
-        new estimates meanwhile makes a later save refuse)."""
+        new estimates meanwhile makes a later save refuse), and the inspection settings it was built with
+        (.bkapp_kwargs, .wave_cfg: read again for each preparation)."""
         paths = self.paths
         rec = registry.load_record(paths, sid)
         cnmf = rec.stages.get("cnmf")
@@ -638,12 +836,13 @@ class InspectServer:
             raise _NotDone(sid)
         stamp = _stamp_of(paths, rec)
         fname = _estimates_file(paths, rec)
-        time_s = session_time_s(paths, rec)
-        kwargs = self.bkapp_kwargs
-        wkey = self._wave_key()
-        contours, cached_frac = self._read_cache(sid, stamp, kwargs, wkey)
-        bm = _bm()
+        cfg = self.read_cfg()
+        kwargs, wave_cfg = self._kwargs_of(cfg), cfg.get("wave") or {}
+        wkey = self._wave_key(wave_cfg)
         try:
+            time_s = session_time_s(paths, rec)
+            contours, cached_frac = self._read_cache(sid, stamp, kwargs, wkey)
+            bm = _bm()
             # forward slashes: the window titles its image with the part of the path after the last "/"
             prep = bm.prepare_session(fname.as_posix(), time=time_s, default_fps=DEFAULT_FPS, bkapp_kwargs=kwargs,
                                       contours=contours, threads=PREPARE_THREADS)
@@ -651,23 +850,26 @@ class InspectServer:
             m = _SHORT_RE.search(str(e))
             if m:
                 raise _ShortTimestamps(sid, int(m.group(1)), int(m.group(2))) from e
+            m = _PART_RE.search(str(e))
+            if m:
+                raise _PartTimestamps(sid, int(m.group(1)), int(m.group(2))) from e
             raise
-        frac = cached_frac if cached_frac is not None else self._wave_frac(sid, prep.estimates)
+        frac = cached_frac if cached_frac is not None else self._wave_frac(sid, prep.estimates, wave_cfg)
         if prep.contours is not None and (contours is None or (cached_frac is None and frac is not None)):
             self._write_cache(sid, stamp, kwargs, prep.contours, frac, wkey)
         if frac is not None:
             # in the series log even without a threshold: the values a later warn_frac can be chosen from
             log.info("%s: calcium-wave share %.4f%s (inspection.wave.warn_frac %s)", sid, frac,
-                     " (cached)" if cached_frac is not None else "", self.wave_cfg.get("warn_frac"))
+                     " (cached)" if cached_frac is not None else "", wave_cfg.get("warn_frac"))
         prep.sid, prep.stamp, prep.wave_frac = sid, stamp, frac
+        prep.bkapp_kwargs, prep.wave_cfg = kwargs, wave_cfg
         return prep
 
-    def _wave_frac(self, sid: str, est) -> float | None:
+    def _wave_frac(self, sid: str, est, w: dict) -> float | None:
         """The session's share of wave frames (bearmind.wave) over the components the window lists, with each
         component's noise as the floor. Computed here, with the preparation and off the IOLoop (0.6 s at most on
         the May 2026 corpus); kept in the inspect cache. None when it cannot be computed: the hint is advice, and
         the session opens without it; also with fewer than wave.MIN_COMPONENTS kept components."""
-        w = self.wave_cfg
         try:
             idx = est.idx_components
             if np.size(idx) < wave.MIN_COMPONENTS:
@@ -680,9 +882,9 @@ class InspectServer:
             log.warning("%s: calcium-wave share not computed", sid, exc_info=True)
             return None
 
-    def _wave_key(self) -> tuple | None:
+    @staticmethod
+    def _wave_key(w: dict) -> tuple | None:
         """What a cached wave share must match besides the estimates file: the rule's version and parameters."""
-        w = self.wave_cfg
         try:
             return float(wave.RULE_VERSION), float(w.get("k_mad", 3.0)), float(w.get("active_frac", 0.3))
         except (TypeError, ValueError):
@@ -734,30 +936,67 @@ class InspectServer:
             except OSError:
                 pass
 
-    def open_failure(self, sid: str, e: BaseException) -> str:
+    def open_failure(self, sid: str, e: BaseException, logged: bool = True) -> str:
+        """The page's text for a session that cannot be opened; logged: the error goes to the series log too."""
         if isinstance(e, _NotDone):
             return NOT_DONE.format(sid=sid)
-        if isinstance(e, _ShortTimestamps):
+        if logged:
             log.error("%s cannot be opened: %s", sid, e, exc_info=e)
+        if isinstance(e, _ShortTimestamps):
             return SHORT_TIMESTAMPS.format(sid=sid, n_ts=e.n_ts, n_frames=e.n_frames)
-        log.error("%s cannot be opened", sid, exc_info=e)
+        if isinstance(e, _PartTimestamps):
+            return PART_TIMESTAMPS.format(sid=sid, n_frames=e.n_frames, n_rows=e.n_rows)
         return CANNOT_OPEN.format(sid=sid, what=page_error(e))
 
+    def session_notices(self, sid: str) -> tuple[str | None, str | None]:
+        """(the notice of a saved result, the notice of an out-of-date CNMF-E) for the header of sid's page;
+        None for one that does not apply. Never raises: a notice that cannot be checked is left out, and the
+        series log says why."""
+        saved = out = None
+        try:
+            rec = registry.load_record(self.paths, sid)
+        except Exception:
+            log.warning("%s: page notices not checked, record not read", sid, exc_info=True)
+            return None, None
+        try:
+            d = actions.counted_gate_decision(self.paths, rec)
+            if d is not None and d.value == "cleaned" and self.paths.manual_result(sid).is_file():
+                saved = SAVED_BEFORE.format(sid=sid, when=_when(d.when), who=d.who)
+        except Exception:
+            log.warning("%s: saved result not checked", sid, exc_info=True)
+        try:
+            if not runner.StageView(self.paths).current_through(rec, "cnmf"):
+                out = CNMF_OUT_OF_DATE.format(sid=sid)
+        except Exception:
+            log.warning("%s: CNMF-E currency not checked", sid, exc_info=True)
+        return saved, out
+
     def waiting(self) -> list[str]:
-        """Sessions waiting for manual inspection, in Monitor's order (mouse, then session)."""
-        return sorted(actions.waiting_gate_sids(self.paths), key=lambda s: (naming.mouse_id(s), s))
+        """Sessions waiting for manual inspection whose CNMF-E is up to date, in Monitor's order (mouse, then
+        session): a result saved on a CNMF-E the batch recomputes would not count."""
+        view = runner.StageView(self.paths)
+        sids = [r.sid for r in registry.all_records(self.paths)
+                if actions.gate_waits(self.paths, r) and view.current_through(r, "cnmf")]
+        return sorted(sids, key=lambda s: (naming.mouse_id(s), s))
+
+    def next_order(self, after: str | None, page=None) -> tuple[list[str], list[str]]:
+        """(the waiting sessions Next may offer, those after `after` in Monitor's order first, then from the
+        start; not `after` and not one another open tab holds), (the waiting sessions other tabs hold)."""
+        with self._lock:
+            held = {s for p in self._pages.values() if p is not page and p.is_open() for s in (p.sid, p.claim) if s}
+        waiting = [s for s in self.waiting() if s != after]
+        order = [s for s in waiting if s not in held]
+        if after is not None:
+            key = (naming.mouse_id(after), after)
+            later = [s for s in order if (naming.mouse_id(s), s) > key]
+            order = later + [s for s in order if s not in later]
+        return order, [s for s in waiting if s in held]
 
     def next_waiting(self, after: str | None, page=None) -> str | None:
         """The first waiting session after `after` in Monitor's order (from the start when none is after it),
         not `after` itself and not one another tab holds."""
-        with self._lock:
-            held = {s for p in self._pages.values() if p is not page and p.is_open() for s in (p.sid, p.claim) if s}
-        order = [s for s in self.waiting() if s != after and s not in held]
-        if after is None:
-            return order[0] if order else None
-        key = (naming.mouse_id(after), after)
-        later = [s for s in order if (naming.mouse_id(s), s) > key]
-        return (later or order or [None])[0]
+        order, _ = self.next_order(after, page)
+        return order[0] if order else None
 
     # -- tabs --
     def claim_status(self, page, sid: str, next_: bool = False) -> str:
@@ -831,7 +1070,10 @@ class InspectServer:
         self.background(lambda: self._prepare_after(page, sid))
 
     def _prepare_after(self, page, sid):
-        nxt = self.next_waiting(sid, page)
+        # The Preparer holds one prepared session (an hour of many components is GBs): with two tabs at work,
+        # the session opened last has its next one prepared, and the other tab's Next builds its own on the click.
+        order, _ = self.next_order(sid, page)
+        nxt = next((s for s in order if self.preparer.failed(s) is None), None)
         if nxt is not None:
             self.preparer.prepare(nxt)
 
@@ -857,15 +1099,22 @@ class InspectServer:
         """Save results: the result, then the decision "cleaned"; side files in the background. Never raises:
         the page shows the returned text."""
         try:
-            now = self.stamp(sid)
+            rec = registry.load_record(self.paths, sid)
+            now = _stamp_of(self.paths, rec)
+            current = now == opened and runner.StageView(self.paths).current_through(rec, "cnmf")
         except Exception as e:
             log.exception("%s: save not checked, registry not read", sid)
             return SAVE_FAILED.format(what=page_error(e))
         if now != opened:
-            log.warning("%s: result not saved, CNMF-E was recomputed after the session was opened (%s -> %s)",
+            log.warning("%s: result not saved, CNMF-E changed after the session was opened (%s -> %s)",
                         sid, opened, now)
-            _say(f"[WARN] {sid}: result not saved; CNMF-E was recomputed after the session was opened")
-            return OUTDATED
+            _say(f"[WARN] {sid}: result not saved; CNMF-E changed after the session was opened")
+            return outdated_text(now)
+        if not current:
+            # the gate would take the result, but the batch recomputes CNMF-E first and drops it
+            log.warning("%s: result not saved, CNMF-E is out of date (the batch recomputes it)", sid)
+            _say(f"[WARN] {sid}: result not saved; CNMF-E is out of date")
+            return CNMF_OUT_OF_DATE.format(sid=sid)
         bm = _bm()
         try:
             bm.write_result(est, self.paths.manual_result(sid))
@@ -1013,7 +1262,7 @@ class InspectServer:
         asyncio.set_event_loop(loop)
         io_loop = IOLoop.current()
         server = tick = None
-        self.preparer = Preparer(self.build, self.stamp)
+        self.preparer = Preparer(self.build, self.stamp, self.failure_key)
         self._bg = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bearmind-inspect-bg")
         try:
             try:

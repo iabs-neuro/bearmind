@@ -42,6 +42,7 @@ from bearmind import actions, cli, config, inspect_server, monitor, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
+from tests.bearmind.current_stages import make_current, mark_current
 from tests.examinator_helpers import make_estimates
 
 S1, S2, S3 = "NOF_H01_1D", "NOF_H02_1D", "NOF_H03_1D"
@@ -73,6 +74,8 @@ def series_est(make_series, tmp_path):
             st = rec.stages["cnmf"]
             st.state, st.finished, st.outputs = State.DONE, finished, {"estimates": paths.rel(est)}
         update_record(paths, sid, done)
+        # up to date by the batch's rule: the server lists and saves only such sessions (I3)
+        make_current(paths, sid, "crop", "mc", "thresholds", "cnmf")
     assert actions.waiting_gate_sids(paths) == [S1, S2, S3]
     return paths
 
@@ -124,6 +127,11 @@ def tab(srv, sid=None):
 
 
 _TAB_LOOPS = []  # the loops of the open tabs, innermost last
+
+# Wall-clock bounds: the fast suite runs with loose ones (at least 3 times the time measured on an idle machine:
+# the suite also runs on a loaded one), each still well below the time the behaviour under test must not take;
+# the strict targets run with the slow tests.
+STRICT = [False, pytest.param(True, marks=pytest.mark.slow, id="strict")]
 
 
 def until(cond, timeout=30.0, step=0.01):
@@ -200,7 +208,8 @@ def _settle(page, sid, timeout=120):
     """Wait while the page is opening sid for itself: a session that is not prepared is built after the page
     answered with "Opening" (K1c). A page refused the session (another tab holds it) does not hold it and is
     not waited for; its own retry goes on."""
-    until(lambda: page.sid != sid or _opened(page, sid), timeout=timeout)
+    # opened: the window, or the text the window shows instead (an autoinspected input), below the header
+    until(lambda: page.sid != sid or _opened(page, sid) or len(page.doc.roots) >= 2, timeout=timeout)
 
 
 # --- tests ---
@@ -381,7 +390,8 @@ def test_port_in_use(series_est, capsys):
     assert not series_est.inspection_lock.exists()
 
 
-def test_server_exits_when_idle(series_est):
+@pytest.mark.parametrize("strict", STRICT)
+def test_server_exits_when_idle(series_est, strict):
     """The tab is closed without saving: no decision, the session still waits, the server stops after
     idle_exit_s and removes its lock."""
     paths = series_est
@@ -400,8 +410,11 @@ def test_server_exits_when_idle(series_est):
             time.sleep(idle + 1)  # an open tab keeps the server
             assert t.is_alive()
         closed = time.monotonic()
-        t.join(idle + 5)
-        assert not t.is_alive() and time.monotonic() - closed <= idle + 5
+        bound = idle + 5 if strict else idle + 30  # measured: idle + 0.5-1 s
+        t.join(bound)
+        took = time.monotonic() - closed
+        print(f"[timing] stopped {took:.2f} s after the tab closed (idle_exit_s {idle})")
+        assert not t.is_alive() and took <= bound
         assert result["code"] == 0
         assert not paths.inspection_lock.exists()
         assert _decisions(paths, S1) == [] and S1 in actions.waiting_gate_sids(paths)
@@ -637,7 +650,7 @@ def test_wave_share_cached(series_est, monkeypatch):
     srv = inspect_server.InspectServer(paths.root)
     assert srv.build(S1).wave_frac == frac and len(calls) == 1
     assert srv.build(S1).wave_frac == frac and len(calls) == 1  # from the cache
-    srv.cfg["wave"] = {**srv.wave_cfg, "k_mad": 4.0}  # another rule
+    _set_wave(paths, k_mad=4.0)  # another rule, in the series config: read at each preparation
     assert srv.build(S1).wave_frac != frac and len(calls) == 2
     assert len(srv.build(S1).contours) == 12 and len(calls) == 2  # cached again, with the contours
     est = paths.estimates(S1)
@@ -673,7 +686,7 @@ def test_wave_share_cache_key(series_est, monkeypatch, change):
         assert {"wave_key", "wave_frac"} <= set(z.files)
         fields = {k: z[k] for k in z.files}
     if change == "active_frac":
-        srv.cfg["wave"] = {**srv.wave_cfg, "active_frac": 0.5}
+        _set_wave(paths, active_frac=0.5)
     elif change == "rule_version":
         monkeypatch.setattr(wave, "RULE_VERSION", wave.RULE_VERSION + 1)
     elif change == "corrupt_field":
@@ -944,7 +957,8 @@ def test_two_inspect_commands_at_once(series_est, monkeypatch, capsys):
         assert opened == [inspect_server.session_url(srv.url, S1)]
 
 
-def test_empty_lock_means_wait(tmp_path):
+@pytest.mark.parametrize("strict", STRICT)
+def test_empty_lock_means_wait(tmp_path, strict):
     """M4: a lock read just after its new holder emptied it (before it wrote itself in) is "wait", not
     "no server"."""
     paths = SeriesPaths(tmp_path / "s")
@@ -971,7 +985,11 @@ def test_empty_lock_means_wait(tmp_path):
                     encoding="utf-8")
     t0 = time.monotonic()
     st = inspect_server.wait_ready(paths)  # a dead holder: nothing to wait for
-    assert not st.alive and not st.starting and not st.available and time.monotonic() - t0 < 2
+    took = time.monotonic() - t0
+    print(f"[timing] a dead holder answered in {took:.3f} s")
+    # waiting for it would take URL_WAIT_S (10 s)
+    assert not st.alive and not st.starting and not st.available
+    assert took < (2 if strict else inspect_server.URL_WAIT_S / 2)
 
 
 def test_old_empty_lock_is_stale(tmp_path):
@@ -990,7 +1008,8 @@ def test_old_empty_lock_is_stale(tmp_path):
     assert time.monotonic() - t0 < 1
 
 
-def test_lock_left_by_a_stopped_server(series_est):
+@pytest.mark.parametrize("strict", STRICT)
+def test_lock_left_by_a_stopped_server(series_est, strict):
     """N3: a reader holds the lock file while the server stops, so Windows cannot delete it: what is left says
     "no holder", and nobody waits for it."""
     paths = series_est
@@ -1007,7 +1026,10 @@ def test_lock_left_by_a_stopped_server(series_est):
             st = inspect_server.server_state(paths)
             assert not st.alive and not st.stopping and not st.starting
         t0 = time.monotonic()
-        assert not inspect_server.wait_ready(paths).available and time.monotonic() - t0 < 1
+        assert not inspect_server.wait_ready(paths).available
+        took = time.monotonic() - t0
+        print(f"[timing] a lock without holder answered in {took:.3f} s")
+        assert took < (1 if strict else inspect_server.URL_WAIT_S / 2)  # a wait would take 10 s or more
         # a new server takes the series
         with running(paths) as srv2:
             assert inspect_server.server_state(paths).available and srv2.url
@@ -1017,7 +1039,8 @@ def test_lock_left_by_a_stopped_server(series_est):
         assert not t.is_alive()
 
 
-def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys):
+@pytest.mark.parametrize("strict", STRICT)
+def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys, strict):
     """N5: a server that does not finish stopping: the inspect command waits once, for STOP_WAIT_S, then fails
     naming the lock file (not a second wait, not a second server)."""
     paths = series_est
@@ -1027,6 +1050,8 @@ def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys):
         raise AssertionError("a server was started while another one holds the series")
 
     monkeypatch.setattr(inspect_server, "serve", must_not_serve)
+    waits, real_wait = [], inspect_server.wait_ready
+    monkeypatch.setattr(inspect_server, "wait_ready", lambda *a, **k: waits.append(1) or real_wait(*a, **k))
     fh = runner._take_lock(paths.inspection_lock, {"url": None, "current": [], "prepared": None, "stopping": True})
     assert fh is not None
     try:
@@ -1034,9 +1059,12 @@ def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys):
         capsys.readouterr()
         t0 = time.monotonic()
         assert cli.main(["inspect", str(paths.root), "--no-browser"]) == 3
-        assert time.monotonic() - t0 < 1.9
+        took = time.monotonic() - t0
+        print(f"[timing] the inspect command gave up after {took:.2f} s (STOP_WAIT_S 1.0)")
         out = capsys.readouterr().out
         assert "[FAILED]" in out and str(paths.inspection_lock) in out
+        assert waits == [1] and out.count("is stopping") == 1  # one wait, one notice
+        assert took < (1.9 if strict else 5.0)  # measured 1.0-1.2 s
     finally:
         runner._drop_lock(paths.inspection_lock, fh)
 
@@ -1183,6 +1211,278 @@ def test_cli_inspect_starts_a_server(series_est, monkeypatch):
     assert len(calls) == 1
 
 
+# --- the page never loses work silently; minors of the final fix wave ---
+
+def _visible_next(srv, page):
+    return locked(srv, page, lambda: page.next_button.visible and page.next_button.label)
+
+
+def test_change_after_save_hides_next(series_est):
+    """I1: an edit after Save results says so in the status line and hides Next until the next save (Next would
+    drop the edit), also when the offer of Next was still on its way; a Revert change back to the saved state
+    and a new save bring Next back."""
+    with running(series_est) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        status = lambda: locked(srv, page, lambda: _div(page.doc, "status").text)  # noqa: E731
+
+        # the edit right after the save, before the offer of Next arrives
+        locked(srv, page, lambda: (click(page.doc, "Save results"), delete_row(page.doc, 2)))
+        assert status() == inspect_server.CHANGED_SINCE_SAVE
+        time.sleep(1.0)  # the offer has arrived meanwhile
+        assert not locked(srv, page, lambda: page.next_button.visible or page.next_text.visible)
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S2)
+
+        # an edit after the offer
+        locked(srv, page, lambda: delete_row(page.doc, 0))
+        assert status() == inspect_server.CHANGED_SINCE_SAVE
+        assert not locked(srv, page, lambda: page.next_button.visible)
+        # back to what was saved: Next again
+        locked(srv, page, lambda: click(page.doc, "Revert change"))
+        assert status() == inspect_server.SAVED.format(sid=S1)
+        assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S2)
+        locked(srv, page, lambda: click(page.doc, "Discard all"))
+        assert status() == inspect_server.CHANGED_SINCE_SAVE and not _visible_next(srv, page)
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S2)
+    assert list(_load(series_est.manual_result(S1)).idx_components_bad) == []  # the last save: Discard all
+
+
+def test_saved_result_named_when_opened_again(series_est):
+    """I2: a session whose "cleaned" decision counts and whose result exists says so above the window when it is
+    opened again: the window shows the CNMF-E output, and Save results replaces that result."""
+    paths = series_est
+    with running(paths) as srv:
+        with tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert not _div(page.doc, "saved_before").visible
+            locked(srv, page, lambda: delete_row(page.doc, 2))
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert not _div(page.doc, "saved_before").visible
+        d = load_record(paths, S1).decisions[-1]
+        with tab(srv, S1) as s:  # a reload, or a reopen from the Inspection tab
+            page = srv.page_of(s.id)
+            until(lambda: _opened(page, S1), timeout=30)  # after the closed tab's socket is gone
+            notice = _div(page.doc, "saved_before")
+            when = datetime.fromisoformat(d.when).strftime("%Y-%m-%d %H:%M")
+            assert notice.visible and notice.text == html.escape(
+                inspect_server.SAVED_BEFORE.format(sid=S1, when=when, who=d.who), quote=False)
+            assert len(locked(srv, page, lambda: _src(page.doc).data["idx"])) == 8  # the CNMF-E output
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert not locked(srv, page, lambda: notice.visible)  # replaced by this save
+    # not-needed or no decision: nothing to name
+    with running(paths) as srv, tab(srv, S2) as s:
+        assert not _div(srv.page_of(s.id).doc, "saved_before").visible
+
+
+def _src(doc):
+    src, = [m for m in _models(doc, ColumnDataSource) if "idx" in m.data]
+    return src
+
+
+def test_out_of_date_cnmf_not_listed_and_not_saved(series_est):
+    """I3: a session whose CNMF-E the batch would recompute (here: its parameters changed) is not in the waiting
+    list and not offered by Next; opened by its address, it says so, and Save results writes nothing."""
+    paths = series_est
+    _set_cnmf(paths, S2, params_hash="an older run")
+    text = inspect_server.CNMF_OUT_OF_DATE.format(sid=S2)
+    with running(paths) as srv:
+        assert srv.waiting() == [S1, S3]
+        with tab(srv) as index:
+            assert S2 not in index.document.roots[0].text and S3 in index.document.roots[0].text
+        with tab(srv, S2) as s:
+            page = srv.page_of(s.id)
+            notice = _div(page.doc, "out_of_date")
+            assert notice.visible and notice.text == html.escape(text, quote=False)
+            assert save(srv, page) == text
+            assert not paths.manual_result(S2).exists() and _decisions(paths, S2) == []
+        with tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert not _div(page.doc, "out_of_date").visible
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S3)
+
+
+@pytest.mark.parametrize("state, text", [
+    ("done", inspect_server.OUTDATED), ("running", inspect_server.OUTDATED_RUNNING),
+    ("pending", inspect_server.OUTDATED_RESET), ("failed", inspect_server.OUTDATED_FAILED),
+    ("gone", inspect_server.OUTDATED_GONE)])
+def test_outdated_text_per_case(series_est, state, text):
+    """M1: Save results after CNMF-E changed says what happened: recomputed ("Open it again": a new page opens the
+    new output), running, reset or failed (no page can open it now: no "open again"), its output gone."""
+    paths = series_est
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        later = datetime.now().isoformat(timespec="milliseconds")
+        if state == "gone":
+            paths.estimates(S1).unlink()
+        else:
+            _set_cnmf(paths, S1, state=State(state), finished=later)
+        assert save(srv, page) == text
+        assert ("Open it again" in text) == (state == "done")
+        assert not paths.manual_result(S1).exists() and _decisions(paths, S1) == []
+
+
+def _break_estimates(paths, sid):
+    """sid's estimates file cut in half: CNMF-E done, but the file cannot be read."""
+    f = paths.estimates(sid)
+    data = f.read_bytes()
+    f.write_bytes(data[:len(data) // 2])
+
+
+def test_next_skips_a_session_that_cannot_be_opened(series_est, monkeypatch):
+    """M2: S2 cannot be opened (its file is broken). Prepared in the background, its failure is remembered:
+    after Save results Next skips it with a note and offers S3; it is not read again until its file changes."""
+    paths = series_est
+    _break_estimates(paths, S2)
+    builds = []
+    real = inspect_server.InspectServer.build
+    monkeypatch.setattr(inspect_server.InspectServer, "build",
+                        lambda self, sid: builds.append(sid) or real(self, sid))
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        until(lambda: srv.preparer.failed(S2) is not None, timeout=60)  # the background preparation failed
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S3)
+        note = locked(srv, page, lambda: page.notes_div.visible and page.notes_div.text)
+        what = inspect_server.CANNOT_OPEN.format(sid=S2, what="UnpicklingError")
+        assert note == html.escape(inspect_server.SKIPPED.format(text=what), quote=False), note
+        locked(srv, page, lambda: click(page.doc, inspect_server.NEXT_LABEL.format(sid=S3)))
+        until(lambda: _opened(page, S3), timeout=60)
+        assert builds.count(S2) == 1  # remembered, not read again
+        with pytest.raises(Exception):
+            srv.preparer.take(S2)
+        assert builds.count(S2) == 1
+        shutil.copy(paths.estimates(S1), paths.estimates(S2))  # CNMF-E wrote it again: a new stamp
+        assert srv.preparer.failed(S2) is None
+        # read again (here or by a background preparation that saw the new stamp first)
+        assert srv.preparer.take(S2).sid == S2 and builds.count(S2) >= 2
+
+
+def test_next_click_skips_a_session_that_fails_then(series_est, monkeypatch):
+    """M2: a failure found only when Next is clicked (nothing was prepared) leaves the page where it is, with a
+    note, and offers the session after it."""
+    paths = series_est
+    _break_estimates(paths, S2)
+    with running(paths) as srv:
+        monkeypatch.setattr(srv.preparer, "prepare", lambda sid: None)  # no background preparation
+        with tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            label = until(lambda: _visible_next(srv, page))
+            assert label == inspect_server.NEXT_LABEL.format(sid=S2)  # not known yet
+            locked(srv, page, lambda: click(page.doc, label))
+            assert until(lambda: _visible_next(srv, page) == inspect_server.NEXT_LABEL.format(sid=S3), timeout=60)
+            assert page.sid == S1 and not page.busy
+            note = locked(srv, page, lambda: page.notes_div.text)
+            assert S2 in note and note.endswith(html.escape("Next skips it.", quote=False))
+            locked(srv, page, lambda: click(page.doc, inspect_server.NEXT_LABEL.format(sid=S3)))
+            until(lambda: _opened(page, S3), timeout=60)
+
+
+def test_remaining_sessions_open_in_other_tabs(series_est):
+    """M4: no free session left, but others wait in other tabs: the page names them instead of "No more"."""
+    with running(series_est) as srv, tab(srv, S2) as a, tab(srv, S3) as b, tab(srv, S1) as s:
+        assert _opened(srv.page_of(a.id), S2) and _opened(srv.page_of(b.id), S3)
+        page = srv.page_of(s.id)
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        text = until(lambda: locked(srv, page, lambda: page.next_text.visible and page.next_text.text))
+        assert text == inspect_server.OPEN_ELSEWHERE_MANY.format(sids=f"{S2}, {S3}")
+        assert not locked(srv, page, lambda: page.next_button.visible)
+    with running(series_est) as srv:
+        actions.gate_not_needed(series_est, [S3], "ann")
+        with tab(srv, S2) as a, tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            locked(srv, page, lambda: delete_row(page.doc, 0))  # S1 was saved above: a change, then a save
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            text = until(lambda: locked(srv, page, lambda: page.next_text.visible and page.next_text.text))
+            assert text == inspect_server.OPEN_ELSEWHERE.format(sids=S2)
+
+
+def test_autoinspected_input_refused_in_server_words(series_est):
+    """M3: an autoinspected CNMF-E output is refused with the server's text (no "open 4_Estimates instead")."""
+    paths = series_est
+    est = _load(paths.estimates(S1))
+    est.metrics_df = pd.DataFrame({"component_idx": range(8)})
+    _dump(est, paths.estimates(S1))
+    make_current(paths, S1, "cnmf")  # the file changed; the record follows it
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        texts = _divs(srv, page)
+        assert html.escape(inspect_server.AUTOINSPECTED.format(sid=S1), quote=False) in texts
+        assert "4_Estimates" not in " ".join(texts) and not _models(page.doc, Button)[1:]  # Next only
+
+
+def test_part_timestamps_named_on_the_page(series_est, monkeypatch):
+    """M7: session_timestamps' refusal (a part with fewer timestamp rows than frames) is caught with the other
+    preparation errors and named in English with both numbers; its message holds a folder, never shown."""
+    def short(paths, rec):
+        raise ValueError("1_Raw/папка: 150 frames but 100 timestamp rows; rescan the series")
+
+    monkeypatch.setattr(inspect_server, "session_timestamps", short)
+    with running(series_est) as srv, tab(srv, S1) as s:
+        texts = _divs(srv, srv.page_of(s.id))
+    assert texts == [inspect_server.PART_TIMESTAMPS.format(sid=S1, n_frames=150, n_rows=100)]
+
+
+def test_config_read_at_each_preparation(series_est):
+    """M8: a new trace_points or warn_frac in the series config takes effect at the next preparation, without a
+    restart; the page uses the settings its session was prepared with."""
+    paths = series_est
+    frac = _add_wave(paths, S1)
+    srv = inspect_server.InspectServer(paths.root)
+    first = srv.build(S1)
+    assert first.bkapp_kwargs["trace_points"] == 2000 and first.wave_cfg["warn_frac"] == 0.025
+    config.update_yaml(paths.series_config, {"inspection": {"trace_points": 500, "wave": {"warn_frac": frac / 2}}})
+    again = srv.build(S1)
+    assert again.bkapp_kwargs["trace_points"] == 500 and again.wave_cfg["warn_frac"] == frac / 2
+    assert inspect_server.wave_hint(again.wave_frac, again.wave_cfg) is not None
+    paths.series_config.write_text("inspection: [broken\n", encoding="utf-8")  # cannot be read now
+    assert srv.build(S1).bkapp_kwargs["trace_points"] == 500  # the settings read last
+
+
+def test_take_rebuilds_a_prepared_session_whose_stamp_changed():
+    """M11: a prepared session whose stamp changed before take() (CNMF-E ran again) is built again."""
+    stamps, built = {"A": 1}, []
+
+    class Prep:
+        def __init__(self, sid):
+            self.sid, self.stamp = sid, stamps[sid]
+
+    def build(sid):
+        built.append(sid)
+        return Prep(sid)
+
+    p = inspect_server.Preparer(build, lambda sid: stamps[sid])
+    try:
+        p.prepare("A")
+        until(lambda: p.prepared == "A", timeout=10)
+        stamps["A"] = 2
+        prep = p.take("A")
+        assert built == ["A", "A"] and prep.stamp == 2
+        p.prepare("A")
+        until(lambda: p.prepared == "A", timeout=10)
+        assert p.take("A").stamp == 2 and built == ["A", "A", "A"]  # unchanged: handed over as prepared
+    finally:
+        p.close(10)
+
+
+def test_gate_cleaned_reads_one_record(series_est, monkeypatch):
+    """M5: the server's decision reads only the session's record; an unknown or not-a-name session is refused
+    as before, before any write."""
+    paths = series_est
+    paths.manual_result(S1).parent.mkdir(parents=True, exist_ok=True)
+    paths.manual_result(S1).write_bytes(b"result")
+    real = actions.registry.all_records
+    monkeypatch.setattr(actions.registry, "all_records", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    res = actions.gate_cleaned(paths, S1, "ann")
+    assert res.ok == [S1] and _decisions(paths, S1) == ["cleaned"]
+    monkeypatch.setattr(actions.registry, "all_records", real)
+    for sid in ("NOF_X99_9D", "../registry/" + S1):
+        with pytest.raises(actions.UnknownSession):
+            actions.gate_cleaned(paths, sid, "ann")
+
+
 # --- speed on hour-long sessions (slow) ---
 
 HOUR = 107_107
@@ -1248,6 +1548,7 @@ def _hour_series(root):
                             fps=20.0, fps_info={}, anomalies=[], decisions=[], excluded=False,
                             stages={s: StageRecord() for s in STAGES})
         rec.stages["cnmf"] = StageRecord(state=State.DONE, finished=finished, outputs={"estimates": paths.rel(f)})
+        mark_current(paths, rec, ("crop", "mc", "thresholds", "cnmf"))  # the server lists only current ones
         save_record(paths, rec)
     return paths
 

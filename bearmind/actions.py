@@ -195,6 +195,23 @@ def gate_passed(rec) -> bool:
     return g is not None and g.state is State.DONE
 
 
+def counted_gate_decision(paths, rec):
+    """The latest manual-inspection decision when it counts now: the gate passed, or the gate's rule would pass
+    on it (gate.run, R28: newer than the current CNMF-E output; a "cleaned" one with its result file, newer than
+    the estimates). None when there is none or it does not count."""
+    found = [d for d in rec.decisions if d.what == "manual_inspection"]
+    if not found:
+        return None
+    if gate_passed(rec):
+        return found[-1]
+    try:
+        # the decision itself is judged, whatever the session's gate setting: a disabled gate passes without one
+        gate.run(paths, rec, {"gate": {"enabled": True}})
+    except WaitingForInput:
+        return None
+    return found[-1]
+
+
 def _side_cfg(rec, paths):
     """The session's config when it has a FAILED side stage (is that preview still on?); else None, not read."""
     if not any(rec.stages.get(s) and rec.stages[s].state is State.FAILED for s in SIDE_STAGES):
@@ -446,10 +463,15 @@ def gate_not_needed(paths, sids, who: str, force: bool = False) -> ActionResult:
 
 
 def gate_cleaned(paths, sid: str, who: str) -> ActionResult:
-    recs = _records(paths)
-    check_sids(recs, [sid])
+    # the session's record only (the server's Save results calls this; a series has dozens of records); all are
+    # read only to refuse an unknown session as check_sids does, and a name that is not a file of the registry
+    # folder is unknown
+    f = paths.registry_file(sid)
+    if f.parent != paths.registry_file("x").parent or not f.is_file():
+        check_sids(_records(paths), [sid])
+    rec = registry.load_record(paths, sid)
     res = ActionResult()
-    _warn_excluded(res, recs[sid])
+    _warn_excluded(res, rec)
     manual = paths.manual_result(sid)
     if not manual.exists():
         res.failed[sid] = ("manual_result_missing", str(manual))
