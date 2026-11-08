@@ -3,7 +3,9 @@ import copy
 import html
 import logging
 import traceback
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from scipy.stats import median_abs_deviation, spearmanr
 
 from functools import partial
@@ -573,6 +575,92 @@ def SaveResults(estimates, sigma=3):
     savemat(fold + '_session.mat', {"A": np.array(ims)})
 
 
+def kept_for_side_files(estimates) -> np.ndarray:
+    """The components the side files hold, in idx_components order: idx_components without those that
+    autoinspection marked deleted (metrics_df['delete'] == 1), which it leaves in idx_components for the window
+    to show. metrics_df names components by its 'component_idx' column, or by row number without one."""
+    idx = np.asarray(estimates.idx_components, dtype=int)
+    df = getattr(estimates, 'metrics_df', None)
+    if df is None or 'delete' not in df.columns:
+        return idx
+    comps = df['component_idx'].to_numpy() if 'component_idx' in df.columns else np.arange(len(df))
+    deleted = set(int(c) for c in comps[(df['delete'] == 1).to_numpy()])
+    return np.array([c for c in idx if int(c) not in deleted], dtype=int)
+
+
+def _write_whole(path, write):
+    """write(tmp) beside path, then rename over it: a reader never finds half a file, and a failed write
+    leaves the earlier file."""
+    path = Path(path)
+    tmp = path.with_name(path.name + '.partial')
+    try:
+        write(tmp)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def write_side_files(estimates, folder, base, sigma=3) -> None:
+    """SaveResults' files for the components of kept_for_side_files, in folder (made if missing):
+    <base>traces.csv (time_s and one column per component), <base>filters/filter_NNN.tif (footprints smoothed
+    with sigma) and <base>filters_session.mat (the same images as one array 'A').
+
+    The folder holds one save: filter files left by an earlier save of more components are removed."""
+    folder = Path(folder)
+    kept = kept_for_side_files(estimates)
+    stamped = np.concatenate(([estimates.time], estimates.C[kept]), axis=0)
+    folder.mkdir(parents=True, exist_ok=True)
+    _write_whole(folder / f'{base}traces.csv', lambda p: pd.DataFrame(stamped.T).to_csv(
+        p, index=False, header=['time_s', *np.arange(len(kept))]))
+    del stamped
+
+    filters = folder / f'{base}filters'
+    filters.mkdir(exist_ok=True)
+    A = estimates.A.tocsc()[:, kept]
+    shape = estimates.imax.shape[::-1]  # as SaveResults: a footprint's pixels read in C order, i.e. transposed
+    ims, names = [], set()
+    for i in range(len(kept)):
+        im = A[:, i].toarray().reshape(shape)
+        if sigma:  # gaussian smoothing of neural contours, omitted if sigma=0
+            im = gaussian_filter(im, sigma=sigma)
+        ims.append((im * 255 / np.max(im)).astype(np.uint8))
+        name = f'filter_{i + 1:03d}.tif'
+        tfl.imwrite(filters / name, ims[-1])
+        names.add(name)
+    for p in filters.glob('filter_*.tif'):
+        if p.name not in names:
+            p.unlink()
+    _write_whole(folder / f'{base}filters_session.mat', lambda p: savemat(p, {"A": np.array(ims)}, appendmat=False))
+
+
+def write_result(estimates, path) -> Path:
+    """Pickle estimates at path as they are: never compressed, since the autoinspect stage refuses any compressed
+    input (old and new compression cannot be told apart), and whole (see _write_whole). Makes the folder."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def dump(tmp):
+        with open(tmp, 'wb') as f:
+            # protocol 5 writes large arrays without first copying them into bytes
+            pickle.dump(estimates, f, protocol=pickle.HIGHEST_PROTOCOL)
+    _write_whole(path, dump)
+    return path
+
+
+# One worker, so side files are written in the order they were asked for: two saves of a session never write
+# at once, and the files left are those of the last save. Its thread is joined at interpreter exit, so a server
+# that stops waits for the files it queued.
+_SIDE_FILES = ThreadPoolExecutor(max_workers=1, thread_name_prefix='bm_side_files')
+
+
+def write_side_files_in_background(estimates, folder, base, sigma=3) -> Future:
+    """write_side_files in a background thread, after the side files asked for before. The Future holds a
+    failure (the caller logs or shows it). estimates must not change meanwhile: give it what a save hook got,
+    a copy the window never changes."""
+    return _SIDE_FILES.submit(lambda: write_side_files(estimates, folder, base, sigma))
+
+
 # bkapp_kwargs the first view is built from, with their defaults
 _FIRST_VIEW_DEFAULTS = {
     'mode': 'legacy', 'cthr': 0.3, 'start_frame': 0, 'end_frame': None, 'downsampling': 1, 'corr_thr': 0.6,
@@ -730,8 +818,9 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 per-neuron contribution highlighting. If provided, metrics will be sorted
                 by global importance and show local contributions when a neuron is selected.
             - metrics_width: Width of the central metrics widget in pixels (default: 200)
-            - compress_estimates: If True, compress estimates before saving (removes bad
-                components, converts to float32, sparse S matrix). Default: False
+            - compress_estimates: If True, the notebook path compresses the files it saves (removes bad
+                components, converts to float32, sparse S matrix). Default: False. The save hooks always
+                get the estimates uncompressed (write_result keeps them so).
             - end_frame: last frame shown (exclusive); None (default) is the full length
             - trace_points: at most this many points per trace are sent to the browser (default 2000):
                 min and max of equal bins for the whole session, every frame of a zoomed-in window
@@ -741,6 +830,10 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             next to the input; the returned text is shown in the page's status line. None: the notebook
             behaviour.
         progress_save: progress_save(estimates) -> str, the same for "Save progress".
+            A hook gets a shallow copy of the window's working estimates: it may rebind or delete their
+            attributes, but must not change their arrays or lists in place, which the window, its undo
+            record and a reused PreparedSession share. The copy does not change after the hook returns, so
+            a hook may hand it to a background writer (write_side_files_in_background).
         refuse_autoinspected: an autoinspected input (with metrics_df) opens a page with only
             AUTOINSPECTED_TEXT.
     """
@@ -1525,7 +1618,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         def run_save_hook(save, storage):
             # a failed save must not end the callback: the page says so and the button stays usable
             try:
-                text = save(storage.estimates)
+                # a shallow copy: what the hook rebinds (or a background writer reads later) is not the window's
+                text = save(copy.copy(storage.estimates))
             except Exception as e:
                 logging.getLogger(__name__).exception('save failed for %s', fname)
                 first = ''.join(traceback.format_exception_only(type(e), e)).strip().splitlines()[0]
@@ -1543,7 +1637,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             #if '-' in base_name:
             #    base_name = base_name[:2+1+2+1+4+1 + 2+1+2+1+2]
             out_name = base_name + dt.replace(':', '-') + '_estimates.pickle'
-            save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
+            # compression rebinds the fields of what it saves: a copy, so the window keeps its uncompressed object
+            save_processed_estimates(copy.copy(storage.estimates), out_name, compress=compress_estimates)
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
         def final_save_callback(event, storage=None):
@@ -1552,11 +1647,12 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 return
             base_name = extract_name_with_pattern(estimates0.name)
             out_name = base_name + 'final_estimates.pickle'
-            save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
+            saved = copy.copy(storage.estimates)  # see save_callback
+            save_processed_estimates(saved, out_name, compress=compress_estimates)
             print(f'Final results for {title} saved to {out_name}\n')
 
-            # now save to .mat file
-            SaveResults(storage.estimates)
+            # now save to .mat file; from the object as saved (compressed or not), as before
+            SaveResults(saved)
             print(f'Results for {title} saved in folder {os.path.dirname(fname)}\n')
 
 

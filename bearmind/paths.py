@@ -36,6 +36,12 @@ class SeriesPaths:
     def manual_result(self, sid: str) -> Path:
         return self.inspection_dir(sid) / f"{sid}_manual_estimates.pickle"
 
+    def inspection_progress_dir(self, sid: str) -> Path:
+        return self.inspection_dir(sid) / "progress"
+
+    def inspection_cache(self, sid: str) -> Path:
+        return self.inspection_dir(sid) / f"{sid}_inspect_cache.npz"
+
     # --- export ---
     def export_npz(self, sid: str) -> Path:
         return self.root / "6_Export" / "npz" / f"{sid}_data.npz"
@@ -102,6 +108,10 @@ class SeriesPaths:
     @property
     def lock(self) -> Path:
         return self._service / "run.lock"
+
+    @property
+    def inspection_lock(self) -> Path:
+        return self._service / "inspect.lock"
 
     @property
     def stop_request(self) -> Path:

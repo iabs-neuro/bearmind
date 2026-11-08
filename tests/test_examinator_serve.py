@@ -3,18 +3,22 @@
 # fails to load (WinError 127) unless torch is imported first.
 import torch  # noqa: F401
 
+import copy
 import logging
 import os
 import pickle
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import tifffile
 from bokeh.document.document import Document
 from bokeh.models import Button, Div
+from scipy.io import loadmat
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
@@ -24,6 +28,8 @@ from examinator_helpers import App, make_estimates
 
 LEGACY = {"mode": "legacy", "end_frame": None}
 REFUSAL = "This file is already autoinspected; open 4_Estimates instead."
+SID = "NOF_H01_1D"  # the session of make_estimates
+SIDE_FILES = [f"{SID}_filters", f"{SID}_filters_session.mat", f"{SID}_traces.csv"]
 
 
 def _models(doc):
@@ -269,3 +275,222 @@ def test_prepared_session_must_match(tmp_path):
             (str(path), 25, LEGACY, "default_fps")]:
         with pytest.raises(ValueError, match=what):
             bm_examinator.make_app(fname, fps, kwargs, prepared=prep)
+
+
+def _loaded(folder):
+    """The synthetic session as the window holds it: loaded, with its time axis."""
+    return bm_examinator.LoadEstimates(str(make_estimates(folder)), time=np.arange(300) / 20.0)
+
+
+def _read_side_files(folder, base):
+    """(traces table, the .mat images, the filter images by file name) of one save of side files."""
+    folder = Path(folder)
+    traces = pd.read_csv(folder / f"{base}traces.csv")
+    mat = loadmat(folder / f"{base}filters_session.mat")["A"]
+    tifs = {p.name: tifffile.imread(p) for p in sorted((folder / f"{base}filters").iterdir())}
+    return traces, mat, tifs
+
+
+def _load(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def _server_final_save(folder, futures):
+    """A final_save as the inspection server's: the result whole and uncompressed, the side files in the
+    background (their Futures appended to futures)."""
+    def final_save(est):
+        path = bm_examinator.write_result(est, Path(folder) / f"{SID}_manual_estimates.pickle")
+        futures.append(bm_examinator.write_side_files_in_background(est, folder, f"{SID}_"))
+        return f"Saved {path.name}"
+    return final_save
+
+
+def test_side_files_skip_deleted(tmp_path):
+    """Only kept components: not those of idx_components_bad, nor the ones autoinspection marked deleted (it
+    leaves them in idx_components for the window). For those components, the files SaveResults writes."""
+    est = _loaded(tmp_path)
+    est.idx_components, est.idx_components_bad = np.array([0, 1, 2, 3, 4, 6, 7]), np.array([5])
+    est.metrics_df = pd.DataFrame({"component_idx": range(8), "delete": [0, 0, 0, 1, 0, 0, 0, 0]})
+    kept = [0, 1, 2, 4, 6, 7]
+    assert list(bm_examinator.kept_for_side_files(est)) == kept
+
+    bm_examinator.write_side_files(est, tmp_path / "out", f"{SID}_")
+    traces, mat, tifs = _read_side_files(tmp_path / "out", f"{SID}_")
+    assert list(traces.columns) == ["time_s", "0", "1", "2", "3", "4", "5"]
+    assert np.array_equal(traces["time_s"].to_numpy(), est.time)
+    assert np.array_equal(traces.iloc[:, 1:].to_numpy().T, est.C[kept])
+    assert mat.shape[0] == 6 and list(tifs) == [f"filter_{i:03d}.tif" for i in range(1, 7)]
+
+    ref = copy.copy(est)
+    del ref.metrics_df
+    ref.idx_components = np.array(kept)
+    (tmp_path / "ref").mkdir()
+    ref.name = str(tmp_path / "ref" / f"{SID}_estimates.pickle")  # SaveResults writes next to it
+    bm_examinator.SaveResults(ref)
+    assert (tmp_path / "out" / f"{SID}_traces.csv").read_bytes() == \
+        (tmp_path / "ref" / f"{SID}_traces.csv").read_bytes()
+    _, ref_mat, ref_tifs = _read_side_files(tmp_path / "ref", f"{SID}_")
+    assert np.array_equal(mat, ref_mat) and list(ref_tifs) == list(tifs)
+    assert all(np.array_equal(tifs[k], ref_tifs[k]) for k in tifs)
+
+    # without a delete column, or without component_idx (rows are components then)
+    est.metrics_df = pd.DataFrame({"component_idx": range(8)})
+    assert list(bm_examinator.kept_for_side_files(est)) == [0, 1, 2, 3, 4, 6, 7]
+    est.metrics_df = pd.DataFrame({"delete": [1, 0, 0, 0, 0, 0, 0, 0]})
+    assert list(bm_examinator.kept_for_side_files(est)) == [1, 2, 3, 4, 6, 7]
+
+
+def test_side_files_names(tmp_path):
+    est = _loaded(tmp_path)
+    folder = tmp_path / "5_Inspection" / SID  # made by the write
+    bm_examinator.write_side_files(est, folder, f"{SID}_")
+    assert sorted(os.listdir(folder)) == SIDE_FILES
+    assert len(os.listdir(folder / f"{SID}_filters")) == 8
+    # the folder holds one save: a later one with fewer components leaves no filter of the earlier one
+    est.idx_components, est.idx_components_bad = np.array([0, 4, 7]), np.array([1, 2, 3, 5, 6])
+    bm_examinator.write_side_files(est, folder, f"{SID}_")
+    assert sorted(os.listdir(folder)) == SIDE_FILES
+    assert sorted(os.listdir(folder / f"{SID}_filters")) == ["filter_001.tif", "filter_002.tif", "filter_003.tif"]
+
+
+def test_write_result_whole(tmp_path, monkeypatch):
+    est = _loaded(tmp_path)
+    path = tmp_path / "5_Inspection" / SID / f"{SID}_manual_estimates.pickle"
+    assert bm_examinator.write_result(est, path) == path
+    assert sorted(os.listdir(path.parent)) == [path.name]
+    assert np.array_equal(_load(path).C, est.C)
+
+    def broken(obj, f, *args, **kwargs):  # the disk fills up halfway
+        f.write(b"half")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(bm_examinator.pickle, "dump", broken)
+    with pytest.raises(OSError):
+        bm_examinator.write_result(est, path)
+    monkeypatch.undo()
+    assert np.array_equal(_load(path).C, est.C)  # the earlier result stays whole
+
+
+def test_final_save_uncompressed(tmp_path, monkeypatch):
+    """The window hands the hooks its working object uncompressed: compress_estimates is the notebook's."""
+    inp, cwd, out = tmp_path / "in", tmp_path / "cwd", tmp_path / "5_Inspection" / SID
+    inp.mkdir(), cwd.mkdir()
+    path = make_estimates(inp)
+    monkeypatch.chdir(cwd)
+    futures = []
+    app = App(bm_examinator.make_app(str(path), 20, {**LEGACY, "compress_estimates": True},
+                                     final_save=_server_final_save(out, futures)))
+    app.select([2]); app.click("Delete sel.")
+    app.click("Save results")
+    futures[0].result(timeout=120)
+    assert _status(app.doc).text == f"Saved {SID}_manual_estimates.pickle"
+    saved = _load(out / f"{SID}_manual_estimates.pickle")
+    assert len(saved.SNR_comp) == saved.A.shape[1] == 8
+    assert not hasattr(saved, "idx_components_bad_original")
+    assert list(saved.idx_components_bad) == [2] and saved.C.dtype == np.float64 and saved.R is not None
+    assert sorted(os.listdir(out)) == sorted(SIDE_FILES + [f"{SID}_manual_estimates.pickle"])
+    assert pd.read_csv(out / f"{SID}_traces.csv").shape[1] == 1 + 7
+    assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
+
+
+def test_side_files_in_background(tmp_path, monkeypatch):
+    """Save results returns while the side files are still written; they hold the components of that save
+    even when the window changes meanwhile, and a later save's files are written after an earlier one's."""
+    path = make_estimates(tmp_path)
+    out = tmp_path / "out"
+    gate, written = threading.Event(), []
+    real = bm_examinator.write_side_files
+
+    def waiting(est, folder, base, sigma=3):
+        assert gate.wait(60)
+        written.append([int(c) for c in bm_examinator.kept_for_side_files(est)])
+        real(est, folder, base, sigma)
+
+    monkeypatch.setattr(bm_examinator, "write_side_files", waiting)
+    futures = []
+    app = App(bm_examinator.make_app(str(path), 20, LEGACY, final_save=_server_final_save(out, futures)))
+    app.select([2]); app.click("Delete sel.")
+    app.click("Save results")  # returns although the side files wait
+    assert _status(app.doc).text == f"Saved {SID}_manual_estimates.pickle" and not futures[0].done()
+    app.select([0]); app.click("Delete sel.")  # the window goes on
+    app.click("Save results")
+    gate.set()
+    for f in futures:
+        f.result(timeout=120)
+    assert written == [[0, 1, 3, 4, 5, 6, 7], [1, 3, 4, 5, 6, 7]]
+    assert pd.read_csv(out / f"{SID}_traces.csv").shape[1] == 1 + 6  # the last save's
+    assert list(_load(out / f"{SID}_manual_estimates.pickle").idx_components) == [1, 3, 4, 5, 6, 7]
+
+
+def test_side_files_failure_in_future(tmp_path):
+    """A failure in the background is not lost: the Future holds it for the server to log and show."""
+    est = _loaded(tmp_path)
+    est.time = est.time[:10]  # no time for most frames
+    future = bm_examinator.write_side_files_in_background(est, tmp_path / "out", f"{SID}_")
+    with pytest.raises(ValueError):
+        future.result(timeout=60)
+
+
+def test_notebook_compressed_save_keeps_the_window(tmp_path, monkeypatch):
+    """compress_estimates compresses what the notebook path writes, not the window's working object (a
+    compressed working object is renumbered, and the next Delete would remove the wrong neuron)."""
+    inp, cwd = tmp_path / "in", tmp_path / "cwd"
+    inp.mkdir(), cwd.mkdir()
+    path = make_estimates(inp)
+    monkeypatch.chdir(cwd)
+    app = App(bm_examinator.make_app(str(path), 20, {"mode": "legacy", "end_frame": 300,
+                                                     "compress_estimates": True}))
+    app.select([2]); app.click("Delete sel.")
+    app.click("Save progress")
+    progress, = cwd.glob("*_estimates.pickle")
+    saved = _load(progress)
+    assert saved.A.shape[1] == 7 and list(saved.idx_components_bad_original) == [2]  # compressed, as before
+    est = app.storage.estimates
+    assert est.A.shape[1] == 8 and est.C.dtype == np.float64 and list(est.idx_components_bad) == [2]
+    app.select([0]); app.click("Delete sel.")
+    assert app.shown() == [1, 3, 4, 5, 6, 7]
+    app.click("Save results")
+    final = _load(cwd / f"{SID}final_estimates.pickle")
+    assert final.A.shape[1] == 6 and list(final.idx_components_bad_original) == [0, 2]
+    # SaveResults from the compressed object, as before: float32 traces of the kept neurons
+    traces = pd.read_csv(inp / f"{SID}_traces.csv")
+    assert np.array_equal(traces.iloc[:, 1:].to_numpy().T.astype(np.float32),
+                          est.C[[1, 3, 4, 5, 6, 7]].astype(np.float32))
+
+
+def test_hooks_get_a_copy(tmp_path):
+    """A hook may rebind fields of what it gets (here: compress it) without changing the window, its undo
+    record or a reused prepared session."""
+    from estimates_compression import compress_estimates_ultra_lightweight
+    path = make_estimates(tmp_path)
+    prep = bm_examinator.prepare_session(str(path), bkapp_kwargs=LEGACY)
+    got = []
+
+    def final_save(est):
+        got.append(copy.copy(est))
+        if len(got) == 1:
+            compress_estimates_ultra_lightweight(est)
+            est.idx_components = []
+            del est.r_values
+        return "Saved"
+
+    app = App(bm_examinator.make_app(str(path), 20, LEGACY, prepared=prep, final_save=final_save))
+    app.select([2]); app.click("Delete sel.")
+    app.select([0, 1]); app.click("Merge sel.")
+    app.click("Save results")
+    est = app.storage.estimates
+    # CaImAn renumbers; the merged one is 6
+    assert list(est.idx_components) == [1, 2, 3, 4, 5, 6] and est.A.shape[1] == 7 and est.C.dtype == np.float64
+    assert len(est.r_values) == 7 and est.R is not None
+    app.click("Revert change")
+    assert app.shown() == [0, 1, 3, 4, 5, 6, 7]
+    assert app.storage.estimates.A.shape[1] == 8 and len(app.storage.estimates.r_values) == 8
+    app.click("Discard all")
+    assert app.shown() == list(range(8))
+    app.select([5]); app.click("Delete sel.")
+    app.click("Save results")
+    last = got[-1]
+    assert list(last.idx_components) == [0, 1, 2, 3, 4, 6, 7] and list(last.idx_components_bad) == [5]
+    assert last.A.shape[1] == 8 and last.C.dtype == np.float64 and len(last.r_values) == 8
+    assert list(prep.estimates.idx_components) == list(range(8)) and prep.estimates.C.dtype == np.float64

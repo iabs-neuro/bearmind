@@ -19,3 +19,12 @@ def test_paths_layout(tmp_path):
 
 def test_threshold_choices_path(tmp_path):
     assert SeriesPaths(tmp_path).threshold_choices_csv == tmp_path / "_bearmind" / "threshold_choices.csv"
+
+
+def test_inspection_paths(tmp_path):
+    p = SeriesPaths(tmp_path)
+    assert p.rel(p.inspection_lock) == "_bearmind/inspect.lock"
+    assert p.rel(p.inspection_progress_dir("NOF_H01_1D")) == "5_Inspection/NOF_H01_1D/progress"
+    assert p.rel(p.inspection_cache("NOF_H01_1D")) == "5_Inspection/NOF_H01_1D/NOF_H01_1D_inspect_cache.npz"
+    assert p.inspection_cache("NOF_H01_1D").parent == p.inspection_dir("NOF_H01_1D") == \
+        p.manual_result("NOF_H01_1D").parent
