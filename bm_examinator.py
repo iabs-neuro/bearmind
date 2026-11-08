@@ -1,7 +1,9 @@
 # Stuff needed for plotting and widget callbacks
 import copy
 import html
+import itertools
 import logging
+import threading
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -231,12 +233,43 @@ def _decimate_rows(Y, n_out):
 def _hval(tr):
     """Share of a trace's points at or above its median + 4 MAD (the H-val sort)."""
     med = np.median(tr)
-    meddev = median_abs_deviation(tr)
-    return np.round(1.0 * len(np.where(tr >= med + 4 * meddev)[0]) / len(tr), 4)
+    # scipy's median_abs_deviation(tr), the same operations without taking the median a second time
+    meddev = np.median(np.abs(tr - med))
+    return np.round(1.0 * np.count_nonzero(tr >= med + 4 * meddev) / len(tr), 4)
 
 
-def _corr_matrix(trace_data, correlation_method):
-    """Correlations between the rows of trace_data with the diagonal and NaN set to 0, as the Corr sort uses."""
+# A server prepares sessions in threads while windows run Merges in others. threadpool_limits sets the BLAS
+# thread count of the whole process, so a region that widens it holds this lock, and so does a Merge: a Merge
+# never runs with another thread count than the process's own (its results would differ in the last bits).
+_BLAS_LOCK = threading.Lock()
+# numpy releases the GIL in the partitions of np.median, so the H-vals of 1880 traces of an hour take a quarter
+# of the time on four threads (as bearmind.wave); each value is computed alone, so they are the same.
+_HVAL_THREADS = 4
+
+
+def _hvals(X, threads=None):
+    """_hval of each row of X drawn at its height (row i + i), as EstimatesToSrcFast computes it; threads (the
+    server's): over a pool of up to _HVAL_THREADS threads, None: in this thread."""
+    n = len(X)
+    if not threads or n < 2:
+        return [_hval(X[i] + i) for i in range(n)]
+    with ThreadPoolExecutor(max_workers=min(_HVAL_THREADS, threads), thread_name_prefix='bm_hval') as ex:
+        return list(ex.map(lambda i: _hval(X[i] + i), range(n)))
+
+
+def _corr_matrix(trace_data, correlation_method, threads=None):
+    """Correlations between the rows of trace_data with the diagonal and NaN set to 0, as the Corr sort uses.
+
+    threads: BLAS threads for the computation (the inspection server's opt-in; 1880 traces of an hour take
+    4.4 s on one thread); None leaves the process's own setting, the single thread of the notebook."""
+    if not threads:
+        return _corr_matrix_here(trace_data, correlation_method)
+    from threadpoolctl import threadpool_limits
+    with _BLAS_LOCK, threadpool_limits(limits=int(threads), user_api='blas'):
+        return _corr_matrix_here(trace_data, correlation_method)
+
+
+def _corr_matrix_here(trace_data, correlation_method):
     n = len(trace_data)
     if correlation_method == 'pearson':
         if n == 1:
@@ -479,11 +512,12 @@ _NOT_COLUMNS = ('base', 'base_recon', 'cm')
 
 
 def _legacy_rows(estimates, comps, cthr=0.3, sf=None, ef=None, ds=1, corr_thr=0.6, correlation_method='pearson',
-                 contours=None):
+                 contours=None, threads=None):
     """The window's first view of comps in legacy mode: the per-row values of EstimatesToSrcFast, but each trace
     kept once, normalized and at full resolution ('base', float32 (rows, frames): the window sends a decimated
     or zoomed part of it), no per-row copy of the time axis, and the correlation matrix the Corr sort comes
-    from ('cm'), which a merge extends by one row. contours: _component_contours of comps, or None."""
+    from ('cm'), which a merge extends by one row. contours: _component_contours of comps, or None. threads:
+    see prepare_session."""
     comps = [int(c) for c in comps]
     n = len(comps)
     if sf is None:
@@ -495,24 +529,36 @@ def _legacy_rows(estimates, comps, cthr=0.3, sf=None, ef=None, ds=1, corr_thr=0.
     if len(contours) != n:
         raise ValueError(f"{len(contours)} contours for {n} components")
 
-    X = np.array(estimates.C[comps, sf:ef][:, ::ds], dtype=float)
-    with np.errstate(invalid='ignore', divide='ignore'):  # a flat trace is NaN, as before
-        X -= X.min(axis=1, keepdims=True)
-        X /= X.max(axis=1, keepdims=True)
-    # on the trace drawn at height i, as EstimatesToSrcFast computes it
-    hvals = [_hval(X[i] + i) for i in range(n)]
-    base = X.astype(np.float32)
-    del X
+    def corr():
+        return _corr_matrix(estimates.C[comps, sf:ef], correlation_method, threads) if n else np.zeros((0, 0))
 
-    dims = estimates.imax.shape
-    polygons, areas = [], []
-    for coors in contours:
-        areas.append(calculate_polygon_area(coors))
-        polygons.append(coors[~np.isnan(coors).any(axis=1)])
-    xs = [[pt[0] for pt in c] for c in polygons]
-    ys = [[dims[0] - pt[1] for pt in c] for c in polygons]  # flip for y-axis inversion
+    # The server's threads: the correlation matrix (BLAS threads) is computed while this thread takes the traces
+    # and the H-vals (their own pool); the two are independent and both run outside the GIL.
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='bm_corr') if threads and n else None
+    try:
+        CM = pool.submit(corr) if pool is not None else None
+        # advanced indexing returns a new array: changed in place below without a second copy
+        X = np.asarray(estimates.C[comps, sf:ef][:, ::ds], dtype=float)
+        with np.errstate(invalid='ignore', divide='ignore'):  # a flat trace is NaN, as before
+            X -= X.min(axis=1, keepdims=True)
+            X /= X.max(axis=1, keepdims=True)
+        # on the trace drawn at height i, as EstimatesToSrcFast computes it
+        hvals = _hvals(X, threads)
+        base = X.astype(np.float32)
+        del X
 
-    CM = _corr_matrix(estimates.C[comps, sf:ef], correlation_method) if n else np.zeros((0, 0))
+        dims = estimates.imax.shape
+        polygons, areas = [], []
+        for coors in contours:
+            areas.append(calculate_polygon_area(coors))
+            polygons.append(coors[~np.isnan(coors).any(axis=1)])
+        xs = [[pt[0] for pt in c] for c in polygons]
+        ys = [[dims[0] - pt[1] for pt in c] for c in polygons]  # flip for y-axis inversion
+
+        CM = CM.result() if CM is not None else corr()
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
     corr_scores, corr_groups = _corr_groups(CM, corr_thr)
     return dict(idx=comps, xs=xs, ys=ys, areas=areas, hvals=hvals, colors=[colornum_Metro(i) for i in range(n)],
                 corr_scores=list(corr_scores), corr_groups=list(corr_groups), base=base, cm=CM)
@@ -768,7 +814,7 @@ class PreparedSession:
         return self.options['mode']
 
 
-def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
+def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours, threads=None):
     o = _first_view_options(bkapp_kwargs, default_fps)
     view = _view_options(bkapp_kwargs)
     if o['mode'] == 'legacy':
@@ -776,7 +822,7 @@ def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
             idx = estimates.idx_components
             contours = _component_contours(estimates, idx, view['cthr']) if len(idx) else []
         data = _legacy_rows(estimates, estimates.idx_components, correlation_method=o['correlation_method'],
-                            contours=contours, **view)
+                            contours=contours, threads=threads, **view)
         return PreparedSession(fname, estimates, data, contours, o)
     if o['mode'] == 'capcan':
         if contours is not None:
@@ -809,13 +855,16 @@ def _check_prepared(prepared, fname, default_fps, bkapp_kwargs):
                              f"the window asks for {v!r}")
 
 
-def prepare_session(fname, time=None, default_fps=20, bkapp_kwargs=None, contours=None) -> PreparedSession:
+def prepare_session(fname, time=None, default_fps=20, bkapp_kwargs=None, contours=None,
+                    threads=None) -> PreparedSession:
     """Load the estimates and build the window's first view; the slow part of opening a session.
 
     time: the session's timestamps in seconds (see LoadEstimates). contours: PreparedSession.contours of an
-    earlier preparation of the same file with the same cthr (legacy mode); None computes them."""
+    earlier preparation of the same file with the same cthr (legacy mode); None computes them. threads (legacy
+    mode; the inspection server's opt-in): BLAS threads for the correlation matrix and up to _HVAL_THREADS for
+    the H-vals; None computes both in this thread with the process's BLAS setting, as the notebook does."""
     estimates = LoadEstimates(fname, default_fps=default_fps, time=time)
-    return _prepare(fname, estimates, default_fps, bkapp_kwargs, contours)
+    return _prepare(fname, estimates, default_fps, bkapp_kwargs, contours, threads)
 
 
 def _autoinspected(estimates):
@@ -1628,13 +1677,16 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 print('sel_comps:', sel_comps)
             remember(storage)
             before = storage.undo.fields
-            estimates.manual_merge([sel_comps], params=cnmf_params(estimates))
-            good_neurons = np.setdiff1d(list(range(before['C'].shape[0])), np.array(sel_comps))
-            cmapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
-            estimates.SNR_comp = _merged_quality(before['SNR_comp'], cmapping, sel_comps)
-            estimates.r_values = _merged_quality(before['r_values'], cmapping, sel_comps)
+            # never inside a server's widened BLAS region (see _BLAS_LOCK); free in the notebook
+            with _BLAS_LOCK:
+                estimates.manual_merge([sel_comps], params=cnmf_params(estimates))
+                good_neurons = np.setdiff1d(list(range(before['C'].shape[0])), np.array(sel_comps))
+                cmapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
+                estimates.SNR_comp = _merged_quality(before['SNR_comp'], cmapping, sel_comps)
+                estimates.r_values = _merged_quality(before['r_values'], cmapping, sel_comps)
+                numbering = merged_numbering(storage, cmapping)  # its correlations use BLAS too
 
-            use_numbering(storage, merged_numbering(storage, cmapping))
+            use_numbering(storage, numbering)
             storage.shown = [int(c) for c in estimates.idx_components]
             # Same as in del_callback: no select-all.
             after_change(storage)

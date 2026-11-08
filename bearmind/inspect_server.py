@@ -90,6 +90,10 @@ ALREADY_RUNNING = "[FAILED] an inspection server of this series is already runni
 NOT_DONE_CONSOLE = "[FAILED] CNMF-E of {sid} is not done yet"
 
 DEFAULT_FPS = 20  # timestamps come from the registry; make_app needs a value, which the first view ignores
+# BLAS threads for the correlation matrix of a session being prepared (bm_examinator.prepare_session's threads):
+# 1880 traces of an hour (FOF_F01_1D) take 4.4 s on the single thread the environment sets; more than 8 threads
+# gain little on a matrix of that size.
+PREPARE_THREADS = min(8, os.cpu_count() or 1)
 TICK_MS = 500  # how often open tabs are counted and the lock is updated
 # A page whose browser has not connected yet (the page is loading) holds its session this long; once connected,
 # it holds the session while it is connected, so a reloaded tab is not refused as a second one.
@@ -277,6 +281,23 @@ class Preparer:
             self._wanted = sid
             self._cv.notify_all()
 
+    def take_ready(self, sid: str):
+        """The prepared session of sid when it is ready now and its stamp still holds, handed over at once;
+        None otherwise (being prepared, not prepared, or out of date): never waits, never builds."""
+        with self._cv:
+            prep = self._ready.get(sid)
+        if prep is None:
+            return None
+        try:
+            current = prep.stamp == self._stamp(sid)
+        except Exception:
+            return None  # take() reads the stamp again and shows its error
+        with self._cv:
+            if not current or self._ready.get(sid) is not prep:
+                return None
+            del self._ready[sid]
+        return prep
+
     def take(self, sid: str):
         with self._cv:
             while self._busy == sid:
@@ -356,8 +377,10 @@ class _Page:
         return self.holding() is not None
 
     # -- content --
-    def show_message(self, text: str, title: str = INDEX_TITLE) -> None:
-        self.sid = None
+    def show_message(self, text: str, title: str = INDEX_TITLE, holding: bool = False) -> None:
+        """Only a text on the page. holding: the page still holds its session (it is being opened)."""
+        if not holding:
+            self.sid = None
         self.doc.clear()
         self.doc.title = title
         self.doc.add_root(Div(text=html.escape(text, quote=False), name="message"))
@@ -385,11 +408,13 @@ class _Page:
             self.show_message(OPENING.format(sid=sid), TITLE.format(sid=sid))
             self.doc.add_timeout_callback(partial(self._claim_again, sid), RETRY_OPEN_MS)
             return
-        try:
-            prep = srv.preparer.take(sid)
-        except Exception as e:
-            srv.release(self)
-            return self.show_message(srv.open_failure(sid, e))
+        prep = srv.preparer.take_ready(sid)
+        if prep is None:
+            # Not prepared: the request is answered at once with "Opening" and the session is built off it
+            # (seconds for a session of many components), as after a refused claim; the window replaces it.
+            self.show_message(OPENING.format(sid=sid), TITLE.format(sid=sid), holding=True)
+            self.doc.add_next_tick_callback(without_document_lock(partial(self._take, sid)))
+            return
         self.show(sid, prep)
 
     def _claim_again(self, sid: str) -> None:
@@ -410,13 +435,14 @@ class _Page:
         try:
             prep = self.server.preparer.take(sid)
         except Exception as e:
-            self.server.release(self)
             err = self.server.open_failure(sid, e)
         self._next_tick(self._taken, sid, prep, err)
 
     def _taken(self, sid: str, prep, err) -> None:
         if err is not None:
-            self.show_message(err)
+            # the text first, then the session is let go: whoever sees it free sees why
+            self.show_message(err, holding=True)
+            self.server.release(self)
             return
         try:
             self.show(sid, prep)
@@ -613,7 +639,7 @@ class InspectServer:
         try:
             # forward slashes: the window titles its image with the part of the path after the last "/"
             prep = bm.prepare_session(fname.as_posix(), time=time_s, default_fps=DEFAULT_FPS, bkapp_kwargs=kwargs,
-                                      contours=contours)
+                                      contours=contours, threads=PREPARE_THREADS)
         except ValueError as e:
             m = _SHORT_RE.search(str(e))
             if m:

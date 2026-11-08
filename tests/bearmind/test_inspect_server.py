@@ -112,6 +112,8 @@ def tab(srv, sid=None):
     try:
         session = pull_session(url=srv.url + "/", io_loop=io, arguments={"sid": sid} if sid else None)
         try:
+            if sid:
+                _settle(srv.page_of(session.id), sid)
             yield session
         finally:
             session.close()
@@ -192,6 +194,13 @@ def _texts(doc):
 
 def _opened(page, sid):
     return page.sid == sid and any(b.label == "Save results" for b in _models(page.doc, Button))
+
+
+def _settle(page, sid, timeout=120):
+    """Wait while the page is opening sid for itself: a session that is not prepared is built after the page
+    answered with "Opening" (K1c). A page refused the session (another tab holds it) does not hold it and is
+    not waited for; its own retry goes on."""
+    until(lambda: page.sid != sid or _opened(page, sid), timeout=timeout)
 
 
 # --- tests ---
@@ -302,6 +311,7 @@ def _get(srv, sid):
     with urllib.request.urlopen(inspect_server.session_url(srv.url, sid), timeout=120) as r:
         assert r.status == 200
     page, = [p for p in srv.pages() if id(p) not in before]
+    _settle(page, sid)
     return page
 
 
@@ -420,6 +430,48 @@ def test_next_session_prepared_in_background(series_est):
         until(lambda: inspect_server.server_state(paths).prepared == S3, timeout=30)
 
 
+def test_build_widens_blas_threads(series_est, monkeypatch):
+    """K1a: the server prepares a session with PREPARE_THREADS BLAS threads (at most 8)."""
+    seen = []
+    real = bm_examinator.prepare_session
+    monkeypatch.setattr(bm_examinator, "prepare_session", lambda *a, **k: seen.append(k.get("threads")) or real(*a, **k))
+    inspect_server.InspectServer(series_est.root).build(S1)
+    assert seen == [inspect_server.PREPARE_THREADS] and seen[0] == min(8, os.cpu_count())
+
+
+def test_unprepared_session_opens_off_the_request(series_est, monkeypatch):
+    """K1c: a session that is not prepared answers the browser's request at once with "Opening" and is built
+    off it; the window replaces the text when the session is ready."""
+    release, building = threading.Event(), threading.Event()
+    real = inspect_server.InspectServer.build
+
+    def slow(self, sid):
+        if sid == S1:
+            building.set()
+            assert release.wait(60)
+        return real(self, sid)
+
+    monkeypatch.setattr(inspect_server.InspectServer, "build", slow)
+    answered = {}
+    with running(series_est) as srv:
+        def get():
+            with urllib.request.urlopen(inspect_server.session_url(srv.url, S1), timeout=120) as r:
+                answered["status"] = r.status
+        t = threading.Thread(target=get)
+        try:
+            t.start()
+            assert building.wait(30)
+            t.join(10)
+            assert answered.get("status") == 200, "the request waited for the build"
+            page, = srv.pages()
+            assert _divs(srv, page) == [inspect_server.OPENING.format(sid=S1)] and page.sid == S1
+            assert page.doc.title == inspect_server.TITLE.format(sid=S1)
+        finally:
+            release.set()
+            t.join(120)
+        until(lambda: _opened(page, S1), timeout=60)
+
+
 def test_next_session_skips_decided(series_est):
     paths = series_est
     with running(paths) as srv, tab(srv, S1) as s:
@@ -512,9 +564,9 @@ def test_wave_banner_only_in_page(series_est):
         page = srv.page_of(s.id)
         assert _opened(page, S1)
         assert page.prepared.wave_frac == frac  # computed while the session was prepared
-        banner = _div(s.document, "wave")
+        banner = _div(page.doc, "wave")
         assert banner.visible and banner.text == html.escape(wave.wave_text(frac, 0.3))
-        header = s.document.roots[0]
+        header = page.doc.roots[0]
         assert header.name == "inspection_header" and banner in header.references()
         assert not CYRILLIC.search(banner.text)
     view = monitor.series_view(paths)
@@ -530,7 +582,7 @@ def test_no_banner_without_threshold(series_est):
     with running(paths) as srv, tab(srv, S1) as s:
         page = srv.page_of(s.id)
         assert _opened(page, S1) and page.prepared.wave_frac == frac
-        banner = _div(s.document, "wave")
+        banner = _div(page.doc, "wave")
         assert not banner.visible and banner.text == ""
 
 
@@ -545,7 +597,7 @@ def test_no_banner_on_ordinary_sessions(series_est):
             with tab(srv, sid) as s:
                 page = srv.page_of(s.id)
                 assert _opened(page, sid) and page.prepared.wave_frac <= warn
-                banner = _div(s.document, "wave")
+                banner = _div(page.doc, "wave")
                 assert not banner.visible and banner.text == ""
 
 
@@ -559,7 +611,7 @@ def test_no_hint_below_ten_components(series_est, n):
     with running(paths) as srv, tab(srv, S1) as s:
         page = srv.page_of(s.id)
         assert _opened(page, S1)
-        banner = _div(s.document, "wave")
+        banner = _div(page.doc, "wave")
         if n < 10:
             assert page.prepared.wave_frac is None and not banner.visible
         else:
@@ -668,7 +720,7 @@ def test_short_timestamps_named_on_the_page(series_est):
     ts.write_text("".join(f"{i * 500000}\n" for i in range(250)), encoding="utf-8")
     with running(paths) as srv:
         with tab(srv, S3) as s:
-            texts = [d.text for d in _models(s.document, Div)]
+            texts = _divs(srv, srv.page_of(s.id))
             assert texts == [inspect_server.SHORT_TIMESTAMPS.format(sid=S3, n_ts=250, n_frames=300)]
             assert "250" in texts[0] and "300" in texts[0] and S3 in texts[0]
         with tab(srv, S1) as s:
@@ -1035,10 +1087,11 @@ def test_page_texts_are_english(series_est, monkeypatch, capsys):
             assert S1 in index.document.roots[0].text and S3 in index.document.roots[0].text
         for sid in (S2, "NOF_X99_9D", "../registry/" + S1):  # CNMF-E not done; not a session; not a name
             with tab(srv, sid) as s:
-                texts += _texts(s.document)
+                page = srv.page_of(s.id)
+                texts += locked(srv, page, lambda: _texts(page.doc))
         with tab(srv, S1) as s, tab(srv, S1) as second:
             page = srv.page_of(s.id)
-            texts += _texts(s.document) + _texts(second.document)  # the second: "opening", then refused
+            texts += locked(srv, page, lambda: _texts(page.doc)) + _texts(second.document)  # "opening", refused
             refused = srv.page_of(second.id)
             until(lambda: _divs(srv, refused) == [inspect_server.SECOND_TAB.format(sid=S1)], timeout=10)
             texts += locked(srv, refused, lambda: _texts(refused.doc))
@@ -1187,14 +1240,15 @@ def test_speed_hour_session(tmp_path, monkeypatch):
     numbers = {}
     with running(paths) as srv:
         def get(sid):
+            """(page, seconds from the request until the window is on the page): a session that is not
+            prepared answers with "Opening" at once and is built after it (K1c)."""
             before = {id(p) for p in srv.pages()}
             t0 = time.perf_counter()
             with urllib.request.urlopen(inspect_server.session_url(srv.url, sid), timeout=600) as r:
                 assert r.status == 200
-            dt = time.perf_counter() - t0
             page, = [p for p in srv.pages() if id(p) not in before]
-            assert _opened(page, sid)
-            return page, dt
+            until(lambda: _opened(page, sid), timeout=600, step=0.002)
+            return page, time.perf_counter() - t0
 
         def timed_save(page):
             def run():

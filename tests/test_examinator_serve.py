@@ -138,6 +138,60 @@ def test_prepared_contours_reused(tmp_path, monkeypatch):
             assert np.array_equal(np.asarray(a), np.asarray(b)), key
 
 
+def test_prepare_threads_same_view(tmp_path, monkeypatch):
+    """K1a: with the server's threads the correlation matrix is computed in a widened BLAS region (the notebook
+    keeps the process's setting) and the H-vals on a pool; the first view is the same, the grouping too."""
+    import threadpoolctl
+    path = make_estimates(tmp_path, n=40, T=2000)
+    one = bm_examinator.prepare_session(str(path), bkapp_kwargs=LEGACY)
+    limits, real = [], threadpoolctl.threadpool_limits
+
+    def recorded(*args, **kwargs):
+        limits.append(kwargs.get("limits", args[0] if args else None))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(threadpoolctl, "threadpool_limits", recorded)
+    bm_examinator.prepare_session(str(path), bkapp_kwargs=LEGACY)
+    assert limits == []  # the notebook path leaves the BLAS threads alone
+    many = bm_examinator.prepare_session(str(path), bkapp_kwargs=LEGACY, contours=one.contours, threads=8)
+    assert limits == [8]
+    assert many.data["hvals"] == one.data["hvals"]
+    np.testing.assert_allclose(many.data["cm"], one.data["cm"], rtol=0, atol=1e-12)
+    assert many.data["corr_groups"] == one.data["corr_groups"]
+    assert many.data["corr_scores"] == pytest.approx(one.data["corr_scores"], abs=1e-12)
+
+
+def test_hval_same_as_scipy_formula():
+    """K1: _hval takes the median once (scipy's median_abs_deviation takes it again); every value is the same as
+    the formula the H-val sort was written with, also for flat (NaN) and constant traces."""
+    from scipy.stats import median_abs_deviation
+
+    def old(tr):
+        med = np.median(tr)
+        return np.round(1.0 * len(np.where(tr >= med + 4 * median_abs_deviation(tr))[0]) / len(tr), 4)
+
+    rng = np.random.default_rng(3)
+    rows = [rng.random(n) ** k + i for i, (n, k) in enumerate(((300, 1), (2001, 3), (64300, 8), (17, 2)))]
+    rows += [np.full(50, np.nan), np.zeros(40), np.r_[np.zeros(30), 1.0]]
+    for tr in rows:
+        assert bm_examinator._hval(tr) == old(tr) or (np.isnan(old(tr)) and np.isnan(bm_examinator._hval(tr)))
+
+
+def test_merge_waits_for_a_widened_blas_region(tmp_path):
+    """K1b: a Merge never runs while a server prepares a session with more BLAS threads (another thread holds
+    the region's lock): it starts once the region ends."""
+    app = App(bm_examinator.make_app(str(make_estimates(tmp_path)), 20, LEGACY))
+    app.select([0, 1])
+    done = threading.Event()
+    with bm_examinator._BLAS_LOCK:  # a preparation in its widened region
+        t = threading.Thread(target=lambda: (app.click("Merge sel."), done.set()))
+        t.start()
+        assert not done.wait(1.0)  # the Merge waits
+        assert len(app.storage.estimates.idx_components) == 8
+    t.join(60)
+    assert done.is_set() and app.shown()[-1] == 6  # merged after the region ended, the merged one last
+
+
 def test_final_save_hook_called_and_text_shown(tmp_path, monkeypatch):
     inp, cwd = tmp_path / "in", tmp_path / "cwd"
     inp.mkdir(), cwd.mkdir()
