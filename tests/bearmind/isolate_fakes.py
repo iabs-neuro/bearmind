@@ -48,6 +48,18 @@ def ok(paths, rec, cfg):
         anomalies=[Anomaly("note", "warning", "from the child", data={"k": 1})])
 
 
+def mpl_backend(paths, rec, cfg):
+    """What bm_qc does to draw the residual maps (pyplot in the stage process), and what a process the stage
+    starts (CaImAn's pool workers) inherits."""
+    import matplotlib
+    import matplotlib.pyplot  # noqa: F401
+
+    child = subprocess.run([sys.executable, "-c", "import os; print(os.environ.get('MPLBACKEND'))"],
+                           capture_output=True, text=True, timeout=60)
+    return StageResult(metrics={"backend": matplotlib.get_backend(), "pyside6": "PySide6" in sys.modules,
+                                "worker_env": child.stdout.strip()})
+
+
 def value_error(paths, rec, cfg):
     raise ValueError("x")
 

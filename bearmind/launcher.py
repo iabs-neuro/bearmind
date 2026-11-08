@@ -47,6 +47,9 @@ def start_detached(series_root: Path, cmd: list[str] | None = None) -> int:
     env["PYTHONPATH"] = str(provenance.REPO_ROOT)
     env.setdefault("OPENBLAS_CORETYPE", "Sandybridge")
     env["PYTHONUTF8"] = "1"  # series names the redirected (cp1251) console log cannot encode
+    # the runner draws nothing on a screen; a Qt backend would load PySide6 into it (its stage processes set the
+    # same in bearmind.isolate)
+    env["MPLBACKEND"] = "Agg"
     with open(paths.logs_dir / "runner_console.log", "ab") as log:
         # a job that forbids breakaway refuses the flag (OSError): start without it, still detached
         for breakaway in (True, False):

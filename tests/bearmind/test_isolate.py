@@ -112,6 +112,22 @@ def test_result_and_output_come_back(stage):
     assert d.alive() == []
 
 
+@pytest.mark.parametrize("parent", [None, "QtAgg"])
+def test_stage_process_draws_without_qt(stage, monkeypatch, parent):
+    """C1 (check finding 4): matplotlib chose its Qt backend in the CNMF-E process, which loaded PySide6, and the
+    process crashed in os._exit (a ~100 MB dump, the stage recorded ~30 s late). A stage process and what it
+    starts draw with Agg, whatever the parent's environment says."""
+    if parent is None:
+        monkeypatch.delenv("MPLBACKEND", raising=False)
+    else:
+        monkeypatch.setenv("MPLBACKEND", parent)
+    with Descendants() as d:
+        m = run(stage, "mpl_backend").metrics
+    assert m["backend"].lower() == "agg" and m["pyside6"] is False and m["worker_env"] == "Agg"
+    assert os.environ.get("MPLBACKEND") == parent  # this process is left as it was
+    assert d.alive() == []
+
+
 def test_exception_reraised_with_type_message_and_child_traceback(stage):
     with pytest.raises(ValueError) as ei:
         run(stage, "value_error")

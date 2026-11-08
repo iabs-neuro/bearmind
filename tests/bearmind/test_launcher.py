@@ -115,9 +115,11 @@ def test_request_stop_writes_file(tmp_path):
 
 def test_detached_child_sees_environment(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENBLAS_CORETYPE", raising=False)
+    monkeypatch.setenv("MPLBACKEND", "QtAgg")  # C1: the runner draws without Qt whatever the window process has
     out = tmp_path / "env.json"
     code = ("import os, sys, json; open(sys.argv[1], 'w', encoding='utf-8').write(json.dumps("
-            "{k: os.environ.get(k) for k in ('PYTHONPATH', 'OPENBLAS_CORETYPE', 'PYTHONUTF8')} | {'cwd': os.getcwd()}))")
+            "{k: os.environ.get(k) for k in ('PYTHONPATH', 'OPENBLAS_CORETYPE', 'PYTHONUTF8', 'MPLBACKEND')}"
+            " | {'cwd': os.getcwd()}))")
     pid = launcher.start_detached(tmp_path / "s", cmd=[sys.executable, "-c", code, str(out)])
     try:
         assert _wait_for(out)
@@ -126,7 +128,7 @@ def test_detached_child_sees_environment(tmp_path, monkeypatch):
         _kill(pid)
     got = json.loads(out.read_text(encoding="utf-8"))
     assert got == {"PYTHONPATH": str(REPO), "OPENBLAS_CORETYPE": "Sandybridge", "PYTHONUTF8": "1",
-                   "cwd": str(REPO)}
+                   "MPLBACKEND": "Agg", "cwd": str(REPO)}
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows consoles")

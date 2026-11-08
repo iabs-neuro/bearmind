@@ -253,6 +253,11 @@ _LOG_FILE = None  # kept open for the life of the child: faulthandler writes to 
 def _setup_child(log_path: str) -> None:
     global _LOG_FILE
     os.environ["PYTHONFAULTHANDLER"] = "1"  # processes the stage starts (CaImAn's pool) dump crashes too
+    # Before any stage import, and inherited by the processes the stage starts: left to itself matplotlib picks
+    # its Qt backend in this environment (bm_qc draws with pyplot), which loads PySide6, and such a process
+    # crashes in os._exit below (a Windows crash dump of ~100 MB, the stage recorded ~30 s late). Here only, not
+    # in bearmind/__init__: the window and notebooks choose their own backends.
+    os.environ["MPLBACKEND"] = "Agg"
     _LOG_FILE = open(log_path, "ab", buffering=0)
     faulthandler.enable(_LOG_FILE, all_threads=True)
     for fd in (1, 2):  # also the process's standard handles: native code and child processes write here
