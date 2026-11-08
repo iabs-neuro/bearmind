@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from bokeh.document.document import Document
 from bokeh.events import ButtonClick
-from bokeh.models import Button, ColumnDataSource
+from bokeh.models import Button, ColumnDataSource, RadioButtonGroup
 from caiman.source_extraction.cnmf.estimates import Estimates
 from caiman.source_extraction.cnmf.params import CNMFParams
 from scipy.sparse import csc_matrix
@@ -18,8 +18,9 @@ from scipy.sparse import csc_matrix
 def make_estimates(folder, n=8, T=300) -> Path:
     """n round footprints in rows of four, T frames; enough for delete, merge, zoom and revert.
 
-    The default, 8 footprints on 48x48 and 300 frames, is the session the callback tests were written on;
-    a larger n widens the field and keeps the same footprints and random draws for the first eight."""
+    The default, 8 footprints on 48x48 and 300 frames, is the session the callback tests were written on
+    (same footprints and traces); a larger n widens the field and keeps the same footprints and random
+    draws for the first eight."""
     rng = np.random.default_rng(0)
     dims = (48, 20 * (-(-n // 4)) + 8)
     yy, xx = np.mgrid[0:dims[0], 0:dims[1]]
@@ -33,11 +34,15 @@ def make_estimates(folder, n=8, T=300) -> Path:
         C[k] = np.convolve(spikes, np.exp(-np.arange(60) / 5.0))[:T] + 0.01 * k
     est = Estimates(A=csc_matrix(A), C=C, b=None, f=None, dims=dims)
     est.YrA = 0.01 * rng.normal(size=(n, T))
+    est.R = est.YrA  # as CaImAn's CNMF.fit leaves it
     est.S = np.zeros((n, T))
-    est.bl = np.zeros(n)
-    est.c1 = np.zeros(n)
-    est.neurons_sn = np.ones(n)
-    est.g = np.full((n, 1), 0.9)
+    # distinct per component, so a value carried to the wrong component shows; the window and CaImAn's
+    # manual_merge do not read them, so the traces and merges do not depend on them
+    k = np.arange(n)
+    est.bl = 0.01 * k
+    est.c1 = 0.02 * k
+    est.neurons_sn = 1.0 + 0.1 * k
+    est.g = (0.9 - 0.005 * k)[:, None]
     est.idx_components = np.arange(n)
     est.idx_components_bad = np.array([], dtype=int)
     est.SNR_comp = np.arange(n) + 1.0
@@ -58,11 +63,14 @@ class App:
         bkapp(doc)
         self.doc = doc
         self.buttons = {}
+        self.sorting = []
         sources = []
         for root in doc.roots:
             for m in root.references():
                 if isinstance(m, Button):
                     self.buttons[m.label] = m
+                elif isinstance(m, RadioButtonGroup):
+                    self.sorting.append(m)
                 elif isinstance(m, ColumnDataSource) and "idx" in m.data:
                     sources.append(m)
         assert len(sources) == 1, len(sources)
@@ -75,6 +83,12 @@ class App:
     def click(self, label):  # whole chain
         b = self.buttons[label]
         b._trigger_event(ButtonClick(b))
+
+    def sort(self, label):
+        """A click on a sorting button: the browser sets 'active', then sends the click (legacy mode)."""
+        group, = [g for g in self.sorting if label in g.labels]
+        group.active = group.labels.index(label)
+        group._trigger_event(ButtonClick(group))
 
     def first(self, label):  # own callback only
         b = self.buttons[label]

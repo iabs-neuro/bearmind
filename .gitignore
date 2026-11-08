@@ -117,6 +117,7 @@ experiments/
 
 # Large data directories
 data/
+!tests/data/
 output/
 
 # ML training artifacts (large, regenerable)
