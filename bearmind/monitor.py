@@ -108,9 +108,9 @@ class SeriesView:
 
 # --- reading with a cache ---
 
-def _sig(f: Path):
+def _sig(f):
     try:
-        st = f.stat()
+        st = os.stat(f)
     except OSError:
         return None
     return st.st_mtime_ns, st.st_size
@@ -131,6 +131,9 @@ class RecordCache:
         self._rec_sig: dict[str, tuple] = {}  # sid -> sig of the file its record was read from
         self._cfg: dict[str, tuple] = {}  # sid -> (key, resolved config or the exception resolving raised)
         self._gate: dict[str, tuple] = {}  # sid -> (key, waits for manual inspection)
+        # (sid, mouse) -> its three config files as strings: building and hashing Paths for every cell of every
+        # refresh cost more than the stat calls themselves
+        self._cfg_files: dict[tuple, tuple] = {}
 
     def records(self, paths) -> tuple[list[SessionRecord], list[tuple[Path, str]]]:
         folder = paths.registry_file("x").parent
@@ -172,7 +175,11 @@ class RecordCache:
         # the three config files the session's settings come from (and its record file); an object id would
         # be reused by a later record and serve a stale value. `sigs` shares the stat calls within a refresh.
         sigs = {} if sigs is None else sigs
-        files = (paths.series_config, paths.mouse_config(rec.mouse), paths.session_config(rec.sid))
+        files = self._cfg_files.get((rec.sid, rec.mouse))
+        if files is None:
+            files = tuple(str(f) for f in (paths.series_config, paths.mouse_config(rec.mouse),
+                                           paths.session_config(rec.sid)))
+            self._cfg_files[(rec.sid, rec.mouse)] = files
         for f in files:
             if f not in sigs:
                 sigs[f] = _sig(f)
@@ -200,21 +207,19 @@ class RecordCache:
         sigs = {}  # the stat calls of one refresh are shared
         return runner.StageView(paths, resolve=lambda rec: self.resolve(paths, rec, sigs))
 
-    def _settings(self, paths, rec) -> tuple:
+    def gsig(self, paths, rec, sigs=None) -> int | None:
+        return _settings(self._safe_cfg(paths, rec, sigs))[0]
+
+    def preview_on(self, paths, rec, sigs=None) -> bool | None:
+        """The session's preview checkbox (preview.enabled); None when its config cannot be read. `sigs`: the
+        stat results shared by the calls of one refresh."""
+        return _settings(self._safe_cfg(paths, rec, sigs))[1]
+
+    def _safe_cfg(self, paths, rec, sigs=None):
         try:
-            cfg = self.resolve(paths, rec)
-            c = cfg["cnmf"]
-            # one flag (preview.enabled) drives both preview stages today, so mc_preview speaks for both
-            return c.get("gSig"), runner.side_enabled("mc_preview", cfg)
+            return self.resolve(paths, rec, sigs)
         except Exception:  # a broken config is the core's "cannot be scheduled", not the window's crash
-            return None, None
-
-    def gsig(self, paths, rec) -> int | None:
-        return self._settings(paths, rec)[0]
-
-    def preview_on(self, paths, rec) -> bool | None:
-        """The session's preview checkbox (preview.enabled); None when its config cannot be read."""
-        return self._settings(paths, rec)[1]
+            return None
 
     def problems(self, paths, records, view: runner.StageView | None = None) -> dict:
         """sid -> why the runner cannot schedule the session (runner.schedule_problems, the runner's own
@@ -240,6 +245,17 @@ class RecordCache:
             hit = (key, waits)
             self._gate[rec.sid] = hit
         return hit[1]
+
+
+def _settings(cfg) -> tuple:
+    """(gSig, preview checkbox) of a resolved config; (None, None) when there is none (it cannot be read)."""
+    if cfg is None:
+        return None, None
+    try:
+        # one flag (preview.enabled) drives both preview stages today, so mc_preview speaks for both
+        return cfg["cnmf"].get("gSig"), runner.side_enabled("mc_preview", cfg)
+    except Exception:  # a config that resolves but is not usable: the core reports it
+        return None, None
 
 
 # --- runner state ---
@@ -346,7 +362,7 @@ def _num(x) -> str:
     return f"{x:g}" if isinstance(x, float) else str(x)
 
 
-def _cell_text(rec, stage, st, cache, paths) -> str:
+def _cell_text(rec, stage, st, gsig) -> str:
     if stage == "crop":
         # width × height (as the mockup's 512×480): the box MC used once MC ran, the placed box before; both
         # are recorded as [top, left, height, width]
@@ -363,8 +379,7 @@ def _cell_text(rec, stage, st, cache, paths) -> str:
         v = m.get("max_shift_px")
         return "done" if v is None else f"{v:.1f} px"
     if stage == "thresholds":
-        g = cache.gsig(paths, rec)
-        return "done" if g is None else f"gSig {_num(g)}"
+        return "done" if gsig is None else f"gSig {_num(gsig)}"
     if stage == "cnmf":
         v = m.get("n_components")
         return "done" if v is None else f"{_num(v)} cells"
@@ -397,9 +412,10 @@ NO_LONGER_WAITS = ("the registry still says it waits for thresholds; the batch n
                    "next check")
 
 
-def _cell(rec, stage, cache, paths, human, alive, stale=(), first_stale=None) -> Cell:
-    """`human`: (waits for thresholds, waits for manual inspection); `alive`: the batch is running; `stale`: the
-    main stages DONE that the batch would redo, and `first_stale` the one it starts from (runner.StageView)."""
+def _cell(rec, stage, settings, human, alive, stale=(), first_stale=None) -> Cell:
+    """`settings`: (gSig, preview checkbox) of the session's config; `human`: (waits for thresholds, waits for
+    manual inspection); `alive`: the batch is running; `stale`: the main stages DONE that the batch would redo,
+    and `first_stale` the one it starts from (runner.StageView)."""
     title = STAGE_TITLE[stage]
     st = rec.stages.get(stage) or StageRecord()
     if rec.excluded:
@@ -410,10 +426,10 @@ def _cell(rec, stage, cache, paths, human, alive, stale=(), first_stale=None) ->
         # not coloured as a result: the batch replaces it; the old number stays readable in the tooltip
         level, text = "none", OUT_OF_DATE
         lines.insert(0, f"{OUT_OF_DATE}: the batch redoes {first_stale} first; old result: "
-                        f"{_cell_text(rec, stage, st, cache, paths)}")
+                        f"{_cell_text(rec, stage, st, settings[0])}")
     elif st.state is State.DONE:
         level = _worse([c.level for c in st.checks] + [a.level for a in _live_anomalies(rec, stage)])
-        text = _cell_text(rec, stage, st, cache, paths)
+        text = _cell_text(rec, stage, st, settings[0])
     elif st.state is State.FAILED:
         level, text = "error", "failed"
         lines.insert(0, _last_line(st.error) or "failed")
@@ -439,7 +455,7 @@ def _cell(rec, stage, cache, paths, human, alive, stale=(), first_stale=None) ->
         lines.append("waiting for manual inspection")
     if stage in _SIDE_OF:
         side = rec.stages.get(_SIDE_OF[stage]) or StageRecord()
-        off = side.state is State.PENDING and cache.preview_on(paths, rec) is False
+        off = side.state is State.PENDING and settings[1] is False
         lines.append(f"preview: {'off' if off else side.state.value}")
     if any(a.code == "cnmf_downsampled" for a in _live_anomalies(rec, stage)):
         lines.append(HINTS["cnmf_downsampled"])
@@ -497,8 +513,8 @@ def _warnings(rec, preview_on) -> list[WarningItem]:
     return out
 
 
-def _preview_if_failed(paths, rec, cache) -> bool | None:
-    return cache.preview_on(paths, rec) if any(
+def _preview_if_failed(rec, preview_on) -> bool | None:
+    return preview_on if any(
         s in rec.stages and rec.stages[s].state is State.FAILED for s in SIDE_STAGES) else None
 
 
@@ -611,10 +627,11 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     human = {r.sid: (actions.waits_for_thresholds(view, r), cache.gate_waits(paths, r)) for r in records}
     # sid -> DONE stages the batch would redo; a session that cannot be scheduled is red instead (it has none)
     stale = {r.sid: ([] if r.sid in problems else view.done_not_current(r)) for r in records}
+    settings = {r.sid: _settings(view.cfg(r)) for r in records}  # the configs the view resolved
     rows = []
     for r in records:
         first = view.first_not_current(r) if stale[r.sid] else None
-        cells = {s: _cell(r, s, cache, paths, human[r.sid], rs.alive, stale[r.sid], first) for s in STAGES}
+        cells = {s: _cell(r, s, settings[r.sid], human[r.sid], rs.alive, stale[r.sid], first) for s in STAGES}
         why = problems.get(r.sid)
         if why is not None:  # red like an unreadable record; the panel has no seventh kind
             cells = {s: _blocked(c, why) for s, c in cells.items()}
@@ -624,7 +641,7 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     live = [r for r in records if not r.excluded]
     waiting = {"thresholds": sum(human[r.sid][0] for r in live),
                "manual_inspection": sum(human[r.sid][1] for r in live)}
-    warnings = [w for r in records for w in _warnings(r, _preview_if_failed(paths, r, cache))]
+    warnings = [w for r in records for w in _warnings(r, _preview_if_failed(r, settings[r.sid][1]))]
     order = {s: i for i, s in enumerate(("",) + ALL_STAGES)}
     warnings.sort(key=lambda w: (w.level != "error", w.sid, order[w.stage]))
     rates = _rates(records, config.load_defaults().get("monitor", {}))

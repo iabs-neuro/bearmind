@@ -614,7 +614,8 @@ class MonitorTab(QWidget):
         config, a mouse or session config can override the series one); sessions with an unreadable config
         are left out."""
         records, _ = self._cache.records(self.paths)
-        vals = [self._cache.preview_on(self.paths, r) for r in records if not r.excluded]
+        sigs = {}  # one stat per config file for all sessions
+        vals = [self._cache.preview_on(self.paths, r, sigs) for r in records if not r.excluded]
         return [v for v in vals if v is not None]
 
     def _sync_previews(self) -> None:
