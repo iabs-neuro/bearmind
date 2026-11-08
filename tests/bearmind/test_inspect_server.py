@@ -37,7 +37,7 @@ from bokeh.models import Button, ColumnDataSource, Div
 from tornado.ioloop import IOLoop
 
 import bm_examinator
-from bearmind import actions, cli, config, inspect_server, scan
+from bearmind import actions, cli, config, inspect_server, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
@@ -574,6 +574,44 @@ def test_newer_save_skips_queued_side_files(series_est, monkeypatch):
     assert pd.read_csv(paths.inspection_dir(S1) / f"{S1}_traces.csv").shape[1] == 1 + 6
 
 
+def test_queued_side_files_kept_when_the_new_job_cannot_start(series_est, monkeypatch):
+    """N4: the earlier save's queued job is dropped only after the new one is queued: a new job that cannot be
+    queued leaves it."""
+    paths = series_est
+    started, release, written = threading.Event(), threading.Event(), []
+    real = bm_examinator.write_side_files
+
+    def gated(est, folder, base, sigma=3):
+        written.append([int(c) for c in bm_examinator.kept_for_side_files(est)])
+        if len(written) == 1:
+            started.set()
+            assert release.wait(60)
+        real(est, folder, base, sigma)
+
+    def cannot_queue(*args, **kwargs):
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    monkeypatch.setattr(bm_examinator, "write_side_files", gated)
+    try:
+        with running(paths) as srv, tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert started.wait(60)
+            locked(srv, page, lambda: delete_row(page.doc, 0))
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)  # queued behind the first
+            real_queue = bm_examinator.write_side_files_in_background
+            monkeypatch.setattr(bm_examinator, "write_side_files_in_background", cannot_queue)
+            locked(srv, page, lambda: delete_row(page.doc, 0))
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            monkeypatch.setattr(bm_examinator, "write_side_files_in_background", real_queue)
+            note = until(lambda: locked(srv, page, lambda: page.notes_div.visible and page.notes_div.text))
+            assert note == inspect_server.SIDE_FILES_FAILED.format(sid=S1, what="RuntimeError")
+            release.set()
+    finally:
+        release.set()
+    assert written == [list(range(8)), list(range(1, 8))]  # the second save's files were still written
+
+
 def test_closed_tab_is_freed(series_est, monkeypatch):
     """I2: after Save results the tab is closed and Bokeh discards its session: nothing of the server keeps the
     page, its document or its prepared session (hundreds of MB on an hour session)."""
@@ -680,6 +718,128 @@ def test_empty_lock_means_wait(tmp_path):
     t0 = time.monotonic()
     st = inspect_server.wait_ready(paths)  # a dead holder: nothing to wait for
     assert not st.alive and not st.starting and not st.available and time.monotonic() - t0 < 2
+
+
+def test_old_empty_lock_is_stale(tmp_path):
+    """N5: an empty lock nobody writes into (its holder died between emptying it and writing itself in) is not
+    waited for once it is older than a moment."""
+    paths = SeriesPaths(tmp_path / "s")
+    lock = paths.inspection_lock
+    lock.parent.mkdir(parents=True)
+    lock.write_text("", encoding="utf-8")
+    old = time.time() - 5
+    os.utime(lock, (old, old))
+    st = inspect_server.server_state(paths)
+    assert not st.starting and not st.alive and not st.available
+    t0 = time.monotonic()
+    inspect_server.wait_ready(paths)
+    assert time.monotonic() - t0 < 1
+
+
+def test_lock_left_by_a_stopped_server(series_est):
+    """N3: a reader holds the lock file while the server stops, so Windows cannot delete it: what is left says
+    "no holder", and nobody waits for it."""
+    paths = series_est
+    srv = inspect_server.InspectServer(paths.root, port=0, open_browser=False, idle_exit_s=600)
+    t = threading.Thread(target=srv.run, name="t4-inspect-server")
+    t.start()
+    try:
+        assert srv.started.wait(120)
+        with open(paths.inspection_lock, "rb"):  # a reader (Monitor, another command) at the wrong moment
+            srv.request_stop()
+            t.join(180)
+            assert not t.is_alive()
+        if paths.inspection_lock.exists():  # left behind (on Windows)
+            st = inspect_server.server_state(paths)
+            assert not st.alive and not st.stopping and not st.starting
+        t0 = time.monotonic()
+        assert not inspect_server.wait_ready(paths).available and time.monotonic() - t0 < 1
+        # a new server takes the series
+        with running(paths) as srv2:
+            assert inspect_server.server_state(paths).available and srv2.url
+    finally:
+        srv.request_stop()
+        t.join(180)
+        assert not t.is_alive()
+
+
+def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys):
+    """N5: a server that does not finish stopping: the inspect command waits once, for STOP_WAIT_S, then fails
+    naming the lock file (not a second wait, not a second server)."""
+    paths = series_est
+    monkeypatch.setattr(inspect_server, "STOP_WAIT_S", 1.0)
+
+    def must_not_serve(*args, **kwargs):
+        raise AssertionError("a server was started while another one holds the series")
+
+    monkeypatch.setattr(inspect_server, "serve", must_not_serve)
+    fh = runner._take_lock(paths.inspection_lock, {"url": None, "current": [], "prepared": None, "stopping": True})
+    assert fh is not None
+    try:
+        assert inspect_server.server_state(paths).stopping
+        capsys.readouterr()
+        t0 = time.monotonic()
+        assert cli.main(["inspect", str(paths.root), "--no-browser"]) == 3
+        assert time.monotonic() - t0 < 1.9
+        out = capsys.readouterr().out
+        assert "[FAILED]" in out and str(paths.inspection_lock) in out
+    finally:
+        runner._drop_lock(paths.inspection_lock, fh)
+
+
+def _session_id(srv, page):
+    with srv._lock:
+        return next(k for k, p in srv._pages.items() if p is page)
+
+
+def test_waits_for_a_page_that_never_connects(series_est, monkeypatch):
+    """N1: the session's other page never connects (its request was left while the page was built): the new
+    page shows "Opening" and gets the session once the other page's connect grace is over."""
+    monkeypatch.setattr(inspect_server, "CONNECT_GRACE_S", 3.0)
+    with running(series_est) as srv:
+        first = _get(srv, S1)  # holds S1, never connects
+        assert _opened(first, S1)
+        new = _get(srv, S1)
+        assert _divs(srv, new) == [inspect_server.OPENING.format(sid=S1)]
+        until(lambda: _opened(new, S1), timeout=15)
+        assert time.monotonic() - first.created >= 3.0
+
+
+def test_waiting_page_refused_when_the_other_connects(series_est, monkeypatch):
+    """N1: the other page connects while the new one waits: the new page is refused."""
+    monkeypatch.setattr(inspect_server, "CONNECT_GRACE_S", 3.0)
+    with running(series_est) as srv:
+        first = _get(srv, S1)
+        new = _get(srv, S1)
+        io = IOLoop(make_current=False)
+        _TAB_LOOPS.append(io.asyncio_loop)
+        asyncio.set_event_loop(io.asyncio_loop)
+        try:
+            # the browser of the first page connects late, within its grace
+            session = pull_session(session_id=_session_id(srv, first), url=srv.url + "/", io_loop=io)
+            try:
+                until(lambda: _divs(srv, new) == [inspect_server.SECOND_TAB.format(sid=S1)], timeout=10)
+                assert new.sid is None and _opened(first, S1)
+            finally:
+                session.close()
+        finally:
+            _TAB_LOOPS.pop()
+            asyncio.set_event_loop(_TAB_LOOPS[-1] if _TAB_LOOPS else None)
+            io.close(all_fds=True)
+
+
+def test_pages_not_kept_by_the_browser(series_est):
+    """N2: a page kept in the browser's back-forward cache keeps its websocket open after the tab has left it:
+    pages are sent with Cache-Control: no-store, and their script closes the sockets of a page put in that
+    cache and loads a page restored from it again."""
+    with running(series_est) as srv:
+        for url in (inspect_server.session_url(srv.url, S1), srv.url + "/"):
+            with urllib.request.urlopen(url, timeout=120) as r:
+                assert r.headers["Cache-Control"] == "no-store", url
+                body = r.read().decode("utf-8")
+            assert "pagehide" in body and "pageshow" in body and "event.persisted" in body, url
+            # before BokehJS: its websocket is made by the page script's WebSocket
+            assert body.index("pagehide") < body.index("static/js/bokeh"), url
 
 
 def test_page_texts_are_english(series_est, monkeypatch, capsys):

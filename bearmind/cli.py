@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -571,10 +572,19 @@ def cmd_inspect(args) -> int:
             webbrowser.open(inspect_server.session_url(state.url, args.sid) if args.sid else state.url + "/")
         return OK
 
-    # a server that starts or stops right now is waited for: never a second server, never a dead address
-    state = inspect_server.wait_ready(paths, on_stopping=stopping)
+    def not_ready(state) -> CliError:
+        who = f" (PID {state.pid})" if state.pid is not None else ""
+        return CliError(f"the inspection server of this series{who} did not finish starting or stopping in time; "
+                        f"its lock file: {paths.inspection_lock}; repeat the command later", BUSY)
+
+    # A server that starts or stops right now is waited for: never a second server, never a dead address. One
+    # wait in all, also when another command takes the series in between.
+    deadline = time.monotonic() + inspect_server.STOP_WAIT_S
+    state = inspect_server.wait_ready(paths, on_stopping=stopping, deadline=deadline)
     if state.available:
         return running(state)
+    if state.starting or state.stopping:
+        raise not_ready(state)
     # the server draws nothing with matplotlib; a Qt backend would load PySide6 into it (as for the runner)
     os.environ.setdefault("MPLBACKEND", "Agg")
     try:
@@ -586,11 +596,10 @@ def cmd_inspect(args) -> int:
     if code != BUSY:
         return code
     # another inspect command started the series' server between the look above and this start
-    state = inspect_server.wait_ready(paths, on_stopping=stopping)
+    state = inspect_server.wait_ready(paths, on_stopping=stopping, deadline=deadline)
     if state.available:
         return running(state)
-    raise CliError("an inspection server of this series is starting or stopping; repeat the command in a moment",
-                   BUSY)
+    raise not_ready(state)
 
 
 def _port(value: str) -> int:

@@ -42,6 +42,7 @@ from bokeh.layouts import column, row
 from bokeh.models import Button, Div
 from bokeh.server.server import Server
 from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado.web import OutputTransform
 
 from bearmind import actions, config, naming, provenance, registry, runner
 from bearmind.paths import SeriesPaths
@@ -91,6 +92,9 @@ CHECK_UNUSED_MS = 5_000
 SIDE_FILES_WAIT_S = 600  # a stopping server waits this long for the side files it queued
 URL_WAIT_S = 10.0  # a server that holds the lock writes its address right after it listens
 STOP_WAIT_S = SIDE_FILES_WAIT_S + 60  # how long the inspect command waits for a stopping server to end
+# A lock that cannot be read is being written by its new holder (it empties the file, then writes itself in, at
+# once); one older than this was left by a holder that died in between, and is not waited for.
+UNREADABLE_LOCK_STALE_S = 2.0
 # A reload asks for the new page while the old page's websocket is still open (it closes a moment later): a
 # session held by another tab is asked for again after this long, and refused only if that tab is still there.
 RETRY_OPEN_MS = 1500
@@ -199,7 +203,11 @@ def server_state(paths) -> ServerState:
     before opening its address; starting and stopping mean "look again shortly" (wait_ready)."""
     info = _lock_info(paths.inspection_lock)
     if info is None:
-        return ServerState(alive=False, url=None, pid=None, starting=True)
+        try:
+            age = time.time() - paths.inspection_lock.stat().st_mtime
+        except OSError:
+            age = 0.0  # gone or held right now: look again
+        return ServerState(alive=False, url=None, pid=None, starting=age < UNREADABLE_LOCK_STALE_S)
     pid, url, cur, prep = info.get("pid"), info.get("url"), info.get("current"), info.get("prepared")
     alive = _same_process(pid, info.get("create_time"))
     url = url if isinstance(url, str) else None
@@ -210,12 +218,14 @@ def server_state(paths) -> ServerState:
                        starting=alive and url is None and not stopping, stopping=stopping)
 
 
-def wait_ready(paths, start_timeout: float = URL_WAIT_S, stop_timeout: float = STOP_WAIT_S,
-               on_stopping=None) -> ServerState:
+def wait_ready(paths, start_timeout: float | None = None, stop_timeout: float | None = None,
+               on_stopping=None, deadline: float | None = None) -> ServerState:
     """The server state once it is settled: available, or no server at all. A starting server is waited for
-    start_timeout, a stopping one (it ends once the side files of its last saves are written) stop_timeout;
-    on_stopping(state) is called once before waiting for a stopping one. After the time it returns the state
-    as it is then (not available)."""
+    start_timeout (URL_WAIT_S), a stopping one (it ends once the side files of its last saves are written)
+    stop_timeout (STOP_WAIT_S), never past deadline (time.monotonic()); on_stopping(state) is called once
+    before waiting for a stopping one. After the time it returns the state as it is then (not available)."""
+    start_timeout = URL_WAIT_S if start_timeout is None else start_timeout
+    stop_timeout = STOP_WAIT_S if stop_timeout is None else stop_timeout
     t0 = time.monotonic()
     told = False
     while True:
@@ -225,7 +235,8 @@ def wait_ready(paths, start_timeout: float = URL_WAIT_S, stop_timeout: float = S
         if st.stopping and not told and on_stopping is not None:
             on_stopping(st)
             told = True
-        if time.monotonic() - t0 >= (stop_timeout if st.stopping else start_timeout):
+        limit = t0 + (stop_timeout if st.stopping else start_timeout)
+        if time.monotonic() >= (limit if deadline is None else min(limit, deadline)):
             return st
         time.sleep(0.1)
 
@@ -375,13 +386,19 @@ class _Page:
             return None
         return getattr(ctx, "session", None) if ctx is not None else None
 
-    def is_open(self) -> bool:
-        """A browser shows this page: connected now, or loading it (not connected yet, not for long)."""
+    def holding(self) -> str | None:
+        """How a browser shows this page: "connected" now, "loading" (never connected yet, for at most
+        CONNECT_GRACE_S since it was asked for), or None (the tab left it)."""
         s = self.session()
         if s is not None and not s.destroyed and s.connection_count > 0:
             self.connected = True
-            return True
-        return not self.connected and time.monotonic() - self.created < CONNECT_GRACE_S
+            return "connected"
+        if not self.connected and time.monotonic() - self.created < CONNECT_GRACE_S:
+            return "loading"
+        return None
+
+    def is_open(self) -> bool:
+        return self.holding() is not None
 
     # -- content --
     def show_message(self, text: str, title: str = INDEX_TITLE) -> None:
@@ -407,8 +424,9 @@ class _Page:
         # the name comes from the address bar: a session name, never a path into another folder
         if not _SID_RE.fullmatch(sid) or not srv.paths.registry_file(sid).is_file():
             return self.show_message(UNKNOWN.format(sid=sid))
-        if not srv.claim(self, sid):
-            # most often a reload: the browser asks for the new page while the old page is still connected
+        if srv.claim_status(self, sid) != "claimed":
+            # most often a reload: the browser asks for the new page while the old page is still connected; or
+            # the other page was left while it loaded and will never connect
             self.show_message(OPENING.format(sid=sid), TITLE.format(sid=sid))
             self.doc.add_timeout_callback(partial(self._claim_again, sid), RETRY_OPEN_MS)
             return
@@ -420,12 +438,16 @@ class _Page:
         self.show(sid, prep)
 
     def _claim_again(self, sid: str) -> None:
-        """RETRY_OPEN_MS after a refused claim (under the document lock): a tab still holding the session now is
-        another tab."""
-        if not self.server.claim(self, sid):
+        """RETRY_OPEN_MS after a refused claim (under the document lock). A tab connected to the session now is
+        another tab; a page that has not connected yet is waited for until it connects (then refused) or its
+        CONNECT_GRACE_S is over (then the session is taken)."""
+        status = self.server.claim_status(self, sid)
+        if status == "connected":
             self.show_message(SECOND_TAB.format(sid=sid))
-            return
-        self.doc.add_next_tick_callback(without_document_lock(partial(self._take, sid)))
+        elif status == "loading":
+            self.doc.add_timeout_callback(partial(self._claim_again, sid), RETRY_OPEN_MS)
+        else:
+            self.doc.add_next_tick_callback(without_document_lock(partial(self._take, sid)))
 
     def _take(self, sid: str) -> None:
         """Without the document lock: the session may still be prepared."""
@@ -703,17 +725,29 @@ class InspectServer:
         return (later or order or [None])[0]
 
     # -- tabs --
-    def claim(self, page, sid: str, next_: bool = False) -> bool:
-        """page holds sid unless another open tab does (False then)."""
+    def claim_status(self, page, sid: str, next_: bool = False) -> str:
+        """page holds sid ("claimed") unless another page does: "connected" when one of them is connected,
+        "loading" when they have only not connected yet (Page.holding). The check and the claim are one step."""
         with self._lock:
+            loading = False
             for p in self._pages.values():
-                if p is not page and sid in (p.sid, p.claim) and p.is_open():
-                    return False
+                if p is page or sid not in (p.sid, p.claim):
+                    continue
+                state = p.holding()
+                if state == "connected":
+                    return "connected"
+                loading = loading or state == "loading"
+            if loading:
+                return "loading"
             if next_:
                 page.claim = sid
             else:
                 page.sid = sid
-            return True
+            return "claimed"
+
+    def claim(self, page, sid: str, next_: bool = False) -> bool:
+        """page holds sid unless another open tab does (False then)."""
+        return self.claim_status(page, sid, next_) == "claimed"
 
     def release(self, page) -> None:
         with self._lock:
@@ -735,6 +769,7 @@ class InspectServer:
         """A browser asked for a page. Bokeh builds documents in a worker thread, so a slow preparation does not
         hold up the other tabs. Never a dead page: every failure becomes a message."""
         page = _Page(self, doc)
+        doc.template = _page_template()
         ctx = doc.session_context
         key = ctx.id if ctx is not None else str(id(page))
         with self._lock:
@@ -824,16 +859,16 @@ class InspectServer:
         bm = _bm()
         with self._lock:
             earlier = self._side_last.get(sid)
-            if earlier is not None and earlier.cancel():
-                log.info("%s: side files of an earlier save dropped, this save replaces them", sid)
             try:
                 future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_")
             except Exception as e:  # the executor is shut down: the result and the decision stand
                 log.exception("%s: side files not queued", sid)
                 page.add_note(SIDE_FILES_FAILED.format(sid=sid, what=page_error(e)))
-                return
+                return  # the earlier save's job stays: its files are the newest that will be written
             self._side_futures.add(future)
             self._side_last[sid] = future
+            if earlier is not None and earlier.cancel():
+                log.info("%s: side files of an earlier save dropped, this save replaces them", sid)
         # the page through a weak reference: a finished Future keeps its callbacks, and a closed tab's page holds
         # its document and the session's data
         future.add_done_callback(partial(self._side_files_done, weakref.ref(page), sid))
@@ -888,6 +923,9 @@ class InspectServer:
                     return code
                 return self._serve()
             finally:
+                # On Windows the file cannot be deleted while a reader has it open, and it would stay with this
+                # (live) process in it: "no holder" first, so nobody waits for it
+                self._rewrite_lock(pid=None, create_time=None, url=None, stopping=False, current=[], prepared=None)
                 self._lock_fh = None
                 runner._drop_lock(self.paths.inspection_lock, fh)
         finally:
@@ -922,7 +960,9 @@ class InspectServer:
                 return Server({"/": self._make_doc}, io_loop=io_loop, port=port, address="localhost",
                               allow_websocket_origin=[f"localhost:{port}", f"127.0.0.1:{port}"],
                               check_unused_sessions_milliseconds=CHECK_UNUSED_MS,
-                              unused_session_lifetime_milliseconds=UNUSED_SESSION_MS)
+                              unused_session_lifetime_milliseconds=UNUSED_SESSION_MS,
+                              # passed on to Tornado's Application: every response goes through them
+                              transforms=[_NoStorePages])
             except OSError as e:
                 if want or attempt == 4:
                     raise OSError(f"cannot listen on port {port}") from e
@@ -1025,6 +1065,46 @@ class InspectServer:
             self._lock_len = max(self._lock_len, len(data))
         except OSError:
             log.warning("inspection lock not updated", exc_info=True)
+
+
+class _NoStorePages(OutputTransform):
+    """Cache-Control: no-store on the HTML pages. A page kept in the browser's back-forward cache keeps its
+    websocket, and with it its session, open after the tab has left it: the session would stay held (a second
+    tab refused, Next skipping it) and the server would never be idle."""
+
+    def transform_first_chunk(self, status_code, headers, chunk, finishing):
+        if headers.get("Content-Type", "").startswith("text/html"):
+            headers["Cache-Control"] = "no-store"
+        return status_code, headers, chunk
+
+
+# Before BokehJS, which opens the websocket: a browser that keeps a page in its back-forward cache anyway (Chrome
+# may, despite no-store) gets its sockets closed when the page is put there, and a page shown again from there
+# is loaded anew, so it asks for its session again.
+_PAGE_SCRIPT = """<script>
+(function () {
+  const Native = window.WebSocket, sockets = [];
+  window.WebSocket = class extends Native {
+    constructor(...args) { super(...args); sockets.push(this); }
+  };
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) for (const s of sockets) { try { s.close(); } catch (e) { } }
+  });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
+})();
+</script>"""
+
+_template = None
+
+
+def _page_template():
+    """Bokeh's page with _PAGE_SCRIPT in its head, before Bokeh's own scripts."""
+    global _template
+    if _template is None:
+        from bokeh.core.templates import get_env
+        _template = get_env().from_string('{% extends "file.html.jinja" %}{% block preamble %}{% raw %}'
+                                          + _PAGE_SCRIPT + '{% endraw %}{% endblock %}')
+    return _template
 
 
 def _free_port() -> int:
