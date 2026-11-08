@@ -71,6 +71,7 @@ _WARNING_TEXT = {
                                 "Restore the session folder and Rescan.",
     "no_mismatch_error": "{sid} has no frame/timestamp mismatch error; the decision was recorded anyway.",
     "already_confirmed": "{sid}: the stitch is already confirmed; nothing was recorded.",
+    "config_unreadable": "{sid}: its config cannot be read, so it was left alone.",
 }
 
 

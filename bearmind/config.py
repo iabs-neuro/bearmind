@@ -15,7 +15,20 @@ _DEFAULTS = Path(__file__).with_name("defaults.yaml")
 
 
 class ConfigError(ValueError):
-    """A config file that cannot be parsed; the message starts with the file."""
+    """A config file that cannot be parsed; the message starts with the file. `path` and `first_line` (the first
+    line of the parser's message, with its line number) let a caller name the file and the problem in a few
+    words; both are empty on an instance rebuilt from its message alone (unpickled)."""
+
+    def __init__(self, message: str, path=None, first_line: str = ""):
+        super().__init__(message)
+        self.path, self.first_line = path, first_line
+
+
+def _yaml_first_line(e) -> str:
+    first = (str(e).splitlines() or [""])[0].strip()
+    # where the broken construct starts (a flow mapping left open), else where the parser stopped
+    mark = getattr(e, "context_mark", None) or getattr(e, "problem_mark", None)
+    return f"{first} (line {mark.line + 1})" if mark is not None else first
 
 
 _PARSED: dict = {}  # path -> (text, parsed): the runner resolves every session's config each loop
@@ -34,7 +47,7 @@ def _read_yaml(path) -> dict:
         try:
             parsed = yaml.safe_load(text) or {}
         except yaml.YAMLError as e:  # the parser names only "<unicode string>": the operator needs the file
-            raise ConfigError(f"{path}: {' '.join(str(e).split())}") from e
+            raise ConfigError(f"{path}: {' '.join(str(e).split())}", path, _yaml_first_line(e)) from e
         hit = (text, parsed)
         _PARSED[key] = hit
     return copy.deepcopy(hit[1])

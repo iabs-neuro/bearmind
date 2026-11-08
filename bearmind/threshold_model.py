@@ -255,13 +255,25 @@ def start_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[i
     return g, min_corr, min_pnr, source, missing_gsig_note(item, maps, source)
 
 
+CORR_DECIMALS, PNR_DECIMALS = 2, 1  # the slider steps of the window: 0.01 and 0.1
+
+
+def value_text(x, decimals: int) -> str:
+    """x with the slider step's decimals, or with all of its own when it lies between steps (an untouched
+    suggestion is written exactly, so the window shows it exactly)."""
+    x = float(x)
+    short = f"{x:.{decimals}f}"
+    return short if float(short) == x else repr(x)
+
+
 def source_text(source: str, item: ThresholdItem) -> str:
     if source == "chosen":
         return "Your earlier choice"
     if source == "suggested" and item.suggested:
         s = item.suggested
         return (f"Autotune suggestion ({s.get('method', '?')}): gSig {int(s['gSig'])}, "
-                f"min_corr {s['min_corr']:g}, min_pnr {float(s['min_pnr']):.1f}")
+                f"min_corr {value_text(s['min_corr'], CORR_DECIMALS)}, "
+                f"min_pnr {value_text(s['min_pnr'], PNR_DECIMALS)}")
     return "No suggestion — start values from the config"
 
 

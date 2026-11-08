@@ -385,15 +385,31 @@ def cmd_status(args) -> int:
     return OK
 
 
+_CHOICE_LOG = {
+    actions.CHOICE_NOT_LOGGED: "[WARN] {sid}: the choice log cannot be written (open in another program?); the row "
+                               "was kept in {pending}",
+    actions.CHOICE_ONLY_IN_LOG: "[WARN] {sid}: neither the choice log nor {pending} can be written; the row is in "
+                                "the warning printed above",
+}
+
+
+def _say_choice_log(paths, res) -> None:
+    pending = paths.threshold_choices_csv.with_name(actions.PENDING_CHOICES)
+    for sid, code in res.warnings:
+        if code in _CHOICE_LOG:
+            _say(_CHOICE_LOG[code].format(sid=sid, pending=pending))
+
+
 def cmd_thresholds(args) -> int:
     paths = _series(args.series)
     recs = _records(paths)
     if args.action == "set":
         _check_sids(recs, [args.sid])
         _warn_excluded(recs[args.sid])
-        actions.set_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr, who=_who(args),
-                               source="cli")
+        res = actions.set_thresholds(paths, args.sid, args.gsig, args.min_corr, args.min_pnr, who=_who(args),
+                                     source="cli")
         _say(f"[OK] {args.sid}: gSig={args.gsig} min_corr={args.min_corr} min_pnr={args.min_pnr}")
+        _say_choice_log(paths, res)
         _say(_next_hint(paths))
         return OK
     if args.sessions:
@@ -423,6 +439,7 @@ def cmd_thresholds(args) -> int:
         _warn_excluded(recs[sid])
         sug = recs[sid].stages["thresholds"].metrics["suggested"]
         _say(f"[OK] {sid}: gSig={sug['gSig']} min_corr={sug['min_corr']} min_pnr={sug['min_pnr']}")
+    _say_choice_log(paths, res)
     if code != 1 or len(sids) > 1:
         _say(_next_hint(paths))
     return code

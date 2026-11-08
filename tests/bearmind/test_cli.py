@@ -159,6 +159,17 @@ def test_thresholds_accept_suggested(series, capsys):
     assert f"[FAILED] {S3}: no threshold suggestion" in capsys.readouterr().out
 
 
+def test_thresholds_set_warns_when_the_choice_log_is_held(series, capsys):
+    """B2: the thresholds are written and the command succeeds; it says where the row of the choice log went."""
+    series.paths.threshold_choices_csv.mkdir(parents=True)  # opening it for append fails, as Excel makes it
+    assert _main("thresholds", series.root, "set", S1, "--gsig", 5, "--min-corr", 0.7, "--min-pnr", 9) == 0
+    out = capsys.readouterr().out
+    assert f"[OK] {S1}: gSig=5" in out and out.isascii()
+    assert f"[WARN] {S1}: the choice log cannot be written (open in another program?); the row was kept in " in out
+    assert "threshold_choices.pending.csv" in out
+    assert _yaml(series.paths.session_config(S1))["cnmf"] == {"gSig": 5, "min_corr": 0.7, "min_pnr": 9.0}
+
+
 def test_thresholds_accept_suggested_sessions(series):
     sug = {"gSig": 3, "min_corr": 0.6, "min_pnr": 7.0, "method": "auto"}
     _set(series.paths, S2, "thresholds", State.DONE, suggested=sug)

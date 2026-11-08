@@ -1,5 +1,6 @@
 """Actions module: codes, unknown sessions raise before any write, same effects as the CLI commands."""
 import csv
+import logging
 import re
 import threading
 
@@ -494,3 +495,108 @@ def test_set_excluded_include_not_found_stays_excluded(series):
     update_record(series.paths, S1, lambda r: r.anomalies.append(Anomaly("not_found_in_scan", "error", "gone")))
     res = actions.set_excluded(series.paths, [S1], False, "ann")
     assert res.warnings == [(S1, "not_found_stays_excluded")]
+
+
+# --- phase 4 final fix wave, B: writes that never lie ---
+
+def _broken_yaml(path, text="gate: {enabled: false\n"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_mouse_plan_with_a_broken_config_layer_never_overwrites(series):
+    """B1 (review probe test_probe_mouse_plan_with_broken_series_yaml): a config layer that cannot be read means
+    "cannot tell", never "no thresholds": the session is listed as unreadable and left alone, so a typo in the
+    series config cannot let the mouse write overwrite the session's own thresholds."""
+    p = series.paths
+    actions.set_thresholds(p, S2, 3, 0.7, 6.0)  # S2 has its own choice in its session config
+    _set(p, S2, "cnmf", State.DONE)
+    p.series_config.write_text(p.series_config.read_text(encoding="utf-8") + "\ngate: {enabled: false\n",
+                               encoding="utf-8")  # a hand edit with a typo
+    plan = actions.mouse_plan(p, "NOF_H01")
+    assert (plan.will_get, plan.keep_own, plan.cnmf_done) == ([], [], [])
+    assert [sid for sid, _ in plan.unreadable] == [S1, S2]
+    n = len(p.series_config.read_text(encoding="utf-8").splitlines())  # the typo is on the last line
+    assert dict(plan.unreadable)[S2] == f"_bearmind/config/series.yaml: while parsing a flow mapping (line {n})"
+    before = p.session_config(S2).read_text(encoding="utf-8")
+    res = actions.apply_to_mouse(p, "NOF_H01", 4, 0.85, 8, "ann")
+    assert res.ok == [] and res.failed == {} and res.warnings == [(S1, "config_unreadable"), (S2, "config_unreadable")]
+    assert p.session_config(S2).read_text(encoding="utf-8") == before and not p.session_config(S1).exists()
+    assert len(_choices(p)) == 1  # the earlier choice of S2 only
+
+
+def test_thresholds_choice_tells_no_choice_from_cannot_tell(series):
+    p = series.paths
+    recs = actions._records(p)
+    assert actions.thresholds_choice(p, recs[S1]) == (None, None)
+    actions.set_thresholds(p, S1, 3, 0.7, 6.0)
+    assert actions.thresholds_choice(p, recs[S1]) == ({"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}, None)
+    _broken_yaml(p.mouse_config("NOF_H01"), "cnmf: [unclosed\n")
+    values, why = actions.thresholds_choice(p, recs[S1])
+    assert values is None and why.startswith("_bearmind/config/mice/NOF_H01.yaml: ")
+
+
+def _pending(paths):
+    return paths.threshold_choices_csv.with_name("threshold_choices.pending.csv")
+
+
+def test_unwritable_choice_log_keeps_the_row_pending(series):
+    """B2: the choice log held by another program (here a folder in its place, which opening for append refuses
+    like Excel does): the thresholds and the decision are written, the row waits in the pending file, and the
+    result says so instead of raising after the write."""
+    p = series.paths
+    p.threshold_choices_csv.mkdir(parents=True)
+    res = actions.set_thresholds(p, S1, 4, 0.85, 8, who="ann", source="window")
+    assert res.ok == [S1] and res.warnings == [(S1, "choice_log_not_written")]
+    assert yaml.safe_load(p.session_config(S1).read_text(encoding="utf-8"))["cnmf"]["min_corr"] == 0.85
+    assert ("thresholds", "gSig=4 min_corr=0.85 min_pnr=8", "ann") in _decisions(p, S1)
+    with open(_pending(p), encoding="utf-8", newline="") as f:
+        (row,) = list(csv.DictReader(f))
+    assert (row["sid"], row["who"], row["source"], row["min_corr"]) == (S1, "ann", "window", "0.85")
+
+
+def test_pending_choices_are_flushed_first_in_order(series):
+    p = series.paths
+    p.threshold_choices_csv.mkdir(parents=True)
+    actions.set_thresholds(p, S1, 4, 0.85, 8)
+    actions.set_thresholds(p, S2, 5, 0.8, 9)
+    p.threshold_choices_csv.rmdir()  # the other program let the log go
+    res = actions.set_thresholds(p, S3, 6, 0.75, 10)
+    assert res.warnings == []
+    assert [r["sid"] for r in _choices(p)] == [S1, S2, S3] and [r["gSig"] for r in _choices(p)] == ["4", "5", "6"]
+    lines = p.threshold_choices_csv.read_text(encoding="utf-8").splitlines()
+    assert sum(ln.startswith("sid,") for ln in lines) == 1 and not _pending(p).exists()
+
+
+def test_choice_row_goes_to_the_log_when_the_pending_file_fails_too(series, caplog):
+    p = series.paths
+    p.threshold_choices_csv.mkdir(parents=True)
+    _pending(p).mkdir(parents=True)
+    with caplog.at_level(logging.WARNING, logger="bearmind"):
+        res = actions.set_thresholds(p, S1, 4, 0.85, 8, who="ann")
+    assert res.ok == [S1] and res.warnings == [(S1, "choice_log_only_in_log")]
+    warned = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(S1 in m and "'min_corr': 0.85" in m and "'who': 'ann'" in m for m in warned)
+
+
+def test_apply_to_mouse_collects_failures_and_goes_on(series, monkeypatch):
+    """B2: one session that cannot be written is a failure in the result; the other sessions are still written."""
+    from pathlib import Path
+
+    from bearmind import config
+
+    p = series.paths
+    real = config.update_yaml
+
+    def flaky(path, patch):
+        if Path(path) == p.session_config(S1):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, patch)
+
+    monkeypatch.setattr(config, "update_yaml", flaky)
+    res = actions.apply_to_mouse(p, "NOF_H01", 4, 0.85, 8, "ann")
+    assert res.ok == [S2] and list(res.failed) == [S1]
+    code, detail = res.failed[S1]
+    assert code == "write_failed" and "Permission denied" in detail
+    assert yaml.safe_load(p.session_config(S2).read_text(encoding="utf-8"))["cnmf"]["gSig"] == 4
+    assert actions.failure_text(code, detail).startswith("The write failed: ")

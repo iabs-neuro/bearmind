@@ -203,6 +203,20 @@ def read_text(path, tries: int = 5, step: float = 0.05) -> str:
             time.sleep(step)
 
 
+def append_text(path, text: str, tries: int = 5, step: float = 0.05) -> None:
+    """Append UTF-8 text (no newline translation), retried briefly: on Windows a file another process has open
+    refuses writes with PermissionError, sometimes only for a moment. A file Excel holds stays refused."""
+    for i in range(tries):
+        try:
+            with open(path, "a", encoding="utf-8", newline="") as fh:
+                fh.write(text)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(step)
+
+
 def move(src, dst) -> None:
     """os.replace; across drives (temp folder on C:, series elsewhere) copy to <dst>.partial, then replace."""
     src, dst = Path(src), Path(dst)

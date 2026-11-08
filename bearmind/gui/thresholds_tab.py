@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QLocale, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QDoubleSpinBox, QGridLayout, QHBoxLayout,
                                QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
@@ -30,6 +30,17 @@ CNMF_DONE_ASK = ("CNMF-E of {sid} is already done. With the new thresholds it wi
                  "inspection will be needed again. Write?")
 CNMF_RUNNING_ASK = ("CNMF-E of {sid} is running with the old thresholds. It will run again with the new ones, and "
                     "manual inspection will be needed again. Write?")
+# the gate is disabled in the session's resolved config: a new CNMF-E needs no manual inspection
+CNMF_DONE_ASK_NO_GATE = "CNMF-E of {sid} is already done. With the new thresholds it will be recomputed. Write?"
+CNMF_RUNNING_ASK_NO_GATE = ("CNMF-E of {sid} is running with the old thresholds. It will run again with the new "
+                            "ones. Write?")
+CHOICE_LOG_TEXT = {
+    actions.CHOICE_NOT_LOGGED: "Thresholds written. The choice log is open in another program; the row was kept in "
+                               "threshold_choices.pending.csv.",
+    actions.CHOICE_ONLY_IN_LOG: "Thresholds written. The choice log is open in another program, and "
+                                "threshold_choices.pending.csv cannot be written either; the row was written to the "
+                                "warning log (gui.log).",
+}
 ALL_HAVE = "All sessions have thresholds."
 NO_SESSIONS = "No sessions in this series yet. Scan the series in the Scan tab."
 CORR_STEPS = 100  # slider units per 1.0: min_corr moves in steps of 0.01
@@ -74,6 +85,31 @@ def _rgb_image(rgb: np.ndarray) -> QImage:
 
 def _grey_rgb(img: np.ndarray) -> np.ndarray:
     return np.repeat(tm.display_u8(img)[..., None], 3, axis=2)
+
+
+class _NumberBox(QDoubleSpinBox):
+    """A threshold's spin box. The C locale: a dot whatever the Windows locale (a Russian one took only a comma and
+    turned a typed "12.5" into 12.0), as everywhere else in the window. It shows the slider step's decimals, or
+    all of an exact start value that lies between steps (an untouched suggestion), which is what Accept writes."""
+
+    def __init__(self, shown: int):
+        super().__init__()
+        self._shown = shown
+        self.setLocale(QLocale.c())
+        self.setDecimals(6)  # the value is rounded to these: an exact start value must survive them
+
+    def textFromValue(self, value: float) -> str:
+        whole, _, frac = f"{value:.6f}".rstrip("0").partition(".")
+        return f"{whole}.{frac.ljust(self._shown, '0')}"
+
+
+def _values_text(c: float, p: float) -> str:
+    return f"min_corr {tm.value_text(c, tm.CORR_DECIMALS)}, min_pnr {tm.value_text(p, tm.PNR_DECIMALS)}"
+
+
+def _gate_on(cfg: dict) -> bool:
+    """The rule of runner.stage_params for the gate: enabled unless the config says otherwise."""
+    return bool((cfg.get("gate") or {}).get("enabled", True))
 
 
 def _window_text(error: str) -> str:
@@ -145,6 +181,7 @@ class ThresholdsTab(QWidget):
         self._source = ""
         self._note = ""
         self._g: int | None = None
+        self._exact: dict[str, float] = {}  # "corr" / "pnr" -> start value kept exactly until that control moves
         self._min_blob_px = 2
         self._base: dict[str, np.ndarray] = {}  # "corr" / "pnr" -> grey RGB of the selected gSig
         self._images: dict[str, QImage] = {}  # the same with the red mask, at full resolution
@@ -240,11 +277,13 @@ class ThresholdsTab(QWidget):
         top.setStretchFactor(1, 2)
         lay.addWidget(top, 1)
         self.min_corr_slider.valueChanged.connect(
-            lambda v: self._guarded(self._on_slider, self.min_corr_slider, self.min_corr_spin, CORR_STEPS, v))
+            lambda v: self._guarded(self._on_slider, "corr", self.min_corr_slider, self.min_corr_spin, CORR_STEPS, v))
         self.min_pnr_slider.valueChanged.connect(
-            lambda v: self._guarded(self._on_slider, self.min_pnr_slider, self.min_pnr_spin, PNR_STEPS, v))
-        self.min_corr_spin.valueChanged.connect(lambda x: self.min_corr_slider.setValue(round(x * CORR_STEPS)))
-        self.min_pnr_spin.valueChanged.connect(lambda x: self.min_pnr_slider.setValue(round(x * PNR_STEPS)))
+            lambda v: self._guarded(self._on_slider, "pnr", self.min_pnr_slider, self.min_pnr_spin, PNR_STEPS, v))
+        self.min_corr_spin.valueChanged.connect(
+            lambda x: self._guarded(self._on_spin, "corr", self.min_corr_slider, self.min_corr_spin, CORR_STEPS, x))
+        self.min_pnr_spin.valueChanged.connect(
+            lambda x: self._guarded(self._on_spin, "pnr", self.min_pnr_slider, self.min_pnr_spin, PNR_STEPS, x))
         for slider in (self.min_corr_slider, self.min_pnr_slider):
             slider.sliderReleased.connect(lambda: self._guarded(self._update_numbers))
 
@@ -298,8 +337,7 @@ class ThresholdsTab(QWidget):
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(0, round(top * steps))
         slider.setPageStep(5 if steps == CORR_STEPS else 10)
-        spin = QDoubleSpinBox()
-        spin.setDecimals(decimals)
+        spin = _NumberBox(decimals)
         spin.setSingleStep(1 / steps)
         spin.setRange(0.0, top)
         spin.setKeyboardTracking(False)  # typing "0.85" must not jump the slider to 0, then 0.8
@@ -612,13 +650,15 @@ class ThresholdsTab(QWidget):
         self.min_pnr_spin.blockSignals(False)
 
     def _put(self, min_corr: float, min_pnr: float) -> None:
-        """Slider and spin box values without the change handlers (the caller updates the pictures)."""
-        for slider, spin, steps, x in ((self.min_corr_slider, self.min_corr_spin, CORR_STEPS, min_corr),
-                                       (self.min_pnr_slider, self.min_pnr_spin, PNR_STEPS, min_pnr)):
+        """Slider and spin box values without the change handlers (the caller updates the pictures). A spin box
+        shows the exact start value while it is kept (_exact), else the slider's."""
+        for name, slider, spin, steps, x in (
+                ("corr", self.min_corr_slider, self.min_corr_spin, CORR_STEPS, min_corr),
+                ("pnr", self.min_pnr_slider, self.min_pnr_spin, PNR_STEPS, min_pnr)):
             slider.blockSignals(True)
             slider.setValue(round(x * steps))
             slider.blockSignals(False)
-            self._sync_spin(spin, slider.value() / steps)
+            self._sync_spin(spin, self._exact.get(name, slider.value() / steps))
 
     @staticmethod
     def _sync_spin(spin: QDoubleSpinBox, x: float) -> None:
@@ -640,9 +680,13 @@ class ThresholdsTab(QWidget):
         self.maps_title.setText(f"Correlation and PNR, gSig {g}")
 
     def _apply(self, g: int, min_corr: float, min_pnr: float) -> None:
+        """Start values (the session's start, Reset, maps replaced under kept values): kept exactly until the
+        person moves that control, so an untouched Accept writes what the source line says, as CLI
+        accept-suggested does, even between two slider steps."""
         for w in (self.min_corr_slider, self.min_pnr_slider, self.min_corr_spin, self.min_pnr_spin):
             w.setEnabled(True)
         self._select_gsig(g, min_pnr)
+        self._exact = {"corr": float(min_corr), "pnr": float(min_pnr)}
         self._put(min_corr, min_pnr)
         self._update_overlay()
         self._update_numbers()
@@ -651,7 +695,7 @@ class ThresholdsTab(QWidget):
         if self._maps is None or g not in self.gsig_buttons:
             return
         self._select_gsig(g, self.current()[3])
-        self._sync_spin(self.min_pnr_spin, self.min_pnr_slider.value() / PNR_STEPS)
+        self._sync_spin(self.min_pnr_spin, self.current()[3])
         self._update_overlay()
         self._update_numbers()
 
@@ -660,19 +704,33 @@ class ThresholdsTab(QWidget):
             return
         if min_pnr > self.min_pnr_slider.maximum() / PNR_STEPS:
             self._set_pnr_top(min_pnr)
+        self._exact = {}  # the person set them: the slider steps count
         self._put(min_corr, min_pnr)
         self._update_overlay()
         self._update_numbers()
 
     def current(self) -> tuple[str, int, float, float]:
-        return (self._sid or "", self._g or 0, self.min_corr_slider.value() / CORR_STEPS,
-                self.min_pnr_slider.value() / PNR_STEPS)
+        return (self._sid or "", self._g or 0, self._exact.get("corr", self.min_corr_slider.value() / CORR_STEPS),
+                self._exact.get("pnr", self.min_pnr_slider.value() / PNR_STEPS))
 
     def overlay_image(self, name: str) -> QImage | None:
         """The map ("corr" or "pnr") with the red mask at full resolution (None without maps)."""
         return self._images.get(name)
 
-    def _on_slider(self, slider: QSlider, spin: QDoubleSpinBox, steps: int, v: int) -> None:
+    def _on_spin(self, name: str, slider: QSlider, spin: QDoubleSpinBox, steps: int, x: float) -> None:
+        """A typed value: the slider's step value counts from now on, even when the slider does not move (the person
+        typed the rounded value of an exact start value)."""
+        self._exact.pop(name, None)
+        v = round(x * steps)
+        if slider.value() != v:
+            slider.setValue(v)  # _on_slider updates the rest
+            return
+        self._sync_spin(spin, v / steps)
+        self._update_overlay()
+        self._update_numbers()
+
+    def _on_slider(self, name: str, slider: QSlider, spin: QDoubleSpinBox, steps: int, v: int) -> None:
+        self._exact.pop(name, None)  # the person moved it (programmatic moves block this signal)
         self._sync_spin(spin, v / steps)
         self._update_overlay()  # the mask follows a drag at once (a few ms on a 600x600 map)
         if not slider.isSliderDown():  # a key, a click on the track or the spin box: no release follows
@@ -765,7 +823,17 @@ class ThresholdsTab(QWidget):
         # run again and the question would be false
         if self._run_values(cnmf, item) == (g, c, p):
             return ""
-        return (CNMF_DONE_ASK if cnmf.state is State.DONE else CNMF_RUNNING_ASK).format(sid=rec.sid)
+        if _gate_on(self._session_cfg(item)):
+            ask = CNMF_DONE_ASK if cnmf.state is State.DONE else CNMF_RUNNING_ASK
+        else:
+            ask = CNMF_DONE_ASK_NO_GATE if cnmf.state is State.DONE else CNMF_RUNNING_ASK_NO_GATE
+        return ask.format(sid=rec.sid)
+
+    def _gate_on_for(self, sid: str) -> bool:
+        try:
+            return _gate_on(config.resolve(self.paths, sid=sid))
+        except Exception:  # cannot be read: the defaults (gate on), as for _session_cfg
+            return True
 
     def accept_and_next(self) -> None:
         item = self._by_sid.get(self._sid) if self._sid else None
@@ -793,7 +861,7 @@ class ThresholdsTab(QWidget):
             self._gone(e.unknown)
             return
         self._after_write(res)
-        self._next_waiting(f"Thresholds of {sid} written: gSig {g}, min_corr {c:.2f}, min_pnr {p:.1f}.")
+        self._next_waiting(f"Thresholds of {sid} written: gSig {g}, {_values_text(c, p)}.")
 
     def accept_for_mouse(self) -> None:
         item = self._by_sid.get(self._sid) if self._sid else None
@@ -806,18 +874,27 @@ class ThresholdsTab(QWidget):
         except actions.UnknownSession:
             self._gone([mouse])
             return
+        unreadable = (f"Config cannot be read, left alone: {_listed(f'{sid} ({why})' for sid, why in plan.unreadable)}"
+                      if plan.unreadable else "")
         if not plan.will_get:
-            self._message("BEARMiND", f"Every session of {mouse} has its own thresholds or is excluded: "
-                                      "nothing to write.")
+            self._message("BEARMiND", "\n".join(
+                [f"Every session of {mouse} has its own thresholds, is excluded or has a config that cannot be "
+                 "read: nothing to write."] + ([unreadable] if unreadable else [])))
             return
-        lines = [f"Thresholds gSig {g}, min_corr {c:.2f}, min_pnr {p:.1f} for the sessions of {mouse}.",
+        lines = [f"Thresholds gSig {g}, {_values_text(c, p)} for the sessions of {mouse}.",
                  f"Will get these thresholds: {_listed(plan.will_get)}",
                  f"Keep their own: {_listed(plan.keep_own) if plan.keep_own else 'none'}"]
         if plan.excluded:
             lines.append(f"Excluded, left alone: {_listed(plan.excluded)}")
-        if plan.cnmf_done:
-            lines.append(f"CNMF-E of {_listed(plan.cnmf_done)} is already done: it will be recomputed, and manual "
+        if unreadable:
+            lines.append(unreadable)
+        inspect = [s for s in plan.cnmf_done if self._gate_on_for(s)]  # the gate is per session (resolved config)
+        no_gate = [s for s in plan.cnmf_done if s not in inspect]
+        if inspect:
+            lines.append(f"CNMF-E of {_listed(inspect)} is already done: it will be recomputed, and manual "
                          "inspection will be needed again.")
+        if no_gate:
+            lines.append(f"CNMF-E of {_listed(no_gate)} is already done: it will be recomputed.")
         if not self._confirm("\n".join(lines), yes="Write", no="Cancel"):
             return
         try:
@@ -826,16 +903,23 @@ class ThresholdsTab(QWidget):
             self._gone([mouse])
             return
         self._after_write(res, warn=False)  # its warnings are the groups the question already named
-        if sorted(res.ok) != sorted(plan.will_get):  # the registry changed between the question and the write
+        if sorted(res.ok + list(res.failed)) != sorted(plan.will_get):  # the registry changed after the question
             self._message("BEARMiND", f"The sessions of {mouse} changed after the question. "
                                       f"Written: {_listed(res.ok) if res.ok else 'none'}.")
-        total = len(plan.will_get) + len(plan.keep_own) + len(plan.excluded)
+        total = len(plan.will_get) + len(plan.keep_own) + len(plan.excluded) + len(plan.unreadable)
         self._next_waiting(f"Thresholds written for {len(res.ok)} of {total} sessions of {mouse}.")
 
     def _after_write(self, res: actions.ActionResult, warn: bool = True) -> None:
-        if warn and res.warnings:
-            self._message("BEARMiND", "\n".join(WARNING_TEXT.get(code, "{sid}: " + code).format(sid=sid)
-                                                for sid, code in res.warnings))
+        """Says what the write could not do (a failed session, a choice log another program holds), then goes on
+        as after any write: what was written changes Monitor's count. `warn`: also the other warnings."""
+        lines = [f"Writing failed for {sid}: {detail}" for sid, (_code, detail) in res.failed.items()]
+        logged = [code for _sid, code in res.warnings if code in CHOICE_LOG_TEXT]
+        lines += [CHOICE_LOG_TEXT[code] for code in dict.fromkeys(logged)]  # once each, for any number of rows
+        if warn:
+            lines += [WARNING_TEXT.get(code, "{sid}: " + code).format(sid=sid) for sid, code in res.warnings
+                      if code not in CHOICE_LOG_TEXT]
+        if lines:
+            self._message("BEARMiND", "\n".join(lines))
         self.decided.emit()
         self.refresh()
 

@@ -802,3 +802,166 @@ def test_window_count_drops_at_once_after_accept_while_the_registry_still_waits(
     assert w.monitor.model.item(row, 3).text() == "gSig 4"  # the Thresholds cell no longer says it waits
     w.thresholds.shutdown()
     w.close()
+
+
+# --- phase 4 final fix wave, B: writes that never lie ---
+
+NO_GATE_DONE = "CNMF-E of {} is already done. With the new thresholds it will be recomputed. Write?"
+NO_GATE_RUNNING = "CNMF-E of {} is running with the old thresholds. It will run again with the new ones. Write?"
+PENDING_TEXT = ("Thresholds written. The choice log is open in another program; the row was kept in "
+                "threshold_choices.pending.csv.")
+
+
+def test_broken_series_config_refuses_the_mouse_write(qapp, series_maps, make_tab):
+    """B1 (review probe): with series.yaml broken by a hand edit, the shown session cannot be scheduled: Accept and
+    Accept for all sessions of this mouse are refused with that reason, and S2 keeps its own thresholds."""
+    p = series_maps.paths
+    actions.set_thresholds(p, S2, 3, 0.7, 6.0)
+    _set(p, S2, "cnmf", State.DONE)
+    p.series_config.write_text(p.series_config.read_text(encoding="utf-8") + "\ngate: {enabled: false\n",
+                               encoding="utf-8")
+    tab = make_tab(p, Dialogs(answer=True))
+    tab.show_session(S1)
+    rows = tree_rows(tab)[0]
+    assert rows[S1].startswith("cannot be scheduled: config: ConfigError: ") and "series.yaml" in rows[S1]
+    why = tab.accept_mouse_button.toolTip()
+    assert why.startswith("The session cannot be scheduled: config: ") and tab.corr_view.text() == why
+    assert not tab.accept_button.isEnabled() and not tab.accept_mouse_button.isEnabled()
+    tab.accept_mouse_button.click()
+    tab.accept_for_mouse()
+    assert not tab.dlg.asked and _cfg(p, S2) == {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}
+
+
+def test_mouse_question_lists_sessions_whose_config_cannot_be_read(qapp, series_maps, make_tab):
+    """B1: a session of the mouse whose config cannot be read is named in the question and left alone."""
+    p = series_maps.paths
+    p.session_config(S2).parent.mkdir(parents=True, exist_ok=True)
+    p.session_config(S2).write_text("cnmf: {gSig: 3, min_corr: 0.7\n", encoding="utf-8")
+    before = p.session_config(S2).read_text(encoding="utf-8")
+    tab = make_tab(p, Dialogs(answer=True))
+    tab.show_session(S1)
+    tab.accept_for_mouse()
+    ((text, _, _),) = tab.dlg.asked
+    assert text.splitlines() == [
+        "Thresholds gSig 4, min_corr 0.85, min_pnr 8.0 for the sessions of NOF_H01.",
+        "Will get these thresholds: NOF_H01_1D",
+        "Keep their own: none",
+        "Config cannot be read, left alone: NOF_H01_2D (_bearmind/config/sessions/NOF_H01_2D.yaml: while parsing "
+        "a flow mapping (line 1))"]
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0}
+    assert p.session_config(S2).read_text(encoding="utf-8") == before and not tab.dlg.messages
+
+
+def test_unwritable_choice_log_says_so_and_moves_on(qapp, series_maps, make_tab):
+    """B2 (review probe test_probe_choice_log_unwritable): the thresholds are written, the window says where the
+    row went, emits decided and moves to the next waiting session, as after any write."""
+    p = series_maps.paths
+    p.threshold_choices_csv.mkdir(parents=True)
+    reported, decided = [], []
+    tab = make_tab(p, report=lambda t, e, tb: reported.append(e))
+    tab.decided.connect(lambda: decided.append(1))
+    tab.accept_button.click()  # through the guarded slot, as a click
+    assert not reported and decided == [1]
+    assert tab.dlg.messages == [("BEARMiND", PENDING_TEXT)]
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0}
+    assert tab.current()[0] == S2 and tree_rows(tab)[0][S1] == "chosen"
+    assert tab.said[-1].startswith(f"Thresholds of {S1} written")
+
+
+def test_mouse_write_lists_the_sessions_it_could_not_write(qapp, series_maps, make_tab, monkeypatch):
+    """B2: apply_to_mouse goes on after a failed session; the window lists the failures, and does not claim the
+    registry changed."""
+    from pathlib import Path
+
+    p = series_maps.paths
+    real = config.update_yaml
+
+    def flaky(path, patch):
+        if Path(path) == p.session_config(S2):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, patch)
+
+    tab = make_tab(p, Dialogs(answer=True))
+    tab.show_session(S1)
+    monkeypatch.setattr(config, "update_yaml", flaky)
+    tab.accept_for_mouse()
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0}
+    ((title, text),) = tab.dlg.messages
+    assert text.startswith(f"Writing failed for {S2}: PermissionError: ") and "changed after" not in text
+
+
+def test_gate_disabled_questions_do_not_promise_inspection(qapp, series_maps, make_tab):
+    """B3: with the gate disabled in the session's resolved config, a rerun of CNMF-E needs no manual inspection, so
+    the questions do not say it will."""
+    p = series_maps.paths
+    config.update_yaml(p.series_config, {"gate": {"enabled": False}})
+    for sid in (S1, S2):
+        config.update_yaml(p.session_config(sid), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    _set(p, S1, "cnmf", State.DONE)
+    _set(p, S2, "cnmf", State.RUNNING)
+    tab = make_tab(p, Dialogs(answer=False))
+    for sid, text in ((S1, NO_GATE_DONE), (S2, NO_GATE_RUNNING)):
+        tab.show_session(sid)
+        tab.set_thresholds(0.9, 9.0)
+        tab.accept_and_next()
+        assert tab.dlg.asked[-1][0] == text.format(sid)
+    config.update_yaml(p.session_config(S2), {"gate": {"enabled": True}})  # S2 inspects again, S1 does not
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": None}})
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": None}})
+    _set(p, S2, "cnmf", State.DONE)
+    tab.refresh()
+    tab.show_session(S1)
+    tab.accept_for_mouse()
+    lines = tab.dlg.asked[-1][0].splitlines()
+    assert f"CNMF-E of {S1} is already done: it will be recomputed." in lines
+    assert (f"CNMF-E of {S2} is already done: it will be recomputed, and manual inspection will be needed again."
+            in lines)
+
+
+def test_spin_boxes_take_a_dot_whatever_the_system_locale(qapp, series_maps, make_tab):
+    """B4 (check finding 1): on a Russian Windows the spin boxes took only a comma and wrote 12.0 for "12.5"."""
+    from PySide6.QtCore import QLocale
+    from PySide6.QtTest import QTest
+
+    old = QLocale()
+    QLocale.setDefault(QLocale(QLocale.Language.Russian, QLocale.Country.Russia))
+    try:
+        tab = make_tab(series_maps.paths)
+        for spin, typed in ((tab.min_pnr_spin, "12.5"), (tab.min_corr_spin, "0.62")):
+            spin.lineEdit().selectAll()
+            QTest.keyClicks(spin, typed)
+            QTest.keyClick(spin, Qt.Key.Key_Return)
+        assert tab.min_pnr_spin.value() == 12.5 and tab.min_corr_spin.value() == 0.62
+        assert tab.current()[2:] == (0.62, 12.5) and tab.min_pnr_spin.text() == "12.5"
+        assert tab.min_corr_spin.locale() == QLocale.c() == tab.min_pnr_spin.locale()
+    finally:
+        QLocale.setDefault(old)
+
+
+def test_untouched_suggestion_is_written_exactly(qapp, series_maps, make_tab):
+    """B5: a start value between slider steps stays exact until the person moves that control; Accept then writes
+    what the source label says and what CLI accept-suggested writes."""
+    p = series_maps.paths
+    sug = {"gSig": 4, "min_corr": 0.853, "min_pnr": 8.27, "method": "robust_bg"}
+    _set(p, S1, "thresholds", State.DONE, suggested=sug)
+    tab = make_tab(p)
+    assert tab.current() == (S1, 4, 0.853, 8.27)
+    assert tab.min_corr_slider.value() == 85 and tab.min_pnr_slider.value() == 83
+    assert (tab.min_corr_spin.text(), tab.min_pnr_spin.text()) == ("0.853", "8.27")
+    assert tab.source_label.text() == "Autotune suggestion (robust_bg): gSig 4, min_corr 0.853, min_pnr 8.27"
+    tab.set_gsig(5)  # another control: the thresholds stay exact
+    tab.set_gsig(4)
+    assert tab.current()[2:] == (0.853, 8.27)
+    tab.accept_and_next()
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.853, "min_pnr": 8.27}
+    assert tab.said[-1].startswith(f"Thresholds of {S1} written: gSig 4, min_corr 0.853, min_pnr 8.27.")
+    assert (_choices(p)[-1]["min_corr"], _choices(p)[-1]["min_pnr"]) == ("0.853", "8.27")
+    actions.accept_suggested(p, [S1])  # the CLI's way writes the same
+    assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.853, "min_pnr": 8.27}
+    # moving a control takes its step value; the other control stays exact
+    tab.show_session(S1)
+    assert tab.current() == (S1, 4, 0.853, 8.27) and tab.source_label.text().startswith("Your earlier choice")
+    tab.min_corr_slider.setValue(86)
+    assert tab.current()[2:] == (0.86, 8.27) and tab.min_corr_spin.text() == "0.86"
+    tab.min_pnr_spin.setValue(8.3)  # the same slider position, typed: the typed value counts
+    assert tab.current()[2:] == (0.86, 8.3)

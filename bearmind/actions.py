@@ -8,6 +8,7 @@ config.update_yaml, which keeps it safe next to a running runner.
 import csv
 import getpass
 import io
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,6 +21,8 @@ from bearmind.stages import WaitingForInput, gate
 
 if TYPE_CHECKING:  # threshold_model imports this module
     from bearmind.threshold_model import Counters
+
+log = logging.getLogger("bearmind.actions")
 
 
 @dataclass
@@ -49,6 +52,7 @@ _FAILURE_TEXT = {
     "already_passed": "Manual inspection already passed, so nothing was recorded. A new decision would make "
                       "autoinspection and export run again, and autoinspection is not reproducible run to run, "
                       "so the exported neurons could change.",
+    "write_failed": "The write failed: {detail}",
 }
 
 
@@ -121,6 +125,43 @@ def waits_for_thresholds(view, rec) -> bool:
     if not isinstance(cnmf, dict):  # cannot be read: the session is "cannot be scheduled", not waiting
         return False
     return any(cnmf.get(k) is None for k in THRESHOLD_KEYS) and view.current_through(rec, "thresholds")
+
+
+def _first(text) -> str:
+    return (str(text).splitlines() or [""])[0]
+
+
+def config_problem(paths, e: BaseException) -> str:
+    """'<file>: <first line of the error>' for a config that cannot be read; the file relative to the series."""
+    f = getattr(e, "path", None) or getattr(e, "filename", None)
+    if isinstance(e, config.ConfigError) and not e.first_line:
+        return _first(e)  # rebuilt from its message, which starts with the file
+    if isinstance(e, config.ConfigError):
+        first = e.first_line
+    elif isinstance(e, OSError) and e.strerror:
+        first = e.strerror
+    else:
+        first = f"{type(e).__name__}: {_first(e)}"
+    if f is None:
+        return first
+    try:
+        name = paths.rel(f)
+    except ValueError:  # outside the series (machine.yaml)
+        name = str(f)
+    return f"{name}: {first}"
+
+
+def thresholds_choice(paths, rec) -> tuple[dict | None, str | None]:
+    """(the session's thresholds, None); (None, None) when it has none; (None, why) when its config cannot be
+    read. "Cannot tell" is never "no choice": a write meant for sessions without thresholds must leave such a
+    session alone, or a typo in the series or mouse config would let it overwrite the session's own thresholds
+    (its session file alone can still be read and written)."""
+    try:
+        cnmf = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
+        values = {k: cnmf.get(k) for k in THRESHOLD_KEYS}
+    except Exception as e:  # not only ConfigError: a cnmf section that is not a mapping cannot be told either
+        return None, config_problem(paths, e)
+    return (values if all(v is not None for v in values.values()) else None), None
 
 
 def gate_may_wait(rec) -> bool:
@@ -198,9 +239,39 @@ CHOICE_COLUMNS = ("sid", "mouse", "when", "who", "source", "suggested_gSig", "su
                   "single_frac", "n_mirror_blobs")
 
 
-def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, counters, when: str) -> None:
+PENDING_CHOICES = "threshold_choices.pending.csv"  # next to the log: rows the log would not take yet
+CHOICE_NOT_LOGGED = "choice_log_not_written"  # warning: the row waits in PENDING_CHOICES
+CHOICE_ONLY_IN_LOG = "choice_log_only_in_log"  # warning: the pending file failed too; the row is a log WARNING
+
+
+def _csv_text(rows, header: bool) -> str:
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, CHOICE_COLUMNS, lineterminator="\n")
+    if header:
+        w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue()
+
+
+def _empty(f) -> bool:
+    return not f.exists() or f.stat().st_size == 0
+
+
+def _pending_rows(pending) -> list:
+    if not pending.exists():
+        return []
+    with io.StringIO(fileio.read_text(pending), newline="") as f:
+        return [{k: r.get(k) or "" for k in CHOICE_COLUMNS} for r in csv.DictReader(f)]
+
+
+def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, counters, when: str) -> str | None:
     """One row per choice, next to the suggestion it answers: the decision log keeps only the chosen values,
-    and the suggestion in the record is replaced when the thresholds stage re-runs."""
+    and the suggestion in the record is replaced when the thresholds stage re-runs.
+
+    The thresholds are written by then, so a log that cannot be written (open in Excel) must not fail the choice:
+    the row waits in PENDING_CHOICES, and the next append that works writes the waiting rows first, in their
+    order. Returns None, CHOICE_NOT_LOGGED, or CHOICE_ONLY_IN_LOG (the pending file failed too: the row is in
+    the log as a WARNING)."""
     th = rec.stages.get("thresholds")
     sug = (th.metrics.get("suggested") if th is not None else None) or {}
     row = {"sid": rec.sid, "mouse": rec.mouse, "when": when, "who": who, "source": source,
@@ -210,26 +281,47 @@ def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, coun
     if counters is not None:
         row.update(n_blobs=counters.n_blobs, single_frac=counters.single_frac,
                    n_mirror_blobs=counters.n_mirror_blobs)
+    row = {k: "" if row.get(k) is None else row[k] for k in CHOICE_COLUMNS}
     target = paths.threshold_choices_csv
-    with fileio.file_lock(target):
-        new = not target.exists() or target.stat().st_size == 0
-        buf = io.StringIO()
-        w = csv.DictWriter(buf, CHOICE_COLUMNS, lineterminator="\n")
-        if new:
-            w.writeheader()
-        w.writerow({k: "" if row.get(k) is None else row[k] for k in CHOICE_COLUMNS})
-        with open(target, "a", encoding="utf-8", newline="") as f:
-            f.write(buf.getvalue())
+    pending = target.with_name(PENDING_CHOICES)
+    written = False
+    try:
+        # both locks: a writer that keeps its row in the pending file meanwhile must not be flushed half-way
+        with fileio.file_lock(target), fileio.file_lock(pending):
+            waiting = _pending_rows(pending)
+            fileio.append_text(target, _csv_text(waiting + [row], header=_empty(target)))
+            written = True
+            if waiting:
+                try:
+                    pending.unlink()
+                except OSError as e:
+                    log.warning("the rows of %s are in %s now, but the file cannot be removed (remove it, or its "
+                                "rows are written again): %s", pending, target, runner._one_line(e))
+        return None
+    except OSError as e:
+        if written:  # the row is in the log; only a lock could not be released
+            return None
+        why = runner._one_line(e)
+    try:
+        with fileio.file_lock(pending):
+            fileio.append_text(pending, _csv_text([row], header=_empty(pending)))
+    except OSError as e:
+        log.warning("threshold choice not logged: %s and %s cannot be written (%s; %s); the row: %s", target,
+                    pending, why, runner._one_line(e), row)
+        return CHOICE_ONLY_IN_LOG
+    log.warning("threshold choice log %s cannot be written (%s); the row was kept in %s", target, why, pending)
+    return CHOICE_NOT_LOGGED
 
 
-def _write_thresholds(paths, rec, gsig, min_corr, min_pnr, who: str, source: str, counters) -> None:
+def _write_thresholds(paths, rec, gsig, min_corr, min_pnr, who: str, source: str, counters) -> str | None:
+    """The thresholds, the decision, then the choice log; returns the choice log's warning code, if any."""
     now = datetime.now().isoformat(timespec="milliseconds")
     config.update_yaml(paths.session_config(rec.sid), {"cnmf": {"gSig": gsig, "min_corr": min_corr,
                                                                 "min_pnr": min_pnr}})
     value = f"gSig={gsig} min_corr={min_corr} min_pnr={min_pnr}"
     registry.update_record(paths, rec.sid, lambda r: r.decisions.append(Decision("thresholds", value, who, now)))
     # the CSV log comes last: if a write above fails, the log never claims a choice the config does not hold
-    _log_choice(paths, rec, who, source, gsig, min_corr, min_pnr, counters, now)
+    return _log_choice(paths, rec, who, source, gsig, min_corr, min_pnr, counters, now)
 
 
 def _warn_excluded(res: ActionResult, rec) -> None:
@@ -395,8 +487,10 @@ def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr, *, who: str = "", s
     check_sids(recs, [sid])
     res = ActionResult()
     _warn_excluded(res, recs[sid])
-    _write_thresholds(paths, recs[sid], int(gsig), min_corr, min_pnr, who, source, counters)
+    logged = _write_thresholds(paths, recs[sid], int(gsig), min_corr, min_pnr, who, source, counters)
     res.ok.append(sid)
+    if logged:
+        res.warnings.append((sid, logged))
     return res
 
 
@@ -416,18 +510,12 @@ def accept_suggested(paths, sids, *, who: str = "") -> ActionResult:
             res.failed[sid] = ("invalid_suggestion", bad)
             continue
         _warn_excluded(res, recs[sid])
-        _write_thresholds(paths, recs[sid], int(sug["gSig"]), sug["min_corr"], sug["min_pnr"], who,
-                          "accept_suggested", None)
+        logged = _write_thresholds(paths, recs[sid], int(sug["gSig"]), sug["min_corr"], sug["min_pnr"], who,
+                                   "accept_suggested", None)
         res.ok.append(sid)
+        if logged:
+            res.warnings.append((sid, logged))
     return res
-
-
-def _has_choice(paths, rec) -> bool:
-    try:
-        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-    except (config.ConfigError, OSError):  # a broken config is shown by Monitor; here the session has no choice
-        return False
-    return all(c.get(k) is not None for k in ("gSig", "min_corr", "min_pnr"))
 
 
 @dataclass
@@ -437,6 +525,7 @@ class MousePlan:
     keep_own: list = field(default_factory=list)   # has thresholds: never overwritten, its CNMF-E would re-run
     excluded: list = field(default_factory=list)   # left alone
     cnmf_done: list = field(default_factory=list)  # in will_get with CNMF-E done (config lost them): it re-runs
+    unreadable: list = field(default_factory=list)  # (sid, why): its config cannot be read, so it is left alone
 
 
 def _mouse_plan(paths, mouse: str) -> tuple[MousePlan, dict]:
@@ -449,7 +538,11 @@ def _mouse_plan(paths, mouse: str) -> tuple[MousePlan, dict]:
         # excluded first: the runner ignores an excluded session, so that is its warning even when it has a choice
         if rec.excluded:
             plan.excluded.append(sid)
-        elif _has_choice(paths, rec):
+            continue
+        chosen, why = thresholds_choice(paths, rec)
+        if why is not None:
+            plan.unreadable.append((sid, why))
+        elif chosen is not None:
             plan.keep_own.append(sid)
         else:
             plan.will_get.append(sid)
@@ -465,20 +558,31 @@ def mouse_plan(paths, mouse: str) -> MousePlan:
 
 def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float, who: str) -> ActionResult:
     """The same thresholds for every session of the mouse that has none (mouse_plan). A session with a choice is
-    never overwritten (its CNMF-E would re-run), and an excluded one is left alone: both get a warning."""
+    never overwritten (its CNMF-E would re-run), and an excluded one or one whose config cannot be read is left
+    alone: each gets a warning. A session that cannot be written goes into `failed` (write_failed) and the others
+    are still written: stopping half-way would leave the mouse partly written without saying which part."""
     bad = threshold_error(gsig, min_corr, min_pnr)
     if bad:
         raise ValueError(bad)
     plan, mine = _mouse_plan(paths, mouse)
+    unreadable = dict(plan.unreadable)
     res = ActionResult()
     for sid, rec in mine.items():
         if sid in plan.excluded:
             res.warnings.append((sid, "excluded_session"))
+        elif sid in unreadable:
+            res.warnings.append((sid, "config_unreadable"))
         elif sid in plan.keep_own:
             res.warnings.append((sid, "already_chosen"))
         else:
-            _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse", None)
+            try:
+                logged = _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse", None)
+            except Exception as e:  # a locked file, a session config broken since the plan: this session only
+                res.failed[sid] = ("write_failed", runner._one_line(e))
+                continue
             res.ok.append(sid)
+            if logged:
+                res.warnings.append((sid, logged))
     return res
 
 
