@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QDoubleSpinBox, 
                                QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
                                QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from bearmind import actions, config, registry
+from bearmind import actions, config, monitor, registry
 from bearmind import threshold_model as tm
 from bearmind.gui.monitor_tab import (ACCENT, ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, MAX_NAMED, MUTED,
                                       WARNING_TEXT)
@@ -47,6 +47,7 @@ CORR_STEPS = 100  # slider units per 1.0: min_corr moves in steps of 0.01
 PNR_STEPS = 10  # min_pnr moves in steps of 0.1
 MAX_UPSCALE = 4.0  # a small map is enlarged at most this much: more only blurs it
 THUMB_PX = 96
+VIDEO_MIN_W = 320  # px: below this the movie is too small to judge the cells by
 RED = (255, 0, 0)
 STATE_BG = {"waiting": CELL_BG["waiting"], "chosen": CELL_BG["ok"], "cnmf_done": CELL_BG["ok"],
             "config_error": CELL_BG["error"]}
@@ -172,6 +173,10 @@ class ThresholdsTab(QWidget):
         self._report = report or (lambda *exc: sys.excepthook(*exc))
         self._refresh_failed = None  # (type, message) of the failure reported last, until a refresh succeeds
         self._items: list[tm.ThresholdItem] = []
+        # Monitor's cache: a registry file the batch is replacing (busy for a moment) keeps its last good record,
+        # so the shown session and its slider values stay; configs are resolved again only when a file changes
+        self._cache = monitor.RecordCache()
+        self._records: dict = {}  # sid -> the record of the last refresh
         self._by_sid: dict[str, tm.ThresholdItem] = {}
         self._tree_items: dict[str, QTreeWidgetItem] = {}
         self._sid: str | None = None
@@ -245,6 +250,7 @@ class ThresholdsTab(QWidget):
         vl.setContentsMargins(0, 0, 0, 0)
         self.video_title = _section("MC video")
         self.video = VideoView()
+        self.video.setMinimumWidth(VIDEO_MIN_W)
         vl.addWidget(self.video_title)
         vl.addWidget(self.video, 1)
         top.addWidget(video_box)
@@ -275,6 +281,9 @@ class ThresholdsTab(QWidget):
         top.addWidget(maps_box)
         top.setStretchFactor(0, 1)
         top.setStretchFactor(1, 2)
+        # Initial sizes in proportion (the splitter scales them to its width): the video as wide as one of the two
+        # maps. Without them the splitter follows the size hints, and the slider rows of the maps took nearly all.
+        top.setSizes([1000, 2000])
         lay.addWidget(top, 1)
         self.min_corr_slider.valueChanged.connect(
             lambda v: self._guarded(self._on_slider, "corr", self.min_corr_slider, self.min_corr_spin, CORR_STEPS, v))
@@ -394,10 +403,12 @@ class ThresholdsTab(QWidget):
             self.video.set_video(None, 0)
             self._video_open = False
 
-    def _set_video(self, args) -> None:
-        """A new session's video (None: no session): the old file is released at once."""
+    def _set_video(self, args, keep_position: bool = False) -> None:
+        """A new session's video (None: no session), or the same session's after its maps reloaded (MC may have
+        replaced the file): the old file is released at once; `keep_position` returns to the frame shown."""
+        index = self.video.current_index() if self._video_open else self._video_index
         self._close_video()
-        self._video_args, self._video_index = args, 0
+        self._video_args, self._video_index = args, index if keep_position else 0
         self._open_video()
 
     def _tick(self) -> None:
@@ -426,7 +437,9 @@ class ThresholdsTab(QWidget):
             self._refresh_failed = None
 
     def _refresh(self) -> None:
-        items = tm.threshold_items(self.paths)
+        records, _broken = self._cache.records(self.paths)
+        self._records = {r.sid: r for r in records}
+        items = tm.threshold_items(self.paths, self._cache.stage_view(self.paths), records)
         if items != self._items:
             self._items = items
             self._by_sid = {i.sid: i for i in items}
@@ -435,10 +448,19 @@ class ThresholdsTab(QWidget):
             self._show_first()
             return
         # the shown maps reload only when their file or the thresholds stage changed (the batch made them, or
-        # began to recompute them); the slider values stay
+        # began to recompute them); the slider values stay. The MC video is set again with them: MC may have
+        # replaced the file, and its contrast follows the new mean image.
         if self._maps_sig(self._sid) != self._loaded_sig:
             self._load_maps(keep=True)
+            self._set_video(self._video_for(self._sid), keep_position=True)
         self._update_buttons()
+
+    def show_first_waiting(self) -> None:
+        """Monitor's "Thresholds: N sessions": the first session in list order that waits (none: stay)."""
+        self.refresh()
+        sid = next((i.sid for i in self._items if i.state == "waiting"), None)
+        if sid is not None and sid != self._sid:
+            self.show_session(sid)
 
     def _show_first(self) -> None:
         sid = next((i.sid for i in self._items if i.state == "waiting"), None)
@@ -507,7 +529,9 @@ class ThresholdsTab(QWidget):
     def _record(self, sid: str):
         try:
             return registry.load_record(self.paths, sid)
-        except (OSError, ValueError):  # removed, or replaced half-written by the batch: the next refresh shows it
+        except OSError:  # busy while the batch replaces it, or removed: the last good record (none if removed)
+            return self._records.get(sid) if self.paths.registry_file(sid).exists() else None
+        except ValueError:  # not a record: the next refresh shows it as broken
             return None
 
     def _maps_sig(self, sid: str):
@@ -537,8 +561,14 @@ class ThresholdsTab(QWidget):
             self.session_list.blockSignals(True)
             self.session_list.setCurrentItem(node)
             self.session_list.blockSignals(False)
-        rec = self._record(sid)
         self._load_maps(keep=False)
+        self.video_title.setText(f"MC video — {sid}")
+        self._set_video(self._video_for(sid))
+
+    def _video_for(self, sid: str) -> tuple:
+        """(path, fps, contrast) of the session's MC video; the contrast comes from the shown maps' mean image, so
+        the movie and the maps look alike (None without maps)."""
+        rec = self._record(sid)
         contrast = None
         if self._maps is not None:
             mean = np.asarray(self._maps.mean, dtype=float)
@@ -546,8 +576,7 @@ class ThresholdsTab(QWidget):
             if fin.size:
                 lo, hi = np.percentile(fin, [1.0, 99.5])
                 contrast = (float(lo), float(hi)) if hi > lo else None
-        self.video_title.setText(f"MC video — {sid}")
-        self._set_video((self.paths.mc_video(sid), rec.fps if rec is not None and rec.fps else 0, contrast))
+        return self.paths.mc_video(sid), rec.fps if rec is not None and rec.fps else 0, contrast
 
     def _read_maps(self, item: tm.ThresholdItem):
         """(maps, "") or (None, the reason shown in their place). The item says whether the maps may be shown (the
@@ -607,7 +636,8 @@ class ThresholdsTab(QWidget):
         item = self._by_sid.get(self._sid)
         if item is None or self._maps is None:
             return
-        text = tm.source_text(self._source, item)
+        chosen_from = tm.choice_source(self.paths, item.sid, item.mouse) if self._source == "chosen" else ""
+        text = tm.source_text(self._source, item, chosen_from)
         self.source_label.setText(f"{text} — {self._note}" if self._note else text)
 
     # --- part 3: the gSig strip ---
@@ -867,7 +897,9 @@ class ThresholdsTab(QWidget):
         item = self._by_sid.get(self._sid) if self._sid else None
         if self._refusal(item):
             return
-        _, g, c, p = self.current()
+        sid, g, c, p = self.current()
+        # before the question (its modal loop may reload the maps): the counters the person saw, of this session
+        counters = tm.counters(self._maps, g, c, p, self._min_blob_px)
         mouse = item.mouse
         try:
             plan = actions.mouse_plan(self.paths, mouse)  # the rule apply_to_mouse writes by
@@ -898,7 +930,8 @@ class ThresholdsTab(QWidget):
         if not self._confirm("\n".join(lines), yes="Write", no="Cancel"):
             return
         try:
-            res = actions.apply_to_mouse(self.paths, mouse, g, c, p, actions.current_user())
+            res = actions.apply_to_mouse(self.paths, mouse, g, c, p, actions.current_user(), shown=sid,
+                                         counters=counters)
         except actions.UnknownSession:
             self._gone([mouse])
             return

@@ -181,3 +181,43 @@ def test_destroy_after_session_changes_is_clean(qapp, make_avi, tmp_path, monkey
     qapp.processEvents()
     assert errors == []
     assert not video_view._LIVE
+
+
+def test_frame_that_fails_mid_play_is_named_and_stops_playback(qapp, make_avi, tmp_path, monkeypatch, caplog):
+    """D1 (review probe test_probe_decode_fails_mid_play): the picture says which frame cannot be read and playback
+    stops; the warning is logged once per session per minute, not once per frame; a readable frame shows again."""
+    import logging
+
+    frames = np.stack([np.full((20, 30), i, np.uint8) for i in range(200)])
+    path = make_avi(tmp_path / "mc.avi", frames)
+    real = video_view.VideoArray.__getitem__
+
+    def flaky(self, i):
+        if i > 20:
+            raise OSError("read error")
+        return real(self, i)
+
+    monkeypatch.setattr(video_view.VideoArray, "__getitem__", flaky)
+    monkeypatch.setattr(video_view, "_LAST_WARNED", {})
+    v = VideoView()
+    shown = []
+    v.frame_shown.connect(shown.append)
+    with caplog.at_level(logging.WARNING, logger="bearmind"):
+        v.set_video(path, 200)  # 200 fps: frame 21 is reached within a few ticks
+        _wait(qapp, lambda: v.slider.isEnabled())
+        v.seek(10)
+        _wait(qapp, lambda: 10 in shown)
+        v.play_button.click()
+        _wait(qapp, lambda: v.image_label.text().endswith("cannot be read"))
+        n = int(v.image_label.text().split()[1])
+        assert v.image_label.text() == f"frame {n} cannot be read" and n >= 22  # frames count from 1, as the label
+        assert not v._timer.isActive() and v.play_button.text() == "▶"
+        assert v.image_label.pixmap().isNull()
+        v.seek(150)
+        _wait(qapp, lambda: v.image_label.text() == "frame 151 cannot be read")
+    warned = [r for r in caplog.records if "cannot be read" in r.getMessage() or "not decoded" in r.getMessage()]
+    assert len(warned) == 1
+    v.seek(5)  # a readable frame shows again
+    _wait(qapp, lambda: 5 in shown)
+    assert not v.image_label.pixmap().isNull() and v.image_label.text() == ""
+    v.close()

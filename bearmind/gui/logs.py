@@ -37,6 +37,11 @@ class LogView(QPlainTextEdit):
         self.path: Path | None = None
         self._pos: int | None = None  # None: the file was not there at the last read
         self._partial = b""
+        # Where the view was when it was hidden: a hidden QPlainTextEdit computes its scroll range as if one line
+        # were visible, and Qt puts the position back to the top when it is shown again, so the scroll bar cannot
+        # tell "at the end" meanwhile (Monitor polls while another tab is shown).
+        self._follow = True
+        self._hidden_at = 0
 
     def show_log(self, path: Path) -> None:
         self.path = Path(path)
@@ -48,6 +53,7 @@ class LogView(QPlainTextEdit):
         except OSError:
             lines, self._pos, self._partial = [], None, b""
         self.setPlainText("\n".join(lines))
+        self._follow = True
         self._to_end()
 
     def poll(self) -> None:
@@ -74,13 +80,30 @@ class LogView(QPlainTextEdit):
         self._partial = data[cut:]
         if cut:
             # a person reading further up keeps the place; at the end, the view follows the new lines
-            bar = self.verticalScrollBar()
-            at_end = bar.value() >= bar.maximum()
+            at_end = self._at_end()
             # Python logging writes CRLF on Windows; a lone \r would show as an extra empty line
             text = data[:cut].decode("utf-8", "replace").replace("\r\n", "\n").rstrip("\n")
             self.appendPlainText(text)
             if at_end:
                 self._to_end()
+
+    def _at_end(self) -> bool:
+        if not self.isVisible():
+            return self._follow
+        bar = self.verticalScrollBar()
+        return bar.value() >= bar.maximum()
+
+    def hideEvent(self, event) -> None:
+        bar = self.verticalScrollBar()
+        self._follow, self._hidden_at = bar.value() >= bar.maximum(), bar.value()
+        super().hideEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._follow:
+            self._to_end()
+        else:
+            self.verticalScrollBar().setValue(self._hidden_at)
 
     def _to_end(self) -> None:
         bar = self.verticalScrollBar()

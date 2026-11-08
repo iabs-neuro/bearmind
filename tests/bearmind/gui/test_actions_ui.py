@@ -553,3 +553,45 @@ def test_retry_of_a_failed_preview_resets_only_the_preview(qapp, series4):
     rec = registry.load_record(series4, S3)
     assert rec.stages["mc_preview"].state is State.PENDING and rec.stages["mc"].state is State.DONE
     assert "MC preview" in ui.tab.last_status
+
+
+def test_log_follows_the_end_after_its_tab_was_hidden(qapp, tmp_path):
+    """D9 (check finding 6): a hidden QPlainTextEdit computes its scroll range as if one line were visible, and
+    Qt resets the position to the top when it is shown again; the view then stayed at the start of the file and
+    stopped following. Whether it follows is remembered when it is hidden and restored when it is shown."""
+    from PySide6.QtWidgets import QTabWidget
+
+    f = tmp_path / "series.log"
+    f.write_text("".join(f"line {i}\n" for i in range(200)), encoding="utf-8")
+    tabs = QTabWidget()
+    v = LogView()
+    tabs.addTab(v, "Monitor")
+    tabs.addTab(QLabel("other"), "Thresholds")
+    tabs.resize(600, 300)
+    v.show_log(f)
+    tabs.show()
+    qapp.processEvents()
+    bar = v.verticalScrollBar()
+    assert bar.value() == bar.maximum() > 0
+    tabs.setCurrentIndex(1)  # Monitor's timer keeps polling while its tab is hidden
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write("".join(f"more {i}\n" for i in range(300)))
+    v.poll()
+    tabs.setCurrentIndex(0)
+    qapp.processEvents()
+    assert bar.value() == bar.maximum() and v.firstVisibleBlock().text() != "line 0"
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write("next line\n")
+    v.poll()
+    qapp.processEvents()
+    assert bar.value() == bar.maximum() and v.toPlainText().endswith("next line")
+    # a person reading further up keeps the place across a tab switch
+    bar.setValue(10)
+    tabs.setCurrentIndex(1)
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write("late\n")
+    v.poll()
+    tabs.setCurrentIndex(0)
+    qapp.processEvents()
+    assert bar.value() < bar.maximum()
+    tabs.close()

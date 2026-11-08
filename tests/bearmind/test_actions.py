@@ -600,3 +600,13 @@ def test_apply_to_mouse_collects_failures_and_goes_on(series, monkeypatch):
     assert code == "write_failed" and "Permission denied" in detail
     assert yaml.safe_load(p.session_config(S2).read_text(encoding="utf-8"))["cnmf"]["gSig"] == 4
     assert actions.failure_text(code, detail).startswith("The write failed: ")
+
+
+def test_apply_to_mouse_logs_the_counters_of_the_shown_session(series):
+    """D6: the counters the person saw belong to the shown session; the other sessions get empty counters."""
+    p = series.paths
+    res = actions.apply_to_mouse(p, "NOF_H01", 4, 0.85, 8, "ann", shown=S1, counters=Counters(12, 0.25, 3))
+    assert res.ok == [S1, S2]
+    rows = {r["sid"]: r for r in _choices(p)}
+    assert (rows[S1]["n_blobs"], rows[S1]["single_frac"], rows[S1]["n_mirror_blobs"]) == ("12", "0.25", "3")
+    assert (rows[S2]["n_blobs"], rows[S2]["single_frac"], rows[S2]["n_mirror_blobs"]) == ("", "", "")

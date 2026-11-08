@@ -26,6 +26,18 @@ log = logging.getLogger("bearmind")
 
 CACHE_FRAMES = 64
 PLAY_TICK_MS = 15
+# A frame that cannot be read is logged once per video per minute: playing over a damaged stretch would otherwise
+# log every frame.
+WARN_EVERY_S = 60.0
+_LAST_WARNED: dict[str, float] = {}  # video -> monotonic time of its last warning
+
+
+def _warn_unreadable(path, index: int, e: Exception) -> None:
+    key, now = str(path), time.monotonic()
+    last = _LAST_WARNED.get(key)
+    if last is None or now - last >= WARN_EVERY_S:
+        _LAST_WARNED[key] = now
+        log.warning("MC video frame %s of %s cannot be read: %s (logged once a minute)", index + 1, path, e)
 
 # Workers have no Qt parent and live here until joined. A parented QThread is destroyed with its parent,
 # and Qt aborts when that happens while the thread runs; closeEvent reaches only top-level windows, so a view
@@ -88,6 +100,7 @@ class _Worker(QThread):
     opened = Signal(object, int, int, int)   # token, frames, height, width
     failed = Signal(object, str, bool)       # token, message, file is missing
     decoded = Signal(object, int, object)    # token, index, uint8 (h, w)
+    unreadable = Signal(object, int)         # token, index of a frame that cannot be decoded
 
     def __init__(self, path: Path, token, parent=None):
         super().__init__(parent)
@@ -125,7 +138,8 @@ class _Worker(QThread):
             try:
                 frame = arr[i]
             except Exception as e:
-                log.warning("MC video frame %s of %s not decoded: %s", i, self._path, e)
+                _warn_unreadable(self._path, i, e)
+                self.unreadable.emit(self._token, i)
                 continue
             self.decoded.emit(self._token, i, frame)
 
@@ -200,6 +214,7 @@ class VideoView(QWidget):
         self._worker.opened.connect(self._on_opened)
         self._worker.failed.connect(self._on_failed)
         self._worker.decoded.connect(self._on_decoded)
+        self._worker.unreadable.connect(self._on_unreadable)
         self._worker.start()
 
     def seek(self, index: int) -> None:
@@ -256,6 +271,18 @@ class VideoView(QWidget):
             # A decode slower than the frame period makes every result older than the request; showing
             # the ones that lie on the way keeps the picture moving during playback and drags.
             self._show(index, frame)
+
+    def _on_unreadable(self, token, index: int) -> None:
+        """A frame the decoder cannot read: playing on would only skip past it silently, so playback stops and the
+        picture says which frame (counted from 1, as the position label). Another frame shows again."""
+        if token != self._token:
+            return
+        self._pause()
+        if index != self._index:  # an older request; the frame asked for now comes next
+            return
+        self._image, self._shown = None, -1
+        self.image_label.setPixmap(QPixmap())
+        self.image_label.setText(f"frame {index + 1} cannot be read")
 
     def _between_shown_and_target(self, index: int) -> bool:
         if self._index in self._cache:

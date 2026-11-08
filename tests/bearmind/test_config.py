@@ -137,3 +137,22 @@ def test_yaml_reads_follow_content_and_are_private_copies(tmp_path):
     d = config.load_defaults()
     d["cnmf"]["tsub"] = 3
     assert config.load_defaults()["cnmf"]["tsub"] == 1
+
+
+def test_yaml_whose_top_level_is_not_a_mapping_names_the_file(tmp_path):
+    """D4: a config that parses to a list or a plain value is a ConfigError naming the file (before: an
+    AttributeError from the merge, with no file named)."""
+    import pytest
+
+    from bearmind import config
+
+    paths = SeriesPaths(tmp_path)
+    paths.series_config.parent.mkdir(parents=True)
+    for text, kind in (("- cnmf\n- gate\n", "list"), ("just text\n", "str")):
+        paths.series_config.write_text(text, encoding="utf-8")
+        with pytest.raises(config.ConfigError) as e:
+            config.resolve(paths, sid="NOF_H01_1D")
+        assert str(e.value).startswith(f"{paths.series_config}: ") and kind in str(e.value)
+        assert e.value.path == paths.series_config and e.value.first_line
+    paths.series_config.write_text("", encoding="utf-8")  # an empty file is an empty mapping
+    assert config.resolve(paths, sid="NOF_H01_1D")["cnmf"]

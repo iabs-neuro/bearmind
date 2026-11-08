@@ -403,7 +403,7 @@ def test_reset_to_suggestion(qapp, series_maps, make_tab):
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}})
     tab = make_tab(p)
     tab.show_session(S1)
-    assert tab.current() == (S1, 3, 0.7, 6.0) and tab.source_label.text() == "Your earlier choice"
+    assert tab.current() == (S1, 3, 0.7, 6.0) and tab.source_label.text() == "Your earlier choice (session config)"
     tab.reset_button.click()
     assert tab.current() == (S1, 4, 0.85, 8.0)
     assert tab.source_label.text().startswith("Autotune suggestion (robust_bg)")
@@ -587,7 +587,7 @@ def test_refresh_guard_reports_once_then_says_it(qapp, series_maps, make_tab, mo
     reported = []
     tab = make_tab(series_maps.paths, report=lambda t, e, tb: reported.append(e))
 
-    def boom(paths):
+    def boom(*args, **kwargs):
         raise RuntimeError("registry busy\nmore")
 
     monkeypatch.setattr(tm, "threshold_items", boom)
@@ -965,3 +965,104 @@ def test_untouched_suggestion_is_written_exactly(qapp, series_maps, make_tab):
     assert tab.current()[2:] == (0.86, 8.27) and tab.min_corr_spin.text() == "0.86"
     tab.min_pnr_spin.setValue(8.3)  # the same slider position, typed: the typed value counts
     assert tab.current()[2:] == (0.86, 8.3)
+
+
+# --- phase 4 final fix wave, D: minors ---
+
+def test_busy_registry_file_keeps_the_shown_session(qapp, series_maps, make_tab, monkeypatch):
+    """D2: the batch replaces a registry file while the tab reads it (PermissionError after the retries): the
+    last good record is kept, as in Monitor, so the session and the slider values stay."""
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.set_gsig(5)
+    tab.set_thresholds(0.7, 12.0)
+    update_record(p, S1, lambda r: r.stages["thresholds"].metrics.update(note="rewritten"))  # a new file version
+    from pathlib import Path
+
+    from bearmind import fileio
+
+    real, held = fileio.read_text, p.registry_file(S1)
+
+    def busy(path, *a, **k):
+        if Path(path) == held:
+            raise PermissionError(13, "The process cannot access the file", str(path))
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(fileio, "read_text", busy)
+    tab.refresh()
+    assert tab.current() == (S1, 5, 0.7, 12.0) and S1 in tree_rows(tab)[0]
+    assert tab.session_list.currentItem().data(0, Qt.ItemDataRole.UserRole) == S1
+
+
+def test_maps_reload_sets_the_video_again(qapp, series_maps, make_tab):
+    """D3: new maps of the shown session (MC or crop redone) reload the MC video too, with the contrast of the new
+    mean image, so the movie and the maps match; the position is kept."""
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.show()
+    _wait(qapp, lambda: tab.video.slider.isEnabled())
+    tab.video.seek(4)
+    _wait(qapp, lambda: tab.video.current_index() == 4 and tab.video.shown_image() is not None)
+    before = tab._video_args[2]
+    with np.load(p.threshold_maps(S1)) as z:
+        arrays = {k: z[k] for k in z.files}
+    arrays["mean"] = arrays["mean"] * 2.0
+    np.savez_compressed(p.threshold_maps(S1), **arrays)
+    tab.refresh()
+    after = tab._video_args[2]
+    assert after != before and after[1] == pytest.approx(2 * before[1], rel=1e-3)
+    assert tab.video._contrast == after
+    _wait(qapp, lambda: tab.video.slider.isEnabled() and tab.video.current_index() == 4)
+
+
+def test_earlier_choice_names_its_config(qapp, series_maps, make_tab):
+    """D5: "Your earlier choice" says which config the values come from."""
+    p = series_maps.paths
+    config.update_yaml(p.mouse_config("NOF_H01"), {"cnmf": {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}})
+    tab = make_tab(p)
+    tab.show_session(S1)
+    assert tab.source_label.text() == "Your earlier choice (mouse config)"
+    config.update_yaml(p.session_config(S1), {"cnmf": {"min_pnr": 7.0}})
+    tab.refresh()
+    tab.show_session(S2)
+    tab.show_session(S1)
+    assert tab.source_label.text() == "Your earlier choice (session and mouse config)"
+
+
+def test_mouse_write_logs_the_counters_of_the_shown_session(qapp, series_maps, make_tab):
+    """D6: the person saw the counters of the shown session only: its row carries them, the others none."""
+    p = series_maps.paths
+    tab = make_tab(p, Dialogs(answer=True))
+    tab.show_session(S1)
+    seen = tab.counters_label.text()
+    tab.accept_for_mouse()
+    rows = {r["sid"]: r for r in _choices(p)}
+    assert seen.startswith(f"blobs {rows[S1]['n_blobs']} ·") and rows[S1]["n_mirror_blobs"] != ""
+    assert (rows[S2]["n_blobs"], rows[S2]["single_frac"], rows[S2]["n_mirror_blobs"]) == ("", "", "")
+
+
+def test_monitor_button_opens_the_first_waiting_session(qapp, series_maps):
+    """D7: Monitor's "Thresholds: N sessions →" opens the tab on the first session that waits."""
+    from bearmind.gui.app import MainWindow
+
+    w = MainWindow(series_maps.paths.root, message=lambda title, text: None)
+    w.thresholds.show_session(S2)
+    w.monitor.thresholds_button.click()
+    assert w.tabs.currentIndex() == 2 and w.thresholds.current()[0] == S1
+    w.thresholds.shutdown()
+    w.close()
+
+
+def test_video_is_about_as_large_as_one_map(qapp, series_maps, make_tab):
+    """D8 (check finding 5): the MC video got ~200 px of a 1400 px window; it has a minimum width and the
+    splitter gives it about the room of one map view."""
+    from bearmind.gui.thresholds_tab import VIDEO_MIN_W
+
+    tab = make_tab(series_maps.paths)
+    assert VIDEO_MIN_W >= 300 and tab.video.minimumWidth() == VIDEO_MIN_W
+    for size in ((1400, 860), (1100, 700)):
+        tab.resize(*size)
+        tab.show()
+        qapp.processEvents()
+        v, m = tab.video.width(), tab.corr_view.width()
+        assert v >= VIDEO_MIN_W and abs(v - m) <= 0.3 * m, (size, v, m)

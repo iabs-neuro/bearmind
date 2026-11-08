@@ -48,9 +48,15 @@ def _read_yaml(path) -> dict:
             parsed = yaml.safe_load(text) or {}
         except yaml.YAMLError as e:  # the parser names only "<unicode string>": the operator needs the file
             raise ConfigError(f"{path}: {' '.join(str(e).split())}", path, _yaml_first_line(e)) from e
+        if not isinstance(parsed, dict):  # a list or a plain value: the merge would fail without naming the file
+            first = f"the top level is a {type(parsed).__name__}, not a mapping of settings"
+            raise ConfigError(f"{path}: {first}", path, first)
         hit = (text, parsed)
         _PARSED[key] = hit
     return copy.deepcopy(hit[1])
+
+
+read_yaml = _read_yaml  # public name: one config layer as written (the window says which layer a value is from)
 
 
 def deep_merge(base: dict, over: dict) -> dict:

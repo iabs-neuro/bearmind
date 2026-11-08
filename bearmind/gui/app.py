@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
         self.monitor, self.scan, self.thresholds = monitor_tab, scan_tab, thresholds_tab
         self.actions_menu.clear()
         self.actions_menu.addActions(monitor_tab.menu_actions)
-        monitor_tab.open_tab.connect(self.show_tab)
+        monitor_tab.open_tab.connect(self._open_from_monitor)
         for tab in (monitor_tab, scan_tab, thresholds_tab):
             tab.status_message.connect(self.statusBar().showMessage)
         # written thresholds change Monitor's "Thresholds: N sessions" at once, not at its next tick
@@ -172,6 +172,12 @@ class MainWindow(QMainWindow):
 
     def show_tab(self, name: str) -> None:
         self.tabs.setCurrentIndex(TAB_NAMES.index(name))
+
+    def _open_from_monitor(self, name: str) -> None:
+        """Monitor's buttons: "Thresholds: N sessions" opens the tab on the first session that waits."""
+        if name == "Thresholds":
+            self.thresholds.show_first_waiting()
+        self.show_tab(name)
 
     def report_exception(self, exc_type, exc, tb) -> None:
         """Slot exceptions must not close the window: log the traceback, show the first line."""

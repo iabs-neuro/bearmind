@@ -556,11 +556,13 @@ def mouse_plan(paths, mouse: str) -> MousePlan:
     return _mouse_plan(paths, mouse)[0]
 
 
-def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float, who: str) -> ActionResult:
+def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float, who: str, *,
+                   shown: str | None = None, counters: "Counters | None" = None) -> ActionResult:
     """The same thresholds for every session of the mouse that has none (mouse_plan). A session with a choice is
     never overwritten (its CNMF-E would re-run), and an excluded one or one whose config cannot be read is left
     alone: each gets a warning. A session that cannot be written goes into `failed` (write_failed) and the others
-    are still written: stopping half-way would leave the mouse partly written without saying which part."""
+    are still written: stopping half-way would leave the mouse partly written without saying which part.
+    `counters`: what the person saw on the maps of the session `shown`; only its row in the choice log gets them."""
     bad = threshold_error(gsig, min_corr, min_pnr)
     if bad:
         raise ValueError(bad)
@@ -576,7 +578,8 @@ def apply_to_mouse(paths, mouse: str, gsig: int, min_corr: float, min_pnr: float
             res.warnings.append((sid, "already_chosen"))
         else:
             try:
-                logged = _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse", None)
+                logged = _write_thresholds(paths, rec, int(gsig), min_corr, min_pnr, who, "window_mouse",
+                                           counters if sid == shown else None)
             except Exception as e:  # a locked file, a session config broken since the plan: this session only
                 res.failed[sid] = ("write_failed", runner._one_line(e))
                 continue

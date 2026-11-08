@@ -337,3 +337,19 @@ def test_threshold_items_take_the_callers_view_and_records(series):
     view = runner.StageView(p, resolve=lambda rec: calls.append(rec.sid) or config.resolve(p, sid=rec.sid))
     items = tm.threshold_items(p, view, records)
     assert [i.sid for i in items] == [S1, S2] and sorted(calls) == [S1, S2]
+
+
+def test_choice_source_names_the_configs(series):
+    """D5: the config layers the session's thresholds come from, the closest first."""
+    p = series.paths
+    assert tm.choice_source(p, S1, "NOF_H01") == ""
+    config.update_yaml(p.series_config, {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    assert tm.choice_source(p, S1, "NOF_H01") == "series config"
+    config.update_yaml(p.mouse_config("NOF_H01"), {"cnmf": {"min_corr": 0.7}})
+    assert tm.choice_source(p, S1, "NOF_H01") == "mouse and series config"
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 5, "min_corr": 0.6, "min_pnr": 7.0}})
+    assert tm.choice_source(p, S1, "NOF_H01") == "session config"
+    sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
+    assert tm.source_text("chosen", _item(sug), "session config") == "Your earlier choice (session config)"
+    p.session_config(S1).write_text("cnmf: [unclosed\n", encoding="utf-8")
+    assert tm.choice_source(p, S1, "NOF_H01") == ""  # cannot be read: nothing is claimed

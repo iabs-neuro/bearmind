@@ -266,9 +266,33 @@ def value_text(x, decimals: int) -> str:
     return short if float(short) == x else repr(x)
 
 
-def source_text(source: str, item: ThresholdItem) -> str:
+_LAYERS = ("session", "mouse", "series")  # closest first: a closer layer overrides the next
+
+
+def choice_source(paths, sid: str, mouse: str) -> str:
+    """The config layers the session's thresholds come from, closest first: "session config", "mouse and series
+    config". "" when none of the three sets them, or when a layer cannot be read (nothing is claimed then)."""
+    files = {"session": paths.session_config(sid), "mouse": paths.mouse_config(mouse), "series": paths.series_config}
+    try:
+        cnmf = {name: config.read_yaml(f).get("cnmf") for name, f in files.items()}
+    except Exception:  # a broken layer: the tab shows "cannot be scheduled" for it anyway
+        return ""
+    found = set()
+    for k in actions.THRESHOLD_KEYS:
+        # the closest layer that has the key gives the resolved value (a null there means no choice)
+        name = next((n for n in _LAYERS if isinstance(cnmf[n], dict) and k in cnmf[n]), None)
+        if name is not None and cnmf[name][k] is not None:
+            found.add(name)
+    names = [n for n in _LAYERS if n in found]
+    if not names:
+        return ""
+    return f"{', '.join(names[:-1])} and {names[-1]} config" if len(names) > 1 else f"{names[0]} config"
+
+
+def source_text(source: str, item: ThresholdItem, chosen_from: str = "") -> str:
+    """`chosen_from`: choice_source of the session, for an earlier choice."""
     if source == "chosen":
-        return "Your earlier choice"
+        return f"Your earlier choice ({chosen_from})" if chosen_from else "Your earlier choice"
     if source == "suggested" and item.suggested:
         s = item.suggested
         return (f"Autotune suggestion ({s.get('method', '?')}): gSig {int(s['gSig'])}, "
