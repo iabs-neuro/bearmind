@@ -270,16 +270,16 @@ def _side_off(on, stage) -> bool:
     return on is not None and not on.get(stage, True)
 
 
-def _pv(rec, on) -> str:
-    """The pv column: "off" when the session's config turns every preview off, else one letter per side stage
-    ("-" for one that is off)."""
+STALE_MARK = "D*"  # done in the registry, but the batch would redo it (runner.StageView.current)
+
+
+def _pv(rec, on, stale=()) -> str:
+    """The pv column: "off" when the session's config turns every preview off, else one mark per side stage
+    ("-" for one that is off, D* for one in `stale`: done but the batch would redo it)."""
     if all(_side_off(on, s) for s in _SIDES):
         return "off"
-    return "".join("-" if _side_off(on, s) else _LETTER[rec.stages[s].state] if s in rec.stages else "."
-                   for s in _SIDES)
-
-
-STALE_MARK = "D*"  # done in the registry, but the batch would redo it (runner.StageView.current)
+    return "".join("-" if _side_off(on, s) else STALE_MARK if s in stale
+                   else _LETTER[rec.stages[s].state] if s in rec.stages else "." for s in _SIDES)
 
 
 def _row(rec, on=None, stale=()) -> tuple:
@@ -359,10 +359,14 @@ def cmd_status(args) -> int:
     for r in state.records:
         on = state.previews.get(r.sid)
         stale = state.view.done_not_current(r)
+        stale_sides = state.view.side_done_not_current(r)
         cells, reason = _row(r, on, stale)
-        if stale and not reason and r.sid not in state.problems:
-            reason = f"out of date: the batch redoes {state.view.first_not_current(r)} first"
-        rows.append((r.sid, "yes " if r.excluded else "no  ", cells + [_pv(r, on)], _check_mark(r),
+        if (stale or stale_sides) and not reason and r.sid not in state.problems:
+            # the stage the batch runs first, in its own order: a preview before the next main stage
+            first = state.view.first_ready(r) or state.view.first_not_current(r)
+            if first:
+                reason = f"out of date: the batch redoes {first} first"
+        rows.append((r.sid, "yes " if r.excluded else "no  ", cells + [_pv(r, on, stale_sides)], _check_mark(r),
                      _note(r, reason, state)))
     rows += [(Path(f).stem, "?   ", ["?"] * (len(STAGES) + 1), "?", _clip(state.problems[Path(f).stem]))
              for f, _ in state.broken]

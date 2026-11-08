@@ -395,6 +395,20 @@ class StageView:
         h = self.hash(rec, stage)
         return h is not None and st.params_hash == h
 
+    def ready(self, rec, stage) -> bool:
+        """next_ready would offer this stage of the session (leaving out a run's `until`, `sids` and `skip`): the
+        session not excluded and its hashes computable, every earlier main stage up to date, the stage itself not
+        up to date and not FAILED/SKIPPED with unchanged parameters. A side stage needs its checkbox set and every
+        main stage up to its parent up to date; a main stage never waits for a side stage."""
+        if rec.excluded or self.hashes(rec) is None:
+            return False
+        side = stage in SIDE_STAGES
+        if side and not self.side_on(rec, stage):
+            return False  # disabled: never offered, nothing recorded; an old record stays as it was
+        need = STAGES[:STAGES.index(SIDE_STAGES[stage]) + 1] if side else STAGES[:STAGES.index(stage)]
+        return (all(self.current(rec, s) for s in need) and not self.current(rec, stage)
+                and not self.blocked(rec, stage))
+
     # --- questions of the window and of status; the batch itself asks only current / blocked ---
 
     def problem(self, rec) -> str | None:
@@ -414,6 +428,20 @@ class StageView:
         if self.hashes(rec) is None:
             return None
         return next((s for s in STAGES if not self.current(rec, s)), None)
+
+    def first_ready(self, rec) -> str | None:
+        """The first stage in ALL_STAGES order that the batch would run for this session now (ready): a preview
+        it redoes before the next main stage is named, as the batch runs it first. None when no stage is ready."""
+        return next((s for s in ALL_STAGES if self.ready(rec, s)), None)
+
+    def side_done_not_current(self, rec) -> list:
+        """Side stages DONE in the registry, turned on, that the batch would redo (not current: their files are
+        gone, or their parent or their settings changed). [] for an excluded session and for one whose hashes
+        cannot be computed, as done_not_current."""
+        if rec.excluded or self.hashes(rec) is None:
+            return []
+        return [s for s in ALL_STAGES if s in SIDE_STAGES and s in rec.stages
+                and rec.stages[s].state is State.DONE and self.side_on(rec, s) and not self.current(rec, s)]
 
     def done_not_current(self, rec) -> list:
         """Main stages DONE in the registry that the batch would redo: every DONE one from first_not_current on
@@ -458,15 +486,10 @@ def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
     scope = _Scope(records, sids)
     recs = sorted((r for r in records if not r.excluded), key=lambda r: r.sid)
     for stage in _offered(until):
-        side = stage in SIDE_STAGES
-        need = STAGES[:STAGES.index(SIDE_STAGES[stage]) + 1] if side else STAGES[:STAGES.index(stage)]
         for r in recs:
-            if (r.sid, stage) in skip or not scope.has(r, stage) or view.hashes(r) is None:
+            if (r.sid, stage) in skip or not scope.has(r, stage):
                 continue
-            if side and not view.side_on(r, stage):
-                continue  # disabled: never offered, nothing recorded; an old record stays as it was
-            if (all(view.current(r, s) for s in need) and not view.current(r, stage)
-                    and not view.blocked(r, stage)):
+            if view.ready(r, stage):
                 return r.sid, stage
     return None
 

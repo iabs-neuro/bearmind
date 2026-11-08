@@ -699,6 +699,31 @@ def test_status_previews_column(series, capsys):
     assert all(rows[sid][col:col + 4] == "DD  " for sid in SIDS)
 
 
+def test_status_marks_out_of_date_previews(series, capsys):
+    """K2: the phase 5 check's root: previews on, every stage done, but the preview files and the autoinspection
+    output are gone (the copy left them out). The pv column reads D*D*, and the note names the stage the batch
+    runs first, the MC preview, not autoinspect."""
+    _finished_setup(series)
+    assert _main("previews", series.root, "on") == 0
+    assert _main("run", series.root, "--once") == 0
+    paths = series.paths
+    rec = load_record(paths, S1)
+    for stage in ("mc_preview", "cnmf_preview"):
+        for f in rec.stages[stage].outputs.values():
+            (paths.root / f).unlink()
+    (paths.root / rec.stages["autoinspect"].outputs["processed"]).unlink()
+    head, rows = _status_rows(_status(series, capsys))
+    col = head.index("pv")
+    assert rows[S1][col:col + 4] == "D*D*" and rows[S2][col:col + 4] == "DD  "
+    assert rows[S1].split()[2:9] == ["D", "D", "D", "D", "D", "D*", "D*"]
+    assert rows[S1].endswith("out of date: the batch redoes mc_preview first")
+    assert runner.next_ready(runner.series_state(paths).records, paths) == (S1, "mc_preview")
+    # previews off: the column says so, and the note goes back to the main stages
+    assert _main("previews", series.root, "off") == 0
+    head, rows = _status_rows(_status(series, capsys))
+    assert rows[S1][col:col + 3] == "off" and rows[S1].endswith("out of date: the batch redoes autoinspect first")
+
+
 def test_retry_all_failed_covers_a_failed_preview(series, capsys):
     _finished_setup(series)
     series.stubs.fail[(S1, "mc_preview")] = RuntimeError("disk full")
