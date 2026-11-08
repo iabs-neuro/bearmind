@@ -95,6 +95,18 @@ autoinspect:
   seed: 0
 gate:
   enabled: true
+# The inspection server of the series (python -m bearmind inspect); not stage parameters (no stage hash includes
+# them). port 0 takes a free port; the server stops after idle_exit_s seconds without an open browser tab.
+# webgl: traces drawn by the GPU; trace_points: at most this many points per trace go to the browser. wave: the
+# calcium-wave hint on the session page: a component is active in a frame when its C is above
+# median + k_mad x 1.4826 x MAD of its trace, a frame is a wave frame when at least active_frac of the kept
+# components are active, and the hint shows when the share of wave frames is above warn_frac (null: never).
+inspection:
+  port: 0
+  idle_exit_s: 600
+  webgl: true
+  trace_points: 2000
+  wave: {k_mad: 3.0, active_frac: 0.3, warn_frac: null}
 # MC checks: provisional, from 6 real sessions (task 17, docs/superpowers/specs/2026-11-01-e2e-report.md):
 # max shift 2.2-4.6 px, template corr 0.82-0.94; a uniform 2 px misalignment lowers the corr to 0.57-0.75.
 # The cnmf / autoinspect / export values are the initial guesses: they need production data.

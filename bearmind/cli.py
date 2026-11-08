@@ -552,6 +552,43 @@ def cmd_retry(args) -> int:
     return OK if res.ok else 1
 
 
+def cmd_inspect(args) -> int:
+    paths = _series(args.series)
+    recs = _records(paths)
+    if args.sid:
+        _check_sids(recs, [args.sid])
+    # lazy: Bokeh (and, once a session opens, CaImAn) only for this command
+    from bearmind import inspect_server
+    state = inspect_server.server_state(paths)
+    if state.alive:
+        url = state.url or inspect_server.wait_url(paths)
+        if url is None:
+            raise CliError("an inspection server of this series is starting; repeat the command in a moment",
+                           BUSY)
+        _say(f"[OK] inspection server is running: {url}")
+        if not args.no_browser:
+            import webbrowser
+            webbrowser.open(inspect_server.session_url(url, args.sid) if args.sid else url + "/")
+        return OK
+    # the server draws nothing with matplotlib; a Qt backend would load PySide6 into it (as for the runner)
+    os.environ.setdefault("MPLBACKEND", "Agg")
+    try:
+        return inspect_server.serve(paths.root, args.sid, args.port, open_browser=not args.no_browser)
+    except KeyboardInterrupt:
+        _say("[OK] inspection server stopped by Ctrl+C")
+        return INTERRUPTED
+
+
+def _port(value: str) -> int:
+    try:
+        x = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--port must be a whole number 0-65535, got {value}") from None
+    if not 0 <= x <= 65535:
+        raise argparse.ArgumentTypeError(f"--port must be a whole number 0-65535, got {value}")
+    return x
+
+
 def _preview_setting(value, name):
     if value is None:
         return None
@@ -656,6 +693,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("state", choices=["on", "off"])
     sp.add_argument("--tbin", metavar="N", help="frames averaged into one preview frame (default 2)")
     sp.add_argument("--ssub", metavar="N", help="pixels per side averaged into one preview pixel (default 1: full size)")
+
+    sp = add("inspect", cmd_inspect, "open the manual-inspection window in the browser (one server per series; "
+             "a running one is reused)", who=False)
+    sp.add_argument("sid", metavar="SID", nargs="?", help="session to open (default: the list of waiting sessions)")
+    sp.add_argument("--port", type=_port, help="port of a new server (default: inspection.port; 0 takes a free one)")
+    sp.add_argument("--no-browser", action="store_true", help="do not open the browser")
     return p
 
 
