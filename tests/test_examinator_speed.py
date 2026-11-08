@@ -10,7 +10,6 @@ Each test prints its numbers ("[speed] ...", visible with -s).
 # fails to load (WinError 127) unless torch is imported first.
 import torch  # noqa: F401
 
-import copy
 import sys
 import time
 from pathlib import Path
@@ -127,22 +126,29 @@ def test_delete_fast_short(tmp_path):
         assert dt <= 0.05 and size <= 0.1 * MB, (dt, size)
 
 
-def test_merge_time(hour):
+def test_merge_time(hour, monkeypatch):
+    """The window's own time of a Merge: the chain minus CaImAn's manual_merge, timed inside the chain (a
+    separate manual_merge call on a copy varies by as much as the target, 0.4-1.3 s from run to run)."""
     app = _open(hour)
-    rows = [0, 1]
-    comps = [app.storage.shown[r] for r in rows]
-    ref = copy.copy(app.storage.estimates)  # manual_merge replaces attributes; the window's object stays
-    params = CNMFParams(params_dict=ref.cnmf_dict)
-    t0 = time.perf_counter()
-    ref.manual_merge([comps], params=params)
-    t_mm = time.perf_counter() - t0
-    del ref
-    app.select(rows)
+    inner = []
+    real = Estimates.manual_merge
+
+    def timed_merge(self, *args, **kwargs):
+        t0 = time.perf_counter()
+        try:
+            return real(self, *args, **kwargs)
+        finally:
+            inner.append(time.perf_counter() - t0)
+
+    monkeypatch.setattr(Estimates, "manual_merge", timed_merge)
+    app.select([0, 1])
     dt, size, events = _timed(app, "Merge sel.")
+    assert len(inner) == 1, inner
+    t_mm = inner[0]
     print(f"[speed] hour merge time_s={dt:.3f} manual_merge_s={t_mm:.3f} extra_s={dt - t_mm:.3f} "
           f"patch_bytes={size}")
     assert app.shown()[-1] == N_COMP - 2  # the merged one, last
-    assert dt <= t_mm + 0.5 and size <= 1 * MB, (dt, t_mm, size)
+    assert dt - t_mm <= 0.5 and size <= 1 * MB, (dt, t_mm, size)
 
 
 def test_select_is_cheap(hour):
