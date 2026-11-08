@@ -106,10 +106,6 @@ def test_examine_cells_shows_the_app(tmp_path, monkeypatch):
     shown[0](Document())  # builds without a server
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Revert change keeping the zoomed view contradicts the golden record: sessions s8 and s40 select rows "
-    "right after a Revert of a Delete made in a zoomed view, recorded with the full list on screen "
-    "(see the Task 2 report, NEEDS_CONTEXT)"))
 def test_revert_button_chain_keeps_zoom(tmp_path):
     app = _open(tmp_path)
     app.select([2, 3, 4, 5]); app.click("Show sel.")
@@ -232,6 +228,25 @@ def test_merge_recomputes_one_contour(tmp_path, monkeypatch):
     app.select([0, 1]); app.click("Merge sel.")
     assert columns == [1]
     assert app.shown() == [0, 1, 2, 3, 4, 5, 6]
+
+
+def test_merge_params_built_once(tmp_path, monkeypatch):
+    """Building CNMFParams takes about 0.25 s; manual_merge only reads it, so one per window is enough."""
+    app = _open(tmp_path)
+    built = []
+    real = bm_examinator.params.CNMFParams
+
+    def counting(*args, **kwargs):
+        built.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(bm_examinator.params, "CNMFParams", counting)
+    app.select([0, 1]); app.click("Merge sel.")
+    app.select([2, 3]); app.click("Merge sel.")
+    app.click("Revert change")
+    app.select([0, 1]); app.click("Merge sel.")
+    assert len(built) == 1
+    assert app.shown() == [0, 1, 2, 3, 4, 5]   # 8 components, two merges of two in effect
 
 
 def _capcan_estimates(folder):

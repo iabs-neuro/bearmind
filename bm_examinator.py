@@ -1332,6 +1332,15 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         # as before, Revert change before any change returns to the file as loaded
         remember(storage)
 
+        merge_params = []
+
+        def cnmf_params(estimates):
+            """The session's CNMFParams, built at the first merge only: building takes about 0.25 s, and
+            manual_merge only reads it (cnmf_dict is the file's and never changes)."""
+            if not merge_params:
+                merge_params.append(params.CNMFParams(params_dict=estimates.cnmf_dict))
+            return merge_params[0]
+
         def sort_callback(event, storage=None, rb=None):
             regime = storage.mode
             est = storage.estimates
@@ -1444,7 +1453,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 print('sel_comps:', sel_comps)
             remember(storage)
             before = storage.undo.fields
-            estimates.manual_merge([sel_comps], params=params.CNMFParams(params_dict=estimates.cnmf_dict))
+            estimates.manual_merge([sel_comps], params=cnmf_params(estimates))
             good_neurons = np.setdiff1d(list(range(before['C'].shape[0])), np.array(sel_comps))
             cmapping = dict(zip(good_neurons, np.arange(len(good_neurons))))
             estimates.SNR_comp = _merged_quality(before['SNR_comp'], cmapping, sel_comps)
@@ -1481,8 +1490,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             estimates = storage.estimates
             for f, v in rec.fields.items():
                 setattr(estimates, f, v)
-            # the rows on screen at the change: a zoomed view comes back zoomed (own callback only, see the
-            # Revert change button)
+            # the rows on screen at the change: a zoomed view comes back zoomed
             storage.shown = list(rec.shown)
             use_numbering(storage, rec.numbering)
             # no selection, as after Delete and Merge: a neuron left highlighted under a cleared panel could not
@@ -1856,10 +1864,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                                 partial(sort_callback, storage=storage, rb=radio_button_group))
 
         button_revert = Button(label="Revert change", button_type="danger", width=bwidth, width_policy='fit')
-        # Reset view after the revert: the window has always ended Revert change on the full list, and the golden
-        # record of its decisions (tests/test_examinator_golden.py) selects rows on that list right after it.
+        # no Reset view in this chain: Revert change returns the view of the last change, a zoomed one too
         button_revert.on_event('button_click', partial(revert_callback, storage=storage),
-                               partial(restore_callback, storage=storage),
                                partial(sort_callback, storage=storage, rb=radio_button_group))
 
         button_discard = Button(label="Discard all", button_type="danger", width=bwidth, width_policy='fit')
