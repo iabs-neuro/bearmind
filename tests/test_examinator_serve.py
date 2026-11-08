@@ -290,6 +290,37 @@ def test_save_hook_error_shown(tmp_path, monkeypatch, caplog, hook, button):
     assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
 
 
+def _image(doc):
+    """The max image as the browser gets it."""
+    from bokeh.models import GlyphRenderer, Image
+    r, = [m for m in _models(doc) if isinstance(m, GlyphRenderer) and isinstance(m.glyph, Image)]
+    return np.asarray(r.data_source.data["image"][0])
+
+
+def test_max_image_sent_as_uint8(tmp_path):
+    """One byte per pixel goes to the browser: the colour mapper spans the grey levels 1..256, so a float max
+    image is rounded and clipped to 0..255 (no pixel changes by more than one level); a uint8 one, which the
+    batch's CNMF-E writes, is sent as it is."""
+    path = make_estimates(tmp_path)
+    est = _load(path)
+    est.imax = np.linspace(-3.0, 300.0, est.imax.size).reshape(est.imax.shape)
+    est.imax[0, 0] = np.nan
+    with open(path, "wb") as f:
+        pickle.dump(est, f)
+    img = _image(App(bm_examinator.make_app(str(path), 20, LEGACY)).doc)
+    flipped = np.flip(est.imax, axis=0)
+    assert img.dtype == np.uint8 and img.shape == flipped.shape
+    ok = ~np.isnan(flipped)
+    assert np.array_equal(img[ok], np.clip(np.rint(flipped[ok]), 0, 255).astype(np.uint8))
+    assert img[~ok].tolist() == [0]
+
+    est.imax = (np.arange(est.imax.size) % 256).astype(np.uint8).reshape(est.imax.shape)
+    with open(path, "wb") as f:
+        pickle.dump(est, f)
+    img = _image(App(bm_examinator.make_app(str(path), 20, LEGACY)).doc)
+    assert img.dtype == np.uint8 and np.array_equal(img, np.flip(est.imax, axis=0))
+
+
 def test_prepared_session_must_match(tmp_path):
     path = make_estimates(tmp_path)
     (tmp_path / "other").mkdir()

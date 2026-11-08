@@ -1135,6 +1135,11 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         height = int(imwidth * dims[0] / dims[1])
         imdata = np.flip(estimates0.imax, axis=0)  # flip for reverting y-axis
+        if imdata.dtype != np.uint8:
+            # One byte per pixel to the browser instead of eight (3 of the 4.7 MB of an hour session's page). The
+            # colour mapper spans grey levels 1..256, so rounding and clipping to 0..255 moves a pixel by at most
+            # one of its 256 colours; a NaN pixel becomes 0.
+            imdata = np.clip(np.rint(np.nan_to_num(imdata, nan=0.0)), 0, 255).astype(np.uint8)
 
         # main plots, p1 is for image on the left, p2 is for traces on the right
         p1 = figure(width=imwidth, height=height, tools=tools1, toolbar_location='below', title=title,
