@@ -1,0 +1,513 @@
+{
+ "series": "H:\\Projects\\_bearmind_test\\series1",
+ "window_open_s": 0.232,
+ "snap_monitor": {
+  "file": "series1-monitor.png",
+  "bytes": 81827,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "tab_show_s": 0.01,
+ "first_shown": {
+  "sid": "LT1_K02_1D",
+  "gSig": 4,
+  "min_corr": 0.78,
+  "min_pnr": 13.5,
+  "state": "waiting",
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.78,
+   "min_pnr": 13.5,
+   "method": "mirror_fdr"
+  },
+  "chosen": null,
+  "counters": "blobs 111 \u00b7 single pixels 34 % \u00b7 blobs on mirrored maps 120",
+  "source": "Autotune suggestion (mirror_fdr): gSig 4, min_corr 0.78, min_pnr 13.5",
+  "maps_title": "Correlation and PNR, gSig 4",
+  "video_title": "MC video \u2014 LT1_K02_1D",
+  "strip": [
+   "gSig 3 \u00b7 48",
+   "gSig 4 \u00b7 111",
+   "gSig 5 \u00b7 63",
+   "gSig 6 \u00b7 65",
+   "gSig 7 \u00b7 57"
+  ],
+  "accept_enabled": true,
+  "accept_tip": "Write these thresholds to the session and show the next session that waits",
+  "reset_enabled": true,
+  "tree": [
+   [
+    "LT1_K02",
+    [
+     [
+      "1D",
+      "waiting"
+     ]
+    ]
+   ],
+   [
+    "NOF_H01",
+    [
+     [
+      "1D",
+      "waiting"
+     ]
+    ]
+   ],
+   [
+    "NOF_H03",
+    [
+     [
+      "3D",
+      "waiting"
+     ],
+     [
+      "4D",
+      "waiting"
+     ]
+    ]
+   ],
+   [
+    "RFC_F01",
+    [
+     [
+      "1D",
+      "waiting"
+     ]
+    ]
+   ],
+   [
+    "RFC_F20",
+    [
+     [
+      "1D",
+      "waiting"
+     ]
+    ]
+   ]
+  ],
+  "corr_view_px": [
+   464,
+   484
+  ],
+  "map_shape": [
+   532,
+   608
+  ],
+  "video_frames_shown": 1
+ },
+ "sessions": {
+  "NOF_H01_1D": {
+   "sid": "NOF_H01_1D",
+   "gSig": 4,
+   "min_corr": 0.82,
+   "min_pnr": 14.5,
+   "state": "waiting",
+   "suggested": {
+    "gSig": 4,
+    "min_corr": 0.82,
+    "min_pnr": 14.5,
+    "method": "mirror_fdr"
+   },
+   "chosen": null,
+   "counters": "blobs 172 \u00b7 single pixels 9 % \u00b7 blobs on mirrored maps 127",
+   "source": "Autotune suggestion (mirror_fdr): gSig 4, min_corr 0.82, min_pnr 14.5",
+   "maps_title": "Correlation and PNR, gSig 4",
+   "video_title": "MC video \u2014 NOF_H01_1D",
+   "strip": [
+    "gSig 3 \u00b7 154",
+    "gSig 4 \u00b7 172",
+    "gSig 5 \u00b7 134",
+    "gSig 6 \u00b7 112",
+    "gSig 7 \u00b7 102"
+   ],
+   "accept_enabled": true,
+   "accept_tip": "Write these thresholds to the session and show the next session that waits",
+   "reset_enabled": true,
+   "tree": [
+    [
+     "LT1_K02",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "NOF_H01",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "NOF_H03",
+     [
+      [
+       "3D",
+       "waiting"
+      ],
+      [
+       "4D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "RFC_F01",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "RFC_F20",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ]
+   ],
+   "corr_view_px": [
+    464,
+    484
+   ],
+   "map_shape": [
+    608,
+    608
+   ],
+   "video_frames_shown": 2,
+   "select_sync_s": 0.147,
+   "select_ui_s": 0.147,
+   "first_frame_s": 0.162,
+   "snap": {
+    "file": "series1-NOF_H01_1D.png",
+    "bytes": 289577,
+    "how": "palette 256, scaled 0.80",
+    "px": [
+     1400,
+     860
+    ]
+   }
+  },
+  "RFC_F01_1D": {
+   "sid": "RFC_F01_1D",
+   "gSig": 4,
+   "min_corr": 0.64,
+   "min_pnr": 8.0,
+   "state": "waiting",
+   "suggested": {
+    "gSig": 4,
+    "min_corr": 0.64,
+    "min_pnr": 8.0,
+    "method": "mirror_fdr"
+   },
+   "chosen": null,
+   "counters": "blobs 214 \u00b7 single pixels 15 % \u00b7 blobs on mirrored maps 173",
+   "source": "Autotune suggestion (mirror_fdr): gSig 4, min_corr 0.64, min_pnr 8.0",
+   "maps_title": "Correlation and PNR, gSig 4",
+   "video_title": "MC video \u2014 RFC_F01_1D",
+   "strip": [
+    "gSig 3 \u00b7 152",
+    "gSig 4 \u00b7 214",
+    "gSig 5 \u00b7 256",
+    "gSig 6 \u00b7 268",
+    "gSig 7 \u00b7 209"
+   ],
+   "accept_enabled": true,
+   "accept_tip": "Write these thresholds to the session and show the next session that waits",
+   "reset_enabled": true,
+   "tree": [
+    [
+     "LT1_K02",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "NOF_H01",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "NOF_H03",
+     [
+      [
+       "3D",
+       "waiting"
+      ],
+      [
+       "4D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "RFC_F01",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ],
+    [
+     "RFC_F20",
+     [
+      [
+       "1D",
+       "waiting"
+      ]
+     ]
+    ]
+   ],
+   "corr_view_px": [
+    467,
+    484
+   ],
+   "map_shape": [
+    463,
+    485
+   ],
+   "video_frames_shown": 3,
+   "select_sync_s": 0.108,
+   "select_ui_s": 0.108,
+   "first_frame_s": 0.137,
+   "snap": {
+    "file": "series1-RFC_F01_1D.png",
+    "bytes": 253770,
+    "how": "palette 256, scaled 0.80",
+    "px": [
+     1400,
+     860
+    ]
+   }
+  }
+ },
+ "latency": {
+  "NOF_H01_1D": {
+   "drag_min_corr": {
+    "n": 20,
+    "median_ms": 5.0,
+    "max_ms": 6.0,
+    "min_ms": 3.7
+   },
+   "drag_min_pnr": {
+    "n": 20,
+    "median_ms": 5.0,
+    "max_ms": 6.0,
+    "min_ms": 3.6
+   },
+   "release_min_corr": {
+    "n": 20,
+    "median_ms": 14.0,
+    "max_ms": 23.5,
+    "min_ms": 11.7
+   },
+   "release_min_pnr": {
+    "n": 20,
+    "median_ms": 15.6,
+    "max_ms": 17.6,
+    "min_ms": 13.8
+   },
+   "key_min_corr": {
+    "n": 20,
+    "median_ms": 21.2,
+    "max_ms": 24.0,
+    "min_ms": 18.3
+   },
+   "key_min_pnr": {
+    "n": 20,
+    "median_ms": 21.2,
+    "max_ms": 32.4,
+    "min_ms": 17.9
+   },
+   "map_shape": [
+    608,
+    608
+   ],
+   "n_gsig": 5,
+   "back_to_start": true
+  },
+  "RFC_F01_1D": {
+   "drag_min_corr": {
+    "n": 20,
+    "median_ms": 5.2,
+    "max_ms": 6.1,
+    "min_ms": 3.0
+   },
+   "drag_min_pnr": {
+    "n": 20,
+    "median_ms": 5.1,
+    "max_ms": 5.8,
+    "min_ms": 3.7
+   },
+   "release_min_corr": {
+    "n": 20,
+    "median_ms": 10.0,
+    "max_ms": 10.5,
+    "min_ms": 7.7
+   },
+   "release_min_pnr": {
+    "n": 20,
+    "median_ms": 12.0,
+    "max_ms": 13.5,
+    "min_ms": 10.5
+   },
+   "key_min_corr": {
+    "n": 20,
+    "median_ms": 12.8,
+    "max_ms": 14.4,
+    "min_ms": 11.0
+   },
+   "key_min_pnr": {
+    "n": 20,
+    "median_ms": 14.9,
+    "max_ms": 16.0,
+    "min_ms": 14.0
+   },
+   "map_shape": [
+    463,
+    485
+   ],
+   "n_gsig": 5,
+   "back_to_start": true
+  }
+ },
+ "order": [
+  "LT1_K02_1D",
+  "NOF_H01_1D",
+  "NOF_H03_3D",
+  "NOF_H03_4D",
+  "RFC_F01_1D",
+  "RFC_F20_1D"
+ ],
+ "transitions": [
+  {
+   "button": "Next \u2192",
+   "from": "LT1_K02_1D",
+   "to": "NOF_H01_1D",
+   "sync_s": 0.155,
+   "ui_s": 0.157,
+   "first_frame_s": 0.168
+  },
+  {
+   "button": "Next \u2192",
+   "from": "NOF_H01_1D",
+   "to": "NOF_H03_3D",
+   "sync_s": 0.11,
+   "ui_s": 0.112,
+   "first_frame_s": 0.138
+  },
+  {
+   "button": "Next \u2192",
+   "from": "NOF_H03_3D",
+   "to": "NOF_H03_4D",
+   "sync_s": 0.114,
+   "ui_s": 0.116,
+   "first_frame_s": 0.13
+  },
+  {
+   "button": "Next \u2192",
+   "from": "NOF_H03_4D",
+   "to": "RFC_F01_1D",
+   "sync_s": 0.103,
+   "ui_s": 0.105,
+   "first_frame_s": 0.115
+  },
+  {
+   "button": "Next \u2192",
+   "from": "RFC_F01_1D",
+   "to": "RFC_F20_1D",
+   "sync_s": 0.101,
+   "ui_s": 0.103,
+   "first_frame_s": 0.115
+  },
+  {
+   "button": "\u2190 Previous",
+   "from": "RFC_F20_1D",
+   "to": "RFC_F01_1D",
+   "sync_s": 0.096,
+   "ui_s": 0.099,
+   "first_frame_s": 0.107
+  },
+  {
+   "button": "\u2190 Previous",
+   "from": "RFC_F01_1D",
+   "to": "NOF_H03_4D",
+   "sync_s": 0.12,
+   "ui_s": 0.122,
+   "first_frame_s": 0.133
+  },
+  {
+   "button": "\u2190 Previous",
+   "from": "NOF_H03_4D",
+   "to": "NOF_H03_3D",
+   "sync_s": 0.117,
+   "ui_s": 0.129,
+   "first_frame_s": 0.139
+  },
+  {
+   "button": "\u2190 Previous",
+   "from": "NOF_H03_3D",
+   "to": "NOF_H01_1D",
+   "sync_s": 0.146,
+   "ui_s": 0.149,
+   "first_frame_s": 0.159
+  },
+  {
+   "button": "\u2190 Previous",
+   "from": "NOF_H01_1D",
+   "to": "LT1_K02_1D",
+   "sync_s": 0.131,
+   "ui_s": 0.133,
+   "first_frame_s": 0.143
+  }
+ ],
+ "transition_summary": {
+  "next_ui": {
+   "n": 5,
+   "median_ms": 112.0,
+   "max_ms": 157.0,
+   "min_ms": 103.0
+  },
+  "prev_ui": {
+   "n": 5,
+   "median_ms": 129.0,
+   "max_ms": 149.0,
+   "min_ms": 99.0
+  },
+  "all_ui": {
+   "n": 10,
+   "median_ms": 119.0,
+   "max_ms": 157.0,
+   "min_ms": 99.0
+  },
+  "all_first_frame": {
+   "n": 10,
+   "median_ms": 135.5,
+   "max_ms": 168.0,
+   "min_ms": 107.0
+  }
+ },
+ "refused_writes": [],
+ "errors": [],
+ "messages": []
+}

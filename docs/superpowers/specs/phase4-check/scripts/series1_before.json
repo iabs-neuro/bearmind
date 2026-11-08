@@ -1,0 +1,868 @@
+{
+ "H:\\Projects\\_bearmind_test\\series1\\_bearmind": {
+  "files": {
+   "heartbeat.json": {
+    "size": 438,
+    "mtime_ns": 1793481659671662100,
+    "sha256": "32479db838d43bdf4f8b31468d1d576a1be23294769dc103c259e8e263939a30"
+   },
+   "scan_unrecognized.csv": {
+    "size": 12,
+    "mtime_ns": 1793471435174470100,
+    "sha256": "d1551e208269aee28abe97af78fd4f27ecfb6e656e98e06384506702de26a627"
+   },
+   "summary.csv": {
+    "size": 1107,
+    "mtime_ns": 1793481662051024700,
+    "sha256": "1bddd51214451d0bd6ac4cb01b612e49de817a2e322f08ead7b575b0246fa7a9"
+   },
+   "config\\series.yaml": {
+    "size": 4,
+    "mtime_ns": 1793471434985015900,
+    "sha256": "e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"
+   },
+   "config\\mice\\LT1_K02.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471485304032200,
+    "sha256": "8f54011b996c2b0d07f315e0bf14ee4bc221ed4823d2a6b33486f396d76dd979"
+   },
+   "config\\mice\\NOF_H01.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471486755201600,
+    "sha256": "4ece1000a671d0049780575ed8f26a743496c62223f767567f85f630a8e463a7"
+   },
+   "config\\mice\\NOF_H03.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471490550394700,
+    "sha256": "a9b9271bf5469cecd31467623597648c48fb288c82c4a7db18e7af45be549b54"
+   },
+   "config\\mice\\RFC_F01.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471499435827400,
+    "sha256": "912f886ec9559f2c83ab3856c4f70851c5ac5d95989af2f8ef2998b86857e6e7"
+   },
+   "config\\mice\\RFC_F20.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471509573514800,
+    "sha256": "59a5ef5ced71a09e53827923aa46da7132161d6fb90f23484ef0f496b4912f01"
+   },
+   "config\\sessions\\LT1_K02_1D.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471485314312800,
+    "sha256": "d574d6819737ef35f368e19d18ae68c6a1e5e7cbf410717c9c295ae8d9c5d8d0"
+   },
+   "config\\sessions\\NOF_H01_1D.yaml": {
+    "size": 33,
+    "mtime_ns": 1793471486755201600,
+    "sha256": "d574d6819737ef35f368e19d18ae68c6a1e5e7cbf410717c9c295ae8d9c5d8d0"
+   },
+   "config\\sessions\\NOF_H03_3D.yaml": {
+    "size": 35,
+    "mtime_ns": 1793471490556602400,
+    "sha256": "aae68e156ec41124010786724f08bef2d1f5d9cf925c481c8570ab45676e41f2"
+   },
+   "config\\sessions\\NOF_H03_4D.yaml": {
+    "size": 35,
+    "mtime_ns": 1793471490565708500,
+    "sha256": "aae68e156ec41124010786724f08bef2d1f5d9cf925c481c8570ab45676e41f2"
+   },
+   "config\\sessions\\RFC_F01_1D.yaml": {
+    "size": 36,
+    "mtime_ns": 1793471499446801800,
+    "sha256": "ab0c1ed666272a3f6bce8cb63b3863f9aee3e23ab7e28d74b4c8624f8cf8d243"
+   },
+   "config\\sessions\\RFC_F20_1D.yaml": {
+    "size": 35,
+    "mtime_ns": 1793471509578713800,
+    "sha256": "4c46d7d64866d1f8c496b23fa691f4ce68a463d931bbf3a154e1320418aeba04"
+   },
+   "logs\\LT1_K02_1D.log": {
+    "size": 698,
+    "mtime_ns": 1793481659315677200,
+    "sha256": "90e8712f972ab4b656b73550e1ee559e1d8cc4baa4988b8c00856ce8e91e4ce2"
+   },
+   "logs\\NOF_H01_1D.log": {
+    "size": 630,
+    "mtime_ns": 1793481659379217400,
+    "sha256": "ec72ea83a8895bfab481d1a36dce9a7f7b85551f3459a3950254624d140c00cc"
+   },
+   "logs\\NOF_H03_3D.log": {
+    "size": 579,
+    "mtime_ns": 1793481659442312800,
+    "sha256": "3856424ccdf278734148ca8bfbc60a280467a1f6a09fc05f7749617c8452306b"
+   },
+   "logs\\NOF_H03_4D.log": {
+    "size": 579,
+    "mtime_ns": 1793481659505081800,
+    "sha256": "1a831bc981825eb711b546dde4b8c9ee1888b25d501af98e2e0ba47e56bffa0b"
+   },
+   "logs\\RFC_F01_1D.log": {
+    "size": 580,
+    "mtime_ns": 1793481659574910700,
+    "sha256": "6e413ef04b09e52685dc2f2515e6dbe22bba2c88f5c344656eb9d77b9d18c012"
+   },
+   "logs\\RFC_F20_1D.log": {
+    "size": 579,
+    "mtime_ns": 1793481659636910900,
+    "sha256": "6eda1863bf917134983cabbe5b265823e99ad851327a60b44cb3e602e97770f7"
+   },
+   "logs\\series.log": {
+    "size": 4202,
+    "mtime_ns": 1793481659670661200,
+    "sha256": "d2254294a4671314af43b873d2e065958767a4a835111066a696749634f82dcc"
+   },
+   "registry\\LT1_K02_1D.json": {
+    "size": 7302,
+    "mtime_ns": 1793481659309954400,
+    "sha256": "ea622e7beb6c12b19827852940e258d71db977c0dfc9801b24f3398ce68a4538"
+   },
+   "registry\\NOF_H01_1D.json": {
+    "size": 6946,
+    "mtime_ns": 1793481659372984600,
+    "sha256": "95efa98dc40df1b2fdfd4c7018b3e0ff71a085eef7aec7f0e4449b15a5748a95"
+   },
+   "registry\\NOF_H03_3D.json": {
+    "size": 7175,
+    "mtime_ns": 1793481659436982000,
+    "sha256": "cde724466744f1873a0746d1271412eec63fd2518f8a62792fe3424fb430c929"
+   },
+   "registry\\NOF_H03_4D.json": {
+    "size": 7176,
+    "mtime_ns": 1793481659497817600,
+    "sha256": "f811713021303df31fb862c418b995bdff67b4e682ddc1f6dec8cd4c9b804d17"
+   },
+   "registry\\RFC_F01_1D.json": {
+    "size": 6340,
+    "mtime_ns": 1793481659568134000,
+    "sha256": "42f55b72171aea3abc61e1051f8654c69cef5783faa2c30a0389433f4e40e11e"
+   },
+   "registry\\RFC_F20_1D.json": {
+    "size": 6572,
+    "mtime_ns": 1793481659630159400,
+    "sha256": "2d3dddba6ef3a338dd13b3a0365c76ec1ad72c2bee3b05f029824ea1158f6f68"
+   },
+   "thresholds\\LT1_K02_1D_maps.npz": {
+    "size": 22995052,
+    "mtime_ns": 1793477152062541500,
+    "sha256": "278b067f52fa3835c89f356a3fb10bcdc58067475952a73f4b8aca1601c44e5b"
+   },
+   "thresholds\\NOF_H01_1D_maps.npz": {
+    "size": 26591268,
+    "mtime_ns": 1793478176780579600,
+    "sha256": "221b447a2029e9430b545e68138c7c2224b1b33665f1722378dd16e700048191"
+   },
+   "thresholds\\NOF_H03_3D_maps.npz": {
+    "size": 20251486,
+    "mtime_ns": 1793479446274571700,
+    "sha256": "27f0293f72c08132115eec962a398682a412a744ddd2d610d45db7c70a7c7d9f"
+   },
+   "thresholds\\NOF_H03_4D_maps.npz": {
+    "size": 20237255,
+    "mtime_ns": 1793480720996882400,
+    "sha256": "546e7870fbb2b71a8ac0f59ca8ca0917d174679d57b9e31b4f2eaec87b8e2d73"
+   },
+   "thresholds\\RFC_F01_1D_maps.npz": {
+    "size": 16352263,
+    "mtime_ns": 1793481136264518400,
+    "sha256": "e3c8567b389a3573816caa8e1f0066bae822b720eda8d991634ce3e97f34428d"
+   },
+   "thresholds\\RFC_F20_1D_maps.npz": {
+    "size": 18006713,
+    "mtime_ns": 1793481610234743900,
+    "sha256": "7a85c1adb5ccf6452a48cc1bc7bfc3b6fce2903a418202eec3b8f6a3d945bbb3"
+   }
+  },
+  "dirs": {
+   ".": 1793481662054151800,
+   "config": 1793471485312307200,
+   "config\\mice": 1793471509578713800,
+   "config\\sessions": 1793471509583936400,
+   "logs": 1793471499499205300,
+   "registry": 1793481659636910900,
+   "thresholds": 1793481610234743900
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series1\\3_MC": {
+  "files": {
+   "LT1_K02_1D_MC.avi": {
+    "size": 809315006,
+    "mtime_ns": 1793472850946098100,
+    "sha256": null
+   },
+   "LT1_K02_1D_MC_shifts.npy": {
+    "size": 93520,
+    "mtime_ns": 1793472763393946900,
+    "sha256": null
+   },
+   "NOF_H01_1D_MC.avi": {
+    "size": 1340011442,
+    "mtime_ns": 1793473576674531400,
+    "sha256": null
+   },
+   "NOF_H01_1D_MC_shifts.npy": {
+    "size": 94920,
+    "mtime_ns": 1793473473151655600,
+    "sha256": null
+   },
+   "NOF_H03_3D_MC.avi": {
+    "size": 1079018810,
+    "mtime_ns": 1793474321961814100,
+    "sha256": null
+   },
+   "NOF_H03_3D_MC_shifts.npy": {
+    "size": 143016,
+    "mtime_ns": 1793474206294706200,
+    "sha256": null
+   },
+   "NOF_H03_4D_MC.avi": {
+    "size": 1029335708,
+    "mtime_ns": 1793475058437726200,
+    "sha256": null
+   },
+   "NOF_H03_4D_MC_shifts.npy": {
+    "size": 143008,
+    "mtime_ns": 1793474952085106600,
+    "sha256": null
+   },
+   "RFC_F01_1D_MC.avi": {
+    "size": 696497628,
+    "mtime_ns": 1793475710909591800,
+    "sha256": null
+   },
+   "RFC_F01_1D_MC_shifts.npy": {
+    "size": 71608,
+    "mtime_ns": 1793475671663655700,
+    "sha256": null
+   },
+   "RFC_F20_1D_MC.avi": {
+    "size": 747302692,
+    "mtime_ns": 1793476078697256300,
+    "sha256": null
+   },
+   "RFC_F20_1D_MC_shifts.npy": {
+    "size": 71600,
+    "mtime_ns": 1793476032321301500,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1793476078697256300
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series1\\Preview": {
+  "files": {
+   "LT1_K02_1D_mc.mp4": {
+    "size": 7557214,
+    "mtime_ns": 1793472909272029100,
+    "sha256": null
+   },
+   "LT1_K02_1D_mc_dff.mp4": {
+    "size": 491193181,
+    "mtime_ns": 1793473242855717600,
+    "sha256": null
+   },
+   "LT1_K02_1D_raw.mp4": {
+    "size": 8824116,
+    "mtime_ns": 1793472879368686200,
+    "sha256": null
+   },
+   "LT1_K02_1D_raw_dff.mp4": {
+    "size": 491711700,
+    "mtime_ns": 1793473069301197100,
+    "sha256": null
+   },
+   "NOF_H01_1D_mc.mp4": {
+    "size": 6403179,
+    "mtime_ns": 1793473639217156600,
+    "sha256": null
+   },
+   "NOF_H01_1D_mc_dff.mp4": {
+    "size": 408468583,
+    "mtime_ns": 1793473937230365500,
+    "sha256": null
+   },
+   "NOF_H01_1D_raw.mp4": {
+    "size": 6928222,
+    "mtime_ns": 1793473605519642000,
+    "sha256": null
+   },
+   "NOF_H01_1D_raw_dff.mp4": {
+    "size": 411884970,
+    "mtime_ns": 1793473785123685400,
+    "sha256": null
+   },
+   "NOF_H03_3D_mc.mp4": {
+    "size": 5145945,
+    "mtime_ns": 1793474390278769900,
+    "sha256": null
+   },
+   "NOF_H03_3D_mc_dff.mp4": {
+    "size": 198020323,
+    "mtime_ns": 1793474689549393100,
+    "sha256": null
+   },
+   "NOF_H03_3D_raw.mp4": {
+    "size": 7742592,
+    "mtime_ns": 1793474360474235100,
+    "sha256": null
+   },
+   "NOF_H03_3D_raw_dff.mp4": {
+    "size": 197487853,
+    "mtime_ns": 1793474533965059100,
+    "sha256": null
+   },
+   "NOF_H03_4D_mc.mp4": {
+    "size": 5096958,
+    "mtime_ns": 1793475141399057200,
+    "sha256": null
+   },
+   "NOF_H03_4D_mc_dff.mp4": {
+    "size": 220981291,
+    "mtime_ns": 1793475559049123700,
+    "sha256": null
+   },
+   "NOF_H03_4D_raw.mp4": {
+    "size": 7735334,
+    "mtime_ns": 1793475102255177400,
+    "sha256": null
+   },
+   "NOF_H03_4D_raw_dff.mp4": {
+    "size": 221282582,
+    "mtime_ns": 1793475344369742600,
+    "sha256": null
+   },
+   "RFC_F01_1D_mc.mp4": {
+    "size": 1665235,
+    "mtime_ns": 1793475751237692800,
+    "sha256": null
+   },
+   "RFC_F01_1D_mc_dff.mp4": {
+    "size": 103520387,
+    "mtime_ns": 1793475905749926600,
+    "sha256": null
+   },
+   "RFC_F01_1D_raw.mp4": {
+    "size": 1986468,
+    "mtime_ns": 1793475739144013900,
+    "sha256": null
+   },
+   "RFC_F01_1D_raw_dff.mp4": {
+    "size": 101535509,
+    "mtime_ns": 1793475824778149500,
+    "sha256": null
+   },
+   "RFC_F20_1D_mc.mp4": {
+    "size": 1572979,
+    "mtime_ns": 1793476123409606300,
+    "sha256": null
+   },
+   "RFC_F20_1D_mc_dff.mp4": {
+    "size": 146605976,
+    "mtime_ns": 1793476294389211900,
+    "sha256": null
+   },
+   "RFC_F20_1D_raw.mp4": {
+    "size": 1874327,
+    "mtime_ns": 1793476109517114500,
+    "sha256": null
+   },
+   "RFC_F20_1D_raw_dff.mp4": {
+    "size": 143500004,
+    "mtime_ns": 1793476204627860900,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1793476214745778400
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series1\\1_Raw": {
+  "files": {
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_0.avi": {
+    "size": 10124472,
+    "mtime_ns": 1793470981643887200,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_1.avi": {
+    "size": 10477316,
+    "mtime_ns": 1793470981648077100,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_10.avi": {
+    "size": 10988344,
+    "mtime_ns": 1793470981652184100,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_11.avi": {
+    "size": 9351706,
+    "mtime_ns": 1793470981653752000,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_2.avi": {
+    "size": 10455566,
+    "mtime_ns": 1793470981653752000,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_3.avi": {
+    "size": 10481524,
+    "mtime_ns": 1793470981670404700,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_4.avi": {
+    "size": 10849504,
+    "mtime_ns": 1793470981679306200,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_5.avi": {
+    "size": 10683128,
+    "mtime_ns": 1793470981683395700,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_6.avi": {
+    "size": 10870984,
+    "mtime_ns": 1793470981684926800,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_7.avi": {
+    "size": 10888874,
+    "mtime_ns": 1793470981691675000,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_8.avi": {
+    "size": 10901588,
+    "mtime_ns": 1793470981691675000,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_9.avi": {
+    "size": 10918628,
+    "mtime_ns": 1793470981691675000,
+    "sha256": null
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_Mini_TS.csv": {
+    "size": 236980,
+    "mtime_ns": 1793470981691675000,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_0.avi": {
+    "size": 6322932,
+    "mtime_ns": 1793470981750072600,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_1.avi": {
+    "size": 5843442,
+    "mtime_ns": 1793470981754162100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_10.avi": {
+    "size": 4951076,
+    "mtime_ns": 1793470981754162100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_11.avi": {
+    "size": 4682500,
+    "mtime_ns": 1793470981754162100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_12.avi": {
+    "size": 5033880,
+    "mtime_ns": 1793470981754162100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_13.avi": {
+    "size": 4512450,
+    "mtime_ns": 1793470981769896500,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_14.avi": {
+    "size": 4564630,
+    "mtime_ns": 1793470981769896500,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_15.avi": {
+    "size": 4551222,
+    "mtime_ns": 1793470981777534300,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_16.avi": {
+    "size": 4565322,
+    "mtime_ns": 1793470981777534300,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_17.avi": {
+    "size": 4365000,
+    "mtime_ns": 1793470981783096200,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_2.avi": {
+    "size": 5381288,
+    "mtime_ns": 1793470981785826900,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_3.avi": {
+    "size": 5781556,
+    "mtime_ns": 1793470981790907100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_4.avi": {
+    "size": 5842196,
+    "mtime_ns": 1793470981790907100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_5.avi": {
+    "size": 4422918,
+    "mtime_ns": 1793470981790907100,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_6.avi": {
+    "size": 4838226,
+    "mtime_ns": 1793470981800084500,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_7.avi": {
+    "size": 4999190,
+    "mtime_ns": 1793470981801828300,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_8.avi": {
+    "size": 4990558,
+    "mtime_ns": 1793470981801828300,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_9.avi": {
+    "size": 4866332,
+    "mtime_ns": 1793470981801828300,
+    "sha256": null
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_Mini_TS.csv": {
+    "size": 357220,
+    "mtime_ns": 1793470981801828300,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_0.avi": {
+    "size": 4264098,
+    "mtime_ns": 1793470981857270400,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_1.avi": {
+    "size": 3943584,
+    "mtime_ns": 1793470981865286000,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_10.avi": {
+    "size": 4985186,
+    "mtime_ns": 1793470981869332100,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_11.avi": {
+    "size": 5200238,
+    "mtime_ns": 1793470981869332100,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_12.avi": {
+    "size": 4999664,
+    "mtime_ns": 1793470981876294800,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_13.avi": {
+    "size": 5057310,
+    "mtime_ns": 1793470981879890600,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_14.avi": {
+    "size": 4946654,
+    "mtime_ns": 1793470981883522700,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_15.avi": {
+    "size": 4778466,
+    "mtime_ns": 1793470981886612000,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_16.avi": {
+    "size": 5038862,
+    "mtime_ns": 1793470981889721700,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_17.avi": {
+    "size": 4154580,
+    "mtime_ns": 1793470981891796900,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_2.avi": {
+    "size": 3996082,
+    "mtime_ns": 1793470981894319800,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_3.avi": {
+    "size": 4203328,
+    "mtime_ns": 1793470981896833900,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_4.avi": {
+    "size": 4345574,
+    "mtime_ns": 1793470981899064700,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_5.avi": {
+    "size": 5021002,
+    "mtime_ns": 1793470981901659500,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_6.avi": {
+    "size": 4881202,
+    "mtime_ns": 1793470981901659500,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_7.avi": {
+    "size": 4608990,
+    "mtime_ns": 1793470981907636500,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_8.avi": {
+    "size": 5046752,
+    "mtime_ns": 1793470981910730700,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_9.avi": {
+    "size": 5247788,
+    "mtime_ns": 1793470981914476300,
+    "sha256": null
+   },
+   "HM_NOF_4D\\NOF_H03_4D\\NOF_H03_4D_Mini_TS.csv": {
+    "size": 357200,
+    "mtime_ns": 1793470981914476300,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_0.avi": {
+    "size": 6074122,
+    "mtime_ns": 1793470982868070100,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_1.avi": {
+    "size": 5952814,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_10.avi": {
+    "size": 6113818,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_11.avi": {
+    "size": 5098646,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_2.avi": {
+    "size": 5871482,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_3.avi": {
+    "size": 5820136,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_4.avi": {
+    "size": 5880498,
+    "mtime_ns": 1793470982872967400,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_5.avi": {
+    "size": 6074370,
+    "mtime_ns": 1793470982888645100,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_6.avi": {
+    "size": 5962560,
+    "mtime_ns": 1793470982891206300,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_7.avi": {
+    "size": 6032366,
+    "mtime_ns": 1793470982893812000,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_8.avi": {
+    "size": 6009548,
+    "mtime_ns": 1793470982895891700,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_9.avi": {
+    "size": 6051120,
+    "mtime_ns": 1793470982898489300,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_Mini_TS.csv": {
+    "size": 233472,
+    "mtime_ns": 1793470982899007300,
+    "sha256": null
+   },
+   "LT1_K02_1D\\LT1_K02_1D_l=0_r=0_u=0_d=100_cropping.pickle": {
+    "size": 51,
+    "mtime_ns": 1793470982898489300,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\metaData.json": {
+    "size": 458,
+    "mtime_ns": 1793470981960116100,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\notes.csv": {
+    "size": 22,
+    "mtime_ns": 1793470982277866800,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\0.avi": {
+    "size": 104065464,
+    "mtime_ns": 1793470981991780000,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\1.avi": {
+    "size": 102303114,
+    "mtime_ns": 1793470982030422500,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\2.avi": {
+    "size": 102249924,
+    "mtime_ns": 1793470982054422300,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\3.avi": {
+    "size": 102830704,
+    "mtime_ns": 1793470982102183500,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\4.avi": {
+    "size": 105825164,
+    "mtime_ns": 1793470982133983200,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\5.avi": {
+    "size": 105981450,
+    "mtime_ns": 1793470982175972500,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\6.avi": {
+    "size": 106751950,
+    "mtime_ns": 1793470982212118100,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\7.avi": {
+    "size": 107698622,
+    "mtime_ns": 1793470982252583000,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\8.avi": {
+    "size": 100133902,
+    "mtime_ns": 1793470982277866800,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\headOrientation.csv": {
+    "size": 397716,
+    "mtime_ns": 1793470982277866800,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\metaData.json": {
+    "size": 413,
+    "mtime_ns": 1793470982277866800,
+    "sha256": null
+   },
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope\\timeStamps.csv": {
+    "size": 120710,
+    "mtime_ns": 1793470982277866800,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\metaData.json": {
+    "size": 459,
+    "mtime_ns": 1793470982291110000,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\notes.csv": {
+    "size": 22,
+    "mtime_ns": 1793470982820120700,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\0.avi": {
+    "size": 116433138,
+    "mtime_ns": 1793470982343244300,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\1.avi": {
+    "size": 118257398,
+    "mtime_ns": 1793470982409550100,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\2.avi": {
+    "size": 118501054,
+    "mtime_ns": 1793470982464523600,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\3.avi": {
+    "size": 119125454,
+    "mtime_ns": 1793470982528683500,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\4.avi": {
+    "size": 119004912,
+    "mtime_ns": 1793470982584478300,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\5.avi": {
+    "size": 118835510,
+    "mtime_ns": 1793470982649391600,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\6.avi": {
+    "size": 118058432,
+    "mtime_ns": 1793470982705512300,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\7.avi": {
+    "size": 118344664,
+    "mtime_ns": 1793470982762873400,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\8.avi": {
+    "size": 111534258,
+    "mtime_ns": 1793470982818046200,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\headOrientation.csv": {
+    "size": 399726,
+    "mtime_ns": 1793470982819084200,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\metaData.json": {
+    "size": 413,
+    "mtime_ns": 1793470982819595300,
+    "sha256": null
+   },
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope\\timeStamps.csv": {
+    "size": 120696,
+    "mtime_ns": 1793470982819595300,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1793470982868070100,
+   "HM_NOF_1D": 1793470981639364200,
+   "HM_NOF_1D\\NOF_H01_1D": 1793470981691675000,
+   "HM_NOF_3D": 1793470981748544400,
+   "HM_NOF_3D\\NOF_H03_3D": 1793470981801828300,
+   "HM_NOF_4D": 1793470981857270400,
+   "HM_NOF_4D\\NOF_H03_4D": 1793470981914476300,
+   "LT1_K02_1D": 1793470982899007300,
+   "RFC_F01_1D": 1793470981960116100,
+   "RFC_F01_1D\\2024_10_15": 1793470981960116100,
+   "RFC_F01_1D\\2024_10_15\\13_46_05": 1793470982277866800,
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\Miniscope": 1793470982277866800,
+   "RFC_F01_1D\\2024_10_15\\13_46_05\\experiment": 1793470981960116100,
+   "RFC_F20_1D": 1793470982277866800,
+   "RFC_F20_1D\\2024_10_15": 1793470982277866800,
+   "RFC_F20_1D\\2024_10_15\\14_35_24": 1793470982819595300,
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\Miniscope": 1793470982819595300,
+   "RFC_F20_1D\\2024_10_15\\14_35_24\\experiment": 1793470982277866800
+  }
+ }
+}

@@ -1,0 +1,2 @@
+sid,mouse,when,who,source,suggested_gSig,suggested_min_corr,suggested_min_pnr,suggested_method,gSig,min_corr,min_pnr,n_blobs,single_frac,n_mirror_blobs
+NOF_H01_1D,NOF_H01,2026-11-08T02:52:00.796,User,window,4,0.86,12.5,mirror_fdr,4,0.86,12.5,158,0.08670520231213873,96

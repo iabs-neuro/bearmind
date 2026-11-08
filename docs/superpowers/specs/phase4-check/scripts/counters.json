@@ -1,0 +1,104 @@
+{
+ "NOF_H01_1D": {
+  "min_blob_px": 2,
+  "usable_gsigs": [
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "map_shape": [
+   534,
+   519
+  ],
+  "cnmf_metrics_series_short": {
+   "n_components": 257,
+   "n_accepted": 222,
+   "gSig": 4,
+   "min_corr": 0.9,
+   "min_pnr": 11.0
+  },
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.86,
+   "min_pnr": 12.5,
+   "n_blobs": 158,
+   "single_pct": 8.7,
+   "n_mirror_blobs": 96,
+   "strip_blobs": {
+    "3": 154,
+    "4": 158,
+    "5": 132,
+    "6": 98,
+    "7": 90
+   }
+  },
+  "task17": {
+   "gSig": 4,
+   "min_corr": 0.9,
+   "min_pnr": 11.0,
+   "n_blobs": 176,
+   "single_pct": 3.8,
+   "n_mirror_blobs": 89,
+   "strip_blobs": {
+    "3": 127,
+    "4": 176,
+    "5": 159,
+    "6": 151,
+    "7": 123
+   }
+  }
+ },
+ "NOF_H03_3D": {
+  "min_blob_px": 2,
+  "usable_gsigs": [
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "map_shape": [
+   411,
+   555
+  ],
+  "cnmf_metrics_series_short": {
+   "n_components": 285,
+   "n_accepted": 211,
+   "gSig": 4,
+   "min_corr": 0.78,
+   "min_pnr": 13.5
+  },
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.78,
+   "min_pnr": 13.5,
+   "n_blobs": 224,
+   "single_pct": 8.2,
+   "n_mirror_blobs": 154,
+   "strip_blobs": {
+    "3": 180,
+    "4": 224,
+    "5": 210,
+    "6": 203,
+    "7": 177
+   }
+  },
+  "task17": {
+   "gSig": 4,
+   "min_corr": 0.78,
+   "min_pnr": 13.5,
+   "n_blobs": 224,
+   "single_pct": 8.2,
+   "n_mirror_blobs": 154,
+   "strip_blobs": {
+    "3": 180,
+    "4": 224,
+    "5": 210,
+    "6": 203,
+    "7": 177
+   }
+  }
+ }
+}

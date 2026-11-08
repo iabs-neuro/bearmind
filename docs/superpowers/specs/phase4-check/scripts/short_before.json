@@ -1,0 +1,376 @@
+{
+ "H:\\Projects\\_bearmind_test\\series_short\\_bearmind": {
+  "files": {
+   "crop_overview.png": {
+    "size": 216112,
+    "mtime_ns": 1794072168136981100,
+    "sha256": "ebe043ef4a76f7883d8b6c45f6ce54d437534b27a3ad02aea773d57c1c02f03e"
+   },
+   "heartbeat.json": {
+    "size": 486,
+    "mtime_ns": 1794073330489745000,
+    "sha256": "37d5502fe64dba35fc38de995247a83de0da218056c8a5852cbaff7816495196"
+   },
+   "scan_unrecognized.csv": {
+    "size": 12,
+    "mtime_ns": 1793475094263431300,
+    "sha256": "d1551e208269aee28abe97af78fd4f27ecfb6e656e98e06384506702de26a627"
+   },
+   "summary.csv": {
+    "size": 673,
+    "mtime_ns": 1794073297319810100,
+    "sha256": "72be3637138f74a7d6a34425feb90fd0a811d1fcde180dbbb63b55e060a1e48f"
+   },
+   "config\\series.yaml": {
+    "size": 27,
+    "mtime_ns": 1794073121943521100,
+    "sha256": "79bf3682bae5939032210e935c0c975953630dbed5065deb75f984662db5d046"
+   },
+   "config\\mice\\NOF_H01.yaml": {
+    "size": 53,
+    "mtime_ns": 1794072116482081200,
+    "sha256": "172b21b4b823dc8a9a3fc49d288f6c789269b2a20d6a08ae899892fa91529c1a"
+   },
+   "config\\mice\\NOF_H03.yaml": {
+    "size": 53,
+    "mtime_ns": 1794072167970996200,
+    "sha256": "20e84817ef03c7ea66b245b7a200a39e7be02ffbfcea6842e9bcc9797122c9ce"
+   },
+   "config\\sessions\\NOF_H01_1D.yaml": {
+    "size": 87,
+    "mtime_ns": 1794072116489081300,
+    "sha256": "b7920d80df76a52959c401e3717bf273ab07e852d5b0a127ba710ec692ef014b"
+   },
+   "config\\sessions\\NOF_H03_3D.yaml": {
+    "size": 89,
+    "mtime_ns": 1794072167980995800,
+    "sha256": "ca2dbfd03a0698139975da7d5a6c98f77b07b0235ad949f5d981d78e7b267ef1"
+   },
+   "crop\\NOF_H01_1D_projection.npz": {
+    "size": 977201,
+    "mtime_ns": 1794072115443808600,
+    "sha256": "5daf5dedf310e46862ce7ce3cb230873aa2ac24ad370efc7c7dcaaafc52365b8"
+   },
+   "crop\\NOF_H03_3D_projection.npz": {
+    "size": 845859,
+    "mtime_ns": 1794072166729680200,
+    "sha256": "55228ffb27fb519df1941a21f5779c0babb7f089c7982bcb9e9e955b65a1bb5f"
+   },
+   "logs\\NOF_H01_1D.log": {
+    "size": 156144,
+    "mtime_ns": 1794073261840251300,
+    "sha256": "2ca1ba3f4200defe1fe6b3feaef722f670151d5cd93c26d192876735611d6a1c"
+   },
+   "logs\\NOF_H03_3D.log": {
+    "size": 179784,
+    "mtime_ns": 1794073297302764100,
+    "sha256": "79db7812250a5406d4e5a8085b9d5e614e053ec6e0540e732068e9f8792ab78d"
+   },
+   "logs\\series.log": {
+    "size": 17299,
+    "mtime_ns": 1794073330485745400,
+    "sha256": "a7ecaa34ed311a1dbc3e89fdccf4003cc5ba0a71aacd0aeec0103a47a4fd3e13"
+   },
+   "registry\\NOF_H01_1D.json": {
+    "size": 13486,
+    "mtime_ns": 1794073261832250600,
+    "sha256": "ceb63658e2643f8a472b77a2d3caf6cb54f3f78fab5961048c36cc9f5c29db6e"
+   },
+   "registry\\NOF_H03_3D.json": {
+    "size": 13487,
+    "mtime_ns": 1794073297294764000,
+    "sha256": "f64a0c4c0bca78dc57187fc8c346a0904d7277f73656e8d3a69413e2f10c08a3"
+   },
+   "thresholds\\NOF_H01_1D_maps.npz": {
+    "size": 19835685,
+    "mtime_ns": 1794072380409112000,
+    "sha256": "b7ea814803437626928eaf9ddc3602e40720f2b8d21fbdf32a0266c29b0c2644"
+   },
+   "thresholds\\NOF_H03_3D_maps.npz": {
+    "size": 16391851,
+    "mtime_ns": 1794072453012025400,
+    "sha256": "c2667d46b96c92a57c47f90e842b997ea04117b83cd07d876926a7fd3a78f2aa"
+   }
+  },
+  "dirs": {
+   ".": 1794073330498690000,
+   "config": 1794073121962418200,
+   "config\\mice": 1794072167980995800,
+   "config\\sessions": 1794072167990508100,
+   "crop": 1794072166730200000,
+   "logs": 1793484151173162500,
+   "registry": 1794073297302764100,
+   "thresholds": 1794072453012025400
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\3_MC": {
+  "files": {
+   "NOF_H01_1D_MC.avi": {
+    "size": 180703308,
+    "mtime_ns": 1794072239654020600,
+    "sha256": "ac8aadafadb8e40238525eb822f9933a34188c62d31458494656bcae5a8de509"
+   },
+   "NOF_H01_1D_MC_shifts.npy": {
+    "size": 16128,
+    "mtime_ns": 1794072227831974400,
+    "sha256": "4d1e2142f9a4e36144f5f826d89f55e2482fc6fd35bbcc1e02d17a335ef7a826"
+   },
+   "NOF_H03_3D_MC.avi": {
+    "size": 121109500,
+    "mtime_ns": 1794072302521889700,
+    "sha256": "1f64057e3e69cf0e27640d1295e50133ac5227271cbd239725dc435f9142ee0f"
+   },
+   "NOF_H03_3D_MC_shifts.npy": {
+    "size": 16128,
+    "mtime_ns": 1794072294117029900,
+    "sha256": "e6c7f2a9faab6e8b760152d2bfe29a7cf1e06473b148a98a41771323500a8b1b"
+   }
+  },
+  "dirs": {
+   ".": 1794072302530899700
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\1_Raw": {
+  "files": {
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_0.avi": {
+    "size": 10124472,
+    "mtime_ns": 1793475085549741300,
+    "sha256": "6f8c64b86998ca3c12e470546bcc4fee8e8c39ee04ee085140912b0111b232f0"
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_1.avi": {
+    "size": 10477316,
+    "mtime_ns": 1793475085568199000,
+    "sha256": "945a3214e33c4800d7885a1c0b982016d253fef44ec81f307f7847ea48391b28"
+   },
+   "HM_NOF_1D\\NOF_H01_1D\\NOF_H01_1D_Mini_TS.csv": {
+    "size": 40000,
+    "mtime_ns": 1793475085793477900,
+    "sha256": "6dec31c03f068c804951201c60e712d05aeff40b2af7826715a5c2a3bdbf5af9"
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_0.avi": {
+    "size": 6322932,
+    "mtime_ns": 1793475086139445500,
+    "sha256": "53bdc28728d0e97ce36eaae06a951172fdd43bfea4fa2e2ed7f35448d1b3594b"
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_1.avi": {
+    "size": 5843442,
+    "mtime_ns": 1793475086140455200,
+    "sha256": "989d80f0a33744fa3b0fa489d6318c128db8971910dfa3c4594dc032a42b5fae"
+   },
+   "HM_NOF_3D\\NOF_H03_3D\\NOF_H03_3D_Mini_TS.csv": {
+    "size": 40000,
+    "mtime_ns": 1793475086288688700,
+    "sha256": "aef3b681046ab7c2cd0cb243789cb694c63cf9322c83122cab0bd7fc76b007f6"
+   }
+  },
+  "dirs": {
+   ".": 1793475086073386300,
+   "HM_NOF_1D": 1793475085407496600,
+   "HM_NOF_1D\\NOF_H01_1D": 1793475085709503900,
+   "HM_NOF_3D": 1793475086073386300,
+   "HM_NOF_3D\\NOF_H03_3D": 1793475086210627800
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\4_Estimates": {
+  "files": {
+   "NOF_H01_1D_estimates.pickle": {
+    "size": 68768046,
+    "mtime_ns": 1794072669291929900,
+    "sha256": null
+   },
+   "NOF_H03_3D_estimates.pickle": {
+    "size": 60213007,
+    "mtime_ns": 1794072866341146900,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1794072866344254000
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\5_Inspection": {
+  "files": {
+   "NOF_H01_1D\\NOF_H01_1D_FBD.npy": {
+    "size": 394400,
+    "mtime_ns": 1794072966987677300,
+    "sha256": null
+   },
+   "NOF_H01_1D\\NOF_H01_1D_FCD.npy": {
+    "size": 394400,
+    "mtime_ns": 1794072966986677400,
+    "sha256": null
+   },
+   "NOF_H01_1D\\NOF_H01_1D_match_mtx.npy": {
+    "size": 394400,
+    "mtime_ns": 1794072966987677300,
+    "sha256": null
+   },
+   "NOF_H01_1D\\NOF_H01_1D_metrics_with_decisions.csv": {
+    "size": 147280,
+    "mtime_ns": 1794072966982677200,
+    "sha256": null
+   },
+   "NOF_H01_1D\\NOF_H01_1D_processed.pickle": {
+    "size": 64954483,
+    "mtime_ns": 1794072967031699500,
+    "sha256": null
+   },
+   "NOF_H01_1D\\NOF_H01_1D_rejected_neurons.csv": {
+    "size": 40052,
+    "mtime_ns": 1794072966986677400,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_FBD.npy": {
+    "size": 356296,
+    "mtime_ns": 1794073042752871600,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_FCD.npy": {
+    "size": 356296,
+    "mtime_ns": 1794073042751870300,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_match_mtx.npy": {
+    "size": 356296,
+    "mtime_ns": 1794073042752871600,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_metrics_with_decisions.csv": {
+    "size": 142399,
+    "mtime_ns": 1794073042745869900,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_processed.pickle": {
+    "size": 55821933,
+    "mtime_ns": 1794073042788739600,
+    "sha256": null
+   },
+   "NOF_H03_3D\\NOF_H03_3D_rejected_neurons.csv": {
+    "size": 76899,
+    "mtime_ns": 1794073042751870300,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1793485976754930000,
+   "NOF_H01_1D": 1794072966997188100,
+   "NOF_H03_3D": 1794073042761732900
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\6_Export": {
+  "files": {
+   "filters\\NOF_H01_1D_filters.mat": {
+    "size": 39354928,
+    "mtime_ns": 1794073065601838900,
+    "sha256": null
+   },
+   "filters\\NOF_H03_3D_filters.mat": {
+    "size": 20985856,
+    "mtime_ns": 1794073075116575100,
+    "sha256": null
+   },
+   "npz\\NOF_H01_1D_data.npz": {
+    "size": 1916436,
+    "mtime_ns": 1794073066090755600,
+    "sha256": null
+   },
+   "npz\\NOF_H01_1D_metadata.json": {
+    "size": 166449,
+    "mtime_ns": 1794073066099755300,
+    "sha256": null
+   },
+   "npz\\NOF_H01_1D_timestamps.csv": {
+    "size": 38000,
+    "mtime_ns": 1794073064826901300,
+    "sha256": null
+   },
+   "npz\\NOF_H03_3D_data.npz": {
+    "size": 1290040,
+    "mtime_ns": 1794073075413086300,
+    "sha256": null
+   },
+   "npz\\NOF_H03_3D_metadata.json": {
+    "size": 113409,
+    "mtime_ns": 1794073075419089700,
+    "sha256": null
+   },
+   "npz\\NOF_H03_3D_timestamps.csv": {
+    "size": 38000,
+    "mtime_ns": 1794073074752527000,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1793485977053330500,
+   "filters": 1794073075422090100,
+   "npz": 1794073075422090100
+  }
+ },
+ "H:\\Projects\\_bearmind_test\\series_short\\Preview": {
+  "files": {
+   "NOF_H01_1D_cnmf_qc.mp4": {
+    "size": 212041017,
+    "mtime_ns": 1794073260005713900,
+    "sha256": null
+   },
+   "NOF_H01_1D_cnmf_residual.png": {
+    "size": 1872727,
+    "mtime_ns": 1794072669234026400,
+    "sha256": null
+   },
+   "NOF_H01_1D_mc.mp4": {
+    "size": 912500,
+    "mtime_ns": 1794073158986815100,
+    "sha256": null
+   },
+   "NOF_H01_1D_mc_dff.mp4": {
+    "size": 48978344,
+    "mtime_ns": 1794073176303681000,
+    "sha256": null
+   },
+   "NOF_H01_1D_raw.mp4": {
+    "size": 1168483,
+    "mtime_ns": 1794073136023581400,
+    "sha256": null
+   },
+   "NOF_H01_1D_raw_dff.mp4": {
+    "size": 48323596,
+    "mtime_ns": 1794073154337991800,
+    "sha256": null
+   },
+   "NOF_H03_3D_cnmf_qc.mp4": {
+    "size": 110074506,
+    "mtime_ns": 1794073295580009100,
+    "sha256": null
+   },
+   "NOF_H03_3D_cnmf_residual.png": {
+    "size": 2487790,
+    "mtime_ns": 1794072866301361500,
+    "sha256": null
+   },
+   "NOF_H03_3D_mc.mp4": {
+    "size": 488223,
+    "mtime_ns": 1794073205567802500,
+    "sha256": null
+   },
+   "NOF_H03_3D_mc_dff.mp4": {
+    "size": 17580423,
+    "mtime_ns": 1794073217386436700,
+    "sha256": null
+   },
+   "NOF_H03_3D_raw.mp4": {
+    "size": 853654,
+    "mtime_ns": 1794073189706754800,
+    "sha256": null
+   },
+   "NOF_H03_3D_raw_dff.mp4": {
+    "size": 17495155,
+    "mtime_ns": 1794073202493534600,
+    "sha256": null
+   }
+  },
+  "dirs": {
+   ".": 1794073295580009100
+  }
+ }
+}

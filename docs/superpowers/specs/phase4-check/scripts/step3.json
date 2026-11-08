@@ -1,0 +1,483 @@
+{
+ "root": "H:\\Projects\\_bearmind_test\\phase4_short",
+ "sid": "NOF_H01_1D",
+ "events": [
+  "2026-11-08T02:51:57.151 runner started {\"pid\": 2419392}",
+  "2026-11-08T02:51:59.418 registry: cnmf WAITING {\"error\": \"waiting for thresholds\", \"metrics\": {}}",
+  "2026-11-08T02:51:59.418 monitor {\"thresholds_cell\": \"waits\", \"cnmf_cell\": \"\\u2013\", \"batch\": \"Stopped\", \"detail\": \"\\u2014 finished\", \"thresholds_button\": \"Thresholds: 1 session \\u2192\", \"heartbeat\": {\"pid\": 2419392, \"time\": \"2026-11-08T02:51:59.004\", \"current\": null, \"counts\": {\"done\": 0, \"running\": 0, \"waiting_thresholds\": 1, \"waiting_manual\": 0, \"waiting_crop\": 0, \"failed\": 0, \"skipped\": 0, \"pending\": 0}, \"by_stage\": {\"crop\": 1, \"mc\": 1, \"thresholds\": 1, \"cnmf\": 0, \"gate\": 0, \"autoinspect\": 0, \"export\": 0}, \"status\": \"waiting\", \"unschedulable\": {}, \"exit\": null}}",
+  "2026-11-08T02:52:00.480 tab before accept {\"current\": [\"NOF_H01_1D\", 4, 0.86, 12.5], \"state\": \"waiting\", \"suggested\": {\"gSig\": 4, \"min_corr\": 0.86, \"min_pnr\": 12.5, \"method\": \"mirror_fdr\"}, \"chosen\": null, \"counters\": \"blobs 158 \\u00b7 single pixels 9 % \\u00b7 blobs on mirrored maps 96\", \"source\": \"Autotune suggestion (mirror_fdr): gSig 4, min_corr 0.86, min_pnr 12.5\", \"strip\": [\"gSig 3 \\u00b7 154\", \"gSig 4 \\u00b7 158\", \"gSig 5 \\u00b7 132\", \"gSig 6 \\u00b7 98\", \"gSig 7 \\u00b7 90\"], \"accept_enabled\": true, \"frames_shown\": 1, \"strip_children\": 5}",
+  "2026-11-08T02:52:00.837 accepted {\"click\": \"2026-11-08T02:52:00.791\", \"returned\": \"2026-11-08T02:52:00.836\", \"decision\": {\"value\": \"gSig=4 min_corr=0.86 min_pnr=12.5\", \"who\": \"User\", \"when\": \"2026-11-08T02:52:00.796\"}}",
+  "2026-11-08T02:52:01.842 tab after accept {\"current\": [\"NOF_H01_1D\", 4, 0.86, 12.5], \"source\": \"Your earlier choice\", \"status\": \"Thresholds of NOF_H01_1D written: gSig 4, min_corr 0.86, min_pnr 12.5. All sessions have thresholds.\", \"tree\": [[\"1D\", \"chosen\"], [\"3D\", \"CNMF-E done\"]]}",
+  "2026-11-08T02:52:29.214 pickup {\"decision_when\": \"2026-11-08T02:52:00.796\", \"cnmf_started\": \"2026-11-08T02:52:29.018\", \"delay_registry_s\": 28.222, \"delay_seen_by_poll_s\": 28.418, \"wait_to_accept_s\": 1.4, \"cnmf\": {\"state\": \"running\", \"started\": \"2026-11-08T02:52:29.018\", \"params\": {\"gSig\": [4, 4], \"min_corr\": 0.86, \"min_pnr\": 12.5}}}",
+  "2026-11-08T02:52:30.232 monitor running {\"batch\": \"Running\", \"detail\": \"waiting for you   heartbeat 29 s ago\", \"cnmf_cell\": \"waits\", \"stop_enabled\": true}",
+  "2026-11-08T02:52:30.269 stop clicked {\"clicked\": \"2026-11-08T02:52:30.269\", \"stop_request_file\": true}",
+  "2026-11-08T02:52:30.476 monitor stopping {\"batch\": \"Stopping after current stage\", \"detail\": \"NOF_H01_1D \\u00b7 CNMF-E \\u00b7 1 s   heartbeat 1 s ago\"}",
+  "2026-11-08T02:52:34.063 waiting for the runner to exit {\"cnmf\": \"running\", \"children\": 2, \"heartbeat_current\": {\"sid\": \"NOF_H01_1D\", \"stage\": \"cnmf\"}}",
+  "2026-11-08T02:53:38.772 waiting for the runner to exit {\"cnmf\": \"running\", \"children\": 33, \"heartbeat_current\": {\"sid\": \"NOF_H01_1D\", \"stage\": \"cnmf\"}}",
+  "2026-11-08T02:54:40.706 waiting for the runner to exit {\"cnmf\": \"running\", \"children\": 33, \"heartbeat_current\": {\"sid\": \"NOF_H01_1D\", \"stage\": \"cnmf\"}}",
+  "2026-11-08T02:55:41.644 waiting for the runner to exit {\"cnmf\": \"running\", \"children\": 33, \"heartbeat_current\": {\"sid\": \"NOF_H01_1D\", \"stage\": \"cnmf\"}}",
+  "2026-11-08T02:56:42.312 waiting for the runner to exit {\"cnmf\": \"running\", \"children\": 35, \"heartbeat_current\": {\"sid\": \"NOF_H01_1D\", \"stage\": \"cnmf\"}}",
+  "2026-11-08T02:57:00.482 runner exit {\"exited\": true}",
+  "2026-11-08T02:57:08.482 after {\"children_seen\": 35, \"children_alive\": [], \"monitor\": {\"batch\": \"Stopped\", \"detail\": \"\\u2014 stop requested\", \"cnmf_cell\": \"285 cells\", \"thresholds_cell\": \"gSig 4\"}, \"cnmf\": {\"state\": \"done\", \"started\": \"2026-11-08T02:52:29.018\", \"finished\": \"2026-11-08T02:57:00.183\", \"metrics\": {\"n_components\": 285, \"n_accepted\": 253, \"missed_cells\": 2.0, \"median_snr\": 5.326062286571229, \"gSig\": 4, \"min_corr\": 0.86, \"min_pnr\": 12.5, \"patch_workers\": 31, \"ssub_B\": 2, \"need_gib\": 10.6}, \"error\": null, \"params\": {\"gSig\": [4, 4], \"min_corr\": 0.86, \"min_pnr\": 12.5}}}"
+ ],
+ "monitor_before": {
+  "batch": "Stopped",
+  "detail": "\u2014 finished",
+  "thresholds_button": "Thresholds: 1 session \u2192"
+ },
+ "snap_monitor_before": {
+  "file": "phase4-monitor-before.png",
+  "bytes": 72099,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "runner_cmd": [
+  "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe",
+  "-m",
+  "bearmind",
+  "run",
+  "H:\\Projects\\_bearmind_test\\phase4_short",
+  "--sessions",
+  "NOF_H01_1D"
+ ],
+ "runner_pid": 2419392,
+ "waiting_seen_after_start_s": 2.3,
+ "monitor_waits": {
+  "thresholds_cell": "waits",
+  "cnmf_cell": "\u2013",
+  "batch": "Stopped",
+  "detail": "\u2014 finished",
+  "thresholds_button": "Thresholds: 1 session \u2192",
+  "heartbeat": {
+   "pid": 2419392,
+   "time": "2026-11-08T02:51:59.004",
+   "current": null,
+   "counts": {
+    "done": 0,
+    "running": 0,
+    "waiting_thresholds": 1,
+    "waiting_manual": 0,
+    "waiting_crop": 0,
+    "failed": 0,
+    "skipped": 0,
+    "pending": 0
+   },
+   "by_stage": {
+    "crop": 1,
+    "mc": 1,
+    "thresholds": 1,
+    "cnmf": 0,
+    "gate": 0,
+    "autoinspect": 0,
+    "export": 0
+   },
+   "status": "waiting",
+   "unschedulable": {},
+   "exit": null
+  }
+ },
+ "snap_monitor_waits": {
+  "file": "phase4-monitor-waits.png",
+  "bytes": 72099,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "tab_before_accept": {
+  "current": [
+   "NOF_H01_1D",
+   4,
+   0.86,
+   12.5
+  ],
+  "state": "waiting",
+  "suggested": {
+   "gSig": 4,
+   "min_corr": 0.86,
+   "min_pnr": 12.5,
+   "method": "mirror_fdr"
+  },
+  "chosen": null,
+  "counters": "blobs 158 \u00b7 single pixels 9 % \u00b7 blobs on mirrored maps 96",
+  "source": "Autotune suggestion (mirror_fdr): gSig 4, min_corr 0.86, min_pnr 12.5",
+  "strip": [
+   "gSig 3 \u00b7 154",
+   "gSig 4 \u00b7 158",
+   "gSig 5 \u00b7 132",
+   "gSig 6 \u00b7 98",
+   "gSig 7 \u00b7 90"
+  ],
+  "accept_enabled": true,
+  "frames_shown": 1,
+  "strip_children": 5
+ },
+ "snap_tab_before": {
+  "file": "phase4-thresholds-before-accept.png",
+  "bytes": 298927,
+  "how": "palette 256, scaled 0.80",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "accept": {
+  "click": "2026-11-08T02:52:00.791",
+  "returned": "2026-11-08T02:52:00.836",
+  "decision": {
+   "value": "gSig=4 min_corr=0.86 min_pnr=12.5",
+   "who": "User",
+   "when": "2026-11-08T02:52:00.796"
+  }
+ },
+ "tab_after_accept": {
+  "current": [
+   "NOF_H01_1D",
+   4,
+   0.86,
+   12.5
+  ],
+  "source": "Your earlier choice",
+  "status": "Thresholds of NOF_H01_1D written: gSig 4, min_corr 0.86, min_pnr 12.5. All sessions have thresholds.",
+  "tree": [
+   [
+    "1D",
+    "chosen"
+   ],
+   [
+    "3D",
+    "CNMF-E done"
+   ]
+  ]
+ },
+ "snap_tab_after": {
+  "file": "phase4-thresholds-after-accept.png",
+  "bytes": 300544,
+  "how": "palette 256, scaled 0.80",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "cnmf_after_accept": {
+  "state": "running",
+  "started": "2026-11-08T02:52:29.018",
+  "params": {
+   "gSig": [
+    4,
+    4
+   ],
+   "min_corr": 0.86,
+   "min_pnr": 12.5
+  }
+ },
+ "pickup": {
+  "decision_when": "2026-11-08T02:52:00.796",
+  "cnmf_started": "2026-11-08T02:52:29.018",
+  "delay_registry_s": 28.222,
+  "delay_seen_by_poll_s": 28.418,
+  "wait_to_accept_s": 1.4
+ },
+ "monitor_running": {
+  "batch": "Running",
+  "detail": "waiting for you   heartbeat 29 s ago",
+  "cnmf_cell": "waits",
+  "stop_enabled": true
+ },
+ "snap_monitor_running": {
+  "file": "phase4-monitor-running.png",
+  "bytes": 76200,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "stop": {
+  "clicked": "2026-11-08T02:52:30.269",
+  "stop_request_file": true
+ },
+ "monitor_stopping": {
+  "batch": "Stopping after current stage",
+  "detail": "NOF_H01_1D \u00b7 CNMF-E \u00b7 1 s   heartbeat 1 s ago"
+ },
+ "snap_monitor_stopping": {
+  "file": "phase4-monitor-stopping.png",
+  "bytes": 76393,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "runner_exited": true,
+ "cnmf_final": {
+  "state": "done",
+  "started": "2026-11-08T02:52:29.018",
+  "finished": "2026-11-08T02:57:00.183",
+  "metrics": {
+   "n_components": 285,
+   "n_accepted": 253,
+   "missed_cells": 2.0,
+   "median_snr": 5.326062286571229,
+   "gSig": 4,
+   "min_corr": 0.86,
+   "min_pnr": 12.5,
+   "patch_workers": 31,
+   "ssub_B": 2,
+   "need_gib": 10.6
+  },
+  "error": null,
+  "params": {
+   "gSig": [
+    4,
+    4
+   ],
+   "min_corr": 0.86,
+   "min_pnr": 12.5
+  }
+ },
+ "stages_final": {
+  "crop": "done",
+  "mc": "done",
+  "thresholds": "done",
+  "cnmf": "done",
+  "gate": "pending",
+  "autoinspect": "pending",
+  "export": "pending",
+  "mc_preview": "done",
+  "cnmf_preview": "pending"
+ },
+ "heartbeat_final": {
+  "pid": 2419392,
+  "time": "2026-11-08T02:57:00.227",
+  "current": null,
+  "counts": {
+   "done": 0,
+   "running": 0,
+   "waiting_thresholds": 0,
+   "waiting_manual": 0,
+   "waiting_crop": 0,
+   "failed": 0,
+   "skipped": 0,
+   "pending": 1
+  },
+  "by_stage": {
+   "crop": 1,
+   "mc": 1,
+   "thresholds": 1,
+   "cnmf": 1,
+   "gate": 0,
+   "autoinspect": 0,
+   "export": 0
+  },
+  "status": "idle",
+  "unschedulable": {},
+  "exit": "stopped"
+ },
+ "stop_request_left": false,
+ "children_seen": {
+  "2419400": [
+   "conhost.exe",
+   1794095517.2647784,
+   "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+  ],
+  "2420612": [
+   "python.exe",
+   1794095549.0491967,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2419392, pipe_handle=7784) --multiprocessing-fork"
+  ],
+  "2411680": [
+   "python.exe",
+   1794095562.7879272,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2124) --multiprocessing-fork"
+  ],
+  "2420000": [
+   "python.exe",
+   1794095562.7931316,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=7220) --multiprocessing-fork"
+  ],
+  "2418916": [
+   "python.exe",
+   1794095562.7980382,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=7204) --multiprocessing-fork"
+  ],
+  "2419932": [
+   "python.exe",
+   1794095562.8027823,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2128) --multiprocessing-fork"
+  ],
+  "2417988": [
+   "python.exe",
+   1794095562.8078773,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2064) --multiprocessing-fork"
+  ],
+  "2419504": [
+   "python.exe",
+   1794095562.81239,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2076) --multiprocessing-fork"
+  ],
+  "2419880": [
+   "python.exe",
+   1794095562.8172011,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2228) --multiprocessing-fork"
+  ],
+  "2420288": [
+   "python.exe",
+   1794095562.8217487,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=4376) --multiprocessing-fork"
+  ],
+  "2418204": [
+   "python.exe",
+   1794095562.8262815,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=7120) --multiprocessing-fork"
+  ],
+  "2419748": [
+   "python.exe",
+   1794095562.8307824,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=1348) --multiprocessing-fork"
+  ],
+  "2420148": [
+   "python.exe",
+   1794095562.8355675,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=8992) --multiprocessing-fork"
+  ],
+  "2419836": [
+   "python.exe",
+   1794095562.8558636,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=6180) --multiprocessing-fork"
+  ],
+  "2420572": [
+   "python.exe",
+   1794095562.8604064,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=6228) --multiprocessing-fork"
+  ],
+  "2412212": [
+   "python.exe",
+   1794095562.864647,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2452) --multiprocessing-fork"
+  ],
+  "2417828": [
+   "python.exe",
+   1794095562.8695743,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=4300) --multiprocessing-fork"
+  ],
+  "2417844": [
+   "python.exe",
+   1794095562.8738315,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5912) --multiprocessing-fork"
+  ],
+  "2418124": [
+   "python.exe",
+   1794095562.8777685,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=6068) --multiprocessing-fork"
+  ],
+  "2420740": [
+   "python.exe",
+   1794095562.8820639,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5744) --multiprocessing-fork"
+  ],
+  "2420748": [
+   "python.exe",
+   1794095562.886342,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=6744) --multiprocessing-fork"
+  ],
+  "2420756": [
+   "python.exe",
+   1794095562.8905663,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5428) --multiprocessing-fork"
+  ],
+  "2420764": [
+   "python.exe",
+   1794095562.8947327,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=4132) --multiprocessing-fork"
+  ],
+  "2420772": [
+   "python.exe",
+   1794095562.8987107,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=2460) --multiprocessing-fork"
+  ],
+  "2420780": [
+   "python.exe",
+   1794095562.9023547,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=4964) --multiprocessing-fork"
+  ],
+  "2420788": [
+   "python.exe",
+   1794095562.9060695,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5740) --multiprocessing-fork"
+  ],
+  "2420796": [
+   "python.exe",
+   1794095562.9103353,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=6272) --multiprocessing-fork"
+  ],
+  "2420804": [
+   "python.exe",
+   1794095562.914042,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=1428) --multiprocessing-fork"
+  ],
+  "2420812": [
+   "python.exe",
+   1794095562.9180355,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=7624) --multiprocessing-fork"
+  ],
+  "2420828": [
+   "python.exe",
+   1794095562.9226627,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=4680) --multiprocessing-fork"
+  ],
+  "2420836": [
+   "python.exe",
+   1794095562.9268935,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=3076) --multiprocessing-fork"
+  ],
+  "2420844": [
+   "python.exe",
+   1794095562.9310389,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5856) --multiprocessing-fork"
+  ],
+  "2420852": [
+   "python.exe",
+   1794095562.934924,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2420612, pipe_handle=5692) --multiprocessing-fork"
+  ],
+  "2430284": [
+   "python.exe",
+   1794095788.7019424,
+   "C:\\Users\\User\\anaconda3\\envs\\bearmind\\python.exe -c from multiprocessing.spawn import spawn_main; spawn_main(parent_pid=2419392, pipe_handle=7784) --multiprocessing-fork"
+  ],
+  "2430228": [
+   "WerFault.exe",
+   1794095788.7215576,
+   "C:\\WINDOWS\\system32\\WerFault.exe -u -p 2420612"
+  ]
+ },
+ "children_alive_after": [],
+ "runner_alive_after": false,
+ "monitor_after": {
+  "batch": "Stopped",
+  "detail": "\u2014 stop requested",
+  "cnmf_cell": "285 cells",
+  "thresholds_cell": "gSig 4"
+ },
+ "snap_monitor_after": {
+  "file": "phase4-monitor-stopped.png",
+  "bytes": 75930,
+  "how": "as is",
+  "px": [
+   1400,
+   860
+  ]
+ },
+ "errors": [],
+ "messages": [],
+ "status_lines": [
+  "2026-11-08T02:52:00.836 Thresholds of NOF_H01_1D written: gSig 4, min_corr 0.86, min_pnr 12.5. All sessions have thresholds.",
+  "2026-11-08T02:52:30.269 Stop requested: the batch stops before its next stage."
+ ]
+}
