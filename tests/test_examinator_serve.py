@@ -180,7 +180,7 @@ def test_progress_save_hook(tmp_path, monkeypatch):
 @pytest.mark.parametrize("given, missing", [("final_save", "Save progress"), ("progress_save", "Save results")])
 def test_server_button_without_hook(tmp_path, monkeypatch, given, missing):
     """With a hook given (server mode) nothing is written next to the input or into the working folder: a save
-    button without a hook is disabled and says why, Save Feedback is hidden (feedback corrections are not part of
+    button without a hook is hidden, and so are FP, FN and Save Feedback (feedback corrections are not part of
     the new process)."""
     inp, cwd = tmp_path / "in", tmp_path / "cwd"
     inp.mkdir(), cwd.mkdir()
@@ -193,27 +193,24 @@ def test_server_button_without_hook(tmp_path, monkeypatch, given, missing):
         return "Saved"
 
     app = App(bm_examinator.make_app(str(path), 20, LEGACY, **{given: hook}))
-    button = app.buttons[missing]
-    title = button.html_attributes.get("title", "")
-    assert button.disabled and title == bm_examinator.NO_SAVE_HOOK_TEXT
-    assert title.isascii() and "next to the input" in title
-    assert not app.buttons["Save Feedback"].visible
+    for label in (missing, "FP", "FN", "Save Feedback"):
+        assert not app.buttons[label].visible, label
     app.select([2]); app.click("FP")
     for label in (missing, "Save Feedback"):  # a click that reaches the server anyway
         app.click(label)
     assert calls == [] and _status(app.doc).text == ""
     assert sorted(os.listdir(inp)) == [path.name] and os.listdir(cwd) == []
     other, = {"Save progress", "Save results"} - {missing}
-    assert not app.buttons[other].disabled
+    assert app.buttons[other].visible and not app.buttons[other].disabled
     app.click(other)
     assert len(calls) == 1 and _status(app.doc).text == "Saved"
 
 
 def test_notebook_buttons_unchanged(tmp_path):
     app = App(bm_examinator.make_app(str(make_estimates(tmp_path)), 20, LEGACY))
-    for label in ("Save progress", "Save results", "Save Feedback"):
+    for label in ("Save progress", "Save results", "FP", "FN", "Save Feedback"):
         b = app.buttons[label]
-        assert b.visible and not b.disabled and "title" not in b.html_attributes, label
+        assert b.visible and not b.disabled, label
 
 
 def test_no_status_line_without_hooks(tmp_path):
@@ -449,12 +446,14 @@ def test_side_files_in_background(tmp_path, monkeypatch):
     monkeypatch.setattr(bm_examinator, "write_side_files", waiting)
     futures = []
     app = App(bm_examinator.make_app(str(path), 20, LEGACY, final_save=_server_final_save(out, futures)))
-    app.select([2]); app.click("Delete sel.")
-    app.click("Save results")  # returns although the side files wait
-    assert _status(app.doc).text == f"Saved {SID}_manual_estimates.pickle" and not futures[0].done()
-    app.select([0]); app.click("Delete sel.")  # the window goes on
-    app.click("Save results")
-    gate.set()
+    try:
+        app.select([2]); app.click("Delete sel.")
+        app.click("Save results")  # returns although the side files wait
+        assert _status(app.doc).text == f"Saved {SID}_manual_estimates.pickle" and not futures[0].done()
+        app.select([0]); app.click("Delete sel.")  # the window goes on
+        app.click("Save results")
+    finally:
+        gate.set()  # a failed assert must not leave the shared writer waiting
     for f in futures:
         f.result(timeout=120)
     assert written == [[0, 1, 3, 4, 5, 6, 7], [1, 3, 4, 5, 6, 7]]
@@ -467,7 +466,7 @@ def test_side_files_failure_in_future(tmp_path):
     est = _loaded(tmp_path)
     est.time = est.time[:10]  # no time for most frames
     future = bm_examinator.write_side_files_in_background(est, tmp_path / "out", f"{SID}_")
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError, match="traces.csv"):
         future.result(timeout=60)
 
 
@@ -533,3 +532,69 @@ def test_hooks_get_a_copy(tmp_path):
     assert list(last.idx_components) == [0, 1, 2, 3, 4, 6, 7] and list(last.idx_components_bad) == [5]
     assert last.A.shape[1] == 8 and last.C.dtype == np.float64 and len(last.r_values) == 8
     assert list(prep.estimates.idx_components) == list(range(8)) and prep.estimates.C.dtype == np.float64
+
+
+def test_write_result_waits_for_a_reader(tmp_path):
+    """A reader holding the result (autoinspection reading it right after a save) delays a new save; it does
+    not fail it. On Windows the rename over an open file fails until the reader closes it."""
+    est = _loaded(tmp_path)
+    path = tmp_path / f"{SID}_manual_estimates.pickle"
+    bm_examinator.write_result(est, path)
+    est.idx_components = np.array([0, 1])
+    reader = open(path, "rb")
+    threading.Timer(0.6, reader.close).start()
+    try:
+        bm_examinator.write_result(est, path)
+    finally:
+        reader.close()
+    assert list(_load(path).idx_components) == [0, 1]
+    assert not path.with_name(path.name + ".partial").exists()
+
+
+def test_write_whole_keeps_the_first_error(tmp_path, monkeypatch, caplog):
+    """When the .partial file cannot be removed after a failed write, the write's own error is raised."""
+    def failing(tmp):
+        Path(tmp).write_bytes(b"half")
+        raise ValueError("bad data")
+
+    def stuck(f, *args, **kwargs):
+        raise PermissionError("held by a virus scanner")
+
+    monkeypatch.setattr(bm_examinator.fileio, "_unlink", stuck)
+    with caplog.at_level(logging.WARNING), pytest.raises(ValueError, match="bad data"):
+        bm_examinator._write_whole(tmp_path / "x.csv", failing)
+    assert any("x.csv.partial" in r.getMessage() for r in caplog.records)
+
+
+def test_side_files_failure_does_not_stop_the_rest(tmp_path, monkeypatch):
+    """traces.csv held open: the filters and the .mat are still written, then one error names the file left
+    from the earlier save."""
+    monkeypatch.setattr(bm_examinator.fileio, "REPLACE_TRIES", 2)  # the reader never closes it here
+    est = _loaded(tmp_path)
+    out = tmp_path / "out"
+    bm_examinator.write_side_files(est, out, f"{SID}_")
+    before = (out / f"{SID}_traces.csv").read_bytes()
+    est.idx_components, est.idx_components_bad = np.array([0, 4, 7]), np.array([1, 2, 3, 5, 6])
+    with open(out / f"{SID}_traces.csv", "rb"):
+        with pytest.raises(RuntimeError) as err:
+            bm_examinator.write_side_files(est, out, f"{SID}_")
+    text = str(err.value)
+    assert f"{SID}_traces.csv" in text and "earlier save" in text and "PermissionError" in text
+    assert f"{SID}_filters_session.mat" not in text
+    assert (out / f"{SID}_traces.csv").read_bytes() == before  # the earlier save's, whole
+    assert sorted(os.listdir(out / f"{SID}_filters")) == ["filter_001.tif", "filter_002.tif", "filter_003.tif"]
+    assert loadmat(out / f"{SID}_filters_session.mat")["A"].shape[0] == 3
+    assert sorted(os.listdir(out)) == SIDE_FILES  # no .partial left
+
+
+def test_side_files_failure_logged(tmp_path, caplog):
+    """The background writer logs every failure with its traceback; showing it on the page is the server's."""
+    est = _loaded(tmp_path)
+    est.time = est.time[:10]  # no time for most frames
+    with caplog.at_level(logging.ERROR, logger="bm_examinator"):
+        future = bm_examinator.write_side_files_in_background(est, tmp_path / "out", f"{SID}_")
+        with pytest.raises(RuntimeError):
+            future.result(timeout=60)
+        bm_examinator._SIDE_FILES.submit(lambda: None).result(timeout=60)  # the callback has run
+    logged = [r for r in caplog.records if r.exc_info and f"{SID}_" in r.getMessage()]
+    assert len(logged) == 1 and logged[0].exc_info[0] is RuntimeError

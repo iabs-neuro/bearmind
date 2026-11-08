@@ -50,13 +50,11 @@ from utils import *
 from bm_batch_routines import extract_name_with_pattern
 from naming import extract_session_id
 from auto_inspector import estimates_to_metrics, save_processed_estimates
+from bearmind import fileio
 from polygon import get_contours
 import matplotlib.colors as mcolors
 
 AUTOINSPECTED_TEXT = "This file is already autoinspected; open 4_Estimates instead."
-# tooltip of a save button that a server window leaves without a save function
-NO_SAVE_HOOK_TEXT = ("Not available on this page: the inspection server gives this button no place to save, "
-                     "and nothing is written next to the input file.")
 
 
 def colornum_Metro(num):
@@ -582,7 +580,9 @@ def SaveResults(estimates, sigma=3):
 def kept_for_side_files(estimates) -> np.ndarray:
     """The components the side files hold, in idx_components order: idx_components without those that
     autoinspection marked deleted (metrics_df['delete'] == 1), which it leaves in idx_components for the window
-    to show. metrics_df names components by its 'component_idx' column, or by row number without one."""
+    to show. metrics_df names components by its 'component_idx' column, or by row number without one.
+    metrics_df is in the file's numbering and is stale after a Merge in the window (capcan mode); no caller
+    reaches that case, since the inspection server refuses inputs with metrics_df."""
     idx = np.asarray(estimates.idx_components, dtype=int)
     df = getattr(estimates, 'metrics_df', None)
     if df is None or 'delete' not in df.columns:
@@ -594,15 +594,51 @@ def kept_for_side_files(estimates) -> np.ndarray:
 
 def _write_whole(path, write):
     """write(tmp) beside path, then rename over it: a reader never finds half a file, and a failed write
-    leaves the earlier file."""
+    leaves the earlier file. The rename waits for a reader that holds the earlier file (fileio.replace)."""
+    # Whole against a crash of this process, not against a power loss: no fsync, which for a result of
+    # hundreds of MB would break the 0.5 s target of Save results.
     path = Path(path)
     tmp = path.with_name(path.name + '.partial')
     try:
         write(tmp)
-        os.replace(tmp, path)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+        fileio.replace(tmp, path)
+    except BaseException:
+        try:
+            fileio._unlink(tmp)
+        except OSError:
+            # the write's own error is the one to raise
+            logging.getLogger(__name__).warning('could not remove %s', tmp, exc_info=True)
+        raise
+
+
+def _filter_images(estimates, kept, sigma):
+    """SaveResults' filter image of each kept component: the footprint, smoothed, scaled to uint8."""
+    A = estimates.A.tocsc()[:, kept]
+    shape = estimates.imax.shape[::-1]  # as SaveResults: a footprint's pixels read in C order, i.e. transposed
+    ims = []
+    for i in range(len(kept)):
+        im = A[:, i].toarray().reshape(shape)
+        if sigma:  # gaussian smoothing of neural contours, omitted if sigma=0
+            im = gaussian_filter(im, sigma=sigma)
+        ims.append((im * 255 / np.max(im)).astype(np.uint8))
+    return ims
+
+
+def _write_filters(filters, ims, written):
+    """filter_NNN.tif of each image in the folder filters, then the removal of filter files of an earlier,
+    larger save. written: the names written, filled as it goes."""
+    filters.mkdir(exist_ok=True)
+    for i, im in enumerate(ims):
+        name = f'filter_{i + 1:03d}.tif'
+        tfl.imwrite(filters / name, im)
+        written.add(name)
+    for p in filters.glob('filter_*.tif'):
+        if p.name not in written:
+            fileio._unlink(p)
+
+
+def _first_line(e):
+    return ''.join(traceback.format_exception_only(type(e), e)).strip().splitlines()[0]
 
 
 def write_side_files(estimates, folder, base, sigma=3) -> None:
@@ -610,32 +646,51 @@ def write_side_files(estimates, folder, base, sigma=3) -> None:
     <base>traces.csv (time_s and one column per component), <base>filters/filter_NNN.tif (footprints smoothed
     with sigma) and <base>filters_session.mat (the same images as one array 'A').
 
-    The folder holds one save: filter files left by an earlier save of more components are removed."""
+    The folder holds one save: filter files left by an earlier save of more components are removed. A failure
+    of one of the three does not stop the others; after all were tried, one RuntimeError names what failed and
+    the files of an earlier save left in its place."""
     folder = Path(folder)
-    kept = kept_for_side_files(estimates)
-    stamped = np.concatenate(([estimates.time], estimates.C[kept]), axis=0)
     folder.mkdir(parents=True, exist_ok=True)
-    _write_whole(folder / f'{base}traces.csv', lambda p: pd.DataFrame(stamped.T).to_csv(
-        p, index=False, header=['time_s', *np.arange(len(kept))]))
-    del stamped
-
+    kept = kept_for_side_files(estimates)
+    traces = folder / f'{base}traces.csv'
     filters = folder / f'{base}filters'
-    filters.mkdir(exist_ok=True)
-    A = estimates.A.tocsc()[:, kept]
-    shape = estimates.imax.shape[::-1]  # as SaveResults: a footprint's pixels read in C order, i.e. transposed
-    ims, names = [], set()
-    for i in range(len(kept)):
-        im = A[:, i].toarray().reshape(shape)
-        if sigma:  # gaussian smoothing of neural contours, omitted if sigma=0
-            im = gaussian_filter(im, sigma=sigma)
-        ims.append((im * 255 / np.max(im)).astype(np.uint8))
-        name = f'filter_{i + 1:03d}.tif'
-        tfl.imwrite(filters / name, ims[-1])
-        names.add(name)
-    for p in filters.glob('filter_*.tif'):
-        if p.name not in names:
-            p.unlink()
-    _write_whole(folder / f'{base}filters_session.mat', lambda p: savemat(p, {"A": np.array(ims)}, appendmat=False))
+    mat = folder / f'{base}filters_session.mat'
+    failed = []  # (path, exception)
+
+    def attempt(path, write):
+        try:
+            write()
+        except Exception as e:
+            failed.append((path, e))
+
+    def write_traces():
+        stamped = np.concatenate(([estimates.time], estimates.C[kept]), axis=0)
+        _write_whole(traces, lambda p: pd.DataFrame(stamped.T).to_csv(
+            p, index=False, header=['time_s', *np.arange(len(kept))]))
+
+    attempt(traces, write_traces)
+    written = set()
+    try:
+        ims = _filter_images(estimates, kept, sigma)
+    except Exception as e:
+        failed += [(filters, e), (mat, e)]
+    else:
+        attempt(filters, lambda: _write_filters(filters, ims, written))
+        attempt(mat, lambda: _write_whole(mat, lambda p: savemat(p, {"A": np.array(ims)}, appendmat=False)))
+    if not failed:
+        return
+
+    left = []  # files of an earlier save where this one failed
+    for path, _ in failed:
+        if path == filters:
+            old = [p for p in filters.glob('filter_*.tif') if p.name not in written] if filters.is_dir() else []
+            if old:
+                left.append(f'{len(old)} files in {filters.name}')
+        elif path.is_file():
+            left.append(path.name)
+    what = '; '.join(f'{path.name}: {_first_line(e)}' for path, e in failed)
+    earlier = f'left from an earlier save: {", ".join(left)}' if left else 'no files of an earlier save are left'
+    raise RuntimeError(f'side files in {folder} not all written ({what}); {earlier}') from failed[0][1]
 
 
 def write_result(estimates, path) -> Path:
@@ -659,10 +714,18 @@ _SIDE_FILES = ThreadPoolExecutor(max_workers=1, thread_name_prefix='bm_side_file
 
 
 def write_side_files_in_background(estimates, folder, base, sigma=3) -> Future:
-    """write_side_files in a background thread, after the side files asked for before. The Future holds a
-    failure (the caller logs or shows it). estimates must not change meanwhile: give it what a save hook got,
-    a copy the window never changes."""
-    return _SIDE_FILES.submit(lambda: write_side_files(estimates, folder, base, sigma))
+    """write_side_files in a background thread, after the side files asked for before. A failure is logged
+    with its traceback and kept in the Future (a server shows it on the page). estimates must not change
+    meanwhile: give it what a save hook got, a copy the window never changes."""
+    future = _SIDE_FILES.submit(lambda: write_side_files(estimates, folder, base, sigma))
+
+    def log_failure(f):
+        e = None if f.cancelled() else f.exception()
+        if e is not None:
+            logging.getLogger(__name__).error('side files %s* in %s failed', base, folder,
+                                              exc_info=(type(e), e, e.__traceback__))
+    future.add_done_callback(log_failure)
+    return future
 
 
 # bkapp_kwargs the first view is built from, with their defaults
@@ -838,8 +901,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
             behaviour.
         progress_save: progress_save(estimates) -> str, the same for "Save progress".
             With either hook given (server mode) the window writes nothing itself, neither next to the input
-            nor into the working folder: a save button without a hook is disabled (NO_SAVE_HOOK_TEXT as its
-            tooltip) and Save Feedback is hidden (feedback corrections are not part of the batch process).
+            nor into the working folder: a save button without a hook is hidden, and so are FP, FN and Save
+            Feedback (feedback corrections are not part of the batch process).
             A hook gets a shallow copy of the window's working estimates: it may rebind or delete their
             attributes, but must not change their arrays or lists in place, which the window, its undo
             record and a reused PreparedSession share. The copy does not change after the hook returns, so
@@ -1648,7 +1711,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 run_save_hook(progress_save, storage)
                 return
             if server:
-                return  # the button is disabled; a click that arrives anyway must not write next to the input
+                return  # the button is hidden; a click that arrives anyway must not write next to the input
             dt = get_datetime()
             base_name = extract_name_with_pattern(estimates0.name)
 
@@ -2000,14 +2063,13 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         if server:
             # a server window writes only through its hooks, never next to the input or into the working folder
             for button, hook in ((button_save, progress_save), (button_save_final, final_save)):
-                if hook is None:
-                    button.disabled = True
-                    button.html_attributes = {'title': NO_SAVE_HOOK_TEXT}
+                button.visible = hook is not None
 
-        # Feedback buttons (toggle behavior)
-        button_mark_fp = Button(label="FP", button_type="warning", width=60, width_policy='fit')
-        button_mark_fn = Button(label="FN", button_type="primary", width=60, width_policy='fit')
-        # it writes next to the input or into the working folder, and feedback is not part of a server's process
+        # Feedback buttons (toggle behavior). A server window has none: Save Feedback writes next to the input
+        # or into the working folder, feedback is not part of a server's process, and marks nothing can save
+        # would only mislead.
+        button_mark_fp = Button(label="FP", button_type="warning", width=60, width_policy='fit', visible=not server)
+        button_mark_fn = Button(label="FN", button_type="primary", width=60, width_policy='fit', visible=not server)
         button_save_feedback = Button(label="Save Feedback", button_type="success", width=110, width_policy='fit',
                                       visible=not server)
 
