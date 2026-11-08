@@ -470,6 +470,8 @@ def gate_cleaned(paths, sid: str, who: str) -> ActionResult:
     if f.parent != paths.registry_file("x").parent or not f.is_file():
         check_sids(_records(paths), [sid])
     rec = registry.load_record(paths, sid)
+    if rec.sid != sid:  # the file system ignores case (Windows); session names do not
+        raise UnknownSession([sid], [r.sid for r in registry.all_records(paths)])
     res = ActionResult()
     _warn_excluded(res, rec)
     manual = paths.manual_result(sid)

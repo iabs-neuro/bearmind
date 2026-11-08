@@ -935,6 +935,12 @@ def test_stopping_server_waits_for_side_files_with_a_cap(series_est, monkeypatch
     text = paths.series_log.read_text(encoding="utf-8")
     assert text.count("waiting for the side files of 1 saves") >= 3  # at 0, 0.5, 1.0, 1.5 s
     assert re.search(r"side files of 1 saves not written after \d+ s: stopped \(1 writer processes\)", text)
+    # R6: the folder says its side files are incomplete, until a complete write
+    marker = paths.inspection_dir(S1) / f"{S1}_side_files_INCOMPLETE.txt"
+    note = marker.read_text(encoding="utf-8")
+    assert S1 in note and "incomplete" in note and re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", note)
+    side_files.write_side_files(side_files.load_result(paths.manual_result(S1)), paths.inspection_dir(S1), f"{S1}_")
+    assert not marker.exists()
 
 
 def test_two_inspect_commands_at_once(series_est, monkeypatch, capsys):
@@ -1478,9 +1484,160 @@ def test_gate_cleaned_reads_one_record(series_est, monkeypatch):
     res = actions.gate_cleaned(paths, S1, "ann")
     assert res.ok == [S1] and _decisions(paths, S1) == ["cleaned"]
     monkeypatch.setattr(actions.registry, "all_records", real)
-    for sid in ("NOF_X99_9D", "../registry/" + S1):
+    for sid in ("NOF_X99_9D", "../registry/" + S1, S1.lower()):  # R9: the file system ignores case; names don't
         with pytest.raises(actions.UnknownSession):
             actions.gate_cleaned(paths, sid, "ann")
+    assert _decisions(paths, S1) == ["cleaned"]
+
+
+# --- residual fixes of the final review ---
+
+def test_edit_while_next_loads_keeps_the_page(series_est, monkeypatch):
+    """R1: an edit made while Next is loading the next session keeps the page and the edit: the claim on the next
+    session is let go and the session goes back to the Preparer; Save results, then Next opens it."""
+    paths = series_est
+    with running(paths) as srv:
+        gate, entered = threading.Event(), threading.Event()
+        real_take = srv.preparer.take
+
+        def slow_take(sid):
+            if sid == S2 and not gate.is_set():
+                entered.set()
+                assert gate.wait(60)
+            return real_take(sid)
+
+        monkeypatch.setattr(srv.preparer, "take", slow_take)
+        try:
+            with tab(srv, S1) as s:
+                page = srv.page_of(s.id)
+                status = lambda: locked(srv, page, lambda: _div(page.doc, "status").text)  # noqa: E731
+                assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+                label = until(lambda: _visible_next(srv, page))
+                assert label == inspect_server.NEXT_LABEL.format(sid=S2)
+                locked(srv, page, lambda: click(page.doc, label))
+                assert entered.wait(30)
+                locked(srv, page, lambda: delete_row(page.doc, 0))  # while S2 loads
+                assert status() == inspect_server.CHANGED_SINCE_SAVE
+                gate.set()
+                until(lambda: not page.busy, timeout=60)
+                time.sleep(0.5)
+                assert page.sid == S1 and page.claim is None and _opened(page, S1)
+                assert status() == inspect_server.CHANGED_SINCE_SAVE and not _visible_next(srv, page)
+                assert srv.preparer.prepared == S2  # given back, not lost
+                assert list(_load(paths.manual_result(S1)).idx_components_bad) == []  # the save before the edit
+                assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+                label = until(lambda: _visible_next(srv, page))
+                locked(srv, page, lambda: click(page.doc, label))
+                until(lambda: _opened(page, S2), timeout=60)
+        finally:
+            gate.set()
+    assert list(_load(paths.manual_result(S1)).idx_components_bad) == [0]  # the edit was saved
+
+
+def _tb_len(e):
+    n, tb = 0, e.__traceback__
+    while tb is not None:
+        n, tb = n + 1, tb.tb_next
+    return n
+
+
+def test_remembered_failure_pins_nothing(series_est, monkeypatch):
+    """R2: a remembered preparation failure keeps no frame of the build: the estimates the build had loaded
+    (LoadEstimates refuses short timestamps after unpickling) are freed, and a re-raise does not lengthen the
+    traceback."""
+    paths = series_est
+    rec = load_record(paths, S3)
+    ts = paths.root / rec.parts[0].timestamps_file
+    ts.write_text("".join(f"{i * 500000}\n" for i in range(250)), encoding="utf-8")
+    loaded, real_load = [], bm_examinator.pickle.load
+
+    def load(*args, **kwargs):
+        obj = real_load(*args, **kwargs)
+        if type(obj).__name__ == "Estimates":
+            loaded.append(weakref.ref(obj))
+        return obj
+
+    srv = inspect_server.InspectServer(paths.root)
+    p = inspect_server.Preparer(srv.build, srv.stamp, srv.failure_key)
+    lengths = []
+    try:
+        monkeypatch.setattr(bm_examinator.pickle, "load", load)
+        for _ in range(3):  # the build, then the remembered failure twice
+            try:
+                p.take(S3)
+            except inspect_server._ShortTimestamps as e:
+                lengths.append(_tb_len(e))
+                assert (e.n_ts, e.n_frames) == (250, 300)
+        monkeypatch.undo()
+        assert len(loaded) == 1 and len(lengths) == 3  # read once
+        assert lengths[1] == lengths[2]
+        gc.collect()
+        assert loaded[0]() is None, "the remembered failure keeps the estimates"
+    finally:
+        p.close(10)
+
+
+def test_unschedulable_session_says_so(series_est):
+    """R3: a session the batch cannot schedule (here: its config cannot be read) is not called out of date: the
+    page and Save results name the problem, in the series' own terms (no path of the series folder)."""
+    paths = series_est
+    paths.session_config(S2).parent.mkdir(parents=True, exist_ok=True)
+    paths.session_config(S2).write_text("cnmf: [broken\n", encoding="utf-8")
+    with running(paths) as srv:
+        assert srv.waiting() == [S1, S3]
+        with tab(srv, S2) as s:
+            page = srv.page_of(s.id)
+            notice = _div(page.doc, "out_of_date")
+            text = html.unescape(notice.text)
+            assert notice.visible and text.startswith(f"{S2} cannot be scheduled now: config: ConfigError: ")
+            assert text.endswith(". A result saved here may not count; fix the problem in Monitor first.")
+            assert "out of date" not in text and not CYRILLIC.search(text)
+            assert save(srv, page) == notice.text  # both escaped for the page
+            assert not paths.manual_result(S2).exists() and _decisions(paths, S2) == []
+
+
+def test_reload_while_opening_builds_once(series_est, monkeypatch):
+    """R4: a reload while the page says "Opening" waits for the build already running instead of starting a
+    second one (each holds the whole session in memory and writes the same cache)."""
+    paths = series_est
+    monkeypatch.setattr(inspect_server, "CONNECT_GRACE_S", 1.0)  # the first GET page never connects
+    real = inspect_server.InspectServer.build
+    gate = threading.Event()
+    active, peak, builds, lock = [0], [0], [], threading.Lock()
+
+    def slow(self, sid):
+        if sid != S1:
+            return real(self, sid)
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+            builds.append(sid)
+        try:
+            assert gate.wait(60)
+            return real(self, sid)
+        finally:
+            with lock:
+                active[0] -= 1
+
+    monkeypatch.setattr(inspect_server.InspectServer, "build", slow)
+    try:
+        with running(paths) as srv:
+            pages = []
+            for _ in range(2):  # the first request, then the reload
+                before = {id(p) for p in srv.pages()}
+                with urllib.request.urlopen(inspect_server.session_url(srv.url, S1), timeout=60) as r:
+                    assert r.status == 200
+                pages += [p for p in srv.pages() if id(p) not in before]
+            second = pages[1]
+            until(lambda: second.sid == S1, timeout=30)  # it took the session once the first page's grace ended
+            time.sleep(1.0)
+            with lock:
+                assert active[0] == 1
+            gate.set()
+            until(lambda: _opened(second, S1), timeout=60)
+        assert peak[0] == 1 and builds == [S1]
+    finally:
+        gate.set()
 
 
 # --- speed on hour-long sessions (slow) ---

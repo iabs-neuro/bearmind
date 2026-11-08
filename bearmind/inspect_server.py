@@ -28,6 +28,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import weakref
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -78,6 +79,9 @@ SAVED_BEFORE = ("A result of {sid} was saved {when} by {who}. This window shows 
                 "result; Save results replaces it.")
 CNMF_OUT_OF_DATE = ("CNMF-E of {sid} is out of date: the batch recomputes it, so a result saved here would not "
                     "count.")
+NOT_SCHEDULABLE = ("{sid} cannot be scheduled now: {problem}. A result saved here may not count; fix the problem "
+                   "in Monitor first.")
+PROBLEM_MAX = 200  # characters of a scheduling problem on a page; Monitor and status show it whole
 AUTOINSPECTED = "The CNMF-E output of {sid} is already autoinspected and cannot be inspected here."
 # Save results refused because the estimates file or the CNMF-E record changed after the session was opened; "Open
 # it again" only where a new page can open it now.
@@ -284,6 +288,34 @@ _PART_RE = re.compile(r"(\d+) frames but (\d+) timestamp rows; rescan the series
 _SID_RE = re.compile(r"[\w-]+")
 
 
+class _Remembered(Exception):
+    """A failed preparation's error as the Preparer keeps it: its first line and page_what, the text a page shows
+    of it (page_error), and none of its frames."""
+
+    def __init__(self, message, page_what):
+        super().__init__(message)
+        self.page_what = page_what
+
+
+def _frameless(e: BaseException):
+    """A function making fresh copies of e that keep none of its frames: the frames of a failed build hold what
+    it had loaded (the estimates, GBs), and a kept exception re-raised grows its traceback each time. The
+    server's own errors are made again from their fields; any other becomes _Remembered."""
+    if isinstance(e, _NotDone):
+        sid = e.sid
+        return lambda: _NotDone(sid)
+    if isinstance(e, _ShortTimestamps):
+        args = (e.sid, e.n_ts, e.n_frames)
+        return lambda: _ShortTimestamps(*args)
+    if isinstance(e, _PartTimestamps):
+        args = (e.sid, e.n_frames, e.n_rows)
+        return lambda: _PartTimestamps(*args)
+    what = page_error(e)
+    first = "".join(traceback.format_exception_only(type(e), e)).strip().splitlines()[0]
+    message = f"{first} (remembered: it failed before, and nothing it depends on changed since)"
+    return lambda: _Remembered(message, what)
+
+
 def _when(iso: str) -> str:
     """A registry time as a page shows it: date, hours and minutes."""
     try:
@@ -312,7 +344,8 @@ class Preparer:
 
     build(sid) -> PreparedSession with .stamp; stamp(sid) -> the current stamp. take() hands the prepared
     session over, or waits for the one being prepared, or prepares it in the caller's thread; a prepared session
-    whose stamp changed meanwhile (CNMF-E ran again) is prepared again.
+    whose stamp changed meanwhile (CNMF-E ran again) is prepared again. A session is built by one thread at a
+    time: a take() while another caller builds it waits for that build and gets its result.
 
     A failed preparation is remembered with failure_key(sid) (default: the stamp) taken before it began: until
     that key changes, prepare() skips the session and take() raises the same error at once, without reading the
@@ -325,7 +358,8 @@ class Preparer:
         self._wanted: str | None = None
         self._busy: str | None = None
         self._ready: dict = {}
-        self._failed: dict = {}  # sid -> (failure key before its build, the exception)
+        self._failed: dict = {}  # sid -> (failure key before its build, _frameless copies of its error)
+        self._calls: dict = {}  # sid -> {"done", "prep"} of a build take() runs in a caller's thread now
         self._closed = False
         self._thread = threading.Thread(target=self._work, name="bearmind-inspect-prepare", daemon=True)
         self._thread.start()
@@ -336,8 +370,8 @@ class Preparer:
             return next(iter(self._ready), None)
 
     def failed(self, sid: str):
-        """The error of sid's last preparation when it failed and nothing it depends on changed since; else
-        None."""
+        """A fresh copy of the error of sid's last preparation when it failed and nothing it depends on changed
+        since; else None."""
         with self._cv:
             remembered = self._failed.get(sid)
         if remembered is None:
@@ -346,16 +380,16 @@ class Preparer:
             key = self._failure_key(sid)
         except Exception:
             return None  # cannot tell: a new attempt says what is wrong now
-        return remembered[1] if key == remembered[0] else None
+        return remembered[1]() if key == remembered[0] else None
 
     def prepare(self, sid: str) -> None:
         with self._cv:
-            if self._closed or sid in self._ready or sid == self._busy:
+            if self._closed or sid in self._ready or sid == self._busy or sid in self._calls:
                 return
         if self.failed(sid) is not None:
             return
         with self._cv:
-            if self._closed or sid in self._ready or sid == self._busy:
+            if self._closed or sid in self._ready or sid == self._busy or sid in self._calls:
                 return
             self._wanted = sid
             self._cv.notify_all()
@@ -371,11 +405,19 @@ class Preparer:
         except Exception as e:
             if key is not None:
                 with self._cv:
-                    self._failed[sid] = (key, e)
+                    self._failed[sid] = (key, _frameless(e))
             raise
         with self._cv:
             self._failed.pop(sid, None)
         return prep
+
+    def give_back(self, sid: str, prep) -> None:
+        """A session taken but not shown (the page changed meanwhile) is prepared again for a later take(), unless
+        another one is prepared already or the Preparer is closed; then it is dropped."""
+        with self._cv:
+            if not self._closed and not self._ready and self._busy is None:
+                self._ready = {sid: prep}
+                self._cv.notify_all()
 
     def take_ready(self, sid: str):
         """The prepared session of sid when it is ready now and its stamp still holds, handed over at once;
@@ -403,10 +445,30 @@ class Preparer:
             prep = self._ready.pop(sid, None)
         if prep is not None and prep.stamp == self._stamp(sid):
             return prep
-        e = self.failed(sid)
-        if e is not None:
-            raise e
-        return self._build_noted(sid)
+        while True:
+            e = self.failed(sid)
+            if e is not None:
+                raise e
+            with self._cv:
+                call = self._calls.get(sid)
+                mine = call is None
+                if mine:
+                    call = self._calls[sid] = {"done": threading.Event(), "prep": None}
+            if mine:
+                break
+            # another page builds sid now (a reload while the page said "Opening"): its result, not a second build
+            # of GBs at once writing the same inspect cache
+            call["done"].wait()
+            if call["prep"] is not None:
+                return call["prep"]
+            # it failed: remembered above, unless its failure key could not be read; then built here
+        try:
+            call["prep"] = self._build_noted(sid)
+            return call["prep"]
+        finally:
+            with self._cv:
+                del self._calls[sid]
+            call["done"].set()
 
     def _work(self):
         while True:
@@ -415,7 +477,10 @@ class Preparer:
                     self._cv.wait()
                 if self._closed:
                     return
-                sid, self._wanted, self._busy = self._wanted, None, self._wanted
+                sid, self._wanted = self._wanted, None
+                if sid in self._calls:
+                    continue  # a page builds it now; it takes that build
+                self._busy = sid
                 self._ready.clear()  # one prepared session at a time
             prep = None
             try:
@@ -744,6 +809,13 @@ class _Page:
             self.next_text.text = html.escape(err if err is not None else (text or NO_MORE))
             self.next_text.visible = True
             return
+        if not self._saved_now():
+            # edited while the next session loaded: Next would drop the edit. The page stays as it is (the status
+            # says to save again, changed() hid Next), and the session goes back to the Preparer for the Next
+            # after that save.
+            self.server.release_claim(self)
+            self.server.preparer.give_back(nxt, prep)
+            return
         try:
             self.show(nxt, prep)
         except Exception as e:
@@ -770,6 +842,7 @@ class InspectServer:
         self._pages: dict = {}
         self._side_futures: set = set()  # side-file jobs not done yet (a stopping server waits for them)
         self._side_last: dict = {}  # sid -> its last job not done yet
+        self._side_saves: dict = {}  # side-file job not done yet -> (sid, the time of its save)
         self._cfg = None
         self._io_loop = None
         self._lock_fh = None
@@ -965,11 +1038,30 @@ class InspectServer:
         except Exception:
             log.warning("%s: saved result not checked", sid, exc_info=True)
         try:
-            if not runner.StageView(self.paths).current_through(rec, "cnmf"):
-                out = CNMF_OUT_OF_DATE.format(sid=sid)
+            out = self.schedule_notice(runner.StageView(self.paths), rec)
         except Exception:
             log.warning("%s: CNMF-E currency not checked", sid, exc_info=True)
         return saved, out
+
+    def schedule_notice(self, view, rec) -> str | None:
+        """Why a result saved for rec now would not count, or None: the batch cannot schedule the session (a
+        config it cannot read, no frame rate), or it recomputes CNMF-E first."""
+        problem = view.problem(rec)
+        if problem is not None:
+            return NOT_SCHEDULABLE.format(sid=rec.sid, problem=self._page_problem(problem))
+        if not view.current_through(rec, "cnmf"):
+            return CNMF_OUT_OF_DATE.format(sid=rec.sid)
+        return None
+
+    def _page_problem(self, problem: str) -> str:
+        """A scheduling problem as a page names it: files of the series by their place in it (the series folder
+        may have any letters), on one line, at most PROBLEM_MAX characters."""
+        text = " ".join(str(problem).split())
+        root = str(self.paths.root)
+        for r in (root, root.replace("\\", "/")):
+            text = text.replace(r + os.sep, "").replace(r + "/", "").replace(r, "")
+        text = text.rstrip(" .")
+        return text if len(text) <= PROBLEM_MAX else text[:PROBLEM_MAX - 3] + "..."
 
     def waiting(self) -> list[str]:
         """Sessions waiting for manual inspection whose CNMF-E is up to date, in Monitor's order (mouse, then
@@ -1101,7 +1193,7 @@ class InspectServer:
         try:
             rec = registry.load_record(self.paths, sid)
             now = _stamp_of(self.paths, rec)
-            current = now == opened and runner.StageView(self.paths).current_through(rec, "cnmf")
+            notice = self.schedule_notice(runner.StageView(self.paths), rec) if now == opened else None
         except Exception as e:
             log.exception("%s: save not checked, registry not read", sid)
             return SAVE_FAILED.format(what=page_error(e))
@@ -1110,11 +1202,11 @@ class InspectServer:
                         sid, opened, now)
             _say(f"[WARN] {sid}: result not saved; CNMF-E changed after the session was opened")
             return outdated_text(now)
-        if not current:
-            # the gate would take the result, but the batch recomputes CNMF-E first and drops it
-            log.warning("%s: result not saved, CNMF-E is out of date (the batch recomputes it)", sid)
-            _say(f"[WARN] {sid}: result not saved; CNMF-E is out of date")
-            return CNMF_OUT_OF_DATE.format(sid=sid)
+        if notice is not None:
+            # the gate would take the result, but the batch recomputes CNMF-E first and drops it, or cannot run
+            log.warning("%s: result not saved: %s", sid, notice)
+            _say(f"[WARN] {sid}: result not saved; CNMF-E is out of date or the session cannot be scheduled")
+            return notice
         bm = _bm()
         try:
             bm.write_result(est, self.paths.manual_result(sid))
@@ -1153,6 +1245,7 @@ class InspectServer:
                 return  # the earlier save's job stays: its files are the newest that will be written
             self._side_futures.add(future)
             self._side_last[sid] = future
+            self._side_saves[future] = (sid, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             if earlier is not None and earlier.cancel():
                 log.info("%s: side files of an earlier save dropped, this save replaces them", sid)
         # the page through a weak reference: a finished Future keeps its callbacks, and a closed tab's page holds
@@ -1164,6 +1257,7 @@ class InspectServer:
         page if the tab is still there."""
         with self._lock:
             self._side_futures.discard(future)
+            self._side_saves.pop(future, None)
             if self._side_last.get(sid) is future:
                 del self._side_last[sid]
         page = page_ref()
@@ -1317,10 +1411,10 @@ class InspectServer:
             log.setLevel(level)
             _detach_series_log(handler)
 
-    @staticmethod
-    def _wait_side_files(pending) -> None:
+    def _wait_side_files(self, pending) -> None:
         """Until the side-file jobs are done, a line in the series log every SIDE_FILES_LOG_S; past
-        SIDE_FILES_CAP_S the writers are stopped (their files of an earlier save may be left, or none)."""
+        SIDE_FILES_CAP_S the writers are stopped, and the folder of each session whose files were not all
+        written gets a file that says so (side_files.incomplete_marker); a complete write later removes it."""
         t0 = time.monotonic()
         while True:
             left = [f for f in pending if not f.done()]
@@ -1328,16 +1422,40 @@ class InspectServer:
                 return
             waited = time.monotonic() - t0
             if waited >= SIDE_FILES_CAP_S:
+                with self._lock:
+                    saves = [self._side_saves.get(f) for f in left]
+                incomplete = {}  # sid -> the latest save whose files were not written
+                for sid, when in sorted((x for x in saves if x is not None), key=lambda x: x[1]):
+                    incomplete[sid] = when
+                bm = _bm()
                 for f in left:
                     f.cancel()  # a job that has not started yet must not start a writer after this
-                stopped = _bm().stop_side_files()
+                stopped = bm.stop_side_files()
                 log.warning("side files of %d saves not written after %.0f s: stopped (%d writer processes)",
                             len(left), waited, stopped)
                 _say(f"[WARN] side files of {len(left)} saves not written after {waited:.0f} s; stopped")
-                wait_futures(left, timeout=60)  # their jobs end once the processes are gone
+                try:
+                    wait_futures(left, timeout=60)  # their jobs end once the processes are gone
+                finally:
+                    bm.resume_side_files()
+                for sid, when in incomplete.items():
+                    self._mark_incomplete(sid, when)
                 return
             log.info("stopping: waiting for the side files of %d saves (%.0f s so far)", len(left), waited)
             wait_futures(left, timeout=min(SIDE_FILES_LOG_S, SIDE_FILES_CAP_S - waited))
+
+    def _mark_incomplete(self, sid: str, when: str) -> None:
+        from bearmind import side_files  # pandas, scipy, tifffile: only for this, at a stop past the cap
+        f = side_files.incomplete_marker(self.paths.inspection_dir(sid), f"{sid}_")
+        text = (f"The side files of {sid} in this folder are incomplete: the inspection server stopped writing "
+                f"those of the save of {when} after {SIDE_FILES_CAP_S / 60:g} min (traces.csv, filters, "
+                f"filters_session.mat may be missing, or be those of an earlier save). The saved result and its "
+                f"decision are not affected. Save results again in the inspection window to write them.\n")
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(text, encoding="utf-8")
+        except OSError:
+            log.warning("%s: %s not written", sid, f.name, exc_info=True)
 
     def _tick(self) -> None:
         """Every TICK_MS on the IOLoop: idle exit, and the open sessions and the prepared one in the lock."""
