@@ -172,6 +172,7 @@ def test_thresholds_set_warns_when_the_choice_log_is_held(series, capsys):
 
 def test_thresholds_accept_suggested_sessions(series):
     sug = {"gSig": 3, "min_corr": 0.6, "min_pnr": 7.0, "method": "auto"}
+    make_current(series.paths, S2, "crop", "mc", "thresholds")
     _set(series.paths, S2, "thresholds", State.DONE, suggested=sug)
     assert _main("thresholds", series.root, "accept-suggested", "--sessions", S2) == 0
     assert _yaml(series.paths.session_config(S2))["cnmf"]["gSig"] == 3
@@ -344,6 +345,8 @@ def test_gsig_message(series, capsys):
 
 
 def test_accept_suggested_invalid_suggestion(series, capsys):
+    for sid in (S1, S2):
+        make_current(series.paths, sid, "crop", "mc", "thresholds")
     _set(series.paths, S1, "thresholds", State.DONE,
          suggested={"gSig": 4, "min_corr": 92, "min_pnr": 8.0, "method": "auto"})
     _set(series.paths, S2, "thresholds", State.DONE,
@@ -761,3 +764,16 @@ def test_cli_thresholds_set_logs_source_cli(series, capsys):
     with open(SeriesPaths(series.root).threshold_choices_csv, encoding="utf-8", newline="") as f:
         (row,) = list(csv.DictReader(f))
     assert row["source"] == "cli" and row["who"] == "tester" and row["sid"] == S1
+
+
+def test_accept_suggested_warns_for_out_of_date_maps(series, capsys):
+    """Residual: named sessions whose maps the batch recomputes first are skipped with a warning (exit 0)."""
+    sug = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "auto"}
+    for sid in (S1, S3):
+        make_current(series.paths, sid, "crop", "mc", "thresholds")
+        _set(series.paths, sid, "thresholds", State.DONE, suggested=sug)
+    config.update_yaml(series.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    assert _main("thresholds", series.root, "accept-suggested", "--sessions", S1, S3) == 0
+    out = capsys.readouterr().out
+    assert f"[WARN] {S1}: maps out of date; the batch recomputes them first" in out and "[FAILED]" not in out
+    assert f"[OK] {S3}: gSig=4" in out and not series.paths.session_config(S1).exists()

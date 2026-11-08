@@ -2148,3 +2148,19 @@ def test_stage_view_resolve_hook_and_unschedulable_session(series):
     rec = load_record(s.paths, S2)
     assert view.problem(rec).startswith("config: ") and view.first_not_current(rec) is None
     assert view.done_not_current(rec) == [] and not view.current_through(rec, "crop")
+
+
+def test_done_not_current_names_every_stage_the_batch_redoes(series):
+    """Residual I-1: with one MC video gone, MC is redone and so is every later main stage (_reset_downstream);
+    each of them counts as out of date, though its own record and hash are unchanged."""
+    s = series
+    _run(s)
+    s.paths.mc_video(S1).unlink()
+    records = registry.all_records(s.paths)
+    by = {r.sid: r for r in records}
+    view = runner.StageView(s.paths)
+    assert runner.next_ready(records, s.paths, _view=view) == (S1, "mc")
+    assert view.current(by[S1], "thresholds")  # its own rule still holds: the chain decides
+    assert view.first_not_current(by[S1]) == "mc"
+    assert view.done_not_current(by[S1]) == list(STAGES[1:])
+    assert view.done_not_current(by[S2]) == []

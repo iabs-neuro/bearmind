@@ -6,6 +6,7 @@ injectable for the tests.
 """
 import logging
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -40,6 +41,9 @@ CHOICE_LOG_TEXT = {
     actions.CHOICE_ONLY_IN_LOG: "Thresholds written. The choice log is open in another program, and "
                                 "threshold_choices.pending.csv cannot be written either; the row was written to the "
                                 "warning log (gui.log).",
+    actions.CHOICE_PENDING_KEPT: "Thresholds written to the choice log. Earlier rows wait in "
+                                 "threshold_choices.pending.csv, which cannot be read now (open in another "
+                                 "program?); they are added once it can be read.",
 }
 ALL_HAVE = "All sessions have thresholds."
 NO_SESSIONS = "No sessions in this series yet. Scan the series in the Scan tab."
@@ -48,6 +52,7 @@ PNR_STEPS = 10  # min_pnr moves in steps of 0.1
 MAX_UPSCALE = 4.0  # a small map is enlarged at most this much: more only blurs it
 THUMB_PX = 96
 VIDEO_MIN_W = 320  # px: below this the movie is too small to judge the cells by
+RECORD_RETRY_S = 0.1  # a second read of a busy registry file, after fileio's own retries
 RED = (255, 0, 0)
 STATE_BG = {"waiting": CELL_BG["waiting"], "chosen": CELL_BG["ok"], "cnmf_done": CELL_BG["ok"],
             "config_error": CELL_BG["error"]}
@@ -527,12 +532,17 @@ class ThresholdsTab(QWidget):
     # --- showing a session ---
 
     def _record(self, sid: str):
-        try:
-            return registry.load_record(self.paths, sid)
-        except OSError:  # busy while the batch replaces it, or removed: the last good record (none if removed)
-            return self._records.get(sid) if self.paths.registry_file(sid).exists() else None
-        except ValueError:  # not a record: the next refresh shows it as broken
-            return None
+        """The session's record as it is now. A file the batch is replacing can refuse even fileio's retries for a
+        moment: one more try after RECORD_RETRY_S, then the record of the last refresh (none if it was removed)."""
+        for attempt in range(2):
+            try:
+                return registry.load_record(self.paths, sid)
+            except OSError:
+                if attempt == 0:
+                    time.sleep(RECORD_RETRY_S)
+            except ValueError:  # not a record: the next refresh shows it as broken
+                return None
+        return self._records.get(sid) if self.paths.registry_file(sid).exists() else None
 
     def _maps_sig(self, sid: str):
         """What the shown maps depend on: the item's note (why no maps are shown, "" when they are) and the file.

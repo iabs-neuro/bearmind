@@ -273,13 +273,12 @@ class VideoView(QWidget):
             self._show(index, frame)
 
     def _on_unreadable(self, token, index: int) -> None:
-        """A frame the decoder cannot read: playing on would only skip past it silently, so playback stops and the
-        picture says which frame (counted from 1, as the position label). Another frame shows again."""
-        if token != self._token:
+        """The frame asked for cannot be read: playback stops and the picture says which frame (counted from 1, as
+        the position label); another frame shows again. A failed older request (playback or a drag has moved on)
+        changes nothing: the frame asked for now is decoded next, and stops playback itself if it fails too."""
+        if token != self._token or index != self._index:
             return
         self._pause()
-        if index != self._index:  # an older request; the frame asked for now comes next
-            return
         self._image, self._shown = None, -1
         self.image_label.setPixmap(QPixmap())
         self.image_label.setText(f"frame {index + 1} cannot be read")

@@ -390,6 +390,8 @@ _CHOICE_LOG = {
                                "was kept in {pending}",
     actions.CHOICE_ONLY_IN_LOG: "[WARN] {sid}: neither the choice log nor {pending} can be written; the row is in "
                                 "the warning printed above",
+    actions.CHOICE_PENDING_KEPT: "[WARN] {sid}: the row is in the choice log; earlier rows wait in {pending}, "
+                                 "which cannot be read now (open in another program?)",
 }
 
 
@@ -422,7 +424,11 @@ def cmd_thresholds(args) -> int:
             return OK
     res = actions.accept_suggested(paths, sids, who=_who(args))
     code = OK
+    stale = {sid for sid, w in res.warnings if w == actions.MAPS_OUT_OF_DATE}
     for sid in sids:
+        if sid in stale:  # the batch redoes the maps first: a suggestion on them would be chosen unseen
+            _say(f"[WARN] {sid}: maps out of date; the batch recomputes them first")
+            continue
         if sid in res.failed:
             fcode, detail = res.failed[sid]
             if fcode == "no_suggestion" and not args.sessions:

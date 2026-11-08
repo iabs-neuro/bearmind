@@ -169,6 +169,14 @@ class RecordCache:
                 broken.append((f, hit[2]))
         for f in set(self._files) - seen:
             del self._files[f]
+        # what was cached for sessions gone from the registry goes too, on every refresh (with a live batch the
+        # problems come from its heartbeat and problems() is not called)
+        present = {r.sid for r in out}
+        for cache in (self._cfg, self._gate):
+            for sid in set(cache) - present:
+                del cache[sid]
+        for key in [k for k in self._cfg_files if k[0] not in present]:
+            del self._cfg_files[key]
         return sorted(out, key=lambda r: r.sid), broken
 
     def _config_key(self, paths, rec, sigs=None, record=True) -> tuple:
@@ -225,8 +233,6 @@ class RecordCache:
         """sid -> why the runner cannot schedule the session (runner.schedule_problems, the runner's own
         function, on the refresh's view), for the non-excluded sessions."""
         live = {r.sid for r in records if not r.excluded}
-        for sid in set(self._cfg) - {r.sid for r in records}:  # sessions gone from the registry
-            del self._cfg[sid]
         return runner.schedule_problems(paths, [r for r in records if r.sid in live],
                                         view if view is not None else self.stage_view(paths))
 

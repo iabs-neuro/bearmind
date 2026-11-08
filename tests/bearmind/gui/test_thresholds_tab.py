@@ -1066,3 +1066,71 @@ def test_video_is_about_as_large_as_one_map(qapp, series_maps, make_tab):
         qapp.processEvents()
         v, m = tab.video.width(), tab.corr_view.width()
         assert v >= VIDEO_MIN_W and abs(v - m) <= 0.3 * m, (size, v, m)
+
+
+def test_deleted_mc_video_puts_every_later_stage_out_of_date(qapp, series_maps, make_tab, capsys):
+    """Residual I-1: one MC video deleted. The batch redoes MC and every later stage; Monitor, status,
+    summary.csv and the tab say so for all of them, and the time left counts them."""
+    import csv as _csv
+
+    from bearmind import cli, monitor
+    from tests.bearmind.current_stages import make_current as make_current_all
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0}})
+    make_current_all(p, S1, "cnmf", "gate", "autoinspect", "export")
+    later = ("mc", "thresholds", "cnmf", "gate", "autoinspect", "export")
+    before = monitor.series_view(p)
+    assert all(next(r for r in before.rows if r.sid == S1).cells[s].text != "out of date" for s in later)
+    p.mc_video(S1).unlink()
+    v = monitor.series_view(p)
+    cells = next(r for r in v.rows if r.sid == S1).cells
+    assert cells["crop"].text != "out of date"
+    assert all(cells[s].text == "out of date" and cells[s].level == "none" for s in later)
+    assert all("the batch redoes mc first" in cells[s].tooltip for s in later)
+    rates = config.load_defaults()["monitor"]["eta_s_per_frame"]
+    n_frames = registry.load_record(p, S1).n_frames
+    added = sum(rates[s] for s in ("mc", "thresholds", "cnmf", "autoinspect", "export")) * n_frames
+    assert v.eta_s == pytest.approx(before.eta_s + added)
+    assert v.bars["export"].done == 0 and v.bars["export"].pending == 3
+    capsys.readouterr()
+    assert cli.main(["status", str(p.root)]) == 0
+    row = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(S1))
+    assert row.split()[2:9] == ["D"] + ["D*"] * 6 and row.endswith("out of date: the batch redoes mc first")
+    with open(p.summary_csv, encoding="utf-8", newline="") as f:
+        srow = next(r for r in _csv.DictReader(f) if r["sid"] == S1)
+    assert srow["crop"] == "done" and all(srow[s] == "done (out of date)" for s in later)
+    tab = make_tab(p)
+    assert tree_rows(tab)[0][S1] == "chosen · maps will be recomputed"
+
+
+def test_unreadable_pending_choices_message_is_true(qapp, series_maps, make_tab):
+    """Residual I-2: the row went into the log, so the window does not say the log is held."""
+    p = series_maps.paths
+    pending = p.threshold_choices_csv.with_name(actions.PENDING_CHOICES)
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_bytes(b"sid,when\n\xff\xfe broken\n")
+    tab = make_tab(p)
+    tab.accept_and_next()
+    ((_, text),) = tab.dlg.messages
+    assert "open in another program; the row was kept" not in text
+    assert text == ("Thresholds written to the choice log. Earlier rows wait in threshold_choices.pending.csv, "
+                    "which cannot be read now (open in another program?); they are added once it can be read.")
+    assert _choices(p)[-1]["sid"] == S1
+
+
+def test_registry_read_is_retried_before_the_last_good_record(qapp, series_maps, make_tab, monkeypatch):
+    """Residual M-2: one failed read of a registry file is tried again before the last good record is used."""
+    p = series_maps.paths
+    tab = make_tab(p)
+    update_record(p, S1, lambda r: setattr(r, "fps", 33.0))  # newer than the record of the last refresh
+    real, calls = registry.load_record, []
+
+    def once_busy(paths, sid):
+        calls.append(sid)
+        if len(calls) == 1:
+            raise PermissionError(13, "busy", str(paths.registry_file(sid)))
+        return real(paths, sid)
+
+    monkeypatch.setattr(registry, "load_record", once_busy)
+    assert tab._record(S1).fps == 33.0 and len(calls) == 2

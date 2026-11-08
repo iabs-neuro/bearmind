@@ -416,12 +416,16 @@ class StageView:
         return next((s for s in STAGES if not self.current(rec, s)), None)
 
     def done_not_current(self, rec) -> list:
-        """Main stages DONE in the registry that the batch would redo. [] for an excluded session (the batch
+        """Main stages DONE in the registry that the batch would redo: every DONE one from first_not_current on
+        (not current_through). A stage whose own hash still matches is redone too when an earlier one is not up
+        to date (a deleted MC video): its run resets the later stages. [] for an excluded session (the batch
         ignores it) and for one whose hashes cannot be computed (it is "cannot be scheduled" instead)."""
         if rec.excluded or self.hashes(rec) is None:
             return []
-        return [s for s in STAGES if s in rec.stages and rec.stages[s].state is State.DONE
-                and not self.current(rec, s)]
+        first = self.first_not_current(rec)
+        if first is None:
+            return []
+        return [s for s in STAGES[STAGES.index(first):] if s in rec.stages and rec.stages[s].state is State.DONE]
 
 
 _View = StageView  # the old private name

@@ -176,8 +176,8 @@ def test_cell_texts_match_mockup(tmp_series):
         "gate": done({"gate": "not_needed"}),
         "autoinspect": done({"n_kept": 128}),
         "export": done({"n_neurons": 121})})
-    put(tmp_series, "A_M1_2D", {"gate": done({"gate": "disabled"})})
-    put(tmp_series, "A_M1_3D", {"gate": done({"gate": "cleaned"})})
+    put(tmp_series, "A_M1_2D", {s: done() for s in ("crop", "mc", "thresholds", "cnmf")} | {"gate": done({"gate": "disabled"})})
+    put(tmp_series, "A_M1_3D", {s: done() for s in ("crop", "mc", "thresholds", "cnmf")} | {"gate": done({"gate": "cleaned"})})
     rows = {r.sid: r.cells for r in view(tmp_series).rows}
     assert [rows["A_M1_1D"][s].text for s in STAGES] == [
         "512×480", "3.2 px", "gSig 4", "231 cells", "not needed", "128 kept", "121 neurons"]
@@ -236,15 +236,16 @@ def test_waiting_counts(tmp_series):
 def test_eta_from_history_and_defaults(tmp_series):
     d = defaults()
     # two DONE mc runs of 0.1 and 0.3 s/frame: median 0.2 for pending mc; other stages have no history
-    put(tmp_series, "A_M1_1D", {"mc": done(seconds=100)})
-    put(tmp_series, "A_M1_2D", {"mc": done(seconds=300)})
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(seconds=100)})
+    put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(seconds=300)})
     # FAILED and SKIPPED stages are not estimated; the stages after them are pending
     put(tmp_series, "A_M1_3D", {"mc": StageRecord(State.FAILED, error="x"), "crop": StageRecord(State.SKIPPED),
                                 "thresholds": StageRecord(State.FAILED, error="x")})
     put(tmp_series, "A_M1_4D")
     rest = sum(d[s] for s in PENDING_STAGES if s != "mc") * 1000
-    expected = (rest  # session 1: everything but mc
-                + rest  # session 2
+    after_mc = sum(d[s] for s in PENDING_STAGES if s not in ("crop", "mc")) * 1000
+    expected = (after_mc  # session 1: everything after mc
+                + after_mc  # session 2
                 + sum(d[s] for s in ("cnmf", "autoinspect", "export")) * 1000  # session 3
                 + 0.2 * 1000 + rest)  # session 4: pending mc at the median
     assert view(tmp_series).eta_s == pytest.approx(expected)
@@ -272,7 +273,7 @@ def test_eta_running_stage_minus_elapsed(tmp_series, alive):
 
 
 def test_warning_panel_has_only_six_kinds(tmp_series):
-    put(tmp_series, "A_M1_1D", {
+    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES} | {
         "mc": done({}, [check("mc", "mc_template_corr", "warning")]),
         "cnmf": done({}, [check("cnmf", "cnmf_missed_cells", "warning")]),
         "export": done({}, [check("export", "export_median_snr", "warning")])},
@@ -335,7 +336,7 @@ def test_warning_auto_fixed_mismatch_hidden(tmp_series):
 def test_failed_session_does_not_hide_others(tmp_series, alive):
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "cnmf": StageRecord(State.RUNNING)})
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(), "cnmf": StageRecord(State.FAILED, error="boom")})
-    put(tmp_series, "A_M1_3D", {"crop": done(), "mc": done(), "cnmf": done()})
+    put(tmp_series, "A_M1_3D", {"crop": done(), "mc": done(), "thresholds": done(), "cnmf": done()})
     v = view(tmp_series)
     cells = {r.sid: r.cells["cnmf"].level for r in v.rows}
     assert cells == {"A_M1_1D": "running", "A_M1_2D": "error", "A_M1_3D": "ok"}
@@ -343,7 +344,7 @@ def test_failed_session_does_not_hide_others(tmp_series, alive):
 
 
 def test_unreadable_registry_file_row(tmp_series):
-    put(tmp_series, "A_M1_1D", {"mc": done()})
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done()})
     bad = tmp_series.registry_file("A_M1_2D")
     bad.write_text("{not json", encoding="utf-8")
     v = view(tmp_series)
@@ -481,7 +482,7 @@ def test_crop_cell_is_width_by_height_before_and_after_mc(tmp_series):
 
 def test_transient_read_error_is_retried_not_cached(tmp_series, monkeypatch):
     """M2: a PermissionError (the batch replacing the file) is not a broken record."""
-    put(tmp_series, "A_M1_1D", {"mc": done()})
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done()})
     real = registry.read_file
     fail = {"n": 1}
 
@@ -625,9 +626,9 @@ def test_side_stage_titles():
 
 def test_downsampled_anomaly_in_cnmf_cell(tmp_series):
     msg = "background downsampled to fit RAM: ssub_B 3 instead of 2 (predicted 40 GiB at 2, 18 GiB at 3)"
-    put(tmp_series, "A_M1_1D", {"cnmf": done({"n_components": 80})},
+    put(tmp_series, "A_M1_1D", {s: done() for s in ("crop", "mc", "thresholds", "cnmf")} | {"cnmf": done({"n_components": 80})},
         anomalies=[Anomaly("cnmf_downsampled", "warning", msg, data={"stage": "cnmf"})])
-    put(tmp_series, "A_M1_2D", {"cnmf": done({"n_components": 80})},
+    put(tmp_series, "A_M1_2D", {s: done() for s in ("crop", "mc", "thresholds", "cnmf")} | {"cnmf": done({"n_components": 80})},
         anomalies=[Anomaly("cnmf_downsampled", "error", "predicted 99 GiB even at ssub_B 4",
                            data={"stage": "cnmf"})])
     v = view(tmp_series)
@@ -641,7 +642,7 @@ def test_downsampled_anomaly_in_cnmf_cell(tmp_series):
 
 def test_failed_preview_in_panel_with_retry(tmp_series):
     _preview_on(tmp_series)
-    put(tmp_series, "A_M1_1D", {"mc": done({"max_shift_px": 2.0}),
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done({"max_shift_px": 2.0}),
                                 "mc_preview": StageRecord(State.FAILED, error="Traceback" + chr(10) + "OSError: disk full")})
     v = view(tmp_series)
     [w] = v.warnings
@@ -690,12 +691,13 @@ def test_runner_state_reports_a_current_side_stage(tmp_series, alive):
 
 def test_crop_eta_is_per_session_not_per_frame(tmp_series):
     m = config.load_defaults()["monitor"]
-    # a short and a long session cost the same default crop time
-    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES if s != "crop"}, n_frames=600)
-    short = view(tmp_series).eta_s
-    put(tmp_series, "A_M1_1D", {s: done() for s in STAGES if s != "crop"}, n_frames=36000)
+    per_frame = sum(m["eta_s_per_frame"][s] for s in PENDING_STAGES if s != "crop")
+    # a short and a long session cost the same default crop time; the other stages follow the length
+    put(tmp_series, "A_M1_1D", n_frames=600)
+    short = view(tmp_series).eta_s - per_frame * 600
+    put(tmp_series, "A_M1_1D", n_frames=36000)
     assert short == pytest.approx(m["eta_s_per_session"]["crop"]) == pytest.approx(90, rel=0.2)
-    assert view(tmp_series).eta_s == pytest.approx(short)
+    assert view(tmp_series).eta_s - per_frame * 36000 == pytest.approx(short)
 
 
 def test_crop_eta_from_history_is_median_duration(tmp_series):
@@ -703,8 +705,9 @@ def test_crop_eta_from_history_is_median_duration(tmp_series):
         n_frames=600)
     put(tmp_series, "A_M1_2D", {s: done() for s in STAGES if s != "crop"} | {"crop": done(seconds=60)},
         n_frames=36000)
-    put(tmp_series, "A_M1_3D", {s: done() for s in STAGES if s != "crop"}, n_frames=18000)
-    assert view(tmp_series).eta_s == pytest.approx(50.0)
+    put(tmp_series, "A_M1_3D", n_frames=18000)  # all pending: crop at the median of 40 and 60 s
+    per_frame = sum(defaults()[s] for s in PENDING_STAGES if s != "crop")
+    assert view(tmp_series).eta_s == pytest.approx(50.0 + per_frame * 18000)
 
 
 # --- phase 4 final fix wave: the runner's view in Monitor ---
@@ -759,3 +762,17 @@ def test_out_of_date_maps_do_not_wait_for_thresholds(tmp_series):
     assert v.waiting["thresholds"] == 0
     assert v.rows[0].cells["thresholds"].text == "out of date"
     assert actions.waiting_threshold_sids(tmp_series) == []
+
+
+def test_settings_cache_forgets_removed_sessions_while_the_batch_runs(tmp_series, alive):
+    """Residual M-3: with a live batch the problems come from its heartbeat and RecordCache.problems is not
+    called; the cached configs of removed sessions must go anyway."""
+    alive(unschedulable={})
+    put(tmp_series, "A_M1_1D")
+    put(tmp_series, "A_M1_2D")
+    cache = monitor.RecordCache()
+    view(tmp_series, cache)
+    assert {"A_M1_1D", "A_M1_2D"} <= set(cache._cfg)
+    tmp_series.registry_file("A_M1_2D").unlink()
+    view(tmp_series, cache)
+    assert "A_M1_2D" not in cache._cfg and "A_M1_1D" in cache._cfg

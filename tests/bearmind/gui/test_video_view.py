@@ -221,3 +221,20 @@ def test_frame_that_fails_mid_play_is_named_and_stops_playback(qapp, make_avi, t
     _wait(qapp, lambda: 5 in shown)
     assert not v.image_label.pixmap().isNull() and v.image_label.text() == ""
     v.close()
+
+
+def test_unreadable_frame_already_skipped_keeps_playing(qapp, make_avi, tmp_path):
+    """Residual M-1: a frame that fails after playback moved past it does not stop playback (the frame asked
+    for now is decoded next); only the frame asked for stops it with its message."""
+    p, n = _movie(make_avi, tmp_path, n=50)
+    v = VideoView()
+    v.set_video(p, 20)
+    _wait(qapp, lambda: v.slider.isEnabled())
+    v.seek(30)
+    v.play_button.click()
+    assert v._timer.isActive()
+    v._on_unreadable(v._token, 12)  # an older request that failed
+    assert v._timer.isActive() and v.image_label.text() == ""
+    v._on_unreadable(v._token, v.current_index())
+    assert not v._timer.isActive() and v.image_label.text().endswith("cannot be read")
+    v.close()

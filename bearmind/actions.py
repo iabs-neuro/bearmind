@@ -242,6 +242,8 @@ CHOICE_COLUMNS = ("sid", "mouse", "when", "who", "source", "suggested_gSig", "su
 PENDING_CHOICES = "threshold_choices.pending.csv"  # next to the log: rows the log would not take yet
 CHOICE_NOT_LOGGED = "choice_log_not_written"  # warning: the row waits in PENDING_CHOICES
 CHOICE_ONLY_IN_LOG = "choice_log_only_in_log"  # warning: the pending file failed too; the row is a log WARNING
+CHOICE_PENDING_KEPT = "choice_pending_kept"  # warning: the row is in the log; the pending file cannot be read
+MAPS_OUT_OF_DATE = "maps_out_of_date"  # warning of accept_suggested: the batch recomputes the maps first
 
 
 def _csv_text(rows, header: bool) -> str:
@@ -257,11 +259,24 @@ def _empty(f) -> bool:
     return not f.exists() or f.stat().st_size == 0
 
 
-def _pending_rows(pending) -> list:
-    if not pending.exists():
+def _choice_rows(f) -> list:
+    """The rows of a choice CSV ([] when absent); OSError, ValueError (not UTF-8) or csv.Error when unreadable."""
+    if not f.exists():
         return []
-    with io.StringIO(fileio.read_text(pending), newline="") as f:
-        return [{k: r.get(k) or "" for k in CHOICE_COLUMNS} for r in csv.DictReader(f)]
+    with io.StringIO(fileio.read_text(f), newline="") as fh:
+        return [{k: r.get(k) or "" for k in CHOICE_COLUMNS} for r in csv.DictReader(fh)]
+
+
+def _not_logged(waiting, target) -> list:
+    """The pending rows that are not in the log yet, by (sid, when): a pending file that could not be removed
+    after a flush (a viewer holds it) still holds rows the log has."""
+    if not waiting:
+        return []
+    try:
+        logged = {(r["sid"], r["when"]) for r in _choice_rows(target)}
+    except (ValueError, csv.Error):  # a log edited into something unreadable: nothing to compare with
+        return waiting
+    return [r for r in waiting if (r["sid"], r["when"]) not in logged]
 
 
 def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, counters, when: str) -> str | None:
@@ -270,8 +285,9 @@ def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, coun
 
     The thresholds are written by then, so a log that cannot be written (open in Excel) must not fail the choice:
     the row waits in PENDING_CHOICES, and the next append that works writes the waiting rows first, in their
-    order. Returns None, CHOICE_NOT_LOGGED, or CHOICE_ONLY_IN_LOG (the pending file failed too: the row is in
-    the log as a WARNING)."""
+    order, each once. Returns None, CHOICE_NOT_LOGGED, CHOICE_ONLY_IN_LOG (the pending file failed too: the row
+    is in the log as a WARNING) or CHOICE_PENDING_KEPT (the row is in the log, but the pending file cannot be
+    read, so its rows stay there)."""
     th = rec.stages.get("thresholds")
     sug = (th.metrics.get("suggested") if th is not None else None) or {}
     row = {"sid": rec.sid, "mouse": rec.mouse, "when": when, "who": who, "source": source,
@@ -284,23 +300,31 @@ def _log_choice(paths, rec, who: str, source: str, gsig, min_corr, min_pnr, coun
     row = {k: "" if row.get(k) is None else row[k] for k in CHOICE_COLUMNS}
     target = paths.threshold_choices_csv
     pending = target.with_name(PENDING_CHOICES)
-    written = False
+    written, kept = False, None
     try:
         # both locks: a writer that keeps its row in the pending file meanwhile must not be flushed half-way
         with fileio.file_lock(target), fileio.file_lock(pending):
-            waiting = _pending_rows(pending)
-            fileio.append_text(target, _csv_text(waiting + [row], header=_empty(target)))
+            try:
+                waiting = _choice_rows(pending)
+            except (OSError, ValueError, csv.Error) as e:
+                # it must not hold up the log: the new row goes in, the pending file stays as it is
+                waiting, kept = [], e
+            fileio.append_text(target, _csv_text(_not_logged(waiting, target) + [row], header=_empty(target)))
             written = True
             if waiting:
                 try:
                     pending.unlink()
-                except OSError as e:
-                    log.warning("the rows of %s are in %s now, but the file cannot be removed (remove it, or its "
-                                "rows are written again): %s", pending, target, runner._one_line(e))
+                except OSError as e:  # held by a viewer: its rows are skipped by the next flush (_not_logged)
+                    log.warning("the rows of %s are in %s now, but the file cannot be removed yet: %s", pending,
+                                target, runner._one_line(e))
+        if kept is not None:
+            log.warning("%s cannot be read (%s); the new choice went into %s, the waiting rows stay", pending,
+                        runner._one_line(kept), target)
+            return CHOICE_PENDING_KEPT
         return None
     except OSError as e:
         if written:  # the row is in the log; only a lock could not be released
-            return None
+            return None if kept is None else CHOICE_PENDING_KEPT
         why = runner._one_line(e)
     try:
         with fileio.file_lock(pending):
@@ -495,8 +519,12 @@ def set_thresholds(paths, sid: str, gsig, min_corr, min_pnr, *, who: str = "", s
 
 
 def accept_suggested(paths, sids, *, who: str = "") -> ActionResult:
+    """The suggestion of each session (None: every session waiting for thresholds). Maps the batch recomputes
+    first (an earlier stage out of date) get the warning MAPS_OUT_OF_DATE and no write: the runner would apply
+    the suggestion to new maps nobody has seen, as the window refuses too."""
     recs = _records(paths)
-    sids = waiting_threshold_sids(paths) if sids is None else list(sids)
+    view = runner.StageView(paths)
+    sids = [s for s, r in sorted(recs.items()) if waits_for_thresholds(view, r)] if sids is None else list(sids)
     check_sids(recs, sids)
     res = ActionResult()
     for sid in sids:
@@ -504,6 +532,9 @@ def accept_suggested(paths, sids, *, who: str = "") -> ActionResult:
         sug = th.metrics.get("suggested") if th.state is State.DONE else None
         if not sug:
             res.failed[sid] = ("no_suggestion", "")
+            continue
+        if view.problem(recs[sid]) is None and not view.current_through(recs[sid], "thresholds"):
+            res.warnings.append((sid, MAPS_OUT_OF_DATE))
             continue
         bad = threshold_error(sug.get("gSig"), sug.get("min_corr"), sug.get("min_pnr"))
         if bad:

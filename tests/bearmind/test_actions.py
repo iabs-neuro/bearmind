@@ -10,7 +10,7 @@ import yaml
 from bearmind import actions
 from bearmind.threshold_model import Counters
 from bearmind.registry import STAGES, Anomaly, StageRecord, State, load_record, save_record, update_record
-from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
+from tests.bearmind.test_cli import S1, S2, S3, _set, make_current, series  # noqa: F401  (the series fixture)
 
 
 def _decisions(paths, sid):
@@ -142,6 +142,8 @@ def test_set_thresholds_message_and_write(series):
 
 
 def test_accept_suggested_mixed(series):
+    for sid in (S1, S2):
+        make_current(series.paths, sid, "crop", "mc", "thresholds")
     _set(series.paths, S1, "thresholds", State.DONE, suggested={"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0})
     _set(series.paths, S2, "thresholds", State.DONE)
     res = actions.accept_suggested(series.paths, [S1, S2])
@@ -150,6 +152,7 @@ def test_accept_suggested_mixed(series):
 
 
 def test_accept_suggested_invalid(series):
+    make_current(series.paths, S1, "crop", "mc", "thresholds")
     _set(series.paths, S1, "thresholds", State.DONE, suggested={"gSig": 4, "min_corr": 7, "min_pnr": 8.0})
     res = actions.accept_suggested(series.paths, [S1])
     assert res.failed[S1][0] == "invalid_suggestion" and "min-corr" in res.failed[S1][1]
@@ -426,6 +429,7 @@ def test_choice_log_concurrent_appends(series):
 
 def test_accept_suggested_logs_source(series):
     sug = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "robust_bg"}
+    make_current(series.paths, S1, "crop", "mc", "thresholds")
     _set(series.paths, S1, "thresholds", State.DONE, suggested=sug)
     actions.accept_suggested(series.paths, [S1], who="ann")
     (row,) = _choices(series.paths)
@@ -610,3 +614,51 @@ def test_apply_to_mouse_logs_the_counters_of_the_shown_session(series):
     rows = {r["sid"]: r for r in _choices(p)}
     assert (rows[S1]["n_blobs"], rows[S1]["single_frac"], rows[S1]["n_mirror_blobs"]) == ("12", "0.25", "3")
     assert (rows[S2]["n_blobs"], rows[S2]["single_frac"], rows[S2]["n_mirror_blobs"]) == ("", "", "")
+
+
+def test_pending_file_held_open_writes_no_duplicates(series):
+    """Residual I-2 (re-review probe): a viewer holds the pending file, so it cannot be removed after its rows
+    went into the log; later choices must not write those rows again."""
+    p = series.paths
+    pending = _pending(p)
+    p.threshold_choices_csv.mkdir(parents=True)
+    actions.set_thresholds(p, S1, 4, 0.85, 8)
+    p.threshold_choices_csv.rmdir()
+    held = open(pending, "r", encoding="utf-8")  # no delete sharing on Windows: unlink fails with WinError 32
+    try:
+        assert actions.set_thresholds(p, S2, 5, 0.8, 9).warnings == []
+        assert actions.set_thresholds(p, S3, 6, 0.75, 10).warnings == []
+        assert [r["sid"] for r in _choices(p)] == [S1, S2, S3]
+    finally:
+        held.close()
+    assert actions.set_thresholds(p, S1, 3, 0.7, 7).warnings == []  # released: the file goes, nothing repeats
+    assert [r["sid"] for r in _choices(p)] == [S1, S2, S3, S1] and not pending.exists()
+
+
+def test_unreadable_pending_file_does_not_block_the_log(series):
+    """Residual I-2: a pending file that cannot be read stays as it is; the new row goes into the log, and the
+    warning says that, not that the log is held."""
+    p = series.paths
+    pending = _pending(p)
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_bytes(b"sid,when\n\xff\xfe broken\n")
+    res = actions.set_thresholds(p, S1, 4, 0.85, 8)
+    assert res.ok == [S1] and res.warnings == [(S1, actions.CHOICE_PENDING_KEPT)]
+    assert [r["sid"] for r in _choices(p)] == [S1]
+    assert pending.read_bytes() == b"sid,when\n\xff\xfe broken\n"
+
+
+def test_accept_suggested_skips_out_of_date_maps(series):
+    """Residual: a suggestion on maps the batch recomputes first is not written; a warning, not a failure."""
+    from bearmind import config
+    from tests.bearmind.test_cli import make_current
+
+    p = series.paths
+    sug = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "auto"}
+    for sid in (S1, S3):
+        make_current(p, sid, "crop", "mc", "thresholds")
+        _set(p, sid, "thresholds", State.DONE, suggested=sug)
+    config.update_yaml(p.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})  # S1 out of date
+    res = actions.accept_suggested(p, [S1, S3])
+    assert res.ok == [S3] and res.failed == {} and res.warnings == [(S1, "maps_out_of_date")]
+    assert not p.session_config(S1).exists()
