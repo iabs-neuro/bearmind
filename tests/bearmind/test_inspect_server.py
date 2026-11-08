@@ -472,15 +472,16 @@ def test_contour_cache_reused(series_est, monkeypatch):
 
 
 def _add_wave(paths, sid, start=100, frames=30):
-    """Every component of sid's estimates fires in `frames` frames at once; the session's wave fraction."""
+    """A calcium wave in sid's estimates: at frame `start` every component rises to 20 times the largest noise SD
+    and decays (10 frames) over `frames` frames. Returns the session's wave share."""
     f = paths.estimates(sid)
     est = _load(f)
     est.C = est.C.copy()
-    est.C[:, start:start + frames] += 3.0 * est.C.max()
+    est.C[:, start:start + frames] += 20.0 * np.max(est.neurons_sn) * np.exp(-np.arange(frames) / 10.0)
     with open(f, "wb") as fh:
         pickle.dump(est, fh)
-    frac = wave.wave_frac(est.C, est.idx_components)
-    assert frac >= frames / est.C.shape[1]
+    frac = wave.wave_frac(est.C, est.idx_components, sn=wave.component_noise(est))
+    assert frac >= 10 / est.C.shape[1]  # at least its first 10 frames
     return frac
 
 
@@ -518,6 +519,54 @@ def test_no_banner_without_threshold(series_est):
         assert _opened(page, S1) and page.prepared.wave_frac == frac
         banner = _div(s.document, "wave")
         assert not banner.visible and banner.text == ""
+
+
+def test_no_banner_on_ordinary_sessions(series_est):
+    """With the default threshold the synthetic sessions (independent sparse transients) show no hint."""
+    warn = config.load_defaults()["inspection"]["wave"]["warn_frac"]
+    assert warn is not None
+    with running(series_est) as srv:
+        for sid in (S1, S2):
+            with tab(srv, sid) as s:
+                page = srv.page_of(s.id)
+                assert _opened(page, sid) and page.prepared.wave_frac <= warn
+                banner = _div(s.document, "wave")
+                assert not banner.visible and banner.text == ""
+
+
+def test_wave_share_cached(series_est, monkeypatch):
+    """W4: the share is kept in the session's inspect cache with the contours: a later preparation of the same
+    estimates file with the same rule reads it; another file or another k_mad computes it again."""
+    paths = series_est
+    frac = _add_wave(paths, S1)
+    calls = []
+    real = wave.wave_frac
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(wave, "wave_frac", counted)
+    srv = inspect_server.InspectServer(paths.root)
+    assert srv.build(S1).wave_frac == frac and len(calls) == 1
+    assert srv.build(S1).wave_frac == frac and len(calls) == 1  # from the cache
+    srv.cfg["wave"] = {**srv.wave_cfg, "k_mad": 4.0}  # another rule
+    assert srv.build(S1).wave_frac != frac and len(calls) == 2
+    assert len(srv.build(S1).contours) == 8 and len(calls) == 2  # cached again, with the contours
+    est = paths.estimates(S1)
+    st = est.stat()
+    os.utime(est, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))  # CNMF-E wrote the file again
+    srv.build(S1)
+    assert len(calls) == 3
+    # an inspect cache written before the share was kept (contours only) gets the share added
+    with np.load(paths.inspection_cache(S1)) as z:
+        old = {k: z[k] for k in ("size", "mtime_ns", "cthr", "coords", "lengths")}
+    with open(paths.inspection_cache(S1), "wb") as fh:
+        np.savez(fh, **old)
+    srv.build(S1)
+    assert len(calls) == 4
+    srv.build(S1)
+    assert len(calls) == 4
 
 
 def test_wave_hint_rule():
@@ -1114,6 +1163,7 @@ def test_speed_hour_session(tmp_path, monkeypatch):
         numbers["side_files_left_s"] = time.perf_counter() - t0
     print("[speed] " + " ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in numbers.items()))
     assert numbers["writer_busy_after_next"] and numbers["writer_busy_after_second_save"]
+    assert numbers["open_cold_s"] <= 1.5, numbers  # the calcium-wave share is computed on this path
     assert numbers["open_prepared_s"] <= 1.5, numbers
     assert numbers["next_s"] <= 1.0, numbers
     assert numbers["save_during_side_files_s"] <= 0.5, numbers

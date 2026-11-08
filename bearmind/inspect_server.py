@@ -10,7 +10,8 @@ so Next after Save results only builds the window. Save results writes the sessi
 autoinspection. A save is refused when CNMF-E was recomputed after the session was opened. Without an open
 browser tab for inspection.idle_exit_s the server stops and removes its lock. A session page shows the
 calcium-wave hint (bearmind.wave) above the window when inspection.wave.warn_frac is set and the session's share
-of wave frames, computed while the session is prepared, is above it; nothing outside this page shows it.
+of wave frames, computed while the session is prepared and kept in its inspect cache with the contours, is above
+it; nothing outside this page shows it.
 
 Page texts are English and name only an exception's type and file: a Windows error text is localized, and the
 series log keeps the whole text. Console lines are ASCII.
@@ -606,7 +607,8 @@ class InspectServer:
         fname = _estimates_file(paths, rec)
         time_s = session_time_s(paths, rec)
         kwargs = self.bkapp_kwargs
-        contours = self._cached_contours(sid, stamp, kwargs)
+        wkey = self._wave_key()
+        contours, cached_frac = self._read_cache(sid, stamp, kwargs, wkey)
         bm = _bm()
         try:
             # forward slashes: the window titles its image with the part of the path after the last "/"
@@ -617,44 +619,60 @@ class InspectServer:
             if m:
                 raise _ShortTimestamps(sid, int(m.group(1)), int(m.group(2))) from e
             raise
-        if contours is None and prep.contours is not None:
-            self._write_contours(sid, stamp, kwargs, prep.contours)
-        prep.sid, prep.stamp = sid, stamp
-        prep.wave_frac = self._wave_frac(sid, prep.estimates)
+        frac = cached_frac if cached_frac is not None else self._wave_frac(sid, prep.estimates)
+        if prep.contours is not None and (contours is None or (cached_frac is None and frac is not None)):
+            self._write_cache(sid, stamp, kwargs, prep.contours, frac, wkey)
+        if frac is not None:
+            # in the series log even without a threshold: the values a later warn_frac can be chosen from
+            log.info("%s: calcium-wave share %.4f%s (inspection.wave.warn_frac %s)", sid, frac,
+                     " (cached)" if cached_frac is not None else "", self.wave_cfg.get("warn_frac"))
+        prep.sid, prep.stamp, prep.wave_frac = sid, stamp, frac
         return prep
 
     def _wave_frac(self, sid: str, est) -> float | None:
-        """The session's share of wave frames (bearmind.wave) over the components the window lists. Computed here,
-        with the preparation and off the IOLoop: up to 1.2 s on the May 2026 corpus (64 301 frames, 1 222
-        components). None when it cannot be computed: the hint is advice, and the session opens without it."""
+        """The session's share of wave frames (bearmind.wave) over the components the window lists, with each
+        component's noise as the floor. Computed here, with the preparation and off the IOLoop (0.6 s at most on
+        the May 2026 corpus); kept in the inspect cache. None when it cannot be computed: the hint is advice, and
+        the session opens without it."""
         w = self.wave_cfg
         try:
-            frac = wave.wave_frac(est.C, est.idx_components, k_mad=float(w.get("k_mad", 3.0)),
-                                  active_frac=float(w.get("active_frac", 0.3)))
+            return wave.wave_frac(est.C, est.idx_components, k_mad=float(w.get("k_mad", 3.0)),
+                                  active_frac=float(w.get("active_frac", 0.3)), sn=wave.component_noise(est))
         except Exception:
             log.warning("%s: calcium-wave share not computed", sid, exc_info=True)
             return None
-        # in the series log even without a threshold: the values a later warn_frac can be chosen from
-        log.info("%s: calcium-wave share %.4f (inspection.wave.warn_frac %s)", sid, frac, w.get("warn_frac"))
-        return frac
 
-    def _cached_contours(self, sid, stamp, kwargs):
-        """Contours of an earlier preparation of the same estimates file (size, mtime) and cthr, or None."""
+    def _wave_key(self) -> tuple | None:
+        """What a cached wave share must match besides the estimates file: the rule's version and parameters."""
+        w = self.wave_cfg
+        try:
+            return float(wave.RULE_VERSION), float(w.get("k_mad", 3.0)), float(w.get("active_frac", 0.3))
+        except (TypeError, ValueError):
+            return None  # not a number: _wave_frac fails and logs it
+
+    def _read_cache(self, sid, stamp, kwargs, wkey):
+        """(contours, wave share) of an earlier preparation of the same estimates file (size, mtime): the contours
+        when cthr is the same, the share when its key (_wave_key) is the same; None for each that does not."""
         f = self.paths.inspection_cache(sid)
         if stamp.size is None or not f.is_file():
-            return None
+            return None, None
+        contours = frac = None
         try:
             with np.load(f, allow_pickle=False) as z:
-                key = (int(z["size"]), int(z["mtime_ns"]), float(z["cthr"]))
-                if key != (stamp.size, stamp.mtime_ns, float(kwargs.get("cthr", 0.3))):
-                    return None
-                coords, lengths = z["coords"], z["lengths"]
+                if (int(z["size"]), int(z["mtime_ns"])) != (stamp.size, stamp.mtime_ns):
+                    return None, None
+                if float(z["cthr"]) == float(kwargs.get("cthr", 0.3)):
+                    coords, lengths = z["coords"], z["lengths"]
+                    contours = list(np.split(coords, np.cumsum(lengths)[:-1])) if len(lengths) else []
+                # a cache written before the share was kept has no wave_key
+                if wkey is not None and "wave_key" in z.files and tuple(z["wave_key"].tolist()) == wkey:
+                    frac = float(z["wave_frac"])
         except Exception:
-            log.warning("%s: contour cache not readable, computed again", sid, exc_info=True)
-            return None
-        return list(np.split(coords, np.cumsum(lengths)[:-1])) if len(lengths) else []
+            log.warning("%s: inspect cache not readable, computed again", sid, exc_info=True)
+            return None, None
+        return contours, frac
 
-    def _write_contours(self, sid, stamp, kwargs, contours) -> None:
+    def _write_cache(self, sid, stamp, kwargs, contours, frac, wkey) -> None:
         f = self.paths.inspection_cache(sid)
         tmp = f.with_name(f.name + ".partial")
         try:
@@ -662,13 +680,15 @@ class InspectServer:
             lengths = np.array([len(c) for c in contours], dtype=np.int64)
             coords = (np.concatenate([np.asarray(c, dtype=np.float64) for c in contours])
                       if contours else np.zeros((0, 2)))
+            extra = ({"wave_key": np.array(wkey, dtype=np.float64), "wave_frac": np.float64(frac)}
+                     if frac is not None and wkey is not None else {})
             with open(tmp, "wb") as fh:
                 np.savez(fh, size=np.int64(stamp.size), mtime_ns=np.int64(stamp.mtime_ns),
-                         cthr=np.float64(kwargs.get("cthr", 0.3)), coords=coords, lengths=lengths)
+                         cthr=np.float64(kwargs.get("cthr", 0.3)), coords=coords, lengths=lengths, **extra)
             os.replace(tmp, f)
         except Exception:
-            # only a cache: the next preparation computes the contours again
-            log.warning("%s: contour cache not written", sid, exc_info=True)
+            # only a cache: the next preparation computes the contours and the share again
+            log.warning("%s: inspect cache not written", sid, exc_info=True)
             try:
                 tmp.unlink(missing_ok=True)
             except OSError:
