@@ -410,7 +410,7 @@ def test_server_exits_when_idle(series_est, strict):
             time.sleep(idle + 1)  # an open tab keeps the server
             assert t.is_alive()
         closed = time.monotonic()
-        bound = idle + 5 if strict else idle + 30  # measured: idle + 0.5-1 s
+        bound = idle + 5 if strict else idle + 30  # measured: idle + 1.2 s (3.16 s)
         t.join(bound)
         took = time.monotonic() - closed
         print(f"[timing] stopped {took:.2f} s after the tab closed (idle_exit_s {idle})")
@@ -1064,7 +1064,7 @@ def test_stopping_wait_is_bounded_once(series_est, monkeypatch, capsys, strict):
         out = capsys.readouterr().out
         assert "[FAILED]" in out and str(paths.inspection_lock) in out
         assert waits == [1] and out.count("is stopping") == 1  # one wait, one notice
-        assert took < (1.9 if strict else 5.0)  # measured 1.0-1.2 s
+        assert took < (1.9 if strict else 5.0)  # measured: at most 1.02 s
     finally:
         runner._drop_lock(paths.inspection_lock, fh)
 
