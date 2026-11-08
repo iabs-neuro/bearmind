@@ -29,7 +29,7 @@ import weakref
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -45,6 +45,9 @@ from tornado.ioloop import IOLoop, PeriodicCallback
 from tornado.web import OutputTransform
 
 from bearmind import actions, config, naming, provenance, registry, runner
+# the lock as other processes read it is in a module without Bokeh (the window imports it); its names stay here
+from bearmind.inspect_lock import (UNREADABLE_LOCK_STALE_S, ServerState, _lock_info,  # noqa: F401
+                                   same_process as _same_process, server_state, session_url)
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State
 from bearmind.stages import gate
@@ -92,9 +95,6 @@ CHECK_UNUSED_MS = 5_000
 SIDE_FILES_WAIT_S = 600  # a stopping server waits this long for the side files it queued
 URL_WAIT_S = 10.0  # a server that holds the lock writes its address right after it listens
 STOP_WAIT_S = SIDE_FILES_WAIT_S + 60  # how long the inspect command waits for a stopping server to end
-# A lock that cannot be read is being written by its new holder (it empties the file, then writes itself in, at
-# once); one older than this was left by a holder that died in between, and is not waited for.
-UNREADABLE_LOCK_STALE_S = 2.0
 # A reload asks for the new page while the old page's websocket is still open (it closes a moment later): a
 # session held by another tab is asked for again after this long, and refused only if that tab is still there.
 RETRY_OPEN_MS = 1500
@@ -143,10 +143,6 @@ def _bm():
     return _bm_module
 
 
-def session_url(url: str, sid: str) -> str:
-    return f"{url.rstrip('/')}/?sid={quote(sid, safe='')}"
-
-
 def session_time_s(paths, rec) -> np.ndarray:
     """The session's frame times in seconds from its first frame: the stitched timestamps of the registry
     (timestamps.session_timestamps), one per frame; rec.n_frames of them when the timestamps cover every frame."""
@@ -154,69 +150,7 @@ def session_time_s(paths, rec) -> np.ndarray:
     return (t - t[0]) / 1000.0 if len(t) else t
 
 
-# --- the lock and the state another process reads ---
-
-@dataclass
-class ServerState:
-    alive: bool
-    url: str | None
-    pid: int | None
-    current: list[str] = field(default_factory=list)  # sessions open in a browser tab
-    prepared: str | None = None  # the session prepared in the background
-    # no address yet: its process runs but does not listen yet, or the lock is being written (a new holder
-    # empties it before it writes itself in); worth waiting for
-    starting: bool = False
-    stopping: bool = False  # its process runs, but no longer serves pages (it finishes the side files)
-
-    @property
-    def available(self) -> bool:
-        """A server of the series answers at url."""
-        return self.alive and self.url is not None and not self.stopping
-
-
-def _lock_info(lock: Path, tries: int = 5) -> dict | None:
-    """The lock's content; {} without a lock file; None when it exists but cannot be read as a lock (its holder
-    is writing it, or nobody will)."""
-    for _ in range(tries):
-        try:
-            info = json.loads(lock.read_text(encoding="utf-8"))
-            return info if isinstance(info, dict) else None
-        except FileNotFoundError:
-            return {}
-        except (OSError, ValueError):
-            time.sleep(0.02)  # its server is rewriting it: look again
-    return None
-
-
-def _same_process(pid, created) -> bool:
-    """The process `pid` is alive and started at `created` (a reused PID has another start time)."""
-    if not isinstance(pid, int) or isinstance(pid, bool) or created is None:
-        return False
-    try:
-        return abs(psutil.Process(pid).create_time() - float(created)) < 1.0
-    except (psutil.Error, TypeError, ValueError):
-        return False
-
-
-def server_state(paths) -> ServerState:
-    """The inspection server of the series as its lock describes it; alive: its process runs. Use available
-    before opening its address; starting and stopping mean "look again shortly" (wait_ready)."""
-    info = _lock_info(paths.inspection_lock)
-    if info is None:
-        try:
-            age = time.time() - paths.inspection_lock.stat().st_mtime
-        except OSError:
-            age = 0.0  # gone or held right now: look again
-        return ServerState(alive=False, url=None, pid=None, starting=age < UNREADABLE_LOCK_STALE_S)
-    pid, url, cur, prep = info.get("pid"), info.get("url"), info.get("current"), info.get("prepared")
-    alive = _same_process(pid, info.get("create_time"))
-    url = url if isinstance(url, str) else None
-    stopping = alive and bool(info.get("stopping"))
-    return ServerState(alive=alive, url=url, pid=pid if isinstance(pid, int) else None,
-                       current=[s for s in cur if isinstance(s, str)] if isinstance(cur, list) else [],
-                       prepared=prep if isinstance(prep, str) else None,
-                       starting=alive and url is None and not stopping, stopping=stopping)
-
+# --- waiting for the series' server (its lock is read by bearmind.inspect_lock) ---
 
 def wait_ready(paths, start_timeout: float | None = None, stop_timeout: float | None = None,
                on_stopping=None, deadline: float | None = None) -> ServerState:

@@ -167,9 +167,12 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(TAB_NAMES.index(name))
 
     def _open_from_monitor(self, name: str) -> None:
-        """Monitor's buttons: "Thresholds: N sessions" opens the tab on the first session that waits."""
+        """Monitor's buttons: "Thresholds: N sessions" and "Manual inspection: N sessions" open their tab on the
+        first session that waits (for inspection: one whose CNMF-E is current)."""
         if name == "Thresholds":
             self.thresholds.show_first_waiting()
+        elif name == "Inspection":
+            self.inspection.show_first_waiting()
         self.show_tab(name)
 
     def report_exception(self, exc_type, exc, tb) -> None:

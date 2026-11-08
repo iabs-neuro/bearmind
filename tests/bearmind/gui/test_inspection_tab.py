@@ -4,8 +4,13 @@ No test starts a real server or browser: spawn and open_url are replaced, and a 
 written by the test, held by the test's own process.
 """
 import json
+import logging
+import os
 import re
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import psutil
 import pytest
@@ -27,6 +32,9 @@ ASK_PASSED = ("Manual inspection of {} already passed. Saving a new result makes
               "again, and the exported neurons can change. Open anyway?")
 DID_NOT_START = "The inspection server did not start; see _bearmind/logs/inspect_console.log"
 STARTING = "Starting the inspection server (about 10 s)…"
+STILL_STARTING = "The inspection server is still starting; it opens your session when it is ready."
+NO_SUCH_PID = 999_999_999
+REPO = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
@@ -60,9 +68,10 @@ class Ui:
     def __init__(self, paths, answer=True):
         self.asked, self.shown, self.status, self.spawned, self.opened = [], [], [], [], []
         self.answer = answer
+        self.child = os.getpid()  # the PID the fake start returns: this process, alive while the test runs
         self.tab = InspectionTab(paths.root, confirm=lambda t: (self.asked.append(t), self.answer)[1],
                                  message=lambda title, text: self.shown.append(text),
-                                 spawn=lambda cmd: (self.spawned.append(cmd), 4242)[1],
+                                 spawn=lambda cmd: (self.spawned.append(cmd), self.child)[1],
                                  open_url=self.opened.append)
         self.tab.status_message.connect(self.status.append)
 
@@ -190,34 +199,195 @@ def test_open_waits_for_a_server_another_process_starts(qapp, series4, make_ui):
     assert ui.spawned == [] and ui.opened == [inspect_server.session_url(URL, S1)]
 
 
+def _stdin_child():
+    """A real process that runs until its stdin closes: a started server process that is not a server."""
+    return subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
+
+
 def test_server_did_not_start_message(qapp, series4, make_ui):
+    """The started inspect command ends without a server: said at once, not after the wait."""
     ui = make_ui(series4)
     now = [100.0]
     ui.tab._clock = lambda: now[0]
-    ui.tab.open_inspection(S1)
-    assert len(ui.spawned) == 1 and ui.tab.start_timer.isActive()
-    now[0] += inspection_tab.START_WAIT_S - 1
-    ui.tab._poll_server()
-    assert ui.shown == [] and ui.tab.start_timer.isActive()
-    now[0] += 2  # no address within the wait
-    ui.tab._poll_server()
+    child = _stdin_child()
+    try:
+        ui.child = child.pid
+        ui.tab.open_inspection(S1)
+        assert len(ui.spawned) == 1 and ui.tab.start_timer.isActive()
+        ui.tab._poll_server()
+        assert ui.shown == [] and ui.tab.start_timer.isActive()
+        child.stdin.close()
+        child.wait(timeout=20)
+        ui.tab._poll_server()  # the clock has not moved: the child's end is enough
+    finally:
+        child.kill()
+        child.wait(timeout=20)
     assert ui.shown == [DID_NOT_START] and "inspect_console.log" in ui.status[-1]
     assert ui.opened == [] and not ui.tab.start_timer.isActive()
     assert ui.tab.server_label.text() == "Inspection server: not running"
+    ui.child = os.getpid()
     ui.tab.open_inspection(S1)  # a new click is a new start
     assert len(ui.spawned) == 2
 
 
-def test_spawn_failure_is_shown(qapp, series4, make_ui):
+def test_child_that_died_at_once(qapp, series4, make_ui):
+    ui = make_ui(series4)
+    ui.child = NO_SUCH_PID  # gone before the tab looked at it
+    ui.tab.open_inspection(S1)
+    assert ui.shown == [DID_NOT_START] and not ui.tab.start_timer.isActive() and ui.opened == []
+
+
+def test_still_starting_after_the_wait(qapp, series4, make_ui):
+    """30 s without an address while the started command still runs: the tab says so and keeps waiting, up to the
+    inspect command's own bounded wait."""
+    ui = make_ui(series4)
+    now = [100.0]
+    ui.tab._clock = lambda: now[0]
+    ui.tab.open_inspection(S1)
+    now[0] += inspection_tab.START_WAIT_S + 1
+    ui.tab._poll_server()
+    assert ui.status[-1] == STILL_STARTING and ui.tab.server_label.text() == STILL_STARTING
+    assert ui.shown == [] and ui.tab.start_timer.isActive()
+    n = len(ui.status)
+    now[0] += 60
+    ui.tab._poll_server()
+    assert len(ui.status) == n  # said once
+    write_lock(series4)
+    ui.tab._poll_server()
+    assert ui.opened == [inspect_server.session_url(URL, S1)] and not ui.tab.start_timer.isActive()
+    # the hard cap: the inspect command itself gives up after its bounded wait
+    series4.inspection_lock.unlink()
+    ui.tab.open_inspection(S1)
+    now[0] += inspect_server.STOP_WAIT_S + inspection_tab.START_WAIT_S - 1
+    ui.tab._poll_server()
+    assert ui.shown == [] and ui.tab.start_timer.isActive()
+    now[0] += 2
+    ui.tab._poll_server()
+    assert ui.shown == [DID_NOT_START] and not ui.tab.start_timer.isActive()
+
+
+def test_wait_pauses_while_a_server_stops(qapp, series4, make_ui):
+    """A stopping server holds the lock until its side files are written: that time is not counted, and the line
+    says the server is stopping. The start is not held back: the inspect command waits for the stop itself."""
+    write_lock(series4, stopping=True)
+    ui = make_ui(series4)
+    now = [100.0]
+    ui.tab._clock = lambda: now[0]
+    ui.tab.open_inspection(S1)
+    assert len(ui.spawned) == 1 and ui.tab.server_label.text() == "Inspection server: stopping…"
+    now[0] += 100
+    ui.tab._poll_server()
+    assert ui.shown == [] and ui.status[-1] == STARTING and ui.tab.start_timer.isActive()
+    assert ui.tab.server_label.text() == "Inspection server: stopping…"
+    series4.inspection_lock.unlink()  # the old server ended
+    ui.tab._poll_server()
+    assert ui.tab.server_label.text() == STARTING
+    now[0] += inspection_tab.START_WAIT_S - 1  # the 30 s count from the end of the stop
+    ui.tab._poll_server()
+    assert ui.tab.server_label.text() == STARTING and STILL_STARTING not in ui.status
+    now[0] += 2
+    ui.tab._poll_server()
+    assert ui.status[-1] == STILL_STARTING and len(ui.spawned) == 1
+    write_lock(series4)
+    ui.tab._poll_server()
+    assert ui.opened == [inspect_server.session_url(URL, S1)]
+
+
+def test_spawn_failure_is_shown(qapp, series4, make_ui, caplog):
+    """Any error of the start ends the wait (the line follows the server again); the message names the error's
+    type and errno, not its localized text, which goes to gui.log."""
     ui = make_ui(series4)
 
-    def broken(cmd):
-        raise OSError("python.exe not found")
+    def odd(cmd):
+        raise ValueError("embedded null character")
 
-    ui.tab._spawn = broken
+    ui.tab._spawn = odd
+    with caplog.at_level(logging.ERROR, logger="bearmind"):
+        ui.tab.open_inspection(S1)
+        assert ui.shown == ["The inspection server did not start: ValueError; details in gui.log"]
+        assert not ui.tab.start_timer.isActive() and ui.tab._waiting == []
+        assert "embedded null character" in caplog.text
+        write_lock(series4)
+        ui.tab.refresh()
+        assert ui.tab.server_label.text() == f"Inspection server: running at {URL}"
+        series4.inspection_lock.unlink()
+
+        def localized(cmd):
+            raise FileNotFoundError(2, "Не удается найти указанный файл")
+
+        ui.tab._spawn = localized
+        ui.tab.open_inspection(S1)
+    assert ui.shown[-1] == "The inspection server did not start: FileNotFoundError (errno 2); details in gui.log"
+    assert "Не удается" in caplog.text and not ui.tab.start_timer.isActive()
+
+
+def test_browser_that_does_not_open_is_named(qapp, series4, make_ui, monkeypatch):
+    import webbrowser
+
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: False)
+    assert inspection_tab._default_open_url(URL) is False  # webbrowser.open's answer is passed on
+    write_lock(series4)
+    ui = make_ui(series4)
+    ui.tab._open_url = lambda url: (ui.opened.append(url), False)[1]
     ui.tab.open_inspection(S1)
-    assert ui.shown and ui.shown[0].startswith("The inspection server did not start")
-    assert "python.exe not found" in ui.shown[0] and not ui.tab.start_timer.isActive()
+    url = inspect_server.session_url(URL, S1)
+    assert ui.opened == [url]
+    assert ui.shown == [f"The browser did not open; open {url} yourself."]
+    assert not [s for s in ui.status if s.startswith("Opened in your browser")]
+
+
+def test_unschedulable_session_cannot_be_opened(qapp, series4, make_ui):
+    """A session the batch cannot schedule: whether its CNMF-E is current is unknown, so it is not opened."""
+    f = series4.session_config(S1)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("cnmf: [unclosed\n", encoding="utf-8")
+    ui = make_ui(series4)
+    ui.select(S1)
+    assert not ui.tab.inspect_button.isEnabled()
+    assert ui.tab.inspect_button.toolTip().startswith(f"{S1} cannot be scheduled: config: ")
+    ui.tab.open_inspection(S1)
+    assert ui.spawned == [] and ui.opened == [] and ui.shown[0].startswith(f"{S1} cannot be scheduled: ")
+
+
+def test_window_import_loads_no_bokeh():
+    """The window reads the server's lock through bearmind.inspect_lock: Bokeh and Tornado (the server's) are
+    not loaded at window start."""
+    code = ("import sys, bearmind.gui.app; "
+            "print(sorted({m.split('.')[0] for m in sys.modules} & {'bokeh', 'tornado', 'caiman'}))")
+    r = subprocess.run([sys.executable, "-c", code], cwd=REPO, capture_output=True, text=True, timeout=120,
+                       env={**os.environ, "PYTHONPATH": str(REPO)})
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "[]"
+
+
+def test_monitor_button_preselects_first_waiting(qapp, series4):
+    """Monitor's "Manual inspection: N sessions ->" opens the tab on the first waiting session whose CNMF-E is
+    current (as the Thresholds tab does); none: the selection stays."""
+    from bearmind.gui.app import MainWindow
+
+    w = MainWindow(series4.root, message=lambda title, text: None)
+    try:
+        w.monitor.inspection_button.click()
+        assert w.tabs.currentIndex() == 3 and w.inspection.selected_sids() == [S1]
+        actions.gate_not_needed(series4, [S1], "test")  # S4 still waits, but its CNMF-E is out of date
+        w.monitor.refresh()
+        sel = w.inspection.table.selectionModel()
+        sel.clearSelection()
+        sel.select(w.inspection.table.model().index(1, 0), QItemSelectionModel.SelectionFlag.Select
+                   | QItemSelectionModel.SelectionFlag.Rows)
+        w.show_tab("Monitor")
+        w.monitor.inspection_button.click()
+        assert w.tabs.currentIndex() == 3 and w.inspection.selected_sids() == [S2]
+        s5 = "LT1_J03_1D"
+        put(series4, s5, {"crop": done(), "mc": done(), "thresholds": done(), "cnmf": done(n_components=7)})
+        w.monitor.refresh()
+        w.show_tab("Monitor")
+        w.monitor.inspection_button.click()
+        assert w.inspection.selected_sids() == [s5]
+    finally:
+        w.inspection.shutdown()
+        w.thresholds.shutdown()
+        w.close()
 
 
 def test_open_already_passed_asks(qapp, series4, make_ui):
@@ -294,6 +464,7 @@ def test_inspection_tab_texts_are_english(qapp, series4, make_ui):
     t.open_inspection(S2)
     texts += [t.server_label.text()] + ui.asked + ui.shown + ui.status
     assert len(ui.asked) == 3 and ui.shown and ui.status
+    texts += [v for k, v in vars(inspection_tab).items() if k.isupper() and isinstance(v, str)]  # every text
     for x in texts:
         assert not CYRILLIC.search(x), x
 

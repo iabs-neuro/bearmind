@@ -23,7 +23,8 @@ def tmp_series(tmp_path):
 def _refresh_errors_fail_tests(monkeypatch):
     """A programming error inside refresh() is reported to the window; in tests it must fail the test.
     A test that passes its own `report` keeps it. The Inspection tab of a test never starts a real inspection
-    server or browser: one the test does not replace raises."""
+    server or browser: one the test does not replace raises, and the test fails at its end even when the call
+    came from a Qt slot (an exception there is only printed) or was caught by the tab."""
     from bearmind.gui.inspection_tab import InspectionTab
     from bearmind.gui.monitor_tab import MonitorTab
     from bearmind.gui.scan_tab import ScanTab
@@ -32,7 +33,10 @@ def _refresh_errors_fail_tests(monkeypatch):
     def reraise(exc_type, exc, tb):
         raise exc
 
+    hits = []
+
     def no_real(*a, **k):
+        hits.append(a)
         raise AssertionError("a test started a real inspection server or browser")
 
     for cls in (MonitorTab, ScanTab, ThresholdsTab, InspectionTab):
@@ -41,9 +45,14 @@ def _refresh_errors_fail_tests(monkeypatch):
             if inspection:
                 k.setdefault("spawn", no_real)
                 k.setdefault("open_url", no_real)
+                # its dialogs are modal: offscreen, one would block the test for ever instead of failing it
+                k.setdefault("message", lambda title, text: None)
+                k.setdefault("confirm", lambda text: False)
             real(self, *a, **k)
 
         monkeypatch.setattr(cls, "__init__", init)
+    yield
+    assert not hits, f"a test reached a real inspection server start or browser: {hits}"
 
 
 @pytest.fixture(autouse=True)
