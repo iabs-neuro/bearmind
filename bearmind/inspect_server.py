@@ -102,9 +102,13 @@ CONNECT_GRACE_S = 15.0
 # estimates go with it).
 UNUSED_SESSION_MS = 15_000
 CHECK_UNUSED_MS = 5_000
-SIDE_FILES_WAIT_S = 600  # a stopping server waits this long for the side files it queued
+# A stopping server waits for the side files it queued until they are written, saying so in the series log every
+# SIDE_FILES_LOG_S, and at most SIDE_FILES_CAP_S: those of a session of 1880 components and 64 300 frames take
+# about 90 s, and a few saves can queue behind one another. Past the cap the writers are stopped.
+SIDE_FILES_LOG_S = 60
+SIDE_FILES_CAP_S = 30 * 60
 URL_WAIT_S = 10.0  # a server that holds the lock writes its address right after it listens
-STOP_WAIT_S = SIDE_FILES_WAIT_S + 60  # how long the inspect command waits for a stopping server to end
+STOP_WAIT_S = SIDE_FILES_CAP_S + 60  # how long the inspect command waits for a stopping server to end
 # A reload asks for the new page while the old page's websocket is still open (it closes a moment later): a
 # session held by another tab is asked for again after this long, and refused only if that tab is still there.
 RETRY_OPEN_MS = 1500
@@ -127,6 +131,9 @@ def _file_of(e) -> str | None:
 def page_error(e: BaseException) -> str:
     """What a page says of an error: its type and the file it concerns. The message itself stays out: a Windows
     error text is in the system's language, and a path can hold any letters; the series log has both."""
+    what = getattr(e, "page_what", None)  # a side-file process's failure, as the process reported it
+    if isinstance(what, str) and what:
+        return what
     x = e.__cause__ if e.__cause__ is not None else e
     f = _file_of(x) or _file_of(e)
     return f"{type(x).__name__} on {f}" if f else type(x).__name__
@@ -888,7 +895,9 @@ class InspectServer:
         with self._lock:
             earlier = self._side_last.get(sid)
             try:
-                future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_")
+                # written by a child process that reads the result just written (bm_examinator._side_files_child)
+                future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_",
+                                                           source=self.paths.manual_result(sid))
             except Exception as e:  # the executor is shut down: the result and the decision stand
                 log.exception("%s: side files not queued", sid)
                 page.add_note(SIDE_FILES_FAILED.format(sid=sid, what=page_error(e)))
@@ -1052,12 +1061,34 @@ class InspectServer:
                 self._pages.clear()
             # the side files of the last saves are finished before the lock goes: a new server of the series
             # must not write the same files at the same time
-            wait_futures(pending, timeout=SIDE_FILES_WAIT_S)
+            self._wait_side_files(pending)
             io_loop.close()
             asyncio.set_event_loop(None)
             log.info("inspection server stopped")
             log.setLevel(level)
             _detach_series_log(handler)
+
+    @staticmethod
+    def _wait_side_files(pending) -> None:
+        """Until the side-file jobs are done, a line in the series log every SIDE_FILES_LOG_S; past
+        SIDE_FILES_CAP_S the writers are stopped (their files of an earlier save may be left, or none)."""
+        t0 = time.monotonic()
+        while True:
+            left = [f for f in pending if not f.done()]
+            if not left:
+                return
+            waited = time.monotonic() - t0
+            if waited >= SIDE_FILES_CAP_S:
+                for f in left:
+                    f.cancel()  # a job that has not started yet must not start a writer after this
+                stopped = _bm().stop_side_files()
+                log.warning("side files of %d saves not written after %.0f s: stopped (%d writer processes)",
+                            len(left), waited, stopped)
+                _say(f"[WARN] side files of {len(left)} saves not written after {waited:.0f} s; stopped")
+                wait_futures(left, timeout=60)  # their jobs end once the processes are gone
+                return
+            log.info("stopping: waiting for the side files of %d saves (%.0f s so far)", len(left), waited)
+            wait_futures(left, timeout=min(SIDE_FILES_LOG_S, SIDE_FILES_CAP_S - waited))
 
     def _tick(self) -> None:
         """Every TICK_MS on the IOLoop: idle exit, and the open sessions and the prepared one in the lock."""

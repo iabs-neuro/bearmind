@@ -546,6 +546,49 @@ def test_side_files_in_background(tmp_path, monkeypatch):
     assert list(_load(out / f"{SID}_manual_estimates.pickle").idx_components) == [1, 3, 4, 5, 6, 7]
 
 
+def test_side_files_in_a_child_process(tmp_path, monkeypatch):
+    """K1e: given the result just written (source), the side files are written by a child process that reads it:
+    nothing of them runs in this process, the job does not keep the estimates, and the files are those the
+    window's own writer makes."""
+    est = _loaded(tmp_path)
+    est.idx_components = np.array([0, 1, 3, 4, 5, 6, 7])
+    est.idx_components_bad = np.array([2])
+    ref = tmp_path / "ref"
+    bm_examinator.write_side_files(est, ref, f"{SID}_")
+    source = bm_examinator.write_result(est, tmp_path / "out" / f"{SID}_manual_estimates.pickle")
+    monkeypatch.setattr(bm_examinator, "write_side_files", _boom)  # not in this process
+    future = bm_examinator.write_side_files_in_background(None, tmp_path / "out", f"{SID}_", source=source)
+    future.result(timeout=300)
+    got, want = _read_side_files(tmp_path / "out", f"{SID}_"), _read_side_files(ref, f"{SID}_")
+    pd.testing.assert_frame_equal(got[0], want[0])
+    assert np.array_equal(got[1], want[1]) and got[2].keys() == want[2].keys()
+    assert all(np.array_equal(got[2][k], want[2][k]) for k in want[2])
+
+
+def test_side_files_child_reads_without_caiman(tmp_path):
+    """K1e: the child reads a result without importing CaImAn (it would take it seconds); the attributes the side
+    files need are there."""
+    path = bm_examinator.write_result(_loaded(tmp_path), tmp_path / "out" / f"{SID}_manual_estimates.pickle")
+    code = ("import sys; from bearmind import side_files as s; e = s.load_result(sys.argv[1]); "
+            "assert 'caiman' not in sys.modules and 'torch' not in sys.modules and 'bokeh' not in sys.modules; "
+            "print(e.C.shape[0], e.C.shape[1], e.A.shape[1], len(s.kept_for_side_files(e)), len(e.time))")
+    r = subprocess.run([sys.executable, "-c", code, str(path)], cwd=REPO, capture_output=True, text=True,
+                       timeout=300)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["8", "300", "8", "8", "300"]
+
+
+def test_side_files_child_failure_named(tmp_path):
+    """K1e: a failure of the child is raised in the job's Future: page_what names the error's type and file as
+    the child reported them (never its localized text), the message has its traceback."""
+    missing = tmp_path / "out" / f"{SID}_manual_estimates.pickle"
+    future = bm_examinator.write_side_files_in_background(None, tmp_path / "out", f"{SID}_", source=missing)
+    with pytest.raises(bm_examinator.SideFilesFailed) as info:
+        future.result(timeout=300)
+    assert info.value.page_what == f"FileNotFoundError on {missing.name}"
+    assert "Traceback" in str(info.value)
+
+
 def test_side_files_failure_in_future(tmp_path):
     """A failure in the background is not lost: the Future holds it for the server to log and show."""
     est = _loaded(tmp_path)

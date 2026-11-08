@@ -38,7 +38,7 @@ from bokeh.models import Button, ColumnDataSource, Div
 from tornado.ioloop import IOLoop
 
 import bm_examinator
-from bearmind import actions, cli, config, inspect_server, monitor, runner, scan, wave
+from bearmind import actions, cli, config, inspect_server, monitor, runner, scan, side_files, wave
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
@@ -734,13 +734,11 @@ def test_side_files_failure_on_page(series_est, monkeypatch):
     paths = series_est
     target = paths.inspection_dir(S1) / f"{S1}_traces.csv"
 
-    def failing(est, folder, base, sigma=3):
-        try:
-            raise PermissionError(13, DENIED, str(target))
-        except PermissionError as e:
-            raise RuntimeError(f"side files in {folder} not all written ({target.name}: {DENIED})") from e
+    def failing(source, folder, base, sigma=3):  # the child's report of a failure, as _side_files_child raises it
+        raise bm_examinator.SideFilesFailed(f"side files in {folder} not all written ({target.name}: {DENIED})",
+                                            f"PermissionError on {target.name}")
 
-    monkeypatch.setattr(bm_examinator, "write_side_files", failing)
+    monkeypatch.setattr(bm_examinator, "_side_files_child", failing)
     with running(paths) as srv, tab(srv, S1) as s:
         page = srv.page_of(s.id)
         assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
@@ -771,21 +769,25 @@ def test_decision_not_recorded_after_result_written(series_est, monkeypatch):
         assert _decisions(paths, S1) == ["cleaned"]
 
 
+def _gated_child(started, release, written):
+    """A stand-in for the side-file child process: it reads the result as the child does, notes its components,
+    holds the first job until `release`, then writes the files in this process."""
+    def child(source, folder, base, sigma=3):
+        est = side_files.load_result(source)
+        written.append([int(c) for c in side_files.kept_for_side_files(est)])
+        if len(written) == 1:
+            started.set()
+            assert release.wait(60)
+        side_files.write_side_files(est, folder, base, sigma)
+    return child
+
+
 def test_newer_save_skips_queued_side_files(series_est, monkeypatch):
     """M5: side files of a save that has not started yet are dropped when the same session is saved again;
     only the last save's files matter."""
     paths = series_est
     started, release, written = threading.Event(), threading.Event(), []
-    real = bm_examinator.write_side_files
-
-    def gated(est, folder, base, sigma=3):
-        written.append([int(c) for c in bm_examinator.kept_for_side_files(est)])
-        if len(written) == 1:
-            started.set()
-            assert release.wait(60)
-        real(est, folder, base, sigma)
-
-    monkeypatch.setattr(bm_examinator, "write_side_files", gated)
+    monkeypatch.setattr(bm_examinator, "_side_files_child", _gated_child(started, release, written))
     try:
         with running(paths) as srv, tab(srv, S1) as s:
             page = srv.page_of(s.id)
@@ -807,19 +809,11 @@ def test_queued_side_files_kept_when_the_new_job_cannot_start(series_est, monkey
     queued leaves it."""
     paths = series_est
     started, release, written = threading.Event(), threading.Event(), []
-    real = bm_examinator.write_side_files
-
-    def gated(est, folder, base, sigma=3):
-        written.append([int(c) for c in bm_examinator.kept_for_side_files(est)])
-        if len(written) == 1:
-            started.set()
-            assert release.wait(60)
-        real(est, folder, base, sigma)
 
     def cannot_queue(*args, **kwargs):
         raise RuntimeError("cannot schedule new futures after shutdown")
 
-    monkeypatch.setattr(bm_examinator, "write_side_files", gated)
+    monkeypatch.setattr(bm_examinator, "_side_files_child", _gated_child(started, release, written))
     try:
         with running(paths) as srv, tab(srv, S1) as s:
             page = srv.page_of(s.id)
@@ -837,7 +831,8 @@ def test_queued_side_files_kept_when_the_new_job_cannot_start(series_est, monkey
             release.set()
     finally:
         release.set()
-    assert written == [list(range(8)), list(range(1, 8))]  # the second save's files were still written
+    # the second save's job was still run; it reads the result on disk when it runs, which is the third save's
+    assert written == [list(range(8)), list(range(2, 8))]
 
 
 def test_closed_tab_is_freed(series_est, monkeypatch):
@@ -861,13 +856,13 @@ def test_stopping_server_is_waited_for(series_est, monkeypatch, capsys):
     the inspect command waits for it to end, then starts a new server, never a dead address."""
     paths = series_est
     release = threading.Event()
-    real = bm_examinator.write_side_files
+    real = bm_examinator._side_files_child
 
     def slow(*args, **kwargs):
         assert release.wait(60)
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(bm_examinator, "write_side_files", slow)
+    monkeypatch.setattr(bm_examinator, "_side_files_child", slow)
     srv = inspect_server.InspectServer(paths.root, port=0, open_browser=False, idle_exit_s=600)
     t = threading.Thread(target=srv.run, name="t4-inspect-server")
     t.start()
@@ -896,6 +891,37 @@ def test_stopping_server_is_waited_for(series_est, monkeypatch, capsys):
         t.join(180)
         cmd.join(180)
         assert not t.is_alive() and not cmd.is_alive()
+
+
+def test_stopping_server_waits_for_side_files_with_a_cap(series_est, monkeypatch):
+    """K1e: a stopping server waits for the side files it queued until they are written, with a line in the
+    series log every SIDE_FILES_LOG_S; past SIDE_FILES_CAP_S it stops the writer processes and ends."""
+    paths = series_est
+    monkeypatch.setattr(inspect_server, "SIDE_FILES_LOG_S", 0.5)
+    monkeypatch.setattr(inspect_server, "SIDE_FILES_CAP_S", 2.0)
+    release, stopped = threading.Event(), []
+
+    def stuck(*args, **kwargs):  # a writer that does not finish by itself
+        assert release.wait(60)
+
+    def stop_side_files():
+        stopped.append(1)
+        release.set()  # as killing the child ends its job
+        return 1
+
+    monkeypatch.setattr(bm_examinator, "_side_files_child", stuck)
+    monkeypatch.setattr(bm_examinator, "stop_side_files", stop_side_files)
+    try:
+        with running(paths) as srv, tab(srv, S1) as s:
+            assert save(srv, srv.page_of(s.id)) == inspect_server.SAVED.format(sid=S1)
+            t0 = time.monotonic()
+    finally:
+        release.set()
+    assert 2.0 <= time.monotonic() - t0 <= 2.0 + 30  # the cap, then the end (the thread joins in `running`)
+    assert stopped == [1]
+    text = paths.series_log.read_text(encoding="utf-8")
+    assert text.count("waiting for the side files of 1 saves") >= 3  # at 0, 0.5, 1.0, 1.5 s
+    assert re.search(r"side files of 1 saves not written after \d+ s: stopped \(1 writer processes\)", text)
 
 
 def test_two_inspect_commands_at_once(series_est, monkeypatch, capsys):
