@@ -18,6 +18,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -471,15 +472,27 @@ def test_contour_cache_reused(series_est, monkeypatch):
     assert len(calls) == 2
 
 
-def _add_wave(paths, sid, start=100, frames=30):
-    """A calcium wave in sid's estimates: at frame `start` every component rises to 20 times the largest noise SD
-    and decays (10 frames) over `frames` frames. Returns the session's wave share."""
-    f = paths.estimates(sid)
-    est = _load(f)
+def _estimates_of(paths, sid, n):
+    """sid's estimates replaced by make_estimates' session of n components (the fixture's have 8, fewer than
+    the wave hint needs); returns them."""
+    with tempfile.TemporaryDirectory(prefix="t6c_") as d:
+        est = _load(make_estimates(d, n=n))
+    _dump(est, paths.estimates(sid))
+    return est
+
+
+def _dump(est, path):
+    with open(path, "wb") as fh:
+        pickle.dump(est, fh)
+
+
+def _add_wave(paths, sid, n=12, start=100, frames=30):
+    """A calcium wave in sid's estimates (n components): at frame `start` every component rises to 20 times the
+    largest noise SD and decays (10 frames) over `frames` frames. Returns the session's wave share."""
+    est = _estimates_of(paths, sid, n)
     est.C = est.C.copy()
     est.C[:, start:start + frames] += 20.0 * np.max(est.neurons_sn) * np.exp(-np.arange(frames) / 10.0)
-    with open(f, "wb") as fh:
-        pickle.dump(est, fh)
+    _dump(est, paths.estimates(sid))
     frac = wave.wave_frac(est.C, est.idx_components, sn=wave.component_noise(est))
     assert frac >= 10 / est.C.shape[1]  # at least its first 10 frames
     return frac
@@ -525,6 +538,8 @@ def test_no_banner_on_ordinary_sessions(series_est):
     """With the default threshold the synthetic sessions (independent sparse transients) show no hint."""
     warn = config.load_defaults()["inspection"]["wave"]["warn_frac"]
     assert warn is not None
+    for sid in (S1, S2):
+        _estimates_of(series_est, sid, 12)
     with running(series_est) as srv:
         for sid in (S1, S2):
             with tab(srv, sid) as s:
@@ -532,6 +547,26 @@ def test_no_banner_on_ordinary_sessions(series_est):
                 assert _opened(page, sid) and page.prepared.wave_frac <= warn
                 banner = _div(s.document, "wave")
                 assert not banner.visible and banner.text == ""
+
+
+@pytest.mark.parametrize("n", [3, 9, 10])
+def test_no_hint_below_ten_components(series_est, n):
+    """V1: with fewer than 10 kept components the share is not computed and the page has no hint, whatever the
+    threshold; the series log says why."""
+    paths = series_est
+    _add_wave(paths, S1, n=n)
+    _set_wave(paths, warn_frac=0.0)
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        assert _opened(page, S1)
+        banner = _div(s.document, "wave")
+        if n < 10:
+            assert page.prepared.wave_frac is None and not banner.visible
+        else:
+            assert page.prepared.wave_frac > 0 and banner.visible
+    # S2 (8 components, prepared as the next session) logs it too: only S1's line counts here
+    logged = f"{S1}: too few components for the wave hint" in paths.series_log.read_text(encoding="utf-8")
+    assert logged == (n < 10)
 
 
 def test_wave_share_cached(series_est, monkeypatch):
@@ -552,7 +587,7 @@ def test_wave_share_cached(series_est, monkeypatch):
     assert srv.build(S1).wave_frac == frac and len(calls) == 1  # from the cache
     srv.cfg["wave"] = {**srv.wave_cfg, "k_mad": 4.0}  # another rule
     assert srv.build(S1).wave_frac != frac and len(calls) == 2
-    assert len(srv.build(S1).contours) == 8 and len(calls) == 2  # cached again, with the contours
+    assert len(srv.build(S1).contours) == 12 and len(calls) == 2  # cached again, with the contours
     est = paths.estimates(S1)
     st = est.stat()
     os.utime(est, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))  # CNMF-E wrote the file again
@@ -567,6 +602,40 @@ def test_wave_share_cached(series_est, monkeypatch):
     assert len(calls) == 4
     srv.build(S1)
     assert len(calls) == 4
+
+
+@pytest.mark.parametrize("change", ["active_frac", "rule_version", "corrupt_field", "truncated"])
+def test_wave_share_cache_key(series_est, monkeypatch, change):
+    """V5: a cached share is used only with the same active_frac and rule version; a broken cache that has the
+    wave fields is computed again (contours too) and written anew."""
+    paths = series_est
+    _add_wave(paths, S1)
+    calls = []
+    real = wave.wave_frac
+    monkeypatch.setattr(wave, "wave_frac", lambda *a, **k: calls.append(1) or real(*a, **k))
+    srv = inspect_server.InspectServer(paths.root)
+    first = srv.build(S1)
+    assert len(calls) == 1
+    f = paths.inspection_cache(S1)
+    with np.load(f) as z:
+        assert {"wave_key", "wave_frac"} <= set(z.files)
+        fields = {k: z[k] for k in z.files}
+    if change == "active_frac":
+        srv.cfg["wave"] = {**srv.wave_cfg, "active_frac": 0.5}
+    elif change == "rule_version":
+        monkeypatch.setattr(wave, "RULE_VERSION", wave.RULE_VERSION + 1)
+    elif change == "corrupt_field":
+        with open(f, "wb") as fh:
+            np.savez(fh, **{**fields, "wave_frac": np.array([], dtype=np.float64)})  # not one number
+    else:
+        data = f.read_bytes()
+        f.write_bytes(data[:len(data) // 2])
+    again = srv.build(S1)
+    assert len(calls) == 2
+    if change in ("corrupt_field", "truncated"):
+        assert again.wave_frac == first.wave_frac and len(again.contours) == len(first.contours)
+    srv.build(S1)
+    assert len(calls) == 2  # the cache was written anew with the share
 
 
 def test_wave_hint_rule():

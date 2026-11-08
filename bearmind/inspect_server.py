@@ -633,11 +633,16 @@ class InspectServer:
         """The session's share of wave frames (bearmind.wave) over the components the window lists, with each
         component's noise as the floor. Computed here, with the preparation and off the IOLoop (0.6 s at most on
         the May 2026 corpus); kept in the inspect cache. None when it cannot be computed: the hint is advice, and
-        the session opens without it."""
+        the session opens without it; also with fewer than wave.MIN_COMPONENTS kept components."""
         w = self.wave_cfg
         try:
-            return wave.wave_frac(est.C, est.idx_components, k_mad=float(w.get("k_mad", 3.0)),
-                                  active_frac=float(w.get("active_frac", 0.3)), sn=wave.component_noise(est))
+            idx = est.idx_components
+            if np.size(idx) < wave.MIN_COMPONENTS:
+                log.info("%s: too few components for the wave hint (%d kept, at least %d needed)", sid,
+                         np.size(idx), wave.MIN_COMPONENTS)
+                return None
+            return wave.wave_frac(est.C, idx, k_mad=float(w.get("k_mad", 3.0)),
+                                  active_frac=float(w.get("active_frac", 0.3)), sn=wave.component_noise(est, idx))
         except Exception:
             log.warning("%s: calcium-wave share not computed", sid, exc_info=True)
             return None
@@ -658,7 +663,9 @@ class InspectServer:
             return None, None
         contours = frac = None
         try:
-            with np.load(f, allow_pickle=False) as z:
+            # the file is opened here, not by np.load: np.load leaves it open when the archive is broken, and on
+            # Windows the new cache could then not replace it
+            with open(f, "rb") as fh, np.load(fh, allow_pickle=False) as z:
                 if (int(z["size"]), int(z["mtime_ns"])) != (stamp.size, stamp.mtime_ns):
                     return None, None
                 if float(z["cthr"]) == float(kwargs.get("cthr", 0.3)):

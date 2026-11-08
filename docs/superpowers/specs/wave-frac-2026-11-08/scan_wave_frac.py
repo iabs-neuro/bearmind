@@ -9,8 +9,9 @@ with their idx_components (columns without a prefix). Side columns:
   nofloor_*  the same estimates with the rule before the noise floor (threshold median + k_mad x 1.4826 x MAD);
   manual_*   the manual-inspection estimates that the production autoinspection read (4_Estimates_refined, the
              file whose save date the session's *_processed.pickle name carries): the components the person kept.
-Noise sources of the kept components (bearmind.wave.component_noise): n_sn_caiman (estimates.neurons_sn),
-n_sn_resid (1.4826 x MAD of YrA), n_sn_diff (none: wave_frac's first-difference floor).
+Noise sources of the kept components (bearmind.wave.component_noise, which skips a value below 1e-6 x max|C|):
+n_sn_caiman (estimates.neurons_sn), n_sn_resid (1.4826 x MAD of YrA), n_sn_diff (none: wave_frac's
+first-difference floor). The server gives no hint below 10 kept components; no corpus session has so few.
 
 wave_frac is bearmind.wave.wave_frac with k_mad and active_frac of bearmind/defaults.yaml (inspection.wave).
 Reads only: every file is opened "rb" and nothing is written under ROOT. One session at a time, freed before
@@ -71,17 +72,17 @@ def measure(path: Path, k_mad: float, active_frac: float, side: bool) -> dict:
     est = _load(path)
     C, idx = est.C, np.asarray(est.idx_components, dtype=np.intp).ravel()
     t0 = time.perf_counter()
-    sn = component_noise(est)
+    sn = component_noise(est, idx)  # as the inspection server calls it
     frac = wave_frac(C, idx, k_mad=k_mad, active_frac=active_frac, sn=sn)
     seconds = time.perf_counter() - t0
     out = dict(n_frames=int(C.shape[1]), n_kept=int(idx.size), wave_frac=frac, seconds=seconds)
     if side:
         caiman = getattr(est, "neurons_sn", None)
         caiman = np.asarray(caiman, dtype=np.float64).ravel() if caiman is not None else np.array([])
+        valid = (np.isfinite(sn) & (sn > 0))[idx]
         from_caiman = np.zeros(idx.size, dtype=bool)
         if caiman.size == C.shape[0]:
-            from_caiman = (np.isfinite(caiman) & (caiman > 0))[idx]
-        valid = (np.isfinite(sn) & (sn > 0))[idx]
+            from_caiman = valid & (sn[idx] == caiman[idx])  # component_noise kept CaImAn's value
         X = np.asarray(C[idx], dtype=np.float64)
         med = np.median(X, axis=1, keepdims=True)
         out.update(
