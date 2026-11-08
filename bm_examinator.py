@@ -1,5 +1,7 @@
 # Stuff needed for plotting and widget callbacks
 import copy
+import html
+from dataclasses import dataclass
 from scipy.stats import median_abs_deviation, spearmanr
 
 from functools import partial
@@ -45,7 +47,7 @@ from auto_inspector import estimates_to_metrics, save_processed_estimates
 from polygon import get_contours
 import matplotlib.colors as mcolors
 
-output_notebook()
+AUTOINSPECTED_TEXT = "This file is already autoinspected; open 4_Estimates instead."
 
 
 def colornum_Metro(num):
@@ -105,7 +107,11 @@ def _same_session_folder(folder, session_prefix):
     return not sid or extract_session_id(folder.name) == sid
 
 
-def LoadEstimates(name, default_fps=20):
+def LoadEstimates(name, default_fps=20, time=None):
+    """The estimates in the pickle `name`, with .name and .time (seconds per frame).
+
+    time: the session's timestamps in seconds (a server takes them from the series registry); then
+    get_timestamps is not called. Longer than the traces: cut to them, as get_timestamps cuts a file."""
     with open(name, "rb") as f:
         estimates = pickle.load(f, )
     estimates.name = name
@@ -113,9 +119,17 @@ def LoadEstimates(name, default_fps=20):
     if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
         estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
     '''
-    estimates.time = get_timestamps(extract_name_with_pattern(estimates.name),
-                                    estimates.C.shape[1],
-                                    default_fps=default_fps)
+    n_frames = estimates.C.shape[1]
+    if time is None:
+        estimates.time = get_timestamps(extract_name_with_pattern(estimates.name),
+                                        n_frames,
+                                        default_fps=default_fps)
+    else:
+        time = np.asarray(time)
+        if len(time) < n_frames:
+            # the traces would be drawn against a shorter time axis
+            raise ValueError(f"{name}: {len(time)} timestamps for {n_frames} frames")
+        estimates.time = time[:n_frames] if len(time) > n_frames else time
 
     return estimates
 
@@ -185,9 +199,17 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
+def _component_contours(estimates, comps, cthr=0.3):
+    """Contour coordinates of the components `comps`, one (k, 2) array each with CaImAn's NaN rows kept:
+    what EstimatesToSrcFast draws, and what a server may cache for the same file and cthr."""
+    conts = cm.utils.visualization.get_contours(estimates.A[:, comps], dims=estimates.imax.shape, thr=cthr)
+    return [c["coordinates"] for c in conts]
+
+
 def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
                        sf=None, ef=None, ds=1, fps=20,
-                       detect_corner_artifacts=True, correlation_method='pearson'):
+                       detect_corner_artifacts=True, correlation_method='pearson', contours=None):
+    """contours: _component_contours of comps_to_select, if already computed; None computes them."""
 
     if len(comps_to_select) == 0:
         comps_to_select = estimates.idx_components
@@ -195,6 +217,8 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
     n_cells = len(comps_to_select)
     if n_cells == 0:
         return {}
+    if contours is not None and len(contours) != n_cells:
+        raise ValueError(f"{len(contours)} contours for {n_cells} components")
 
     if sf is None:
         sf = 0
@@ -215,22 +239,19 @@ def EstimatesToSrcFast(estimates, comps_to_select=[], cthr=0.3, corr_thr=0.6,
         hval = np.round(1.0 * len(np.where(tr >= med + 4 * meddev)[0]) / len(tr), 4)
         hvals.append(hval)
 
-    estimates_data = estimates.A[:, comps_to_select]
     dims = estimates.imax.shape
-    cm_conts = cm.utils.visualization.get_contours(estimates_data,
-                                                   dims=estimates.imax.shape,
-                                                   thr=cthr)
+    if contours is None:
+        contours = _component_contours(estimates, comps_to_select, cthr)
 
-    contours = []
+    polygons = []
     areas = []
-    for i, comp in enumerate(comps_to_select):
-        coors = cm_conts[i]["coordinates"]
+    for coors in contours:
         area = calculate_polygon_area(coors)
-        contours.append(coors[~np.isnan(coors).any(axis=1)])
+        polygons.append(coors[~np.isnan(coors).any(axis=1)])
         areas.append(area)
 
-    xs = [[pt[0] for pt in c] for c in contours]
-    ys = [[dims[0] - pt[1] for pt in c] for c in contours]  # flip for y-axis inversion
+    xs = [[pt[0] for pt in c] for c in polygons]
+    ys = [[dims[0] - pt[1] for pt in c] for c in polygons]  # flip for y-axis inversion
 
     # building correlation matrix and assigning corr scores to neurons
     trace_data = estimates.C[comps_to_select, sf:ef]
@@ -408,7 +429,72 @@ def SaveResults(estimates, sigma=3):
     savemat(fold + '_session.mat', {"A": np.array(ims)})
 
 
-def make_app(fname, default_fps=20, bkapp_kwargs=None):
+@dataclass
+class PreparedSession:
+    """What make_app needs to open a session; a server builds it with prepare_session off its IOLoop thread."""
+    fname: str
+    estimates: "Estimates"  # .time set
+    data: dict  # the first view of the traces: one row per component of estimates.idx_components
+    contours: list | None  # legacy mode: _component_contours of those components; None in capcan mode
+    metric_mapping: dict | None = None  # capcan mode: metric names of data by column number
+
+
+def _view_options(bkapp_kwargs):
+    """Options of the traces view used both for the first view and after a merge; end_frame None is the
+    full length of the traces."""
+    kw = bkapp_kwargs or {}
+    return dict(cthr=kw.get('cthr', 0.3), sf=kw.get('start_frame', 0), ef=kw.get('end_frame', None),
+                ds=kw.get('downsampling', 1), corr_thr=kw.get('corr_thr', 0.6))
+
+
+def _prepare(fname, estimates, default_fps, bkapp_kwargs, contours):
+    kw = bkapp_kwargs or {}
+    mode = kw.get('mode', 'legacy')
+    view = _view_options(kw)
+    detect_corner_artifacts = kw.get('detect_corner_artifacts', True)
+    correlation_method = kw.get('correlation_method', 'pearson')
+    if mode == 'legacy':
+        if contours is None:
+            idx = estimates.idx_components
+            contours = _component_contours(estimates, idx, view['cthr']) if len(idx) else []
+        data = EstimatesToSrcFast(estimates, detect_corner_artifacts=detect_corner_artifacts,
+                                  correlation_method=correlation_method, contours=contours, **view)
+        return PreparedSession(fname, estimates, data, contours)
+    if mode == 'capcan':
+        if contours is not None:
+            raise ValueError('cached contours are used in legacy mode only')
+        data, metric_mapping = EstimatesToSrcFull(
+            estimates, default_fps, comps_to_select=[], cthr=view['cthr'], corr_thr=view['corr_thr'],
+            num_sessions=kw.get('num_sessions', 1), match_threshold=kw.get('match_threshold', 1),
+            sf=view['sf'], ef=view['ef'], ds=view['ds'],
+            include_event_based=kw.get('include_event_based', True),
+            include_heavy=kw.get('include_heavy', False),
+            color_by_ml_probability=kw.get('color_by_ml_probability', False),
+            ml_threshold=kw.get('ml_threshold', 0.5),
+            detect_corner_artifacts=detect_corner_artifacts,
+            corner_artifact_params=kw.get('corner_artifact_params', None),
+            correlation_method=correlation_method,
+            n_iter=kw.get('n_iter', 2))
+        return PreparedSession(fname, estimates, data, None, metric_mapping)
+    raise ValueError('wrong operation mode!')
+
+
+def prepare_session(fname, time=None, default_fps=20, bkapp_kwargs=None, contours=None) -> PreparedSession:
+    """Load the estimates and build the window's first view; the slow part of opening a session.
+
+    time: the session's timestamps in seconds (see LoadEstimates). contours: PreparedSession.contours of an
+    earlier preparation of the same file with the same cthr (legacy mode); None computes them."""
+    estimates = LoadEstimates(fname, default_fps=default_fps, time=time)
+    return _prepare(fname, estimates, default_fps, bkapp_kwargs, contours)
+
+
+def _autoinspected(estimates):
+    # autoinspection attaches metrics_df, empty for a session without components
+    return getattr(estimates, 'metrics_df', None) is not None
+
+
+def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_save=None,
+             progress_save=None, refuse_autoinspected=False):
     """
     Interactive neuron examination GUI.
 
@@ -429,7 +515,15 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
             - metrics_width: Width of the central metrics widget in pixels (default: 200)
             - compress_estimates: If True, compress estimates before saving (removes bad
                 components, converts to float32, sparse S matrix). Default: False
+            - end_frame: last frame shown (exclusive); None (default) is the full length
             - Other options: size, cthr, downsampling, corr_thr, etc.
+        prepared: PreparedSession of fname; the window does not load the file itself.
+        final_save: final_save(estimates) -> str, called by "Save results" instead of writing the files
+            next to the input; the returned text is shown in the page's status line. None: the notebook
+            behaviour.
+        progress_save: progress_save(estimates) -> str, the same for "Save progress".
+        refuse_autoinspected: an autoinspected input (with metrics_df) opens a page with only
+            AUTOINSPECTED_TEXT.
     """
     if bkapp_kwargs is None:
         bkapp_kwargs = {}
@@ -606,19 +700,10 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
 
         operation_mode = bkapp_kwargs.get('mode', 'legacy')
         size = bkapp_kwargs.get('size', 500)
-        cthr = bkapp_kwargs.get('cthr', 0.3)
-        ds = bkapp_kwargs.get('downsampling', 1)
-        corr_thr = bkapp_kwargs.get('corr_thr', 0.6)
-        num_sessions = bkapp_kwargs.get('num_sessions', 1)
-        match_threshold = bkapp_kwargs.get('match_threshold', 1)
-        include_event_based = bkapp_kwargs.get('include_event_based', True)
-        include_heavy = bkapp_kwargs.get('include_heavy', False)
-        n_iter = bkapp_kwargs.get('n_iter', 2)
-        color_by_ml_probability = bkapp_kwargs.get('color_by_ml_probability', False) if operation_mode == 'capcan' else False
-        ml_threshold = bkapp_kwargs.get('ml_threshold', 0.5)
-        detect_corner_artifacts = bkapp_kwargs.get('detect_corner_artifacts', True)
-        corner_artifact_params = bkapp_kwargs.get('corner_artifact_params', None)
-        correlation_method = bkapp_kwargs.get('correlation_method', 'pearson')
+        view = _view_options(bkapp_kwargs)
+        cthr = view['cthr']
+        ds = view['ds']
+        corr_thr = view['corr_thr']
 
         sort_order = bkapp_kwargs.get('sort_order', 'up')
         verbose = bkapp_kwargs.get('verbose', False)
@@ -631,8 +716,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
         trace_alpha = bkapp_kwargs.get('trace_alpha', 1)
         bwidth = bkapp_kwargs.get('button_width', 110)
 
-        start_frame = bkapp_kwargs.get('start_frame', 0)
-        end_frame = bkapp_kwargs.get('end_frame', 0)
+        start_frame = view['sf']
+        end_frame = view['ef']
         emergency = bkapp_kwargs.get('oh_shit', False)
 
         if 'enable_gpu_backend' in bkapp_kwargs:
@@ -641,36 +726,24 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
             backend = "canvas"
 
         # for future resetting
-        estimates0 = LoadEstimates(fname, default_fps=default_fps)
+        if prepared is None:
+            estimates0 = LoadEstimates(fname, default_fps=default_fps)
+        else:
+            estimates0 = prepared.estimates
+        if refuse_autoinspected and _autoinspected(estimates0):
+            doc.add_root(Div(text=AUTOINSPECTED_TEXT))
+            return
+        if prepared is None:
+            prep = _prepare(fname, estimates0, default_fps, bkapp_kwargs, None)
+        else:
+            prep = prepared
+        est_data0 = prep.data
+        metric_mapping = prep.metric_mapping
 
         # Extract active deletion metrics for GUI filtering
         active_deletion_metrics = getattr(estimates0, 'active_deletion_metrics', None)
 
-        if operation_mode == 'legacy':
-            est_data0 = EstimatesToSrcFast(estimates0,
-                                           cthr=cthr,
-                                           sf=start_frame,
-                                           ef=end_frame,
-                                           ds=ds,
-                                           corr_thr=corr_thr,
-                                           detect_corner_artifacts=detect_corner_artifacts,
-                                           correlation_method=correlation_method)
-
-        elif operation_mode == 'capcan':
-            est_data0, metric_mapping = EstimatesToSrcFull(estimates0, default_fps,
-                                                           comps_to_select=[], cthr=cthr,
-                                           corr_thr=corr_thr, num_sessions=num_sessions,
-                                           match_threshold=match_threshold,
-                                           sf=start_frame, ef=end_frame, ds=ds,
-                                           include_event_based=include_event_based,
-                                           include_heavy=include_heavy,
-                                           color_by_ml_probability=color_by_ml_probability,
-                                           ml_threshold=ml_threshold,
-                                           detect_corner_artifacts=detect_corner_artifacts,
-                                           corner_artifact_params=corner_artifact_params,
-                                           correlation_method=correlation_method,
-                                           n_iter=n_iter)
-        else:
+        if operation_mode not in ('legacy', 'capcan'):
             raise ValueError('wrong operation mode!')
 
         estimates = copy.deepcopy(estimates0)
@@ -1280,7 +1353,14 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
                 pickle.dump(seeds, f)
                 print(f'Seeds saved to {seeds_fname}\n')
 
+        # The server's save functions report in English text; markup in it is shown, not interpreted.
+        status = (Div(text="", name="status")
+                  if final_save is not None or progress_save is not None else None)
+
         def save_callback(event, storage=None):
+            if progress_save is not None:
+                status.text = html.escape(progress_save(storage.estimates), quote=False)
+                return
             dt = get_datetime()
             base_name = extract_name_with_pattern(estimates.name)
 
@@ -1292,6 +1372,9 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
             print(f'Intermediate results for {title} saved to {out_name}\n')
 
         def final_save_callback(event, storage=None):
+            if final_save is not None:
+                status.text = html.escape(final_save(storage.estimates), quote=False)
+                return
             base_name = extract_name_with_pattern(estimates.name)
             out_name = base_name + 'final_estimates.pickle'
             save_processed_estimates(storage.estimates, out_name, compress=compress_estimates)
@@ -1666,6 +1749,7 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None):
                     button_save_final,
                     checkbox_recon
                 ),
+                *([status] if status is not None else []),
                 sorting_row,
                 row(p1, metrics_div, p2)
             )
@@ -1683,6 +1767,8 @@ def ExamineCells(fname, default_fps=20, bkapp_kwargs=None):
         default_fps: Default frames per second (default: 20)
         bkapp_kwargs: Dict with configuration options, see make_app.
     """
+    # here, not at import: a server imports this module and must not switch Bokeh to notebook output
+    output_notebook()
     show(make_app(fname, default_fps=default_fps, bkapp_kwargs=bkapp_kwargs))
 
 
@@ -1734,6 +1820,7 @@ def ManualSeeds(fname, size=600, cnmf_dict=None):
             )
         )
 
+    output_notebook()  # show() of an app function needs notebook output (see ExamineCells)
     show(bkapp)
 
 

@@ -58,7 +58,7 @@ def test_legacy_split_is_stitched(make_series, tmp_path):
 
 
 def test_split_part_surplus_frames_do_not_shift_next_part(make_series, make_avi, tmp_path):
-    from bearmind.stages.export import _stitched_timestamps
+    from bearmind.timestamps import session_timestamps
     root = make_series(tmp_path / "s", "legacy_split", n_chunks=2, chunk_frames=60)
     minis = sorted((root / "1_Raw").rglob("Miniscope"))  # 10_00_00 (part A), 11_00_00 (part B)
     for k, mini in enumerate(minis):
@@ -76,7 +76,7 @@ def test_split_part_surplus_frames_do_not_shift_next_part(make_series, make_avi,
     assert not r.excluded
     frames = np.concatenate(list(SessionReader(root, r).iter_chunks(50)))
     assert frames[:, 0, 0].tolist() == list(range(118)) + list(range(120, 240))
-    ts = _stitched_timestamps(SeriesPaths(root), r)
+    ts = session_timestamps(SeriesPaths(root), r)
     assert len(ts.raw) == r.n_frames
     # frame k of part B gets timestamp row k of part B (part B starts 1 h after part A)
     assert ts.raw[118:].tolist() == [3600_000 + k * 50 for k in range(120)]

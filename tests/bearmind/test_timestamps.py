@@ -98,6 +98,28 @@ def test_stitch_errors(tmp_path):
         stitch([b, read_timestamps(f)])
 
 
+def test_session_timestamps_matches_export(make_series, tmp_path):
+    """The stitched timestamps the export stage wrote: parts in time order, each cut to its frames, UCLA
+    rows counted from the first part's start."""
+    from bearmind import scan
+    from bearmind.paths import SeriesPaths
+    from bearmind.stages import export
+    from bearmind.timestamps import session_timestamps
+
+    assert export.session_timestamps is session_timestamps  # the export stage calls this function
+    root = make_series(tmp_path / "split", "legacy_split")  # two parts of 30 frames, 1 h apart
+    rec = scan.scan_series(root)[0]
+    ts = session_timestamps(SeriesPaths(root), rec)
+    assert ts.fmt == "ucla_ms" and len(ts.raw) == rec.n_frames == 60
+    assert ts.raw.tolist() == [i * 50 for i in range(30)] + [3600_000 + i * 50 for i in range(30)]
+    assert np.array_equal(ts.t_ms, rec.parts[0].start_ms + ts.raw)
+
+    root = make_series(tmp_path / "bonsai", "bonsai", ts_rows=33)  # 30 frames, 33 timestamp rows
+    rec = scan.scan_series(root)[0]
+    ts = session_timestamps(SeriesPaths(root), rec)
+    assert ts.fmt == "bonsai_ticks" and ts.raw.tolist() == [i * 500000 for i in range(30)]
+
+
 def test_stitch_bonsai_single():
     from bearmind.timestamps import Timestamps
     raw = np.arange(5, dtype=np.int64) * 10**5

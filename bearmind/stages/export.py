@@ -13,7 +13,7 @@ import bearmind.stages
 from bearmind import checks, provenance
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
-from bearmind.timestamps import read_timestamps, stitch, write_timestamps
+from bearmind.timestamps import session_timestamps, write_timestamps
 
 
 def _ml_filter(est):
@@ -108,24 +108,6 @@ def _filters(est, idx, path):
     return path
 
 
-def _truncate(ts, n):
-    return dataclasses.replace(ts, raw=ts.raw[:n], t_ms=ts.t_ms[:n],
-                               buffer=None if ts.buffer is None else ts.buffer[:n])
-
-
-def _stitched_timestamps(paths, rec):
-    parts = []
-    for i, p in enumerate(rec.parts):
-        ts = read_timestamps(paths.root / p.timestamps_file, start_epoch_ms=p.start_ms)
-        if i < len(rec.parts) - 1 and len(ts.raw) < p.n_frames:
-            # the video of this part is longer than its timestamps: every later frame would get a
-            # timestamp from the wrong position (registries scanned before parts were cut per part)
-            raise ValueError(f"{p.folder}: {p.n_frames} frames but {len(ts.raw)} timestamp rows; "
-                             f"rescan the series")
-        parts.append(_truncate(ts, p.n_frames))
-    return stitch(parts)
-
-
 def _provenance(paths, rec, cfg, metrics, anomalies) -> dict:
     """provenance.collect plus this stage's own check results and anomalies, which reach the registry only
     after the stage returns (the runner evaluates the same checks then)."""
@@ -162,7 +144,7 @@ def run(paths, rec, cfg) -> StageResult:
             f"{counts['n_merge_products_dropped'] or 0} merge products dropped (rule: {counts['component_rule']})",
             data={"n_snr_duplicates_exported": counts["n_snr_duplicates_exported"] or 0,
                   "n_merge_products_dropped": counts["n_merge_products_dropped"] or 0}))
-    ts = _stitched_timestamps(paths, rec)
+    ts = session_timestamps(paths, rec)
     n_ts = min(n_frames, rec.n_frames, len(ts.raw))
     if n_frames != rec.n_frames or n_ts < n_frames:
         anomalies.append(Anomaly(

@@ -1,6 +1,7 @@
 """Timestamp files of miniscope recordings: reading, FPS estimate, stitching, writing."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,6 +91,26 @@ def stitch(parts: list[Timestamps]) -> Timestamps:
         for p in parts
     ])
     return Timestamps(raw, t, fmt, start, buf)
+
+
+def _truncate(ts: Timestamps, n: int) -> Timestamps:
+    return dataclasses.replace(ts, raw=ts.raw[:n], t_ms=ts.t_ms[:n],
+                               buffer=None if ts.buffer is None else ts.buffer[:n])
+
+
+def session_timestamps(paths, rec) -> Timestamps:
+    """The session's timestamps from its registry record: each part's file cut to the part's frames, the
+    parts stitched in time order."""
+    parts = []
+    for i, p in enumerate(rec.parts):
+        ts = read_timestamps(paths.root / p.timestamps_file, start_epoch_ms=p.start_ms)
+        if i < len(rec.parts) - 1 and len(ts.raw) < p.n_frames:
+            # the video of this part is longer than its timestamps: every later frame would get a
+            # timestamp from the wrong position (registries scanned before parts were cut per part)
+            raise ValueError(f"{p.folder}: {p.n_frames} frames but {len(ts.raw)} timestamp rows; "
+                             f"rescan the series")
+        parts.append(_truncate(ts, p.n_frames))
+    return stitch(parts)
 
 
 def write_timestamps(ts: Timestamps, frame_idx: np.ndarray, path: Path) -> None:
