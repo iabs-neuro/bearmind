@@ -104,24 +104,23 @@ def check_sids(recs: dict, sids) -> None:
         raise UnknownSession(unknown, recs)
 
 
-def waiting_for(rec, stage: str):
-    st = rec.stages.get(stage)
-    if st is None or st.state is not State.WAITING:
-        return None
-    return runner._what(st)
+THRESHOLD_KEYS = ("gSig", "min_corr", "min_pnr")
 
 
-def suggested_unset(paths, rec) -> bool:
-    """The thresholds stage is done with a suggestion and the session has no thresholds yet: after
-    run --until thresholds CNMF is PENDING, not WAITING."""
-    th = rec.stages.get("thresholds")
-    if th is None or th.state is not State.DONE or not th.metrics.get("suggested"):
+def waits_for_thresholds(view, rec) -> bool:
+    """The batch waits for a person's thresholds for this session: not excluded, no thresholds in the resolved
+    config, and crop, MC and the maps up to date (view: runner.StageView). Then next_ready offers CNMF-E and its
+    check waits; with an earlier stage out of date the batch redoes that one first, so a choice now would apply
+    to maps nobody has seen. The one rule for the Thresholds tab, Monitor and the CLI: build one view per
+    refresh or command and ask it about every session.
+    With a suggestion or without one: the batch waits either way."""
+    if rec.excluded:
         return False
-    try:
-        c = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"]
-    except Exception:  # a broken config is shown by status as "cannot be scheduled"
+    cfg = view.cfg(rec)
+    cnmf = cfg.get("cnmf") if cfg is not None else None
+    if not isinstance(cnmf, dict):  # cannot be read: the session is "cannot be scheduled", not waiting
         return False
-    return any(c.get(k) is None for k in ("gSig", "min_corr", "min_pnr"))
+    return any(cnmf.get(k) is None for k in THRESHOLD_KEYS) and view.current_through(rec, "thresholds")
 
 
 def gate_may_wait(rec) -> bool:
@@ -186,8 +185,8 @@ def waiting_gate_sids(paths) -> list:
 
 
 def waiting_threshold_sids(paths) -> list:
-    return [s for s, r in sorted(_records(paths).items()) if not r.excluded
-            and (waiting_for(r, "cnmf") == "thresholds" or suggested_unset(paths, r))]
+    view = runner.StageView(paths)
+    return [s for s, r in sorted(_records(paths).items()) if waits_for_thresholds(view, r)]
 
 
 def failed_sids(paths) -> list:

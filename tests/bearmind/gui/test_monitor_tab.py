@@ -17,17 +17,20 @@ from bearmind.gui import monitor_tab
 from bearmind.gui.monitor_tab import MonitorTab
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, SessionRecord, StageRecord, State
+from tests.bearmind.current_stages import mark_current
 
 FAKE = Path(__file__).resolve().parents[1] / "fake_runner.py"
 REPO = Path(__file__).resolve().parents[3]
 
 
 def put(paths, sid, stages=None, mouse=None, n_frames=1000):
+    """A record whose DONE main stages are up to date by the runner's rule (else the window shows them as out of
+    date, since the batch would redo them)."""
     st = {s: StageRecord() for s in STAGES}
     st.update(stages or {})
     rec = SessionRecord(sid=sid, mouse=mouse or sid.split("_")[1], mode="bonsai", parts=[], n_frames=n_frames,
                         fps=20.0, fps_info={}, anomalies=[], decisions=[], excluded=False, stages=st)
-    registry.save_record(paths, rec)
+    registry.save_record(paths, mark_current(paths, rec))
     return rec
 
 

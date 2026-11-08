@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QAbstractButton, QLabel
 from bearmind import actions, config, registry
 from bearmind import threshold_model as tm
 from bearmind.registry import State, update_record
-from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
+from tests.bearmind.test_cli import S1, S2, S3, _set, make_current, series  # noqa: F401  (the series fixture)
 
 CYRILLIC = re.compile("[А-Яа-яЁё]")
 SUG = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
@@ -59,8 +59,10 @@ def save_video(make_avi, path, shape=SHAPE, n=10):
 
 
 def with_maps(paths, sid, make_avi, mirror=True, suggested=SUG, shape=SHAPE):
+    """Maps and MC video of the session, with crop, MC and thresholds up to date by the runner's rule."""
     save_maps(paths.threshold_maps(sid), mirror=mirror, shape=shape)
     save_video(make_avi, paths.mc_video(sid), shape=shape)
+    make_current(paths, sid, "crop", "mc", "thresholds")
     _set(paths, sid, "thresholds", State.DONE, suggested=suggested)
     _set(paths, sid, "cnmf", State.PENDING)
 
@@ -173,7 +175,10 @@ def test_session_list_states(qapp, series_maps, make_tab):
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     tab.refresh()
     assert tree_rows(tab)[0][S2] == "chosen"
-    _set(p, S2, "cnmf", State.DONE)
+    _set(p, S2, "cnmf", State.DONE)  # done with other thresholds than these: the batch runs it again
+    tab.refresh()
+    assert tree_rows(tab)[0][S2] == "chosen"
+    make_current(p, S2, "cnmf")
     tab.refresh()
     assert tree_rows(tab)[0][S2] == "CNMF-E done"
     update_record(p, S1, lambda r: setattr(r, "excluded", True))
@@ -744,3 +749,56 @@ def test_no_registry_sessions_is_an_empty_list(qapp, tmp_path, make_tab):
     assert tab.session_list.topLevelItemCount() == 0 and tab.current()[0] == ""
     assert not tab.accept_button.isEnabled()
     assert registry.read_all(p) == ([], [])
+
+
+# --- phase 4 final fix wave, A: one rule for the tab, Monitor and actions ---
+
+def test_probe_cases_agree_in_tab_monitor_and_actions(qapp, series_maps, make_tab):
+    """A6 (probe_states): (a) maps without a suggestion, CNMF-E pending; (b) a suggestion, CNMF-E FAILED and no
+    thresholds; (c) maps DONE but out of date. The tab, Monitor and actions give one answer: (a) and (b) wait,
+    (c) does not, and its maps are refused with the reason."""
+    from bearmind import monitor
+
+    p = series_maps.paths
+    _set(p, S1, "thresholds", State.DONE, suggested=None)  # (a)
+    _set(p, S2, "cnmf", State.FAILED, error="Traceback\nMemoryError: x")  # (b)
+    with_maps(p, S3, series_maps.make_avi)  # (c): maps of S3, then a crop input of its mouse changes
+    config.update_yaml(p.mouse_config("NOF_H02"), {"crop": {"fov_threshold_frac": 0.3}})
+    tab = make_tab(p)
+    assert tree_rows(tab)[0] == {S1: "waiting", S2: "waiting", S3: "maps out of date: the batch redoes crop first"}
+    v = monitor.series_view(p)
+    assert v.waiting["thresholds"] == 2
+    cells = {r.sid: r.cells["thresholds"] for r in v.rows}
+    assert cells[S1].text == cells[S2].text == "waits" and cells[S3].text == "out of date"
+    assert actions.waiting_threshold_sids(p) == [S1, S2]
+    assert [i.sid for i in tm.threshold_items(p) if i.waiting] == [S1, S2]
+    tab.show_session(S3)
+    note = "The maps are out of date: the batch redoes crop first."
+    assert tab.corr_view.text() == note and tab.pnr_view.text() == note
+    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == note
+    assert not tab.accept_mouse_button.isEnabled()
+    tab.accept_and_next()  # refused: nothing is written
+    assert not p.session_config(S3).exists() and not _choices(p)
+    config.update_yaml(p.session_config(S3), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    tab.refresh()
+    assert tree_rows(tab)[0][S3] == "chosen · maps will be recomputed"
+
+
+def test_window_count_drops_at_once_after_accept_while_the_registry_still_waits(qapp, series_maps):
+    """A4: Monitor's "Thresholds: N" and its "waiting for you" follow the config at once after Accept; the
+    registry says WAITING until the batch checks again (up to poll_s later)."""
+    from bearmind.gui.app import MainWindow
+
+    p = series_maps.paths
+    for sid in (S1, S2):
+        _set(p, sid, "cnmf", State.WAITING, error="waiting for thresholds")
+    w = MainWindow(p.root, message=lambda title, text: None)
+    assert w.monitor.thresholds_button.text() == "Thresholds: 2 sessions →"
+    w.monitor.timer.stop()  # the count below comes from the write, not from the timer
+    w.thresholds.accept_and_next()
+    assert registry.load_record(p, S1).stages["cnmf"].state is State.WAITING  # the batch has not looked yet
+    assert w.monitor.thresholds_button.text() == "Thresholds: 1 session →"
+    row = next(i for i in range(w.monitor.model.rowCount()) if w.monitor.model.item(i, 0).text() == S1)
+    assert w.monitor.model.item(row, 3).text() == "gSig 4"  # the Thresholds cell no longer says it waits
+    w.thresholds.shutdown()
+    w.close()

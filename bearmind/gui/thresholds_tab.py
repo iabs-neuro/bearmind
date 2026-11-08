@@ -37,7 +37,8 @@ PNR_STEPS = 10  # min_pnr moves in steps of 0.1
 MAX_UPSCALE = 4.0  # a small map is enlarged at most this much: more only blurs it
 THUMB_PX = 96
 RED = (255, 0, 0)
-STATE_BG = {"waiting": CELL_BG["waiting"], "chosen": CELL_BG["ok"], "cnmf_done": CELL_BG["ok"]}
+STATE_BG = {"waiting": CELL_BG["waiting"], "chosen": CELL_BG["ok"], "cnmf_done": CELL_BG["ok"],
+            "config_error": CELL_BG["error"]}
 WARN_BUTTON = ("QPushButton { background: #fff3b0; color: #6d5300; border: 1px solid #e0c35c; border-radius: 6px; "
                "padding: 4px 10px; }"
                "QPushButton:disabled { background: #f6f0d6; border-color: #eee3b8; color: #b8ab7d; }")
@@ -46,7 +47,7 @@ THUMB_STYLE = (f"QToolButton {{ border: 2px solid transparent; border-radius: 6p
 ACCEPT_TIP = "Write these thresholds to the session and show the next session that waits"
 ACCEPT_MOUSE_TIP = ("Write these thresholds to every session of this mouse that has no thresholds yet and is not "
                     "excluded")
-EXCLUDED_NOTE = "The session is excluded: the batch does not process it."
+EXCLUDED_NOTE = tm.EXCLUDED_NOTE
 
 
 def _section(text: str) -> QLabel:
@@ -434,9 +435,7 @@ class ThresholdsTab(QWidget):
                 f.setBold(True)
                 parent.setFont(0, f)
             day = it.sid[len(it.mouse) + 1:] if it.sid.startswith(it.mouse + "_") else it.sid
-            state = tm.STATE_TEXT.get(it.state, it.state)
-            if it.state == "no_maps" and it.reason:
-                state = f"{state}: {it.reason}"
+            state = tm.state_text(it)
             node = QTreeWidgetItem(parent, [day, state])
             node.setData(0, Qt.ItemDataRole.UserRole, it.sid)
             node.setToolTip(0, it.sid)
@@ -445,7 +444,7 @@ class ThresholdsTab(QWidget):
             if bg:
                 node.setBackground(1, QBrush(QColor(bg)))
                 node.setForeground(1, QBrush(QColor(CELL_INK)))
-            elif it.state in ("excluded", "no_maps"):
+            elif it.state in ("excluded", "no_maps", "out_of_date"):
                 for c in (0, 1):
                     node.setForeground(c, QBrush(QColor(EXCLUDED_INK)))
             self._tree_items[it.sid] = node
@@ -473,15 +472,16 @@ class ThresholdsTab(QWidget):
         except (OSError, ValueError):  # removed, or replaced half-written by the batch: the next refresh shows it
             return None
 
-    def _maps_sig(self, sid: str, rec=None):
-        rec = rec if rec is not None else self._record(sid)
-        th = rec.stages.get("thresholds") if rec is not None else None
+    def _maps_sig(self, sid: str):
+        """What the shown maps depend on: the item's note (why no maps are shown, "" when they are) and the file.
+        A move between waiting, chosen and CNMF-E done reloads nothing; going out of date or back does."""
+        item = self._by_sid.get(sid)
         try:
             st = self.paths.threshold_maps(sid).stat()
             fsig = (st.st_mtime_ns, st.st_size)
         except OSError:
             fsig = None
-        return (th.state.value if th is not None else None), fsig
+        return (item.note if item is not None else None), fsig
 
     def _session_cfg(self, item: tm.ThresholdItem) -> dict:
         try:
@@ -500,7 +500,7 @@ class ThresholdsTab(QWidget):
             self.session_list.setCurrentItem(node)
             self.session_list.blockSignals(False)
         rec = self._record(sid)
-        self._load_maps(keep=False, rec=rec)
+        self._load_maps(keep=False)
         contrast = None
         if self._maps is not None:
             mean = np.asarray(self._maps.mean, dtype=float)
@@ -511,31 +511,12 @@ class ThresholdsTab(QWidget):
         self.video_title.setText(f"MC video — {sid}")
         self._set_video((self.paths.mc_video(sid), rec.fps if rec is not None and rec.fps else 0, contrast))
 
-    def _read_maps(self, item: tm.ThresholdItem, rec):
-        """(maps, "") or (None, the reason shown in their place)."""
-        if item.state == "no_maps":
-            return None, f"No maps: {item.reason}" if item.reason else "No maps"
-        th = rec.stages.get("thresholds") if rec is not None else None
+    def _read_maps(self, item: tm.ThresholdItem):
+        """(maps, "") or (None, the reason shown in their place). The item says whether the maps may be shown (the
+        runner's rule: out of date, being recomputed, cannot be scheduled, no file); only the file is read here."""
+        if item.note:
+            return None, item.note
         path = self.paths.threshold_maps(item.sid)
-        # the stage leaves the old file until it replaces it: maps of another crop or MC must not be chosen from
-        stale = th is not None and th.state is not State.DONE
-        if item.state == "excluded" and (stale or not path.is_file()):
-            # the batch skips an excluded session: nothing will recompute its maps, or make them
-            if not path.is_file():
-                return None, f"No maps. {EXCLUDED_NOTE}"
-            return None, "The maps are out of date, and the session is excluded: the batch does not process it."
-        if stale:
-            error = tm.last_line(th.error).rstrip(".")
-            if th.state is State.RUNNING:
-                return None, "The maps are being recomputed by the batch."
-            if th.state is State.PENDING:
-                return None, "The maps are out of date: the batch will recompute them."
-            if th.state is State.FAILED:
-                return None, (f"The maps are out of date: the thresholds stage failed: {error or 'no error text'}. "
-                              "Retry it in Monitor.")
-            if th.state is State.SKIPPED:  # "skipped: mc failed": an earlier stage must be retried first
-                return None, f"The maps are out of date ({error or 'skipped'}). Retry the failed stage in Monitor."
-            return None, f"The maps are out of date (thresholds stage {th.state.value})."
         try:
             maps = tm.load_maps(path)
         except Exception as e:  # any broken file (zip, pickle, missing key) is shown as the reason
@@ -550,14 +531,13 @@ class ThresholdsTab(QWidget):
         its maps is swapped for a usable one, and the note says so."""
         return tm.start_values(item if use_choice else replace(item, chosen=None), self._maps, cfg)
 
-    def _load_maps(self, keep: bool, rec=None) -> None:
+    def _load_maps(self, keep: bool) -> None:
         item = self._by_sid[self._sid]
-        rec = rec if rec is not None else self._record(self._sid)
-        self._loaded_sig = self._maps_sig(self._sid, rec)
+        self._loaded_sig = self._maps_sig(self._sid)
         old = None
         if keep and self._maps is not None and self._g is not None:
             old = self.current()[1:]
-        self._maps, self._reason = self._read_maps(item, rec)
+        self._maps, self._reason = self._read_maps(item)
         cfg = self._session_cfg(item)
         self._min_blob_px = int(cfg["thresholds"]["min_blob_px"])
         if self._maps is None:

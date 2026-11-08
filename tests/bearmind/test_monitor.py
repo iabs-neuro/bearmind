@@ -11,6 +11,7 @@ import pytest
 from bearmind import actions, config, monitor, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, Check, SessionRecord, StageRecord, State
+from tests.bearmind.current_stages import make_current, mark_current
 
 NOW = datetime(2026, 11, 7, 12, 0, 0)
 FAKE = Path(__file__).with_name("fake_runner.py")
@@ -37,12 +38,16 @@ def done(metrics=None, checks=(), seconds=None):
     return st
 
 
-def put(paths, sid, stages=None, mouse=None, excluded=False, anomalies=(), n_frames=1000):
+def put(paths, sid, stages=None, mouse=None, excluded=False, anomalies=(), n_frames=1000, current=True):
+    """A record; its DONE main stages are up to date by the runner's rule unless current=False (then the batch
+    would redo them, and the window says they are out of date)."""
     st = {s: StageRecord() for s in STAGES}
     st.update(stages or {})
     rec = SessionRecord(sid=sid, mouse=mouse or sid.split("_")[1], mode="bonsai", parts=[], n_frames=n_frames,
                         fps=20.0, fps_info={}, anomalies=list(anomalies), decisions=[], excluded=excluded,
                         stages=st)
+    if current:
+        mark_current(paths, rec)
     registry.save_record(paths, rec)
     return rec
 
@@ -149,8 +154,8 @@ def test_fake_runner_clean_exit_is_stopped_not_dead(tmp_series):
 
 def test_cell_levels_and_texts(tmp_series):
     put(tmp_series, "A_M1_1D", {
-        "mc": done({"max_shift_px": 18.0}, [check("mc", "mc_max_shift_px", "warning")]),
-        "cnmf": waiting("thresholds")})
+        "crop": done(), "mc": done({"max_shift_px": 18.0}, [check("mc", "mc_max_shift_px", "warning")]),
+        "thresholds": done(), "cnmf": waiting("thresholds")})
     put(tmp_series, "A_M1_2D", {"cnmf": StageRecord(State.FAILED, error="Traceback\nMemoryError: out")})
     rows = {r.sid: r for r in view(tmp_series).rows}
     mc = rows["A_M1_1D"].cells["mc"]
@@ -162,7 +167,7 @@ def test_cell_levels_and_texts(tmp_series):
 
 
 def test_cell_texts_match_mockup(tmp_series):
-    config.update_yaml(tmp_series.series_config, {"cnmf": {"gSig": 4}})
+    config.update_yaml(tmp_series.series_config, {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     put(tmp_series, "A_M1_1D", {
         "crop": done(),
         "mc": done({"max_shift_px": 3.2, "crop": [0, 0, 480, 512]}),
@@ -216,9 +221,10 @@ def test_bars_count_sessions_per_stage(tmp_series, alive):
 
 
 def test_waiting_counts(tmp_series):
-    put(tmp_series, "A_M1_1D", {"cnmf": waiting("thresholds")})
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "thresholds": done(), "cnmf": waiting("thresholds")})
     # run --until thresholds: a suggestion exists, CNMF-E is still PENDING and no thresholds are set
-    put(tmp_series, "A_M1_2D", {"thresholds": done({"suggested": {"gSig": 4, "min_corr": .8, "min_pnr": 5}})})
+    put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(),
+                                "thresholds": done({"suggested": {"gSig": 4, "min_corr": .8, "min_pnr": 5}})})
     put(tmp_series, "A_M1_3D", {"cnmf": done(), "gate": waiting("manual_inspection")})
     put(tmp_series, "A_M1_4D", {"mc": waiting("crop_finalize")})
     v = view(tmp_series)
@@ -249,6 +255,8 @@ def test_eta_excludes_human_waits(tmp_series):
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "thresholds": done({"suggested": {}}),
                                 "cnmf": waiting("thresholds")})
     assert view(tmp_series).eta_s == 0.0  # nothing but the person's wait: nothing left for the batch
+    # CNMF-E runs with the thresholds of the config, so nobody is asked for them
+    config.update_yaml(tmp_series.session_config("A_M1_2D"), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(), "thresholds": done(),
                                 "cnmf": StageRecord(State.RUNNING, started=iso(NOW))})
     got = view(tmp_series).eta_s
@@ -357,8 +365,8 @@ def test_cache_rereads_only_changed(tmp_series, monkeypatch):
     monkeypatch.setattr(config, "resolve", lambda *a, **k: (resolves.append(1), real_resolve(*a, **k))[1])
     cache = monitor.RecordCache()
     view(tmp_series, cache)
-    # per session: one for the thresholds, one in runner.schedule_problems ("cannot be scheduled")
-    assert len(reads) == 3 and len(resolves) == 6
+    # one per session: the refresh's runner view, the thresholds and the cells share the cached config
+    assert len(reads) == 3 and len(resolves) == 3
     reads.clear(), resolves.clear()
     view(tmp_series, cache)
     assert reads == [] and resolves == []
@@ -419,9 +427,10 @@ def test_unschedulable_session_is_a_red_row_when_the_batch_is_stopped(tmp_series
     put(tmp_series, "A_M1_1D")
     put(tmp_series, "A_M1_2D", {"crop": done({"box": [0, 0, 480, 512]})})
     _break_session_config(tmp_series, "A_M1_2D")
-    calls = []
-    real = runner.schedule_problems
+    calls, resolves = [], []
+    real, real_resolve = runner.schedule_problems, config.resolve
     monkeypatch.setattr(runner, "schedule_problems", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    monkeypatch.setattr(config, "resolve", lambda *a, **k: (resolves.append(1), real_resolve(*a, **k))[1])
     cache = monitor.RecordCache()
     v = view(tmp_series, cache)
     row = next(r for r in v.rows if r.sid == "A_M1_2D")
@@ -434,8 +443,10 @@ def test_unschedulable_session_is_a_red_row_when_the_batch_is_stopped(tmp_series
     assert (v.bars["crop"].done, v.bars["crop"].failed, v.bars["crop"].pending) == (1, 0, 1)
     assert (v.bars["mc"].failed, v.bars["mc"].pending) == (1, 1)
     assert v.warnings == []  # no seventh panel kind
+    assert len(resolves) == 2  # one per session, the broken one included: its error is cached too
     view(tmp_series, cache)
-    assert len(calls) == 2  # one per session, then cached until a record or config changes
+    # one runner view per refresh, never one per session; the configs come from the cache until a file changes
+    assert len(calls) == 2 and len(resolves) == 2
     tmp_series.session_config("A_M1_2D").write_text("cnmf:\n  gSig: 4\n", encoding="utf-8")
     assert next(r for r in view(tmp_series, cache).rows if r.sid == "A_M1_2D").problem is None
 
@@ -694,3 +705,57 @@ def test_crop_eta_from_history_is_median_duration(tmp_series):
         n_frames=36000)
     put(tmp_series, "A_M1_3D", {s: done() for s in STAGES if s != "crop"}, n_frames=18000)
     assert view(tmp_series).eta_s == pytest.approx(50.0)
+
+
+# --- phase 4 final fix wave: the runner's view in Monitor ---
+
+THRESH = {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}}
+
+
+def test_thresholds_wait_ends_as_soon_as_thresholds_are_written(tmp_series):
+    """A4: the count is actions.waits_for_thresholds on the refresh's view. It drops as soon as the thresholds are
+    in the config, though the registry says WAITING until the batch's next check (up to poll_s later)."""
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "thresholds": done(), "cnmf": waiting("thresholds")})
+    cache = monitor.RecordCache()
+    v = view(tmp_series, cache)
+    assert v.waiting["thresholds"] == 1 and v.rows[0].cells["thresholds"].text == "waits"
+    assert v.bars["thresholds"].waiting == 1
+    actions.set_thresholds(tmp_series, "A_M1_1D", 4, 0.8, 8.0)
+    v = view(tmp_series, cache)
+    assert v.waiting["thresholds"] == 0 and v.bars["thresholds"].waiting == 0
+    row = v.rows[0]
+    assert row.cells["thresholds"].text == "gSig 4" and row.cells["thresholds"].level == "ok"
+    cnmf = row.cells["cnmf"]
+    assert (cnmf.level, cnmf.text) == ("none", "–") and monitor.NO_LONGER_WAITS in cnmf.tooltip
+
+
+def test_out_of_date_stage_in_cell_bar_and_eta(tmp_series):
+    """A4: a DONE stage the batch would redo says so in its cell (text and tooltip, the old number kept); it
+    counts as pending in the bar and in the time left; the warnings panel keeps its six kinds."""
+    config.update_yaml(tmp_series.session_config("A_M1_1D"), THRESH)
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done({"max_shift_px": 3.2}), "thresholds": done()})
+    assert view(tmp_series).rows[0].cells["mc"].text == "3.2 px"
+    config.update_yaml(tmp_series.mouse_config("M1"), {"mc": {"max_shifts": [20, 20]}})  # an MC input changed
+    v = view(tmp_series)
+    cells = v.rows[0].cells
+    assert cells["crop"].level == "ok" and cells["crop"].text == "done"
+    for stage in ("mc", "thresholds"):
+        assert (cells[stage].level, cells[stage].text) == ("none", "out of date")
+        assert "out of date: the batch redoes mc first" in cells[stage].tooltip
+    assert "old result: 3.2 px" in cells["mc"].tooltip
+    assert (v.bars["mc"].done, v.bars["mc"].pending) == (0, 1) and v.bars["crop"].done == 1
+    d = defaults()
+    assert v.eta_s == pytest.approx(sum(d[s] for s in PENDING_STAGES if s != "crop") * 1000)
+    assert v.waiting["thresholds"] == 0 and v.warnings == []
+
+
+def test_out_of_date_maps_do_not_wait_for_thresholds(tmp_series):
+    """A4: maps DONE but out of date and no thresholds: the batch redoes the earlier stage first, so nobody is
+    asked for thresholds yet (the same answer as the Thresholds tab and actions)."""
+    put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(), "thresholds": done({"suggested": {"gSig": 4}}),
+                                "cnmf": waiting("thresholds")})
+    config.update_yaml(tmp_series.mouse_config("M1"), {"crop": {"fov_threshold_frac": 0.3}})
+    v = view(tmp_series)
+    assert v.waiting["thresholds"] == 0
+    assert v.rows[0].cells["thresholds"].text == "out of date"
+    assert actions.waiting_threshold_sids(tmp_series) == []

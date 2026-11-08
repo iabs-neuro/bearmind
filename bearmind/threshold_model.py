@@ -8,11 +8,13 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage
 
-from bearmind import actions, config, registry
+from bearmind import actions, config, registry, runner
 from bearmind.registry import State
 
 STATE_TEXT = {"waiting": "waiting", "chosen": "chosen", "cnmf_done": "CNMF-E done", "no_maps": "no maps",
-              "excluded": "excluded", "not_needed": "thresholds not needed yet"}
+              "excluded": "excluded", "not_needed": "thresholds not needed yet", "out_of_date": "maps out of date",
+              "config_error": "cannot be scheduled"}
+EXCLUDED_NOTE = "The session is excluded: the batch does not process it."
 
 _EIGHT = np.ones((3, 3), dtype=int)  # 8-connectivity
 
@@ -44,13 +46,18 @@ class Counters:
 class ThresholdItem:
     sid: str
     mouse: str
-    state: str          # "excluded" | "no_maps" | "cnmf_done" | "chosen" | "waiting" | "not_needed"
-    reason: str         # for no_maps: last line of the stage error, or "not computed yet"
+    # "excluded" | "config_error" | "no_maps" | "cnmf_done" | "out_of_date" | "chosen" | "waiting" | "not_needed"
+    state: str
+    reason: str         # the short why of no_maps, out_of_date and config_error (and of stale maps when excluded)
     suggested: dict | None
     chosen: dict | None  # {"gSig", "min_corr", "min_pnr"} from the resolved config
-    # The batch waits for this session's thresholds: the rule of actions.waiting_threshold_sids. It is
-    # independent of `state`, so a session without maps can wait and the window count equals Monitor's.
+    # The batch waits for this session's thresholds: actions.waits_for_thresholds, the rule Monitor and the CLI
+    # count by. True exactly in the state "waiting".
     waiting: bool = False
+    first_stale: str | None = None  # the main stage the batch would (re)start the session from (StageView)
+    # the sentence shown in place of the maps, which is also why Accept is refused; "" when the maps are shown
+    note: str = ""
+    text: str = ""  # what the session list says; "" for the plain STATE_TEXT (state_text)
 
 
 def load_maps(path: Path) -> ThresholdMaps:
@@ -123,20 +130,54 @@ def _chosen(cnmf_cfg: dict) -> dict | None:
     return v if all(x is not None for x in v.values()) else None
 
 
-def _item(paths, rec) -> ThresholdItem:
+def _stale(th, first_stale) -> tuple[str, str, bool]:
+    """(short reason, sentence, the batch recomputes them without a person) for maps that are not up to date
+    while their old file is still there."""
+    error = last_line(th.error).rstrip(".") if th is not None else ""
+    state = th.state if th is not None else State.PENDING
+    if state is State.RUNNING:
+        return "maps being recomputed", "The maps are being recomputed by the batch.", True
+    if state is State.PENDING:
+        return ("maps out of date: the batch will recompute them",
+                "The maps are out of date: the batch will recompute them.", True)
+    if state is State.FAILED:
+        return ("maps out of date: the thresholds stage failed",
+                f"The maps are out of date: the thresholds stage failed: {error or 'no error text'}. "
+                "Retry it in Monitor.", False)
+    if state is State.SKIPPED:  # "skipped: mc failed": an earlier stage must be retried first
+        return (f"maps out of date ({error or 'skipped'})",
+                f"The maps are out of date ({error or 'skipped'}). Retry the failed stage in Monitor.", False)
+    # DONE but not current: an input changed since (the crop rule, the box, MC settings) or an output is gone
+    return (f"maps out of date: the batch redoes {first_stale} first",
+            f"The maps are out of date: the batch redoes {first_stale} first.", True)
+
+
+def _item(paths, view, rec) -> ThresholdItem:
+    """The session's state by the runner's rule (view: runner.StageView), the same view for every session."""
     th = rec.stages.get("thresholds")
-    cnmf = rec.stages.get("cnmf")
     suggested = (th.metrics.get("suggested") if th is not None else None) or None
-    try:
-        chosen = _chosen(config.resolve(paths, sid=rec.sid, mouse=rec.mouse)["cnmf"])
-    except Exception:  # a broken config is shown by Monitor; here the session has no choice
-        chosen = None
-    waiting = not rec.excluded and (actions.waiting_for(rec, "cnmf") == "thresholds"
-                                    or actions.suggested_unset(paths, rec))
-    reason = ""
+    cfg = view.cfg(rec)  # None: the config cannot be read (view.problem says why)
+    cnmf_cfg = cfg.get("cnmf") if cfg is not None else None
+    chosen = _chosen(cnmf_cfg) if isinstance(cnmf_cfg, dict) else None
+    waiting = actions.waits_for_thresholds(view, rec)
+    first_stale = view.first_not_current(rec)
+    problem = view.problem(rec)
+    has_file = paths.threshold_maps(rec.sid).is_file()
+    maps_current = view.current_through(rec, "thresholds")
+    reason, note, text = "", "", ""
     if rec.excluded:
         state = "excluded"
-    elif not paths.threshold_maps(rec.sid).is_file():
+        # the batch skips an excluded session: nothing will recompute its maps, or make them
+        if not has_file:
+            note = f"No maps. {EXCLUDED_NOTE}"
+        elif problem is None and not maps_current:
+            reason = "maps out of date"
+            note = "The maps are out of date, and the session is excluded: the batch does not process it."
+    elif problem is not None:
+        # the batch cannot tell which stages are up to date either: it offers nothing until the config is fixed
+        state, reason = "config_error", problem
+        note = f"The session cannot be scheduled: {problem}"
+    elif not has_file:
         state = "no_maps"
         if th is not None and th.state is State.FAILED:
             reason = last_line(th.error) or "failed"
@@ -144,22 +185,45 @@ def _item(paths, rec) -> ThresholdItem:
             reason = "maps file not found"
         else:
             reason = "not computed yet"
+        cnmf = rec.stages.get("cnmf")
         if cnmf is not None and cnmf.state is State.DONE:
             reason += " (CNMF-E done)"
-    elif cnmf is not None and cnmf.state is State.DONE:
+        note = f"No maps: {reason}"
+    elif view.current_through(rec, "cnmf"):
         state = "cnmf_done"
+    elif not maps_current:
+        # The stage leaves the old file until it replaces it, and the runner would apply a choice written now to
+        # maps nobody has seen: the maps are not shown and Accept is refused with the sentence (the author may
+        # relax this later).
+        state = "out_of_date"
+        reason, note, recomputed = _stale(th, first_stale)
+        if chosen is not None:
+            text = "chosen · maps will be recomputed" if recomputed else f"chosen · {reason}"
+        else:
+            text = reason
     elif chosen is not None:
         state = "chosen"
-    elif waiting:
-        state = "waiting"
     else:
-        state = "not_needed"  # no choice, and the batch does not wait for one (CNMF-E runs, failed or not reached)
-    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen, waiting)
+        # waits_for_thresholds holds here (maps current, no thresholds, not excluded, config readable); the
+        # fallback only guards a cnmf section that the hashes accept but the predicate cannot read
+        state = "waiting" if waiting else "not_needed"
+    if state in ("no_maps", "config_error"):
+        text = f"{STATE_TEXT[state]}: {reason}"
+    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen, waiting, first_stale, note, text)
 
 
-def threshold_items(paths) -> list[ThresholdItem]:
-    recs, _broken = registry.read_all(paths)
-    return [_item(paths, r) for r in sorted(recs, key=lambda r: (r.mouse, r.sid))]
+def state_text(item: ThresholdItem) -> str:
+    """What the session list says about the session."""
+    return item.text or STATE_TEXT.get(item.state, item.state)
+
+
+def threshold_items(paths, view=None, records=None) -> list[ThresholdItem]:
+    """One item per session. `view` (runner.StageView) and `records` come from the caller when it has them (the
+    tab's, with cached configs and the last good records); else they are built here: one view for all."""
+    if records is None:
+        records, _broken = registry.read_all(paths)
+    view = view if view is not None else runner.StageView(paths)
+    return [_item(paths, view, r) for r in sorted(records, key=lambda r: (r.mouse, r.sid))]
 
 
 def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str]:

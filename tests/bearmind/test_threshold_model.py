@@ -5,9 +5,9 @@ import time
 
 import numpy as np
 
-from bearmind import actions, config, threshold_model as tm
+from bearmind import actions, config, registry, runner, threshold_model as tm
 from bearmind.registry import State, update_record
-from tests.bearmind.test_cli import S1, S2, S3, _set, series  # noqa: F401  (the series fixture)
+from tests.bearmind.test_cli import S1, S2, S3, _set, make_current, series  # noqa: F401  (the series fixture)
 
 CYR = re.compile("[Ѐ-ӿ]")
 
@@ -101,10 +101,11 @@ def test_threshold_items_states(series):
     _set(p, S1, "thresholds", State.PENDING)
     assert _items(series)[S1].state == "no_maps"
     _save(p.threshold_maps(S2), _maps(), False)
+    make_current(p, S2, "crop", "mc", "thresholds")
     _set(p, S2, "thresholds", State.DONE, suggested=None)
     _set(p, S2, "cnmf", State.WAITING, error="waiting for thresholds")
     it = _items(series)[S2]
-    assert it.state == "waiting" and it.chosen is None
+    assert it.state == "waiting" and it.chosen is None and it.waiting and it.first_stale == "cnmf"
     # a suggestion and no thresholds: CNMF-E is PENDING, not WAITING
     _set(p, S2, "cnmf", State.PENDING, error=None)
     _set(p, S2, "thresholds", State.DONE,
@@ -114,7 +115,9 @@ def test_threshold_items_states(series):
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     it = _items(series)[S2]
     assert it.state == "chosen" and it.chosen == {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
-    _set(p, S2, "cnmf", State.DONE)
+    _set(p, S2, "cnmf", State.DONE)  # done with other thresholds (no hash of these): the batch runs it again
+    assert _items(series)[S2].state == "chosen"
+    make_current(p, S2, "cnmf")
     assert _items(series)[S2].state == "cnmf_done"
     update_record(p, S2, lambda r: setattr(r, "excluded", True))
     assert _items(series)[S2].state == "excluded"
@@ -193,17 +196,18 @@ def test_mask_speed():
     assert statistics.median(times) < 0.2  # the window's budget is 50 ms; the bound leaves room for a loaded machine
 
 
-def test_states_cnmf_running_failed_and_not_needed(series):
+def test_maps_without_a_suggestion_wait(series):
+    """I1: maps up to date and no thresholds: the batch waits whether or not autotune suggested any, and whatever
+    the registry says of CNMF-E (a FAILED one is offered again: its parameters changed with the thresholds)."""
     p = series.paths
     _save(p.threshold_maps(S1), _maps(), False)
+    make_current(p, S1, "crop", "mc", "thresholds")
     _set(p, S1, "thresholds", State.DONE, suggested=None)
-    _set(p, S1, "cnmf", State.PENDING)
-    it = _items(series)[S1]
-    assert it.state == "not_needed" and not it.waiting and not CYR.search(tm.STATE_TEXT[it.state])
-    for st in (State.RUNNING, State.FAILED):
+    for st in (State.PENDING, State.FAILED, State.WAITING):
         _set(p, S1, "cnmf", st)
         it = _items(series)[S1]
-        assert it.state == "not_needed" and not it.waiting
+        assert it.state == "waiting" and it.waiting and it.suggested is None
+        assert actions.waiting_threshold_sids(p) == [S1]
 
 
 def test_cnmf_done_maps_deleted_is_no_maps(series):
@@ -216,22 +220,24 @@ def test_cnmf_done_maps_deleted_is_no_maps(series):
 
 def test_waiting_count_equals_actions(series):
     p = series.paths
-    # waits for thresholds, but no maps
+    # the registry says CNMF-E waits, but the maps failed: the batch redoes the thresholds stage after a retry
     _set(p, S1, "thresholds", State.FAILED, error="MemoryError: x")
     _set(p, S1, "cnmf", State.WAITING, error="waiting for thresholds")
     # suggestion, no thresholds, maps
     _save(p.threshold_maps(S2), _maps(), False)
+    make_current(p, S2, "crop", "mc", "thresholds")
     _set(p, S2, "thresholds", State.DONE,
          suggested={"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"})
     _set(p, S2, "cnmf", State.PENDING)
-    # no suggestion, CNMF-E pending: does not wait
+    # no suggestion, CNMF-E pending: waits too (I1)
     _save(p.threshold_maps(S3), _maps(), False)
+    make_current(p, S3, "crop", "mc", "thresholds")
     _set(p, S3, "thresholds", State.DONE, suggested=None)
     _set(p, S3, "cnmf", State.PENDING)
     items = _items(series)
-    assert items[S1].state == "no_maps" and items[S1].waiting
-    assert items[S2].state == "waiting" and items[S3].state == "not_needed"
-    assert sorted(i.sid for i in items.values() if i.waiting) == actions.waiting_threshold_sids(p) == [S1, S2]
+    assert items[S1].state == "no_maps" and not items[S1].waiting
+    assert items[S2].state == "waiting" and items[S3].state == "waiting"
+    assert sorted(i.sid for i in items.values() if i.waiting) == actions.waiting_threshold_sids(p) == [S2, S3]
     update_record(p, S1, lambda r: setattr(r, "excluded", True))
     assert sorted(i.sid for i in _items(series).values() if i.waiting) == actions.waiting_threshold_sids(p)
 
@@ -272,3 +278,62 @@ def test_usable_gsigs_and_start_values():
 def test_last_line_public():
     assert tm.last_line("Traceback\n  File x\nMemoryError: y\n\n") == "MemoryError: y"
     assert tm.last_line("") == "" and tm.last_line(None) == ""
+
+
+# --- phase 4 final fix wave: states by the runner's view ---
+
+def test_out_of_date_maps_state(series):
+    """A3: maps DONE but not up to date (here a crop input changed): out_of_date, named after the stage the batch
+    starts from; the maps are not offered (the note replaces them); a choice made earlier says the maps will be
+    recomputed."""
+    p = series.paths
+    _save(p.threshold_maps(S1), _maps(), False)
+    make_current(p, S1, "crop", "mc", "thresholds")
+    config.update_yaml(p.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    it = _items(series)[S1]
+    assert (it.state, it.first_stale, it.waiting) == ("out_of_date", "crop", False)
+    assert tm.state_text(it) == "maps out of date: the batch redoes crop first"
+    assert it.note == "The maps are out of date: the batch redoes crop first."
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    assert tm.state_text(_items(series)[S1]) == "chosen · maps will be recomputed"
+    _set(p, S1, "thresholds", State.FAILED, error="MemoryError: x")
+    assert tm.state_text(_items(series)[S1]) == "chosen · maps out of date: the thresholds stage failed"
+    for t in (tm.state_text(i) for i in _items(series).values()):
+        assert not CYR.search(t)
+
+
+def test_cnmf_done_only_when_current(series):
+    """A3: CNMF-E DONE in the registry counts as done only while the batch would not redo it."""
+    p = series.paths
+    _save(p.threshold_maps(S1), _maps(), False)
+    config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    make_current(p, S1, "crop", "mc", "thresholds", "cnmf")
+    assert _items(series)[S1].state == "cnmf_done"
+    config.update_yaml(p.session_config(S1), {"cnmf": {"min_pnr": 9.0}})  # new thresholds: CNMF-E runs again
+    assert _items(series)[S1].state == "chosen"
+
+
+def test_config_error_state_from_the_view(series):
+    """B1 / A3: a config that cannot be read is "cannot be scheduled" with the reason of the runner's view, the one
+    Monitor shows; the session never counts as one without thresholds."""
+    p = series.paths
+    _save(p.threshold_maps(S1), _maps(), False)
+    make_current(p, S1, "crop", "mc", "thresholds")
+    p.session_config(S1).parent.mkdir(parents=True, exist_ok=True)
+    p.session_config(S1).write_text("cnmf: [unclosed\n", encoding="utf-8")
+    it = _items(series)[S1]
+    view = runner.StageView(p)
+    rec = registry.load_record(p, S1)
+    assert it.state == "config_error" and it.reason == view.problem(rec) and it.reason.startswith("config: ")
+    assert tm.state_text(it) == f"cannot be scheduled: {it.reason}" and not it.waiting and it.chosen is None
+    assert it.note == f"The session cannot be scheduled: {it.reason}"
+
+
+def test_threshold_items_take_the_callers_view_and_records(series):
+    """One view per refresh: the view and records of the caller are used; nothing is resolved twice."""
+    p = series.paths
+    records = registry.all_records(p)[:2]
+    calls = []
+    view = runner.StageView(p, resolve=lambda rec: calls.append(rec.sid) or config.resolve(p, sid=rec.sid))
+    items = tm.threshold_items(p, view, records)
+    assert [i.sid for i in items] == [S1, S2] and sorted(calls) == [S1, S2]

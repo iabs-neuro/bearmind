@@ -17,6 +17,7 @@ from bearmind import cli, config, naming, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, Anomaly, State, load_record, save_record, update_record
 from bearmind.stages import gate
+from tests.bearmind.current_stages import make_current  # noqa: F401  (also for the tests that import it from here)
 from tests.bearmind.test_runner import SIDE, SIDS, THRESH, Stubs, _record
 
 S1, S2, S3 = SIDS
@@ -139,18 +140,23 @@ def test_thresholds_set(series):
 
 def test_thresholds_accept_suggested(series, capsys):
     sug = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0, "method": "auto"}
+    for sid in SIDS:
+        make_current(series.paths, sid, "crop", "mc", "thresholds")
     for sid in (S1, S2):
         _set(series.paths, sid, "thresholds", State.DONE, suggested=sug)
         _set(series.paths, sid, "cnmf", State.WAITING, error="waiting for thresholds")
-    # S3 waits too but has no suggestion
+    # S3 waits too but has no suggestion: only a person can choose, which is not a failure of this command
     _set(series.paths, S3, "thresholds", State.DONE, suggested=None)
     _set(series.paths, S3, "cnmf", State.WAITING, error="waiting for thresholds")
-    assert _main("thresholds", series.root, "accept-suggested") == 1
+    assert _main("thresholds", series.root, "accept-suggested") == 0
     out = capsys.readouterr().out
-    assert f"[FAILED] {S3}: no threshold suggestion" in out
+    assert f"[WARN] {S3}: no autotune suggestion; set thresholds by hand" in out and "[FAILED]" not in out
     for sid in (S1, S2):
         assert _yaml(series.paths.session_config(sid))["cnmf"] == {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
     assert not series.paths.session_config(S3).exists()
+    # named on purpose, it is still a failure
+    assert _main("thresholds", series.root, "accept-suggested", "--sessions", S3) == 1
+    assert f"[FAILED] {S3}: no threshold suggestion" in capsys.readouterr().out
 
 
 def test_thresholds_accept_suggested_sessions(series):
@@ -287,6 +293,22 @@ def test_status(series, capsys):
     assert "runner: not running" in _status(series, capsys)
     _heartbeat(series.paths, 5, status="idle")
     assert "runner: not running" in _status(series, capsys)
+
+
+def test_status_marks_out_of_date_stages(series, capsys):
+    """A5: a stage DONE in the registry that the batch would redo reads D* in status and "done (out of date)" in
+    summary.csv, from the runner's own view; the note says where the batch starts again."""
+    assert _main("run", series.root, "--once", "--until", "thresholds") == 0
+    config.update_yaml(series.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})  # S1, S2
+    out = _status(series, capsys)
+    rows = {line.split()[0]: line for line in out.splitlines() if line.startswith("NOF_")}
+    assert rows[S1].split()[2:5] == ["D*", "D*", "D*"] and rows[S3].split()[2:5] == ["D", "D", "D"]
+    assert rows[S1].endswith("out of date: the batch redoes crop first") and "out of date" not in rows[S3]
+    assert "D* done but out of date (the batch redoes it)" in out and out.isascii()
+    with open(series.paths.summary_csv, encoding="utf-8", newline="") as f:
+        csv_rows = {r["sid"]: r for r in csv.DictReader(f)}
+    assert [csv_rows[S2][s] for s in ("crop", "mc", "thresholds")] == ["done (out of date)"] * 3
+    assert csv_rows[S3]["crop"] == "done" and list(csv_rows[S3]) == runner.SUMMARY_COLUMNS
 
 
 def test_bat_file_mentions_conda_and_module():

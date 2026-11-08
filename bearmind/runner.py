@@ -325,18 +325,28 @@ def _one_line(e: BaseException) -> str:
 NO_FPS = "no frame rate (fps_unavailable); run scan again: it excludes the session"
 
 
-class _View:
-    """Resolved configs and stage hashes of one registry snapshot (one loop iteration)."""
+class StageView:
+    """Resolved configs and stage hashes of one registry snapshot (one loop iteration, one window refresh, one
+    command). The one rule of "up to date" (current) for the batch, the window and status: build one view per
+    snapshot and ask it about every session.
 
-    def __init__(self, paths):
+    `resolve(rec)` replaces config.resolve for the session; the window passes one that serves configs cached
+    until a config file changes. It raises as config.resolve does.
+    """
+
+    def __init__(self, paths, resolve=None):
         self.paths = paths
+        self._resolve = resolve
         self._cfg, self._hashes, self._side = {}, {}, {}
         self.errors = {}  # sid -> why the session cannot be scheduled now
 
     def cfg(self, rec):
         if rec.sid not in self._cfg:
             try:
-                self._cfg[rec.sid] = config.resolve(self.paths, sid=rec.sid, mouse=rec.mouse)
+                if self._resolve is None:
+                    self._cfg[rec.sid] = config.resolve(self.paths, sid=rec.sid, mouse=rec.mouse)
+                else:
+                    self._cfg[rec.sid] = self._resolve(rec)
             except Exception as e:  # a broken session config holds this session only, its states stay
                 self._cfg[rec.sid] = None
                 self.errors[rec.sid] = f"config: {_one_line(e)}"
@@ -385,6 +395,37 @@ class _View:
         h = self.hash(rec, stage)
         return h is not None and st.params_hash == h
 
+    # --- questions of the window and of status; the batch itself asks only current / blocked ---
+
+    def problem(self, rec) -> str | None:
+        """Why the session cannot be scheduled (its config or stage parameters cannot be resolved), else None."""
+        self.hashes(rec)
+        return self.errors.get(rec.sid)
+
+    def current_through(self, rec, stage) -> bool:
+        """Every main stage up to and including `stage` is up to date: next_ready offers the next main stage only
+        then, so a stage that is current itself is still redone when an earlier one is not."""
+        return all(self.current(rec, s) for s in STAGES[:STAGES.index(stage) + 1])
+
+    def first_not_current(self, rec) -> str | None:
+        """The main stage the batch would (re)start this session from: the first one that is not up to date.
+        None when every main stage is up to date, or when the hashes cannot be computed (problem says why). A
+        FAILED stage with unchanged parameters is named too: the batch retries it after a reset."""
+        if self.hashes(rec) is None:
+            return None
+        return next((s for s in STAGES if not self.current(rec, s)), None)
+
+    def done_not_current(self, rec) -> list:
+        """Main stages DONE in the registry that the batch would redo. [] for an excluded session (the batch
+        ignores it) and for one whose hashes cannot be computed (it is "cannot be scheduled" instead)."""
+        if rec.excluded or self.hashes(rec) is None:
+            return []
+        return [s for s in STAGES if s in rec.stages and rec.stages[s].state is State.DONE
+                and not self.current(rec, s)]
+
+
+_View = StageView  # the old private name
+
 
 class _Scope:
     """Sessions a run works on. Crop detection also runs for the other sessions of a selected session's
@@ -409,7 +450,7 @@ def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
     range when its parent is. `skip` holds (sid, stage) pairs not to offer now (waiting stages already tried).
     crop.finalize_mouse is scheduled by run(), not here.
     """
-    view = _view or _View(paths)
+    view = _view or StageView(paths)
     scope = _Scope(records, sids)
     recs = sorted((r for r in records if not r.excluded), key=lambda r: r.sid)
     for stage in _offered(until):
@@ -436,7 +477,7 @@ def schedule_problems(paths, records, view=None, broken=()) -> dict:
     """sid -> why the session cannot be scheduled now: its config or stage parameters cannot be resolved,
     or the box of its mouse could not be placed FINALIZE_TRIES times (non-excluded sessions); or its registry
     file cannot be read (under the file name)."""
-    view = view or _View(paths)
+    view = view or StageView(paths)
     active = [r for r in records if not r.excluded]
     for r in active:
         view.hashes(r)
@@ -496,11 +537,12 @@ class SeriesState:
     finalize_failed: dict  # sid -> why the box of its mouse is not placed (the last finalize failed)
     # sid -> {side stage: on in its resolved config}; None when the config cannot be read
     previews: dict = dataclasses.field(default_factory=dict)
+    view: StageView | None = None  # the view all of the above was computed from (status marks stale stages by it)
 
 
 def series_state(paths) -> SeriesState:
     records, broken = registry.read_all(paths)
-    view = _View(paths)
+    view = StageView(paths)
     problems = schedule_problems(paths, records, view, broken=broken)
     person, blocked = _split_waits(_waiting(records, _Scope(records, None), STAGES), records, problems)
     failed = {}
@@ -514,7 +556,7 @@ def series_state(paths) -> SeriesState:
     previews = {r.sid: None if view.cfg(r) is None else {s: side_enabled(s, view.cfg(r)) for s in _SIDE_ORDER}
                 for r in records}
     return SeriesState(records, broken, problems, person, blocked, failed, [r.sid for r in records if r.excluded],
-                       finalize_failed, previews)
+                       finalize_failed, previews, view)
 
 
 # --- registry changes made by the runner ---
@@ -905,17 +947,20 @@ class _Run:
         self.hb.update(status="running")
         self.hb.start()
 
-    def refresh(self, status="running", records=None, broken=None, problems=None, **extra):
-        """Heartbeat counts and summary.csv from the registry as it is now; `extra` goes into the heartbeat."""
+    def refresh(self, status="running", records=None, broken=None, problems=None, view=None, **extra):
+        """Heartbeat counts and summary.csv from the registry as it is now; `extra` goes into the heartbeat.
+        `view`: the StageView `problems` came from, when the caller has one (summary marks stale stages by it)."""
         if records is None:
             records, broken = registry.read_all(self.paths)
+            view = None  # a new snapshot: a view of another one would mix them
+        view = view or StageView(self.paths)
         if problems is None:
-            problems = schedule_problems(self.paths, records, broken=broken or ())
+            problems = schedule_problems(self.paths, records, view, broken=broken or ())
         cur = None if self.current is None else {"sid": self.current[0], "stage": self.current[1]}
         counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages)
         self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur, unschedulable=problems,
                        **extra)
-        summary(self.paths, records, problems=problems, broken=broken)
+        summary(self.paths, records, problems=problems, broken=broken, view=view)
 
     def abort(self):
         """KeyboardInterrupt or an error outside a stage: the stage being run goes back to PENDING."""
@@ -1413,7 +1458,7 @@ def _loop(paths, run_: _Run) -> dict:
             run_.result["stopped"] = True
             return dict(run_.result)
         records, broken = registry.read_all(paths)
-        view = _View(paths)
+        view = StageView(paths)
         due = _finalize_due(records, view, _Scope(records, run_.sids), attempted, once, poll_s)
         if due:
             for mouse, done, key in due:
@@ -1442,7 +1487,7 @@ def _loop(paths, run_: _Run) -> dict:
             if msg != last_msg:
                 log.info(msg, extra={"console": True})
                 last_msg = msg
-            run_.refresh(status="waiting", records=records, broken=broken, problems=problems)
+            run_.refresh(status="waiting", records=records, broken=broken, problems=problems, view=view)
             now = time.monotonic()
             # next retry of a waiting stage; one that is due but was not offered (its session cannot be
             # scheduled now) must not turn this into a busy loop, so it waits a full poll
@@ -1566,19 +1611,22 @@ SUMMARY_COLUMNS = (["sid", "mouse", "excluded"]
                    + ["gSig", "min_corr", "min_pnr", "worst_check", "waiting_for", "error", "anomalies"])
 
 
-def _summary_row(paths, rec, problem=None) -> dict:
+OUT_OF_DATE = "done (out of date)"  # summary.csv: DONE in the registry, but the batch would redo the stage
+
+
+def _summary_row(paths, rec, problem=None, view=None) -> dict:
+    """`view`: the StageView of the snapshot; it gives the config and the stages DONE but not up to date."""
+    view = view or StageView(paths)
     row = {"sid": rec.sid, "mouse": rec.mouse, "excluded": rec.excluded}
     levels, waiting_for, error = [], None, None
-    try:
-        cfg = config.resolve(paths, sid=rec.sid, mouse=rec.mouse)
-    except Exception:
-        cfg = None
+    cfg = view.cfg(rec)  # None: the config cannot be read
+    stale = view.done_not_current(rec)
     for s in ALL_STAGES:
         st = rec.stages.get(s) or StageRecord()
         if s in SIDE_STAGES and _side_off(s, cfg):
             row[s] = "off"  # its old record, if any, holds nothing
             continue
-        row[s] = st.state.value
+        row[s] = OUT_OF_DATE if s in stale else st.state.value
         for col, key in _KEYS.get(s, ()):
             if callable(key):
                 row[col] = key(rec)
@@ -1612,11 +1660,12 @@ def _broken_row(f, problem) -> dict:
 _SUMMARY_WARNED: set = set()  # summary files whose last write failed (warned once until a write works)
 
 
-def summary(paths, records=None, problems=None, broken=None):
+def summary(paths, records=None, problems=None, broken=None, view=None):
     """One row per session (state and key number of each stage, thresholds, worst check); writes summary.csv.
 
     A session that cannot be scheduled has the reason in `error`; a registry file that cannot be read gets a
-    row of its own with the file and the parse error.
+    row of its own with the file and the parse error. A main stage DONE in the registry that the batch would
+    redo (StageView.current) reads OUT_OF_DATE; `view` is the caller's view of these records, if it has one.
 
     Written only when its content changes (a waiting runner refreshes it every poll). One write attempt, no
     retry loop (it runs after every transition and must not hold the batch); a failure (file open in Excel)
@@ -1628,9 +1677,10 @@ def summary(paths, records=None, problems=None, broken=None):
         everything, found = registry.read_all(paths)
         records = everything if records is None else records
         broken = found if broken is None else broken
+    view = view or StageView(paths)
     if problems is None:
-        problems = schedule_problems(paths, records, broken=broken)
-    rows = ([_summary_row(paths, r, problems.get(r.sid)) for r in records]
+        problems = schedule_problems(paths, records, view, broken=broken)
+    rows = ([_summary_row(paths, r, problems.get(r.sid), view) for r in records]
             + [_broken_row(f, problems[Path(f).stem]) for f, _ in broken])
     df = pd.DataFrame(sorted(rows, key=lambda x: x["sid"]), columns=SUMMARY_COLUMNS)
     text = df.to_csv(index=False, lineterminator="\n")

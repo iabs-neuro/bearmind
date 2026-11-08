@@ -2093,3 +2093,58 @@ def test_failed_overview_redraw_removes_the_old_picture(series, monkeypatch):
     runner._write_crop_overview(s.paths)
     assert not png.exists()  # a stale picture with outdated boxes must not stay
     runner._write_crop_overview(s.paths)  # nothing to remove: still quiet
+
+
+# --- the runner's view shared with the window and status (phase 4 final fix wave, A) ---
+
+def test_stage_view_is_the_batch_rule_on_an_out_of_date_stage(series):
+    """runner.StageView is the runner's own view under a public name. With a stage out of date the batch still
+    starts from it, and the view's questions for the window and status agree with what the batch does."""
+    s = series
+    assert runner._View is runner.StageView
+    _run(s, until="thresholds")
+    s.stubs.calls.clear()
+    config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})  # S1 and S2
+    records = registry.all_records(s.paths)
+    by = {r.sid: r for r in records}
+    view = runner.StageView(s.paths)
+    assert runner.next_ready(records, s.paths, until="thresholds", _view=view) == (S1, "crop")
+    assert runner.next_ready(records, s.paths, until="thresholds") == (S1, "crop")  # its own view: the same
+    for sid in (S1, S2):
+        assert view.problem(by[sid]) is None
+        assert view.first_not_current(by[sid]) == "crop"
+        assert view.done_not_current(by[sid]) == ["crop", "mc", "thresholds"]
+        assert not view.current_through(by[sid], "thresholds") and not view.current(by[sid], "thresholds")
+    assert view.first_not_current(by[S3]) == "cnmf" and view.done_not_current(by[S3]) == []
+    assert view.current_through(by[S3], "thresholds")
+    row = runner.summary(s.paths).set_index("sid")
+    assert row.loc[S1, "crop"] == row.loc[S2, "thresholds"] == runner.OUT_OF_DATE == "done (out of date)"
+    assert row.loc[S3, "crop"] == "done" and list(row.reset_index().columns) == runner.SUMMARY_COLUMNS
+    _run(s, until="thresholds")
+    assert s.stubs.calls == [(S1, "crop"), (S2, "crop"), (S1, "mc"), (S2, "mc"), (S1, "thresholds"),
+                             (S2, "thresholds")]
+    assert all(runner.StageView(s.paths).first_not_current(r) == "cnmf" for r in registry.all_records(s.paths))
+
+
+def test_stage_view_resolve_hook_and_unschedulable_session(series):
+    """A view on another source of configs (the window's cache) decides the same; a session whose config cannot
+    be read has no first stale stage and is reported, never taken for up to date."""
+    s = series
+    _run(s, until="thresholds")
+    calls = []
+
+    def resolve(rec):
+        calls.append(rec.sid)
+        return config.resolve(s.paths, sid=rec.sid, mouse=rec.mouse)
+
+    records = registry.all_records(s.paths)
+    hooked = runner.StageView(s.paths, resolve=resolve)
+    plain = runner.StageView(s.paths)
+    for r in records:
+        assert [hooked.current(r, st) for st in STAGES] == [plain.current(r, st) for st in STAGES]
+    assert sorted(calls) == SIDS  # once per session: the view keeps what it resolved
+    s.paths.session_config(S2).write_text("cnmf: [unclosed\n", encoding="utf-8")
+    view = runner.StageView(s.paths)
+    rec = load_record(s.paths, S2)
+    assert view.problem(rec).startswith("config: ") and view.first_not_current(rec) is None
+    assert view.done_not_current(rec) == [] and not view.current_through(rec, "crop")

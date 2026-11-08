@@ -278,7 +278,11 @@ def _pv(rec, on) -> str:
                    for s in _SIDES)
 
 
-def _row(rec, on=None) -> tuple:
+STALE_MARK = "D*"  # done in the registry, but the batch would redo it (runner.StageView.current)
+
+
+def _row(rec, on=None, stale=()) -> tuple:
+    """`stale`: the main stages DONE but out of date (runner.StageView.done_not_current)."""
     cells, reason = [], ""
     for s in STAGES + _SIDES:  # the main stages first: a main failure or wait is the note, not a preview's
         st = rec.stages.get(s)
@@ -286,7 +290,7 @@ def _row(rec, on=None) -> tuple:
             if _side_off(on, s):
                 continue  # off: an old record holds nothing
         else:
-            cells.append(_LETTER[st.state] if st else ".")
+            cells.append(STALE_MARK if s in stale else _LETTER[st.state] if st else ".")
         if st is None:
             continue
         if st.state is State.WAITING and not reason:
@@ -349,11 +353,14 @@ def cmd_status(args) -> int:
     state = runner.series_state(paths)
     if not state.records and not state.broken:
         raise CliError(f"no sessions registered in {paths.root}; run first: scan {paths.root}")
-    runner.summary(paths, state.records, problems=state.problems, broken=state.broken)
+    runner.summary(paths, state.records, problems=state.problems, broken=state.broken, view=state.view)
     rows = []
     for r in state.records:
         on = state.previews.get(r.sid)
-        cells, reason = _row(r, on)
+        stale = state.view.done_not_current(r)
+        cells, reason = _row(r, on, stale)
+        if stale and not reason and r.sid not in state.problems:
+            reason = f"out of date: the batch redoes {state.view.first_not_current(r)} first"
         rows.append((r.sid, "yes " if r.excluded else "no  ", cells + [_pv(r, on)], _check_mark(r),
                      _note(r, reason, state)))
     rows += [(Path(f).stem, "?   ", ["?"] * (len(STAGES) + 1), "?", _clip(state.problems[Path(f).stem]))
@@ -363,7 +370,8 @@ def cmd_status(args) -> int:
     odd = scan.read_unrecognized(paths)
     if odd:
         _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
-    _say("D done, R running, W waiting, F failed, S skipped, . not started, ? unknown; "
+    _say("D done, D* done but out of date (the batch redoes it), R running, W waiting, F failed, S skipped, "
+         ". not started, ? unknown; "
          "chk: W warning, E error in a check of a done stage; pv: MC and CNMF-E preview videos, off (-) when turned off")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
     head = ("session".ljust(width) + "  excl  " + " ".join(x.ljust(4) for x in [_SHORT[s] for s in STAGES] + ["pv"])
@@ -401,6 +409,10 @@ def cmd_thresholds(args) -> int:
     for sid in sids:
         if sid in res.failed:
             fcode, detail = res.failed[sid]
+            if fcode == "no_suggestion" and not args.sessions:
+                # it waits like the others, but only a person can choose for it: not a failure of this command
+                _say(f"[WARN] {sid}: no autotune suggestion; set thresholds by hand")
+                continue
             if fcode == "no_suggestion":
                 _say(f"[FAILED] {sid}: no threshold suggestion (run the thresholds stage first, "
                      f"or set values: thresholds SERIES set {sid} --gsig G --min-corr X --min-pnr Y)")
@@ -591,7 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
     ts = sp.add_subparsers(dest="action", required=True, parser_class=_Parser, metavar="action")
     a = ts.add_parser("accept-suggested", help="use the suggested thresholds")
     a.add_argument("--sessions", nargs="+", metavar="SID",
-                   help="default: every session waiting for thresholds, or with a suggestion and none set")
+                   help="default: every session waiting for thresholds (maps up to date, none set)")
     s = ts.add_parser("set", help="set thresholds of one session")
     s.add_argument("sid", metavar="SID")
     s.add_argument("--gsig", type=_checked(actions.gsig_error, "--gsig"), required=True)
