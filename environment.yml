@@ -17,6 +17,9 @@ name: bearmind
 # is only on Anaconda's pkgs/main; conda-forge has only MKL builds of pytorch 2.14.1
 # for win-64. On a new Anaconda or Miniconda, conda may first ask to accept the
 # Terms of Service of the Anaconda channels (docs/students/README.md, section 2).
+# Strict channel priority (Miniforge's default) cannot solve this file: it excludes
+# the defaults pytorch because conda-forge has a pytorch too. Use flexible priority
+# (set CONDA_CHANNEL_PRIORITY=flexible before conda env create).
 channels:
   - conda-forge
   - defaults
