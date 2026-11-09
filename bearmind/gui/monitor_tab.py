@@ -54,6 +54,9 @@ LEVEL_STYLE = {"error": ("ERROR", "#ffcdd2", "#8e0000"), "warning": ("WARN", "#f
 MAX_NAMED = 12  # sessions named in a confirmation before "and N more"
 NOT_SCANNED_TEXT = "Series not scanned. Open the Scan tab and press Scan."
 NO_SESSIONS_TEXT = "No sessions recognized in this series. See the Scan tab."
+# Include lifts only an exclusion a person made (actions.include_targets), as the Scan tab's Include does
+INCLUDE_REFUSED = "Fix the files and Rescan, or use the Scan tab (Accept / Confirm stitch) for this anomaly."
+NOTHING_TO_INCLUDE = "None of the selected sessions is excluded: nothing to include."
 
 # the same items serve the Actions menu and the table's context menu
 ACTIONS = ("exclude", "include", "accept_mismatch", "rerun_from", "retry_failed", "inspection_not_needed",
@@ -447,6 +450,17 @@ class MonitorTab(QWidget):
             sids = selected
             if not sids:
                 return self._say("Select sessions in the table first.")
+        if name == "include":
+            try:
+                sids, by_anomaly = actions.include_targets(self.paths, sids)
+            except actions.UnknownSession as e:
+                self._message("BEARMiND", f"Not in the series any more: {', '.join(e.unknown)}")
+                return
+            if by_anomaly:  # before the confirmation, which names only the sessions that will be included
+                is_are = "is" if len(by_anomaly) == 1 else "are"
+                self._message("BEARMiND", f"{_named(by_anomaly)} {is_are} excluded by an anomaly. {INCLUDE_REFUSED}")
+            if not sids:
+                return self._say("Nothing was changed." if by_anomaly else NOTHING_TO_INCLUDE)
         # the sessions named in the confirmation are the ones written, even if the batch moves on meanwhile
         target = sids
         stage = None

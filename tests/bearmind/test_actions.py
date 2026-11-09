@@ -27,6 +27,32 @@ def test_set_excluded_and_back(series):
     assert ("exclude", "false", "ann") in _decisions(series.paths, S1)
 
 
+def _exclude_by_anomaly(paths, sid):
+    """An error anomaly of the scan, the session excluded by it (scan.evaluate_excluded's rule)."""
+    from bearmind import scan
+
+    def change(rec):
+        rec.anomalies.append(Anomaly("frames_ts_mismatch", "error", "300 frames, 290 timestamps"))
+        rec.excluded = scan.evaluate_excluded(rec)
+    update_record(paths, sid, change)
+
+
+def test_include_targets_only_a_persons_exclusion(series):
+    """The window's Include lifts only an exclusion a person made (the Scan tab's rule); an anomaly's exclusion is
+    refused, and a session that is not excluded is in neither list."""
+    paths = series.paths
+    actions.set_excluded(paths, [S1], True, "ann")
+    _exclude_by_anomaly(paths, S2)
+    before = {s: _decisions(paths, s) for s in (S1, S2, S3)}
+    assert actions.include_targets(paths, [S1, S2, S3]) == ([S1], [S2])
+    assert {s: _decisions(paths, s) for s in (S1, S2, S3)} == before  # it only reads
+    # a person's include over an error anomaly ("included by you") is not excluded: nothing to include
+    actions.set_excluded(paths, [S2], False, "ann")
+    assert actions.include_targets(paths, [S2]) == ([], [])
+    with pytest.raises(actions.UnknownSession):
+        actions.include_targets(paths, ["NOF_H09_1D"])
+
+
 def test_set_excluded_include_without_fps_warns(series):
     update_record(series.paths, S1, lambda r: setattr(r, "fps", None))
     res = actions.set_excluded(series.paths, [S1], False, "ann")

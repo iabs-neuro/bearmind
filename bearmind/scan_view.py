@@ -185,7 +185,10 @@ def _is_split_pause(a, gaps: list[float]) -> bool:
     return abs(a.data.get("max_gap_ms", 0.0) - max(gaps) * 1000.0) <= 0.01 * max(gaps) * 1000.0
 
 
-def _excluded_by(rec: SessionRecord) -> str:
+def excluded_by(rec: SessionRecord) -> str:
+    """Who excluded the session: "you" (a person's latest exclude decision), "anomaly" (an error of the scan, no
+    fps, a folder not found); "included": a person's include overrides an error; "" otherwise. The Scan tab's
+    Include and Monitor's Include (actions.include_targets) lift only "you"."""
     exclude = scan.latest_decision(rec, "exclude")
     if rec.excluded:
         return "you" if exclude == "true" else "anomaly"
@@ -243,7 +246,7 @@ def _build_row(rec: SessionRecord, rule: dict) -> ScanRow:
         n_video_frames=sum(sum(p.chunk_frames) for p in rec.parts),
         n_frames=rec.n_frames, fps=rec.fps,
         duration_min=rec.n_frames / rec.fps / 60 if rec.fps else None,
-        level=level, excluded=rec.excluded, excluded_by=_excluded_by(rec),
+        level=level, excluded=rec.excluded, excluded_by=excluded_by(rec),
         summary="; ".join(t for t, _ in parts) if parts else "–", anomalies=lines,
         folders=[p.folder for p in rec.parts], fps_text=_fps_text(rec),
         decisions=[f"{d.when} {d.who}: {d.what} = {d.value}" for d in rec.decisions],
@@ -256,14 +259,14 @@ def _row(rec: SessionRecord, rule: dict) -> ScanRow:
     except Exception as e:  # one odd record (hand-edited, an older version) must not hide the whole table
         why = " ".join(f"{type(e).__name__}: {e}".split())
         try:
-            excluded_by = _excluded_by(rec)
+            who = excluded_by(rec)
         except Exception:  # the decisions are odd too: the Excluded column cannot say why
-            excluded_by = ""
+            who = ""
         text = f"cannot show: {why}"
         return ScanRow(
             sid=str(rec.sid), mouse=str(rec.mouse), mode=str(rec.mode), n_parts=None, n_chunks=None,
             n_video_frames=None, n_frames=None, fps=None, duration_min=None, level="error",
-            excluded=bool(rec.excluded), excluded_by=excluded_by, summary=text, anomalies=[], folders=[],
+            excluded=bool(rec.excluded), excluded_by=who, summary=text, anomalies=[], folders=[],
             fps_text="", decisions=[], summary_parts=[(text, False)])
 
 

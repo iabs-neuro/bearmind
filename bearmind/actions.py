@@ -398,6 +398,18 @@ def set_excluded(paths, sids, excluded: bool, who: str) -> ActionResult:
     return res
 
 
+def include_targets(paths, sids) -> tuple[list[str], list[str]]:
+    """(the sessions a person excluded, the sessions an anomaly excluded) among sids; sessions that are not
+    excluded are in neither. The window's Include lifts only the first kind, as the Scan tab's does: an error
+    anomaly's exclusion is lifted by fixing the files and Rescan, or by Accept / Confirm stitch on the Scan tab,
+    never silently. The CLI's `decide include` still overrides it (the operator's tool). Reads only."""
+    recs = _records(paths)
+    sids = list(sids)
+    check_sids(recs, sids)
+    by = {sid: scan_view.excluded_by(recs[sid]) for sid in sids}
+    return [s for s in sids if by[s] == "you"], [s for s in sids if by[s] == "anomaly"]
+
+
 def accept_mismatch(paths, sids, who: str) -> ActionResult:
     recs = _records(paths)
     sids = list(sids)

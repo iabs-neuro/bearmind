@@ -186,12 +186,69 @@ def test_confirm_no_writes_nothing(qapp, series4):
     ui = Ui(series4, answer=False)
     ui.select(S1)
     before = _decisions(series4, S1)
-    for name in ("exclude", "include", "accept_mismatch", "inspection_not_needed", "retry_failed"):
+    for name in ("exclude", "accept_mismatch", "inspection_not_needed", "retry_failed"):
         ui.tab.run_action(name)
     ui.stage = "cnmf"
     ui.tab.run_action("rerun_from")
-    assert len(ui.asked) == 6 and _decisions(series4, S1) == before
+    assert len(ui.asked) == 5 and _decisions(series4, S1) == before
     assert not registry.load_record(series4, S1).excluded
+    # Include asks only for a session you excluded: S1 is not excluded, so it has nothing to include
+    actions.set_excluded(series4, [S3], True, "ann")
+    before = _decisions(series4, S3)
+    ui.select(S3)
+    ui.tab.run_action("include")
+    assert len(ui.asked) == 6 and S3 in ui.asked[-1] and _decisions(series4, S3) == before
+    assert registry.load_record(series4, S3).excluded
+
+
+def _exclude_by_anomaly(paths, sid):
+    from bearmind import scan
+
+    def change(rec):
+        rec.anomalies.append(registry.Anomaly("frames_ts_mismatch", "error", "300 frames, 290 timestamps"))
+        rec.excluded = scan.evaluate_excluded(rec)
+    registry.update_record(paths, sid, change)
+
+
+def test_include_refuses_an_anomaly_exclusion(qapp, series4):
+    """W3: Monitor's Include does not override an ERROR anomaly silently, as the Scan tab's Include does not: it
+    refuses and says how to lift it; nothing is asked or written."""
+    _exclude_by_anomaly(series4, S1)
+    before = _decisions(series4, S1)
+    ui = Ui(series4)
+    ui.select(S1)
+    ui.tab.run_action("include")
+    assert ui.asked == [] and _decisions(series4, S1) == before
+    assert registry.load_record(series4, S1).excluded
+    assert ui.shown == [f"Session {S1} is excluded by an anomaly. Fix the files and Rescan, or use the Scan tab "
+                        "(Accept / Confirm stitch) for this anomaly."]
+    assert ui.tab.last_status == "Nothing was changed."
+
+
+def test_include_lifts_your_exclusion_and_refuses_the_anomalys(qapp, series4):
+    """A selection of both kinds: the anomaly's is refused first, then the confirmation names only yours and only
+    yours is written."""
+    actions.set_excluded(series4, [S3], True, "ann")
+    _exclude_by_anomaly(series4, S1)
+    before = _decisions(series4, S1)
+    ui = Ui(series4)
+    ui.select(S1, S3)
+    ui.tab.run_action("include")
+    assert len(ui.shown) == 1 and S1 in ui.shown[0] and S3 not in ui.shown[0]
+    assert ui.asked == [f"Session {S3} will be included in the batch again."]
+    assert not registry.load_record(series4, S3).excluded
+    assert registry.load_record(series4, S1).excluded and _decisions(series4, S1) == before
+    assert ui.tab.last_status == f"Included 1 session: {S3}"
+
+
+def test_include_of_sessions_not_excluded_writes_nothing(qapp, series4):
+    ui = Ui(series4)
+    ui.select(S1, S2)
+    before = {s: _decisions(series4, s) for s in (S1, S2)}
+    ui.tab.run_action("include")
+    assert ui.asked == [] and ui.shown == []
+    assert {s: _decisions(series4, s) for s in (S1, S2)} == before
+    assert ui.tab.last_status == "None of the selected sessions is excluded: nothing to include."
 
 
 def test_no_selection_says_so_and_asks_nothing(qapp, series4):
