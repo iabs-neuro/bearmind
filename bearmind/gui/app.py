@@ -25,7 +25,7 @@ def _hint() -> QWidget:
     page = QWidget()
     lay = QVBoxLayout(page)
     lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label = QLabel("Open a series: Series > Open series...")
+    label = QLabel("Open a series: Series > Open series…")  # the menu item's own text
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     lay.addWidget(label)
     return page

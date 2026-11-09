@@ -30,7 +30,7 @@ def test_no_placeholder_tabs_left(qapp, tmp_series):
     blank = MainWindow()
     for i in range(blank.tabs.count()):
         assert [lb.text() for lb in blank.tabs.widget(i).findChildren(QLabel)] == \
-            ["Open a series: Series > Open series..."]
+            ["Open a series: Series > Open series…"]
     blank.close()
     paths = SeriesPaths(tmp_series)
     paths.registry_file("x").parent.mkdir(parents=True)
@@ -123,7 +123,11 @@ def test_monitor_tab_hint_before_any_series(qapp):
 
     w = MainWindow()
     texts = [lab.text() for lab in w.tabs.widget(0).findChildren(QLabel)]
-    assert texts == ["Open a series: Series > Open series..."]
+    assert texts == ["Open a series: Series > Open series…"]
+    # the hint names the menu item as the menu writes it
+    item = texts[0].rsplit(" > ", 1)[1]
+    assert item in [a.text() for a in w.series_menu.actions()]
+    w.close()
 
 
 def test_main_writes_bearmind_warnings_to_gui_log(qapp, monkeypatch):

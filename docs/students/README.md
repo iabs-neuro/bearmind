@@ -89,7 +89,7 @@ positional arguments:
     run         process the series (resumes where it stopped)
 ```
 
-Пустое окно пишет **Open a series: Series > Open series...**. Это нормально: серию вы откроете позже.
+Пустое окно пишет **Open a series: Series > Open series…**. Это нормально: серию вы откроете позже.
 
 Первый запуск окна создаёт файл настроек машины `~/.bearmind/machine.yaml`. В нём временная папка, число ядер и память. Без нужды файл не правьте.
 
