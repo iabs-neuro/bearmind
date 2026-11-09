@@ -231,6 +231,9 @@ def test_installers_and_guide_use_the_env_files():
         assert "env create -f environment.yml" in text and f"conda activate {name}" in text
         assert "pip install -r requirements-pip.txt" in text
     assert "env create -f environment.yml" in install1 and f"set ENV_NAME={name}" in install1
+    # Miniforge's strict channel priority cannot solve environment.yml (see its channels comment)
+    assert install1.index("set CONDA_CHANNEL_PRIORITY=flexible") < install1.index("env create -f environment.yml")
+    assert "setlocal" in install1.split("set CONDA_CHANNEL_PRIORITY")[0]
     assert "pip install -r requirements-pip.txt" in install2 and f"set ENV_NAME={name}" in install2
     assert not (REPO / "bearmind2025.yml").exists()  # the old caiman env export: nothing installs from it
     # an env of that name may be main's older one: the guide checks it (section 2) and checks a new one (section 3)
