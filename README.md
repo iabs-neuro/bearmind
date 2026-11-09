@@ -2,6 +2,10 @@
 ### A pipeline for Batch Examination & Analysis of Raw Miniscopic Neural Data
 <img src="/bearmind_logo.png" align="left">
 
+BEARMiND batch-processes miniscope calcium-imaging series with CaImAn: crop, motion correction, CNMF-E, manual and automatic inspection, export.
+A PySide6 window shows the batch, asks for CNMF-E thresholds and for the manual-inspection decision; the batch runs on its own.
+The documentation below is in Russian, for the lab's students; run `run_bearmind.bat --help` for the commands.
+
 BEARMiND обрабатывает записи минископа целыми сериями. Пакет `bearmind` ведёт каждую сессию серии через этапы: кроп, коррекция движения (NoRMCorre), пороги CNMF-E, CNMF-E (CaImAn), ручная инспекция, автоинспекция, экспорт. Экспорт пишет трейсы в `npz` и контуры клеток в `mat` для сопоставления клеток между днями (CellReg).
 
 Вы работаете в окне BEARMiND: выбираете пороги и решаете, нужна ли сессии ручная инспекция. Остальное делает батч — отдельный процесс, который идёт без окна. Автоинспекция убирает плохие компоненты моделью машинного обучения и использует пакет [DRIADA](https://github.com/iabs-neuro/driada).
@@ -20,6 +24,8 @@ BEARMiND обрабатывает записи минископа целыми �
 3. Запустите окно двойным щелчком по `bearmind_gui.bat`.
 4. Откройте серию и найдите сессии на вкладке Scan.
 5. Нажмите Start на вкладке Monitor.
+6. Выберите пороги CNMF-E на вкладке Thresholds: батч ждёт их у каждой сессии.
+7. Решите на вкладке Inspection, нужна ли сессии ручная инспекция: батч ждёт и этого решения.
 
 Команды без окна перечисляет `run_bearmind.bat --help`.
 
