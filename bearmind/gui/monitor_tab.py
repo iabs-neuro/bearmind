@@ -68,7 +68,7 @@ ACTION_TEXT = {
     "inspection_not_needed_all": "Inspection not needed for all waiting", "export_csv": "Export summary CSV…",
 }
 _WARNING_TEXT = {
-    "excluded_session": "{sid} is excluded: the runner ignores it until you include it.",
+    "excluded_session": "{sid} is excluded: the runner ignores it until it is included again.",
     "no_fps_stays_excluded": "{sid} has no frame rate (timestamps missing or unusable): it stays excluded.",
     "not_found_stays_excluded": "{sid} was not found by the last scan: it stays excluded. "
                                 "Restore the session folder and Rescan.",

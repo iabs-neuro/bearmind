@@ -52,6 +52,8 @@ REM Miniforge's default strict channel priority cannot solve environment.yml: th
 REM only on defaults, and strict priority drops it because conda-forge has a pytorch too. setlocal above keeps
 REM this to the script.
 set CONDA_CHANNEL_PRIORITY=flexible
+REM mamba 2 (current Miniforge) reads its own variable; mamba 1 and conda read the one above
+set MAMBA_CHANNEL_PRIORITY=flexible
 echo Creating conda environment (5-15 minutes)...
 echo Command: %CONDA_CMD% env create -f environment.yml
 %CONDA_CMD% env create -f environment.yml

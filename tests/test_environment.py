@@ -241,7 +241,8 @@ def test_installers_and_guide_use_the_env_files():
     for number in ("2", "3"):
         section = next(s for s in sections if s.startswith(number + "."))
         assert f"conda activate {name}" in section and "`python test_env.py`" in section, number
-        assert "0 FAILED" in section, number
+        # the final line, not "ends with 0 FAILED": "10 FAILED" ends with the same characters
+        assert "`[OK] Environment is ready.`" in section, number
     section2 = next(s for s in sections if s.startswith("2."))
     assert f"conda env remove -n {name}" in section2 and "conda deactivate" in section2
 
