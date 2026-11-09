@@ -3,9 +3,10 @@ Every export output of a compressed processed file describes the same components
 
 Autoinspection compresses the processed file: the bad components leave C, A, metrics_df, asp_cache and
 reconstructions, and the rest are renumbered 0..n-1. The export then picks components with
-export_estimates_data.approved_components and writes C and ASP (npz), metrics_df (json) and the filters (mat).
+export_estimates_data.approved_components and writes C, ASP and reconstructions (npz), metrics_df (json) and the
+filters (mat).
 If one structure keeps the old numbers, the files stop describing the same neurons: rows are missing or
-belong to another neuron, and a missing asp_cache entry becomes an all-zero ASP row.
+belong to another neuron, and a missing asp_cache or reconstructions entry becomes an all-zero row.
 
 A synthetic session, so the check runs on every machine (the real-session tests skip without output/).
 It is exported the way the export stage does (tests/export_helpers.export_processed).
@@ -91,7 +92,8 @@ def _synthetic_estimates():
 @pytest.fixture(scope='module')
 def original():
     est = _synthetic_estimates()
-    return {'C': est.C.astype(np.float32), 'asp': {i: a.astype(np.float32) for i, a in est.asp_cache.items()}}
+    return {'C': est.C.astype(np.float32), 'asp': {i: a.astype(np.float32) for i, a in est.asp_cache.items()},
+            'recon': {i: r.astype(np.float32) for i, r in est.reconstructions.items()}}
 
 
 @pytest.fixture(scope='module')
@@ -110,7 +112,7 @@ def exported(tmp_path_factory):
     with open(out / f'{name}_metadata.json') as f:
         meta = json.load(f)
     mat = loadmat(out / f'{name}_filters.mat')
-    return {'indices': npz['component_indices'], 'C': npz['C'], 'asp': npz['asp'],
+    return {'indices': npz['component_indices'], 'C': npz['C'], 'asp': npz['asp'], 'recon': npz['reconstructions'],
             'meta_indices': meta['metrics_df']['component_idx'],
             'meta_prob': meta['metrics_df']['ml_keep_probability'], 'A': mat['A']}
 
@@ -120,6 +122,7 @@ def test_every_output_has_one_row_per_exported_component(exported):
     assert n == len(EXPORTED)
     assert exported['C'].shape[0] == n
     assert exported['asp'].shape[0] == n
+    assert exported['recon'].shape[0] == n
     assert len(exported['meta_indices']) == n
     assert exported['A'].shape[0] == n
 
@@ -127,6 +130,8 @@ def test_every_output_has_one_row_per_exported_component(exported):
 def test_no_zero_asp_rows(exported):
     zero = np.flatnonzero(np.all(exported['asp'] == 0, axis=1))
     assert not len(zero), f'all-zero ASP rows (lost asp_cache entries): {zero.tolist()}'
+    zero = np.flatnonzero(np.all(exported['recon'] == 0, axis=1))
+    assert not len(zero), f'all-zero reconstruction rows (lost reconstructions entries): {zero.tolist()}'
 
 
 def test_rows_belong_to_the_approved_components(exported, original):
@@ -137,6 +142,7 @@ def test_rows_belong_to_the_approved_components(exported, original):
     for row, i in enumerate(EXPORTED):
         np.testing.assert_array_equal(exported['C'][row], original['C'][i])
         np.testing.assert_array_equal(exported['asp'][row], original['asp'][i])
+        np.testing.assert_array_equal(exported['recon'][row], original['recon'][i])
         prob = COMPONENTS[i][0]
         assert exported['meta_prob'][row] == (None if np.isnan(prob) else prob)
         # export_filters_mat writes each filter as (width, height): A's Fortran-ordered column in C order
