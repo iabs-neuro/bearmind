@@ -1,0 +1,3 @@
+# The Windows launchers and installers keep CRLF endings in every checkout, also in a clone without
+# core.autocrlf: cmd.exe can fail to find a goto label in a .bat file with LF endings.
+*.bat text eol=crlf
