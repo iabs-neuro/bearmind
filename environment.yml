@@ -7,11 +7,19 @@
 #
 # CaImAn 1.13.2 is the latest release (2026-08-02): NumPy 2, PyTorch instead of
 # TensorFlow, Qt via PySide6. Python 3.12 is the newest version it is built for.
+#
+# Every package the program imports is pinned here or in requirements-pip.txt to
+# the version in env/bearmind-lock.txt (tests/test_environment.py checks it).
 
 name: bearmind
 
+# defaults is needed: the OpenBLAS build of PyTorch (pytorch ... cpu_openblas, below)
+# is only on Anaconda's pkgs/main; conda-forge has only MKL builds of pytorch 2.14.1
+# for win-64. On a new Anaconda or Miniconda, conda may first ask to accept the
+# Terms of Service of the Anaconda channels (docs/students/README.md, section 2).
 channels:
   - conda-forge
+  - defaults
 
 dependencies:
   - python=3.12.16
@@ -22,14 +30,17 @@ dependencies:
   # numpy/scipy linalg on Windows with 0xc06d007f.
   # WORKAROUND: OpenBLAS 0.3.34 does not recognise Zen 4 and its AVX2 dgemm kernels
   # segfault (e.g. 2000x239 . 239x600 float64, CaImAn compute_W). bearmind/__init__.py,
-  # tests/conftest.py and the conda env variable set OPENBLAS_CORETYPE=Sandybridge.
+  # tests/conftest.py and the conda env variable (variables: below) set
+  # OPENBLAS_CORETYPE=Sandybridge.
   # TODO proper fix: an OpenBLAS build that knows Zen 4, or MKL (currently unsolvable
   # next to this stack because of blas-devel).
   - libblas=*=*openblas
+  # The OpenBLAS build (from defaults, see channels): the conda-forge builds use MKL.
+  - pytorch=2.14.1=cpu_openblas*
 
-  # caiman pulls numpy, scipy, scikit-image, scikit-learn, opencv, av, pims,
-  # bokeh, panel, holoviews, pyqtgraph, pyside6, pytorch, tifffile, h5py, zarr,
-  # pynwb, psutil, ipyparallel and jupyter.
+  # caiman also pulls scikit-image, scikit-learn, pims, panel, holoviews, pyqtgraph,
+  # h5py, zarr, pynwb, ipyparallel and jupyter. The program does not import them,
+  # so they are not pinned; env/bearmind-lock.txt records their versions.
 
   # Video I/O: FFV1 intermediate (3_MC) and mp4 previews
   - ffmpeg=9.0.2
@@ -37,6 +48,21 @@ dependencies:
   - numpy=2.5.4
   - scipy=1.18.1
   - opencv=5.0.0
+  - tifffile=2026.10.15
+
+  # Window (PySide6) and manual-inspection server (bokeh on tornado)
+  - pyside6=6.11.2
+  - bokeh=3.10.0
+  - tornado=6.5.10
+  - ipython=9.18.0
+  - ipywidgets=8.1.9
+
+  # Data, plots, processes and thread pools
+  - pandas=3.1.0
+  - matplotlib=3.11.2
+  - joblib=1.6.0
+  - psutil=7.2.2
+  - threadpoolctl=3.7.0
 
   # Utilities
   - natsort=8.4.0
@@ -45,3 +71,14 @@ dependencies:
   - pywavelets=1.10.0
 
   - pip
+
+# Set on `conda activate` and `conda run`. Sandybridge selects OpenBLAS's AVX
+# kernels: the Zen 4 workaround above, and the kernels the test golden records
+# were made with. Harmless on other CPUs with AVX (Intel Core since 2011, every
+# AMD Ryzen): only the BLAS kernel choice changes, so BLAS can be slower than the
+# CPU's own kernels and results can differ from them by floating-point rounding.
+# A CPU without AVX (some Pentium, Celeron, Atom) cannot run these kernels: set a
+# core it has there (conda env config vars set OPENBLAS_CORETYPE=Nehalem);
+# bearmind/__init__.py keeps a value that is already set.
+variables:
+  OPENBLAS_CORETYPE: Sandybridge

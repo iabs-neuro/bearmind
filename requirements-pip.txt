@@ -6,13 +6,22 @@ numpy==2.5.4
 
 # === CORE NEUROSCIENCE ===
 driada==1.2.2
+# wavelet transform of the autoinspection (comes with driada; the program imports it)
+ssqueezepy==0.6.6
 
 # === MACHINE LEARNING (production EBM model of the autoinspection) ===
 interpret==0.7.8
 sortedcontainers==2.4.0
 
-# === VIDEO (old preview code; to be replaced by ffmpeg/PyAV writers) ===
+# === VIDEO ===
+# moviepy: only history/legacy_pipeline.py (the equivalence test of the old pipeline)
 moviepy==1.0.3
+# ffmpeg binary of bm_qc.py (comes with moviepy)
+imageio-ffmpeg==0.7.0
+
+# === UTILITIES ===
+# time zones of utils.py (comes with driada; pandas 3 no longer brings it)
+pytz==2026.6
 
 # === TESTS ===
 pytest==9.2.0

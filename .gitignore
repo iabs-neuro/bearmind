@@ -70,6 +70,9 @@ venv.bak/
 # env/ at the repo root holds the environment lock file, not a virtualenv: a new file there must not be hidden by
 # env/ or ENV/ above (ENV/ matches env/ too where git ignores case)
 !/env/
+# ... but a `python -m venv env` at the root (env/Scripts, env/Lib, env/Include, env/pyvenv.cfg) stays ignored
+/env/*/
+/env/pyvenv.cfg
 
 # IDEs
 .idea/

@@ -70,20 +70,22 @@ if %ERRORLEVEL% neq 0 (
     )
 )
 
+REM pip is not upgraded: the env keeps the pip conda installed (as in the lock and the student guide)
 echo.
-echo Upgrading pip...
-"%PYTHON%" -m pip install --upgrade pip
-
-echo.
-echo Installing pip packages (preserving conda packages)...
-echo Using --upgrade-strategy only-if-needed to prevent numpy conflicts
-"%PYTHON%" -m pip install --upgrade-strategy only-if-needed -r requirements-pip.txt
+echo Installing pip packages: pip install -r requirements-pip.txt
+echo (requirements-pip.txt pins NumPy to the conda version, so pip keeps the conda NumPy)
+"%PYTHON%" -m pip install -r requirements-pip.txt
 
 echo.
 echo ============================================
 echo   Verifying installation...
 echo ============================================
 "%PYTHON%" -u test_env.py
+if errorlevel 1 (
+    echo [FAILED] Some packages do not import: see the list above.
+    pause
+    exit /b 1
+)
 echo.
 
 echo.

@@ -1,6 +1,10 @@
 # This file may be used to create an environment using:
 # $ conda create --name <env> --file <this file>
 # platform: win-64
+# Lines with the build pypi_0 were installed by pip (requirements-pip.txt and the packages it brings):
+# conda create --file cannot install them. Build the env from environment.yml, then requirements-pip.txt.
+# Exception: scipy comes from conda-forge; conda list shows it as pypi_0 because its conda record
+# names lib/site-packages, not Lib/site-packages.
 _libavif_api=1.4.2=h11686cb_5
 _openmp_mutex=4.5=8_kmp_llvm
 _python_abi3_support=1.0=hd8ed1ab_3
