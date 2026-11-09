@@ -18,7 +18,11 @@
 
 ## 🟡 MEDIUM PRIORITY
 
-### [TECH-DEBT] Large debug notebook in repository
+### [RESOLVED] Large debug notebook in repository
+- **Resolved (phase 6)**: no notebook is left in the repository. The debug notebook (tracked as
+  `BEARMiND_full_pipeline_debug .ipynb`) went in 6bdf1e5; phase 6 removed `BEARMiND_full_pipeline.ipynb`,
+  `MoviePlay.ipynb` and the tracked checkpoint in 0dd440a. All stay in git history; history/README.md says
+  how to recover the main notebook.
 - **Location**: `BEARMiND_full_pipeline_debug.ipynb` (2.5MB)
 - **Issue**: Very large notebook committed, likely contains outputs/data
 - **Suggestion**: Clear outputs, or move to separate debug branch
@@ -62,6 +66,9 @@
 ## 📋 DOCUMENTATION NEEDS
 
 ### [DOCS] Missing docstrings in core functions
+- **Resolved for bm_batch_routines.py (phase 6, 28fd5ab)**: it keeps two documented functions
+  (find_identifiers, extract_name_with_pattern); the legacy pipeline moved to history/legacy_pipeline.py.
+  auto_inspector.py is still open.
 - **Location**: Multiple files (bm_batch_routines.py, auto_inspector.py)
 - **Issue**: Many functions lack docstrings explaining parameters and return values
 - **Suggestion**: Add comprehensive docstrings following NumPy style
@@ -72,7 +79,9 @@
 
 ## ⚠️ INVESTIGATION NEEDED
 
-### [UNKNOWN] warnings.filterwarnings('ignore') in bm_batch_routines
+### [RESOLVED] warnings.filterwarnings('ignore') in bm_batch_routines
+- **Resolved (phase 6, 5527875)**: the filter is removed, not moved: it only hid warnings, so warnings of
+  the remaining code are shown again.
 - **Location**: `bm_batch_routines.py:31`
 - **Issue**: All warnings suppressed - might hide important issues
 - **Suggestion**: Investigate what warnings are being hidden, use specific filters
@@ -181,3 +190,6 @@ exists elsewhere; entries below say which are fixed.
   libiomp5md.dll already initialized" (two OpenMP runtimes); importing ae_launch or
   auto_inspector fails, so test_export_e2e.py cannot run. torch and caiman import
   fine on their own.
+- **Resolved (phase 6)**: test_export_e2e.py is removed (0dd440a); its uncovered check is the synthetic
+  tests/test_export_after_compression.py (2c53484). In the current env (OpenBLAS PyTorch build)
+  `import torch, caiman, driada, ae_launch, auto_inspector` succeeds under conda run (checked 2026-11-09).
