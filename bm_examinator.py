@@ -127,10 +127,6 @@ def LoadEstimates(name, default_fps=20, time=None):
     with open(name, "rb") as f:
         estimates = pickle.load(f, )
     estimates.name = name
-    '''
-    if not hasattr(estimates, 'imax'):  #temporal hack; normally, imax should be loaded from image simultaneously with estimates
-        estimates.imax = LoadImaxFromResults(estimates.name.partition('estimates')[0] + 'results.pickle')
-    '''
     n_frames = estimates.C.shape[1]
     if time is None:
         estimates.time = get_timestamps(extract_name_with_pattern(estimates.name),
@@ -1155,18 +1151,6 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
 
         imwidth = size
         trwidth = size
-        '''
-        # TODO: fix resolution
-        if 'pathway' in bkapp_kwargs:
-            if bkapp_kwargs['pathway'] == 'bonsai':
-                imwidth = 608
-                trwidth = 608
-
-        try:
-            title = get_session_name_from_path(fname)
-        except Exception:
-            title = ''
-        '''
 
         height = int(imwidth * dims[0] / dims[1])
         imdata = np.flip(estimates0.imax, axis=0)  # flip for reverting y-axis
@@ -2299,62 +2283,3 @@ def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.inf, step=5):
     s_cn_min.on_changed(update)
     s_pnr_max.on_changed(update)
     s_pnr_min.on_changed(update)
-
-'''
-def split_estimate(fname, default_fps=20, nparts=2):
-    estimates0 = LoadEstimates(fname, default_fps=default_fps)
-    chunks = np.array_split(estimates0.idx_components, nparts)
-    for i, chunk in tqdm.tqdm(enumerate(chunks), total=len(chunks)):
-        selected = chunk
-        not_selected = np.array([comp for comp in estimates0.idx_components if comp not in chunk])
-
-        estimates1 = copy.deepcopy(estimates0)
-        estimates1.idx_components = list(selected)
-        temp = list(estimates1.idx_components_bad) + list(not_selected)
-        estimates1.idx_components_bad = np.sort(temp)
-
-        base_name = fname.partition('_estimates')[0]
-        out_name = base_name + f'_part_{i + 1}_out_of_{nparts}_estimates.pickle'
-        with open(out_name, "wb") as f:
-            pickle.dump(estimates1, f)
-
-def merge_estimates(fnames, default_fps=20):
-    all_estimates = []
-    for fname in fnames:
-        part_estimates = LoadEstimates(fname, default_fps=default_fps)
-        all_estimates.append(part_estimates)
-
-    all_good_comps = [est.idx_componentsa
-                      chunks = np.array_split(estimates0.idx_components, nparts)
-    for i, chunk in tqdm.tqdm(enumerate(chunks), total=len(chunks)):
-        selected = chunk
-    not_selected = np.array([comp for comp in estimates0.idx_components if comp not in chunk])
-
-    estimates1 = copy.deepcopy(estimates0)
-    estimates1.idx_components = list(selected)
-    temp = list(estimates1.idx_components_bad) + list(not_selected)
-    estimates1.idx_components_bad = np.sort(temp)
-
-    base_name = fname.partition('_estimates')[0]
-    out_name = base_name + f'_part_{i + 1}_out_of_{nparts}_estimates.pickle'
-    with open(out_name, "wb") as f:
-        pickle.dump(estimates1, f)
-        
-fname = askopenfilename(title = 'Select estimates file for examination',
-                        initialdir = CONFIG['ROOT'],
-                        filetypes = [('estimates files', '*estimates.pickle')])
-
-print('estimates:', fname)
-estimates = LoadEstimates(fname, default_fps=20)
-
-# вот здесь надо руками вписать нужный тифф-файл, автоматизировать не нужно, т.к. структура папок везде разная
-tifpath = "C:\\Users\\admin\\Projects\\H_mice\\HM_NOF_2D\\NOF_H04_4D_CR_MC.tif"
-
-gsig=6
-avim = build_average_image(tifpath, gsig)
-estimates.imax = avim
-out_name = fname.partition('_estimates')[0] + '_manual_imax_estimates.pickle'
-print('edited estimates:', out_name)
-with open(out_name, "wb") as f:
-    pickle.dump(estimates, f)
-'''

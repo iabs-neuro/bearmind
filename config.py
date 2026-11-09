@@ -80,7 +80,7 @@ def update_config(new_data, cpath=MAIN_CONFIG):
     write_config(old_config, name=cpath)
 
     if _is_main(cpath):
-        # in place: bm_examinator and bm_batch_routines hold this dict from `from config import CONFIG`
+        # in place: bm_examinator and history.legacy_pipeline hold this dict from `from config import CONFIG`
         CONFIG.clear()
         CONFIG.update(read_config())
 

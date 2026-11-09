@@ -20,11 +20,9 @@ sys.path.insert(0, str(REPO))
 
 import config  # noqa: E402
 
-# These leave the root later in this phase, so this test does not hold them: the MINI3 scripts and batch_export.py
-# move verbatim to history/mini3 and batch_autoinspect.py is deleted (task 3); startup.py is deleted with the
+# These leave the root later in this phase, so this test does not hold them: startup.py is deleted with the
 # notebook and the root test_*.py scripts move to experiments/testing (task 5). conftest.py belongs to pytest.
-LEAVING = {"batch_autoinspect.py", "batch_autoinspect_all.py", "batch_export.py", "batch_export_all.py",
-           "chain_run_export_after_autoinspect.py", "resplit_fof.py", "startup.py", "conftest.py"}
+LEAVING = {"startup.py", "conftest.py"}
 ROOT_MODULES = sorted(p.stem for p in REPO.glob("*.py")
                       if p.name not in LEAVING and not p.name.startswith("test_"))
 
@@ -69,6 +67,7 @@ def test_window_guard_works(tmp_path):
 def test_root_modules_import_cleanly(tmp_path):
     assert {"config", "bm_examinator", "ae_launch", "collect_nof_aligned_events"} <= set(ROOT_MODULES)
     env = _env(tmp_path / "aux")
+    home = tmp_path / "aux" / "home"  # BEARMIND_HOME: machine.yaml is written when a run first needs it
     before = _repo_state()
 
     def one(module):
@@ -83,6 +82,7 @@ def test_root_modules_import_cleanly(tmp_path):
     left = {m: files for m, _, files in results if files}
     assert not failed, failed
     assert not left, f"files left in the start folder: {left}"
+    assert not home.exists() or sorted(p.name for p in home.iterdir()) == [], "an import wrote into BEARMIND_HOME"
     assert _repo_state() == before, "an import changed the repo's top level or its config.json"
 
 
@@ -114,7 +114,7 @@ def main_config(tmp_path, monkeypatch):
 
 
 def test_update_config_visible_to_importers(main_config, tmp_path):
-    from config import CONFIG as imported  # what bm_examinator and bm_batch_routines hold
+    from config import CONFIG as imported  # what bm_examinator and history.legacy_pipeline hold
 
     assert not main_config.exists()
     assert config.read_config() == config.DEFAULT_CONFIG  # no file yet: the defaults, and nothing is written

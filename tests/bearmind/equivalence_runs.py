@@ -5,10 +5,10 @@ get the same BLAS and pool settings, and OPENBLAS_CORETYPE is in place before nu
 `ensure_*`; a run is repeated only when its cache key changes. The key of every cached run (MC old side,
 CNMF-E old and new side) = the input clip (file sizes and mtimes), the resolved crop/mc/cnmf config, the
 CaImAn and NumPy versions, the pool and BLAS settings, and a hash of all code it may run: every *.py under
-bearmind/ and ml/, every root-level *.py and this file (`code_files`). So the cache is invalidated by any
-change to the package, ml/ or the root modules; over-invalidation is accepted. The autoinspection run (new
-env on the input of an old-env run) is keyed the same way on its two files, the stored
-autoinspection_config, the model file, the code and the versions of what it runs (`autoinspect_versions`).
+bearmind/, ml/ and history/, every root-level *.py and this file (`code_files`). So the cache is invalidated by
+any change to the package, ml/, the old code in history/ or the root modules; over-invalidation is accepted.
+The autoinspection run (new env on the input of an old-env run) is keyed the same way on its two files, the
+stored autoinspection_config, the model file, the code and the versions of what it runs (`autoinspect_versions`).
 By hand, to rebuild one side:
 
     python tests/bearmind/equivalence_runs.py mc|cnmf-old|cnmf-new SERIES SID OUT_DIR N_PROCESSES
@@ -66,13 +66,15 @@ def _file_sig(path) -> list:
 
 def code_files(root: Path = REPO) -> list[Path]:
     """The code a cached run may execute: every module of the package, every root-level module, the ml
-    package (auto_inspector imports ml.data_utils), this helper.
+    package (auto_inspector imports ml.data_utils), the old code under history/ (the old side runs
+    history.legacy_pipeline), this helper.
 
     Deliberately wide: the stages import bm_qc, registry, config and more, and the old functions import half of
     the root modules; any change to one of them recomputes the cache (a recompute is ~10 min on the clip).
     """
     root = Path(root)
-    files = set(root.glob("bearmind/**/*.py")) | set(root.glob("*.py")) | set(root.glob("ml/**/*.py"))
+    files = (set(root.glob("bearmind/**/*.py")) | set(root.glob("*.py")) | set(root.glob("ml/**/*.py"))
+             | set(root.glob("history/**/*.py")))
     files.add(root / "tests" / "bearmind" / "equivalence_runs.py")
     return sorted(f for f in files if f.is_file())
 
@@ -464,7 +466,7 @@ def run_mc_old(series_root, sid, out: Path) -> None:
     # the stage's own TIF writer and reader: the comparison isolates motion correction from decoding
     mc_stage._write_tif(SessionReader(paths.root, rec, crop=crop), tif)
 
-    import bm_batch_routines as old
+    from history import legacy_pipeline as old
 
     made = []
 
@@ -522,7 +524,7 @@ def run_cnmf_old(series_root, sid, out: Path, n_processes: int) -> None:
 
     caiman.cluster.setup_cluster = pinned
 
-    import bm_batch_routines as old
+    from history import legacy_pipeline as old
 
     t0 = time.time()
     with PeakMemory() as pm:

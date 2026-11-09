@@ -197,7 +197,7 @@ def test_autoinspection_features_against_old_env():
 def test_export_schema_matches_old_export(clip, tmp_path):
     import scipy.io
 
-    import batch_export
+    from history.mini3 import batch_export
 
     paths, rec = clip
     src = paths.root / rec.stages["autoinspect"].outputs["processed"]

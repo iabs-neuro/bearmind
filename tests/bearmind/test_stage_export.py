@@ -336,7 +336,7 @@ def test_rule_without_decision_columns():
 
 
 def test_all_three_export_paths_use_one_rule(tmp_path, monkeypatch):
-    import batch_export
+    from history.mini3 import batch_export
     est = _est()
     est.name = SID  # extract_session_name reads it
     assert old.ml_approved_components(est.metrics_df, 0.5) == {2, 4}
@@ -382,7 +382,7 @@ def test_new_processed_file_exports_merge_products(tmp_path):
 
 
 def test_batch_export_warns_for_old_processed_file_and_matches_stage(tmp_path, monkeypatch, capsys):
-    import batch_export
+    from history.mini3 import batch_export
     est = _est(old_grouping=True)
     est.name = SID
     folder = tmp_path / "a" / "b"
