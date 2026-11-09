@@ -5,12 +5,12 @@ Merged components are never scored by the ML model (their ml_keep_probability is
 NaN), so a plain `probability >= threshold` filter silently drops every one of
 them from the NPZ, the metadata JSON and the filters .mat used for matching.
 
-Runs the real export script on a real autoinspected session from output/
-(gitignored, so the test skips on a machine without it).
+Exports a real autoinspected session from output/ as the export stage does
+(tests/export_helpers.export_processed; gitignored, so the test skips on a
+machine without it).
 """
 import json
 import pickle
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +22,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
 from export_estimates_data import DEFAULT_ML_THRESHOLD, extract_session_name
+from export_helpers import export_processed
 
 SESSION = (REPO / 'output' / 'inspection_artifacts_WAW_H02_1D'
            / 'WAW_H02_1D30-03-2026 19-27-57_processed.pickle')
@@ -50,8 +51,7 @@ def expected(est):
 @pytest.fixture(scope='module')
 def exported(est, tmp_path_factory):
     out = tmp_path_factory.mktemp('export')
-    subprocess.run([sys.executable, str(REPO / 'export_estimates_data.py'), str(SESSION), '-o', str(out)],
-                   check=True, cwd=REPO)
+    export_processed(SESSION, out)
     name = extract_session_name(est)
     npz = np.load(out / f'{name}_data.npz')
     with open(out / f'{name}_metadata.json') as f:

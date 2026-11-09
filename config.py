@@ -14,7 +14,9 @@ CONFIG_PATH = Path(__file__).resolve().parent / MAIN_CONFIG
 DATA_PATHWAYS = ('bonsai', 'legacy')
 
 # Until update_config names the data folder, ROOT is the user's home folder, which exists on every machine.
-# TEMP_PATHWAY is CaImAn's own default temp folder (~/caiman_data/temp).
+# TEMP_PATHWAY is CaImAn's own default temp folder (~/caiman_data/temp). The MOUSE_CONFIGS / SESSION_CONFIGS paths
+# below are built from dirname(ROOT), here the parent of the home folder; only the notebook's helpers in this file
+# (create_*_configs, get_*_config_path*) build them, and neither the batch nor the windows call those.
 DEFAULT_CONFIG = {
     'ROOT': str(Path.home()),
     'TEMP_PATHWAY': str(Path.home() / 'caiman_data' / 'temp'),

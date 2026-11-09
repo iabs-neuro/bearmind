@@ -357,6 +357,31 @@ def test_export_library_has_no_command_line():
     assert used <= set(dir(lib)), used - set(dir(lib))
 
 
+PROCESS_CALLS = {"run", "call", "check_call", "check_output", "Popen", "system", "spawnv", "spawnl"}
+
+
+def _runs_export_script(tree) -> list:
+    """Lines of process calls whose arguments name export_estimates_data (as a file or as -m)."""
+    return [n.lineno for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and (getattr(n.func, "attr", None) or getattr(n.func, "id", None)) in PROCESS_CALLS
+            and any(isinstance(c, ast.Constant) and isinstance(c.value, str) and "export_estimates_data" in c.value
+                    for a in [*n.args, *(k.value for k in n.keywords)] for c in ast.walk(a))]
+
+
+def test_export_script_detector():
+    src = ("subprocess.run([sys.executable, str(REPO / 'export_estimates_data.py'), p], check=True)\n"
+           "subprocess.check_call([sys.executable, '-m', 'export_estimates_data'])\n"
+           "import export_estimates_data\nAUDITED = ['export_estimates_data.py']\n")
+    assert _runs_export_script(ast.parse(src)) == [1, 2]
+
+
+def test_no_test_runs_the_export_script():
+    """export_estimates_data has no command line: a test that runs it as a script gets exit 0 and no files."""
+    found = {rel: lines for rel, _, tree in _parsed(sorted((REPO / "tests").rglob("*.py")))
+             if (lines := _runs_export_script(tree))}
+    assert found == {}
+
+
 # --- broad excepts ---
 
 # The modules of audit row A28. In auto_inspector the handlers only gained a log line: narrowing them would change

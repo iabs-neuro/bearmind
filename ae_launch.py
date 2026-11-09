@@ -37,7 +37,7 @@ _AUTOINSPECT = load_defaults()["autoinspect"]
 _DEFAULT_MODEL = str(Path(__file__).resolve().parent / _AUTOINSPECT["model_path"])
 
 
-def get_fps_from_table(session_name: str, default_fps: int = None) -> int:
+def get_fps_from_table(session_name: str, default_fps: int | None = None) -> int:
     """
     FPS of a session from fps_data.csv (bearmind.timestamps.fps_from_table), rounded to an integer.
 

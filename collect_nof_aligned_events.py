@@ -25,6 +25,10 @@ internally, so detection on the raw trace gives identical events.
 FPS: read EXACTLY (not rounded) from fps_data.csv by bearmind.timestamps.fps_from_table,
 keyed by session id. NOF sessions are 19.76 Hz; 11848 frames / 19.76 = 600 s = the
 standard 10-min session, confirming the synchronized timeline is the calcium one.
+A name is looked up as itself, then by its session ID, then by the ID without the trial
+suffix; not by its first 10 characters. No NOF session changes, but a name whose table
+rows all carry a trial suffix now gets --default-fps with a WARN line: 3DM_D17_1D got
+29.78 from 3DM_D17_1D_1T before, now 19.76.
 
 ASCII-only output. Usage (use the 'driada' env -- driada 1.1 + working LAPACK):
   <driada env>/python.exe collect_nof_aligned_events.py \

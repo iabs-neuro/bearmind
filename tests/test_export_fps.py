@@ -5,11 +5,11 @@ in the NPZ next to the traces.
 A rounded rate shifts the time axis: 46157 frames at 19.76 fps last 2336 s, at 20 fps
 2308 s. The NPZ is often used on its own, so it needs the rate too.
 
-Runs the real export script on a real autoinspected session from output/
-(gitignored, so the test skips on a machine without it).
+Exports a real autoinspected session from output/ as the export stage does
+(tests/export_helpers.export_processed; gitignored, so the test skips on a
+machine without it).
 """
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -19,6 +19,8 @@ import pytest
 
 REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
+
+from export_helpers import export_processed  # noqa: E402
 
 SESSION = (REPO / 'output' / 'inspection_artifacts_WAW_H02_1D'
            / 'WAW_H02_1D30-03-2026 19-27-57_processed.pickle')
@@ -38,8 +40,7 @@ def exported(tmp_path_factory):
     if not SESSION.exists():
         pytest.skip(f'real session not available: {SESSION.name}')
     out = tmp_path_factory.mktemp('export')
-    subprocess.run([sys.executable, str(REPO / 'export_estimates_data.py'), str(SESSION), '-o', str(out)],
-                   check=True, cwd=REPO)
+    export_processed(SESSION, out)
     npz = np.load(out / f'{SESSION_NAME}_data.npz')
     with open(out / f'{SESSION_NAME}_metadata.json') as f:
         meta = json.load(f)

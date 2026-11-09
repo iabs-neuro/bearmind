@@ -7,11 +7,11 @@ A filter on ML probability alone lets some of them through: the duplicate rule
 deletes the lower-SNR neuron of a close pair whatever its probability, and an
 older session may have been inspected with a higher threshold than the export's.
 
-Runs the real export script on a real autoinspected session from output/
-(gitignored, so the test skips on a machine without it).
+Exports a real autoinspected session from output/ as the export stage does
+(tests/export_helpers.export_processed; gitignored, so the test skips on a
+machine without it).
 """
 import pickle
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +22,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO))
 
 from export_estimates_data import extract_session_name
+from export_helpers import export_processed
 
 SESSION = REPO / 'output' / 'inspection_artifacts_LNOF_J12_1D' / 'LNOF_J12_1D_processed.pickle'
 
@@ -37,8 +38,7 @@ def est():
 @pytest.fixture(scope='module')
 def exported(est, tmp_path_factory):
     out = tmp_path_factory.mktemp('export')
-    subprocess.run([sys.executable, str(REPO / 'export_estimates_data.py'), str(SESSION), '-o', str(out)],
-                   check=True, cwd=REPO)
+    export_processed(SESSION, out)
     npz = np.load(out / f'{extract_session_name(est)}_data.npz')
     return set(int(i) for i in npz['component_indices'])
 
