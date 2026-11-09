@@ -1,1 +1,1 @@
-"""The replaced notebook pipeline and the MINI3 scripts: how the paper's data were processed (README.md)."""
+"""The replaced notebook pipeline and the MINI3 scripts; how they differ from the runs behind the paper: README.md."""

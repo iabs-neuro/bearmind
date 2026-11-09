@@ -4,21 +4,23 @@ history/ is the record of how the paper's data were processed. bearmind does not
 does (its old side runs history.legacy_pipeline, the export comparison runs history.mini3.batch_export).
 """
 import ast
+import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-# The last commit with the MINI3 scripts in the repo root and the old pipeline in bm_batch_routines.py.
-BASE = "55278757e29a4e606f7a784e481fe47c050bb623"
-MINI3 = ("batch_autoinspect_all.py", "batch_export_all.py", "chain_run_export_after_autoinspect.py",
-         "resplit_fof.py", "batch_export.py")
+# git blob ids of the MINI3 scripts as they last were in the repo root, before the move to history/mini3. The
+# content is pinned, not a commit: a squashed, rebased or shallow history must not break the check.
+MINI3 = {"batch_autoinspect_all.py": "7c1e449b89c6689b17999e6d539fccb147a35e70",
+         "batch_export_all.py": "161be541df4a0140b7bb7c37640496db45e33c25",
+         "chain_run_export_after_autoinspect.py": "cef73f50ccbc0ffc93c926d466fcbc6df84f71f0",
+         "resplit_fof.py": "a52630932e24fe5d3b230cff175be4f56d2a457f",
+         "batch_export.py": "4ab30d284a40c49a19702ce0fff6a6872579fda2"}
 # What bm_batch_routines still offers: bm_examinator imports extract_name_with_pattern.
 KEPT = {"find_identifiers", "extract_name_with_pattern", "extract_session_id"}
 MOVED = ("CleanMemmaps", "DrawFrameAndBox", "LoadSelectedVideos", "DrawCropper", "SaveCrops", "get_file_num_id",
@@ -33,15 +35,11 @@ STILL_STAR = {"startup.py"}
 TIMEOUT_S = 600  # a cold import of CaImAn and moviepy
 
 
-def _git(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, timeout=60)
-
-
-def _need_git_base():
-    if _git("rev-parse", "--git-dir").returncode != 0:
-        pytest.skip("not a git checkout: the moved files cannot be compared with their history")
-    r = _git("cat-file", "-e", f"{BASE}^{{commit}}")
-    assert r.returncode == 0, f"commit {BASE} is not in this clone (a shallow clone?)"
+def _blob_id(path: Path) -> str:
+    """git's blob id of the file as git stores it, computed without git. With core.autocrlf=true a Windows checkout
+    has CRLF while the blob has LF, so CRLF is folded back to LF before hashing."""
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
 def _py_files_outside_history():
@@ -98,16 +96,16 @@ def test_no_imports_of_moved_names():
     assert found == [], "code outside history/ uses what moved there:\n" + "\n".join(found)
 
 
+def _functions(path: Path) -> set[str]:
+    return {n.name for n in ast.parse(path.read_bytes()).body if isinstance(n, ast.FunctionDef)}
+
+
 def test_legacy_pipeline_importable(tmp_path):
     """All functions of the old bm_batch_routines but the two name helpers are in history.legacy_pipeline, with
     MotionCorrect as a module name (the equivalence test replaces it to keep the object DoMotionCorrection makes).
     The import in an empty folder leaves nothing there and nothing in BEARMIND_HOME."""
-    _need_git_base()
-    old = ast.parse(_git("show", f"{BASE}:bm_batch_routines.py").stdout)
-    old_functions = {n.name for n in old.body if isinstance(n, ast.FunctionDef)}
-    assert old_functions == set(MOVED) | (KEPT - {"extract_session_id"})
-    now = ast.parse((REPO / "bm_batch_routines.py").read_bytes())
-    assert {n.name for n in now.body if isinstance(n, ast.FunctionDef)} == KEPT - {"extract_session_id"}
+    assert _functions(REPO / "history" / "legacy_pipeline.py") == set(MOVED)
+    assert _functions(REPO / "bm_batch_routines.py") == KEPT - {"extract_session_id"}
 
     work, home = tmp_path / "work", tmp_path / "home"
     work.mkdir()
@@ -123,15 +121,12 @@ def test_legacy_pipeline_importable(tmp_path):
 
 
 def test_mini3_scripts_kept_verbatim():
-    """Byte for byte the scripts that processed the paper's data (git's own line-ending rules on both sides)."""
-    _need_git_base()
-    for name in MINI3:
+    """Byte for byte the MINI3 scripts as they were in the repo root (line endings as git stores them)."""
+    for name, blob in MINI3.items():
         moved = REPO / "history" / "mini3" / name
         assert moved.is_file(), moved
         assert not (REPO / name).exists(), f"{name} is still in the repo root"
-        r = _git("hash-object", str(moved))
-        assert r.returncode == 0, r.stderr
-        assert r.stdout.decode().strip() == _git("rev-parse", f"{BASE}:{name}").stdout.decode().strip(), name
+        assert _blob_id(moved) == blob, name
 
 
 def _imported_modules(path: Path) -> set[str]:
