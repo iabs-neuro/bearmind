@@ -29,9 +29,6 @@ MOVED = ("CleanMemmaps", "DrawFrameAndBox", "LoadSelectedVideos", "DrawCropper",
          "plot_min_corr_and_pnr_range", "crop_tiff", "convert_tiff_to_mp4")
 GONE_MODULES = {"batch_export", "batch_autoinspect", "batch_autoinspect_all", "batch_export_all",
                 "chain_run_export_after_autoinspect", "resplit_fof"}
-# startup.py takes everything from bm_batch_routines with `import *` for the old notebook, which does not run any
-# more (history/README.md).
-STILL_STAR = {"startup.py"}
 TIMEOUT_S = 600  # a cold import of CaImAn and moviepy
 
 
@@ -79,7 +76,7 @@ def _uses_of_moved_code(tree, rel) -> list[str]:
                     found.append(f"{rel}:{node.lineno} from {node.module} import ...")
                 if node.module == "bm_batch_routines":
                     for a in node.names:
-                        if a.name not in KEPT and not (a.name == "*" and rel.as_posix() in STILL_STAR):
+                        if a.name not in KEPT:  # `import *` too: code written that way expects the moved names
                             found.append(f"{rel}:{node.lineno} from bm_batch_routines import {a.name}")
         # a name like `old` means the module only where it was imported (other functions have their own `old`)
         for node in ast.walk(scope):

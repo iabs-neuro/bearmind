@@ -67,6 +67,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# env/ at the repo root holds the environment lock file, not a virtualenv: a new file there must not be hidden by
+# env/ or ENV/ above (ENV/ matches env/ too where git ignores case)
+!/env/
 
 # IDEs
 .idea/

@@ -20,14 +20,13 @@ sys.path.insert(0, str(REPO))
 
 import config  # noqa: E402
 
-# These leave the root later in this phase, so this test does not hold them: startup.py is deleted with the
-# notebook and the root test_*.py scripts move to experiments/testing (task 5). conftest.py belongs to pytest.
-LEAVING = {"startup.py", "conftest.py"}
+# Not modules of the program: conftest.py and the root test_*.py script (test_env.py) belong to pytest.
+NOT_MODULES = {"conftest.py"}
 ROOT_MODULES = sorted(p.stem for p in REPO.glob("*.py")
-                      if p.name not in LEAVING and not p.name.startswith("test_"))
+                      if p.name not in NOT_MODULES and not p.name.startswith("test_"))
 
-# Loaded by every interpreter the tests start (sitecustomize on PYTHONPATH): a Tk window opened on import, as
-# startup.py does, fails the import instead of appearing on the screen.
+# Loaded by every interpreter the tests start (sitecustomize on PYTHONPATH): a Tk window opened on import fails
+# the import instead of appearing on the screen.
 NO_TK = ("import tkinter\n"
          "class _NoTk:\n"
          "    def __init__(self, *args, **kwargs):\n"

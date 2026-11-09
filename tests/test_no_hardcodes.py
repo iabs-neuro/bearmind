@@ -19,10 +19,9 @@ sys.path.insert(0, str(REPO))
 
 from bearmind import config as bm_config  # noqa: E402
 
-# As test_import_side_effects: startup.py leaves with the notebook and the root test_*.py scripts move to
-# experiments/testing (task 5); conftest.py belongs to pytest.
-LEAVING = {"startup.py", "conftest.py"}
-ROOT_MODULES = sorted(p for p in REPO.glob("*.py") if p.name not in LEAVING and not p.name.startswith("test_"))
+# As test_import_side_effects: conftest.py and the root test_*.py script (test_env.py) belong to pytest.
+NOT_MODULES = {"conftest.py"}
+ROOT_MODULES = sorted(p for p in REPO.glob("*.py") if p.name not in NOT_MODULES and not p.name.startswith("test_"))
 PRODUCTION = ROOT_MODULES + sorted((REPO / "bearmind").rglob("*.py"))
 
 
