@@ -564,7 +564,10 @@ class MonitorTab(QWidget):
         try:
             self._start(self.series)
         except RuntimeError as e:  # another batch took the lock between the last refresh and the click
-            self.status_message.emit(str(e))
+            # the status line alone is easy to miss after a click: a message box says it too (as the window's
+            # refusals do)
+            self._say(str(e))
+            self._message("BEARMiND", str(e))
             self.refresh()
             return
         self._starting_since, self._clicked_at = self._clock(), clicked

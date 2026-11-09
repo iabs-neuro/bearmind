@@ -143,15 +143,20 @@ def test_start_calls_launcher(qapp, series4):
     assert never.calls == [series4.root]
 
 
-def test_start_refused_shows_message(qapp, series4):
+@pytest.mark.parametrize("why", ["batch already running: PID 7",
+                                 "another batch is running on this machine: series B (PID 9); run one batch at a "
+                                 "time"])
+def test_start_refused_shows_message(qapp, series4, why):
+    """A refusal is told in a message box as well as in the status line, which is easy to miss after a click."""
     def refuse(series):
-        raise RuntimeError("batch already running: PID 7")
+        raise RuntimeError(why)
 
-    seen = []
-    t = tab_for(series4, start=refuse)
+    seen, boxes = [], []
+    t = tab_for(series4, start=refuse, message=lambda title, text: boxes.append((title, text)))
     t.status_message.connect(seen.append)
     t.start_button.click()
-    assert "already running" in seen[0]
+    assert seen == [why] and boxes == [("BEARMiND", why)]
+    assert t.last_status == why
     assert t.start_button.isEnabled()
 
 
