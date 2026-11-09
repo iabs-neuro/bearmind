@@ -8,7 +8,7 @@
 
 | Файл | Что делает |
 |---|---|
-| `legacy_pipeline.py` | Функции конвейера ноутбука `BEARMiND_full_pipeline.ipynb`. Раньше они лежали в `bm_batch_routines.py`. |
+| `legacy_pipeline.py` | Функции конвейера ноутбука `BEARMiND_full_pipeline.ipynb`. Раньше они лежали в `bm_batch_routines.py`. Сам ноутбук удалён из репозитория: см. раздел «Ноутбук удалён». |
 | `mini3/batch_autoinspect_all.py` | Автоинспекция наборов CC, RFC и FOF с параметрами ноутбука (`pxlthr_distance_boundary = 15`). |
 | `mini3/batch_export.py` | Экспорт файлов `*_processed.pickle` в NPZ, JSON и MAT. |
 | `mini3/batch_export_all.py` | Запускает `batch_export` по наборам CC, RFC и FOF. |
@@ -43,11 +43,20 @@
 
 Поэтому повторный запуск `history/mini3/batch_export.py` теперь даёт другие наборы нейронов, чем в экспорте статьи.
 
-## Ноутбук больше не работает
+## Ноутбук удалён
 
-Ноутбук `BEARMiND_full_pipeline.ipynb` брал эти функции через `startup.py`: `from bm_batch_routines import *`. В `bm_batch_routines.py` теперь остались только `find_identifiers` и `extract_name_with_pattern`. Поэтому ячейки ноутбука со старыми функциями падают с `NameError`.
+Пакет `bearmind` заменил ноутбук `BEARMiND_full_pipeline.ipynb` и `startup.py`. Оба файла удалены из репозитория, но остались в истории git.
 
-Пакет `bearmind` заменил ноутбук и `startup.py`. Старые функции лежат в `bm_batch_routines.py` в родителе коммита, который создал `history/`. Этот коммит покажет команда `git log --diff-filter=A --format=%h -- history/README.md`.
+Ноутбук брал старые функции через `startup.py`: `from bm_batch_routines import *`. В `bm_batch_routines.py` теперь остались только `find_identifiers` и `extract_name_with_pattern`. Поэтому на текущем коде ячейки ноутбука со старыми функциями падают с `NameError`. Старые функции лежат в `bm_batch_routines.py` в родителе коммита, который создал `history/`. Этот коммит покажет команда `git log --diff-filter=A --format=%h -- history/README.md`.
+
+Как достать ноутбук из истории git:
+
+1. Откройте Anaconda Prompt.
+2. Перейдите в корень репозитория: `cd C:\путь\к\bearmind`.
+3. Найдите коммит, который удалил ноутбук: `git log --diff-filter=D --format=%h -- BEARMiND_full_pipeline.ipynb`.
+4. Сохраните ноутбук из родителя этого коммита: `git show "<hash>^:BEARMiND_full_pipeline.ipynb" > BEARMiND_full_pipeline.ipynb`.
+
+Вместо `<hash>` подставьте вывод шага 3. Кавычки в шаге 4 нужны: без них Anaconda Prompt удаляет знак `^`. Не добавляйте восстановленный ноутбук в git.
 
 ## Как вызвать функцию из `legacy_pipeline.py`
 
