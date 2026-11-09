@@ -30,9 +30,9 @@ UI_SOURCES = (sorted((BEARMIND / "gui").glob("*.py"))
 # Texts quoted as `code` may also come from the modules whose strings the window or the page show as they are: the
 # Scan tab's anomaly titles (scan_view) and messages (scan), check messages in Warnings (checks), the Thresholds
 # tab's states and source line (threshold_model), the calcium-wave banner (wave), Start's refusals (runner,
-# launcher). The two launchers' console lines are read as text.
+# launcher), the install check's console lines (test_env.py). The two launchers' console lines are read as text.
 TEXT_SOURCES = UI_SOURCES + [BEARMIND / f"{m}.py" for m in ("scan_view", "scan", "checks", "threshold_model", "wave",
-                                                             "runner", "launcher")]
+                                                             "runner", "launcher")] + [REPO / "test_env.py"]
 LAUNCHERS = (REPO / "run_bearmind.bat", REPO / "bearmind_gui.bat")
 # console logs of the processes the window starts, in the series' logs folder (bearmind/launcher.py,
 # bearmind/gui/inspection_tab.py); bearmind.paths does not name them
@@ -40,7 +40,8 @@ LAUNCHER_LOGS = {"runner_console.log": BEARMIND / "launcher.py",
                  "inspect_console.log": BEARMIND / "gui" / "inspection_tab.py"}
 # files of the machine folder ~/.bearmind (bearmind/config.py); a message may name one bare ("details in gui.log")
 HOME_FILES = {"machine.yaml": BEARMIND / "config.py", "gui.log": BEARMIND / "gui" / "app.py"}
-SHELL_COMMANDS = {"run_bearmind.bat", "bearmind_gui.bat", "conda", "mamba", "pip", "git", "cd", "mkdir"}
+SHELL_COMMANDS = {"run_bearmind.bat", "bearmind_gui.bat", "conda", "mamba", "pip", "git", "cd", "mkdir", "python",
+                  "setx"}
 PLACEHOLDER_ARGS = {"sid": "<SID>", "mouse": "<MOUSE>", "kind": "<kind>"}
 TABS = ("Monitor", "Scan", "Thresholds", "Inspection")  # the author's order, which is the window's (checked below)
 OLD_TAB_NAMES = ("Скан", "Пороги")  # the plan's Russian tab names, replaced by the program's English ones

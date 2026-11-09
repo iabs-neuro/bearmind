@@ -712,6 +712,27 @@ def test_checks_use_series_metrics(series):
                                                                               "mc_template_corr"}
 
 
+def test_run_warns_when_caiman_is_not_the_pinned_version(series, monkeypatch, caplog):
+    """An env named bearmind made from main's older environment.yml has caiman 1.11.3: the run says so at its start
+    (series log and console) and goes on as before."""
+    s = series
+    real = provenance._version
+    monkeypatch.setattr(provenance, "_version", lambda name: "1.11.3" if name == "caiman" else real(name))
+    with caplog.at_level(logging.WARNING, logger="bearmind"):
+        assert _run(s)["done"] == 21
+    warned = [r for r in caplog.records if "caiman 1.11.3" in r.getMessage()]
+    assert len(warned) == 1 and runner.CAIMAN_VERSION in warned[0].getMessage(), caplog.text
+    assert getattr(warned[0], "console", False) and warned[0].getMessage().isascii()
+    assert "caiman 1.11.3" in s.paths.series_log.read_text(encoding="utf-8")
+
+
+def test_run_does_not_warn_with_the_pinned_caiman(series, caplog):
+    assert provenance._version("caiman") == runner.CAIMAN_VERSION
+    with caplog.at_level(logging.WARNING, logger="bearmind"):
+        _run(series)
+    assert not [r for r in caplog.records if "caiman" in r.getMessage()]
+
+
 def test_summary_write_failure_is_warning(series, monkeypatch, caplog):
     """M3: one attempt per write (no retry loop blocking the batch), one warning until a write succeeds."""
     s = series

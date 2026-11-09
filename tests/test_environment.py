@@ -175,16 +175,48 @@ def test_env_file_sets_openblas_coretype():
 def test_install_check_script_checks_the_bearmind_env():
     """install2_pip.bat ends with test_env.py: it checks this env's packages (not the old caiman env's) and every
     package the program imports imports here."""
-    sys.path.insert(0, str(REPO))
-    try:
-        import test_env
-    finally:
-        sys.path.remove(str(REPO))
+    test_env = _test_env()
     names = {m for m, _ in test_env.REQUIRED_PACKAGES}
     assert not names & {"tensorflow", "jupyter_bokeh", "peakutils"}
     assert set(IMPORT_PACKAGE) - {"pylab", "shiboken6"} <= names  # pylab, shiboken6: parts of matplotlib, pyside6
     assert test_env.check_imports()[1] == []
     assert '"%PYTHON%" -u test_env.py' in (REPO / "install2_pip.bat").read_text(encoding="ascii")
+
+
+def _test_env():
+    sys.path.insert(0, str(REPO))
+    try:
+        import test_env
+    finally:
+        sys.path.remove(str(REPO))
+    return test_env
+
+
+def test_install_check_requires_the_pinned_python_and_caiman(monkeypatch, capsys):
+    """main's environment.yml makes an env of the same name with python 3.10 and caiman 1.11.3: the check fails
+    there and ends with "0 FAILED" only when python and caiman are the versions environment.yml pins."""
+    import caiman  # installed_versions() reads the caiman module that is loaded
+    test_env = _test_env()
+    pins = {n: v for n, v, _ in _conda_specs()}
+    assert test_env.REQUIRED_VERSIONS["caiman"] == pins["caiman"]
+    # the runner's warning at the start of a run names the same version (read as text: no runner import here)
+    runner_text = (REPO / "bearmind" / "runner.py").read_text(encoding="utf-8")
+    assert re.search(r'^CAIMAN_VERSION = "([^"]+)"', runner_text, re.M)[1] == pins["caiman"]
+    assert pins["python"].startswith(test_env.REQUIRED_VERSIONS["python"] + ".")
+    assert test_env.check_versions()[1] == []  # this env
+    assert test_env.check_versions({"python": "3.10.14", "caiman": "1.11.3"})[1] == ["python", "caiman"]
+    assert test_env.check_versions({"python": "3.12.16", "caiman": "1.13.2"})[1] == []
+    assert test_env.check_versions({"python": "3.120.1", "caiman": "1.13.20"})[1] == ["python", "caiman"]
+
+    monkeypatch.setattr(caiman, "__version__", "1.11.3")
+    code = test_env.main()
+    out = capsys.readouterr().out
+    assert code == 1 and "0 FAILED" not in out and "1 FAILED" in out
+    line = next(x for x in out.splitlines() if "[FAILED] caiman" in x)
+    assert "1.11.3" in line and pins["caiman"] in line
+    assert out.isascii()
+    monkeypatch.undo()
+    assert test_env.main() == 0 and "0 FAILED" in capsys.readouterr().out
 
 
 def test_installers_and_guide_use_the_env_files():
@@ -201,6 +233,14 @@ def test_installers_and_guide_use_the_env_files():
     assert "env create -f environment.yml" in install1 and f"set ENV_NAME={name}" in install1
     assert "pip install -r requirements-pip.txt" in install2 and f"set ENV_NAME={name}" in install2
     assert not (REPO / "bearmind2025.yml").exists()  # the old caiman env export: nothing installs from it
+    # an env of that name may be main's older one: the guide checks it (section 2) and checks a new one (section 3)
+    sections = re.split(r"^## ", guide, flags=re.M)
+    for number in ("2", "3"):
+        section = next(s for s in sections if s.startswith(number + "."))
+        assert f"conda activate {name}" in section and "`python test_env.py`" in section, number
+        assert "0 FAILED" in section, number
+    section2 = next(s for s in sections if s.startswith("2."))
+    assert f"conda env remove -n {name}" in section2 and "conda deactivate" in section2
 
 
 def test_gitignore_hides_a_root_venv_not_the_lock():

@@ -64,6 +64,10 @@ STAGE_FUNCS = {
 }
 FINALIZE_FUNC = "bearmind.stages.crop:finalize_mouse"
 
+# The CaImAn of environment.yml (tests/test_environment.py checks it). An env named bearmind made from main's older
+# environment.yml has caiman 1.11.3; the run then says so at its start and goes on unchanged.
+CAIMAN_VERSION = "1.13.2"
+
 # Checks run in this process before a stage process is started, and before the stage is written RUNNING.
 # They raise WaitingForInput without heavy work: a stage waiting for a person is retried every poll_s, maybe
 # for days, and must not cost a stage process (0.5-12 s of start-up and imports) or a registry write per
@@ -1557,6 +1561,14 @@ def _wait_message(person, blocked) -> str:
     return msg
 
 
+def _warn_caiman_version() -> None:
+    # from the package metadata: importing caiman here would cost the runner seconds at every start
+    have = provenance._version("caiman")
+    if have != CAIMAN_VERSION:
+        log.warning("caiman %s in this environment; BEARMiND is tested with %s. Check the env with python "
+                    "test_env.py (docs/students/README.md, section 2)", have, CAIMAN_VERSION, extra={"console": True})
+
+
 def run(series_root: Path, until: str | None = None, sids: list[str] | None = None, once: bool = False,
         poll_s: float = 30, console: bool = False) -> dict:
     """Process the series until no stage is ready; returns {"done", "failed", "waiting", "skipped",
@@ -1582,6 +1594,7 @@ def run(series_root: Path, until: str | None = None, sids: list[str] | None = No
         run_.open()
         log.info("run started: pid %d, until %s, sessions %s, once %s", os.getpid(), until or "export",
                  "all" if sids is None else ",".join(sids), once)
+        _warn_caiman_version()
         # a request left by an earlier run (a killed runner never removed it) must not stop this one
         _clear_stop_request(paths)
         known = {r.sid for r in registry.all_records(paths)}

@@ -82,7 +82,7 @@ echo   Verifying installation...
 echo ============================================
 "%PYTHON%" -u test_env.py
 if errorlevel 1 (
-    echo [FAILED] Some packages do not import: see the list above.
+    echo [FAILED] The environment check failed: see the list above.
     pause
     exit /b 1
 )
