@@ -332,12 +332,17 @@ def test_open_folder_of_a_session_without_parts():
 
 
 def test_fps_text():
-    """M11: the intervals left out of the estimate are not "dropped" frames."""
+    """M11: the intervals left out of the estimate are not "dropped" frames. Only the gaps are left out; the
+    uneven intervals (n_outliers, outside 0.5-1.5 of the median) are counted, so the text does not call them
+    ignored."""
     rec = _rec(fps=20.0)
     assert scan_view._row(rec, RULE).fps_text == \
-        "20.0 from timestamps · 0 intervals ignored in the FPS estimate · longest pause 70 ms"
-    rec.fps_info["n_outliers"] = 1
-    assert "· 1 interval ignored in the FPS estimate ·" in scan_view._row(rec, RULE).fps_text
+        ("20.0 from timestamps · 0 gaps left out of the FPS estimate"
+         " · 0 uneven intervals (outside 0.5-1.5 of the median) · longest pause 70 ms")
+    rec.fps_info["n_outliers"], rec.fps_info["n_gaps"] = 1, 1
+    text = scan_view._row(rec, RULE).fps_text
+    assert "· 1 gap left out of the FPS estimate ·" in text and "· 1 uneven interval (" in text
+    assert "ignored" not in text
 
 
 def test_summary_counts_not_found_and_unreadable(make_series, tmp_path):

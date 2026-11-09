@@ -24,9 +24,9 @@ class Timestamps:
 @dataclass
 class FpsEstimate:
     fps: float
-    n_outliers: int
-    n_gaps: int
-    max_gap_ms: float
+    n_outliers: int  # uneven intervals, outside [0.5 m, 1.5 m] of the median m; counted in fps (information only)
+    n_gaps: int  # intervals above gap_factor * m: pauses, dropped frames; left out of fps
+    max_gap_ms: float  # the longest interval, a gap or not
     median_interval_ms: float
 
 
@@ -56,16 +56,24 @@ def read_timestamps(path: Path, start_epoch_ms: float | None = None) -> Timestam
 
 
 def robust_fps(t_ms: np.ndarray, gap_factor: float = 2.0) -> FpsEstimate:
+    """Frames per second over the intervals up to gap_factor * median: only gaps (pauses between parts,
+    dropped frames) are left out.
+
+    A late frame makes one interval long and the next ones short, and the frame clock goes on. Leaving out
+    only the long one biases the rate up: LT1_J06 (long intervals of 1.75 m followed by short ones above
+    0.5 m) gave 30.24-31.57 fps instead of 29.78 with the intervals in [0.5 m, 1.5 m]. Counted in full, the
+    jitter cancels in the sum.
+    """
     d = np.diff(np.asarray(t_ms, dtype=np.float64))
     d = d[d > 0]
     if len(d) < 2:
         raise ValueError("not enough timestamps to estimate fps")
     m = float(np.median(d))
-    keep = d[(d >= 0.5 * m) & (d <= 1.5 * m)]
+    keep = d[d <= gap_factor * m]
     return FpsEstimate(
-        fps=float(1000.0 / keep.mean()),
-        n_outliers=int(len(d) - len(keep)),
-        n_gaps=int(np.sum(d > gap_factor * m)),
+        fps=float(1000.0 * len(keep) / keep.sum()),
+        n_outliers=int(np.sum((d < 0.5 * m) | (d > 1.5 * m))),
+        n_gaps=int(len(d) - len(keep)),
         max_gap_ms=float(d.max()),
         median_interval_ms=m,
     )

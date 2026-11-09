@@ -169,8 +169,10 @@ def _fps_text(rec: SessionRecord) -> str:
     fps = info.get("fps", rec.fps)
     if not fps:
         return "no frame rate"
+    # Only the gaps are left out of the estimate; the uneven intervals (jitter) are counted in it.
     return (f"{fps:.1f} from {info.get('source', 'timestamps')}"
-            f" · {scan.plural(info.get('n_outliers', 0), 'interval')} ignored in the FPS estimate"
+            f" · {scan.plural(info.get('n_gaps', 0), 'gap')} left out of the FPS estimate"
+            f" · {scan.plural(info.get('n_outliers', 0), 'uneven interval')} (outside 0.5-1.5 of the median)"
             f" · longest pause {scan.duration_text(info.get('max_gap_ms', 0.0))}")
 
 
