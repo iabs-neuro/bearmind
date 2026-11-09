@@ -80,8 +80,11 @@ dependencies:
 # were made with. Harmless on other CPUs with AVX (Intel Core since 2011, every
 # AMD Ryzen): only the BLAS kernel choice changes, so BLAS can be slower than the
 # CPU's own kernels and results can differ from them by floating-point rounding.
-# A CPU without AVX (some Pentium, Celeron, Atom) cannot run these kernels: set a
-# core it has there (conda env config vars set OPENBLAS_CORETYPE=Nehalem);
-# bearmind/__init__.py keeps a value that is already set.
+# A CPU without AVX (some Pentium, Celeron, Atom) cannot run these kernels. There
+# set OPENBLAS_CORETYPE=Nehalem twice (docs/students/README.md, section 3): as a
+# user variable (setx OPENBLAS_CORETYPE Nehalem), the only one the launchers'
+# direct python sees (bearmind/__init__.py keeps a value that is already set), and
+# as the env's variable (conda env config vars set OPENBLAS_CORETYPE=Nehalem -n
+# bearmind), because conda activate and conda run overwrite the user variable.
 variables:
   OPENBLAS_CORETYPE: Sandybridge
