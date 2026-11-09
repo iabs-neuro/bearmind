@@ -5,9 +5,10 @@ set "PYTHONPATH=%~dp0"
 rem The env's python is called directly when found: `conda run` prints an extra
 rem "ERROR conda.cli.main_run" line on every non-zero exit, which looks like a crash.
 rem Env folders: per-user and all-users Anaconda and Miniconda, then %USERPROFILE%\.conda\envs, where conda puts
-rem a user's envs when Anaconda is installed for all users. bearmind_gui.bat searches the same folders.
+rem a user's envs when Anaconda is installed for all users, then Miniforge's per-user folder. bearmind_gui.bat and
+rem install2_pip.bat search the same folders in the same order.
 set "PY="
-for %%P in ("%USERPROFILE%\anaconda3\envs\bearmind\python.exe" "%USERPROFILE%\miniconda3\envs\bearmind\python.exe" "%ProgramData%\anaconda3\envs\bearmind\python.exe" "%ProgramData%\miniconda3\envs\bearmind\python.exe" "%USERPROFILE%\.conda\envs\bearmind\python.exe") do if not defined PY if exist "%%~P" set "PY=%%~P"
+for %%P in ("%USERPROFILE%\anaconda3\envs\bearmind\python.exe" "%USERPROFILE%\miniconda3\envs\bearmind\python.exe" "%ProgramData%\anaconda3\envs\bearmind\python.exe" "%ProgramData%\miniconda3\envs\bearmind\python.exe" "%USERPROFILE%\.conda\envs\bearmind\python.exe" "%USERPROFILE%\miniforge3\envs\bearmind\python.exe") do if not defined PY if exist "%%~P" set "PY=%%~P"
 if not defined PY goto conda_run
 "%PY%" -m bearmind %*
 exit /b %ERRORLEVEL%

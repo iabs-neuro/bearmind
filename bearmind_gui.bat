@@ -4,7 +4,7 @@ rem Student launcher of the window: bearmind_gui.bat [SERIES]   (no console wind
 set "PYTHONPATH=%~dp0"
 rem The env folders of run_bearmind.bat; pythonw opens the window without a console.
 set "PY="
-for %%P in ("%USERPROFILE%\anaconda3\envs\bearmind\pythonw.exe" "%USERPROFILE%\miniconda3\envs\bearmind\pythonw.exe" "%ProgramData%\anaconda3\envs\bearmind\pythonw.exe" "%ProgramData%\miniconda3\envs\bearmind\pythonw.exe" "%USERPROFILE%\.conda\envs\bearmind\pythonw.exe") do if not defined PY if exist "%%~P" set "PY=%%~P"
+for %%P in ("%USERPROFILE%\anaconda3\envs\bearmind\pythonw.exe" "%USERPROFILE%\miniconda3\envs\bearmind\pythonw.exe" "%ProgramData%\anaconda3\envs\bearmind\pythonw.exe" "%ProgramData%\miniconda3\envs\bearmind\pythonw.exe" "%USERPROFILE%\.conda\envs\bearmind\pythonw.exe" "%USERPROFILE%\miniforge3\envs\bearmind\pythonw.exe") do if not defined PY if exist "%%~P" set "PY=%%~P"
 if not defined PY goto conda_run
 start "" "%PY%" -m bearmind gui %*
 exit /b 0

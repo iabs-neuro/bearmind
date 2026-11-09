@@ -1,8 +1,9 @@
-"""The two student launchers find the bearmind env the same way: five env folders, then `conda run`.
+"""The two student launchers find the bearmind env the same way: six env folders, then `conda run`.
 
 run_bearmind.bat runs a command in a console; bearmind_gui.bat starts the window with pythonw (no console). Both look
-in the per-user and all-users Anaconda and Miniconda folders and in %USERPROFILE%\\.conda\\envs (where conda puts a
-user's envs when Anaconda is installed for all users). When none holds the env, both let conda find it.
+in the per-user and all-users Anaconda and Miniconda folders, in %USERPROFILE%\\.conda\\envs (where conda puts a
+user's envs when Anaconda is installed for all users) and in Miniforge's per-user folder. When none holds the env,
+both let conda find it. install2_pip.bat looks in the same folders in the same order.
 """
 import os
 import re
@@ -15,6 +16,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 RUN_BAT, GUI_BAT = REPO / "run_bearmind.bat", REPO / "bearmind_gui.bat"
+INSTALL2_BAT = REPO / "install2_pip.bat"
 FAILED = '[FAILED] conda env "bearmind" not found.'
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows launchers")
@@ -34,7 +36,18 @@ def test_launchers_search_the_same_env_folders():
     run, gui = _env_folders(RUN_BAT), _env_folders(GUI_BAT)
     assert run == gui
     assert r"%USERPROFILE%\.conda\envs\bearmind" in run
-    assert len(run) == 5
+    assert r"%USERPROFILE%\miniforge3\envs\bearmind" in run
+    assert len(run) == 6
+
+
+def test_pip_installer_searches_the_launchers_env_folders():
+    """install2_pip.bat finds the env where the launchers do, in their order, with %ProgramData% (not a literal
+    C: path)."""
+    m = re.search(r"^for %%P in \((.*)\) do if not defined CONDA_ENV", _text(INSTALL2_BAT), re.M)
+    assert m, "install2_pip.bat: no loop over env folders"
+    folders = [p.replace("%ENV_NAME%", "bearmind") for p in re.findall(r'"([^"]+)"', m[1])]
+    assert folders == _env_folders(RUN_BAT)
+    assert "C:\\ProgramData" not in _text(INSTALL2_BAT)
 
 
 def test_launchers_fall_back_to_conda_run():
@@ -68,11 +81,12 @@ def _bat(bat: Path, env: dict, cwd: Path, *args):
                           stdin=subprocess.DEVNULL, timeout=180)
 
 
-def test_run_launcher_finds_the_env_in_the_user_conda_folder(tmp_path):
+@pytest.mark.parametrize("envs", [(".conda", "envs"), ("miniforge3", "envs")], ids=["user-conda", "miniforge"])
+def test_run_launcher_finds_the_env_in_the_user_conda_folder(tmp_path, envs):
     home, env = _fake_home(tmp_path)
     miss = _bat(RUN_BAT, env, tmp_path, "--help")
     assert miss.returncode == 1 and FAILED in miss.stdout  # the fake folders hide this machine's env
-    link = home / ".conda" / "envs" / "bearmind"
+    link = home.joinpath(*envs) / "bearmind"
     link.parent.mkdir(parents=True)
     made = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), sys.prefix], capture_output=True, text=True)
     if made.returncode:

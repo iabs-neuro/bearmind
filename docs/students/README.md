@@ -14,10 +14,10 @@ BEARMiND обрабатывает записи минископа: кроп, к�
 ## 1. Что нужно на компьютере
 
 - Windows 10 или новее.
-- Anaconda или Miniconda. Файлы запуска ищут окружение в пяти папках:
+- Anaconda, Miniconda или Miniforge. Файлы запуска ищут окружение в шести папках:
   `%USERPROFILE%\anaconda3\envs\bearmind`, `%USERPROFILE%\miniconda3\envs\bearmind`,
   `%ProgramData%\anaconda3\envs\bearmind`, `%ProgramData%\miniconda3\envs\bearmind`,
-  `%USERPROFILE%\.conda\envs\bearmind`.
+  `%USERPROFILE%\.conda\envs\bearmind`, `%USERPROFILE%\miniforge3\envs\bearmind`.
   Если окружение лежит в другой папке, читайте раздел 4.
 - Git for Windows: им вы скачаете репозиторий.
 - Интернет: окружение скачивает пакеты.
@@ -97,7 +97,7 @@ positional arguments:
 
 ## 4. Окружение не найдено: что делать
 
-Файлы запуска ищут окружение в пяти папках раздела 1. Если окружения там нет, они ищут его через conda. Файлы пишут `[FAILED] conda env "bearmind" not found.`, если не нашли ни окружение, ни conda. Причин две: окружение не создано, или окружение и conda лежат в других папках.
+Файлы запуска ищут окружение в шести папках раздела 1. Если окружения там нет, они ищут его через conda. Файлы пишут `[FAILED] conda env "bearmind" not found.`, если не нашли ни окружение, ни conda. Причин две: окружение не создано, или окружение и conda лежат в других папках.
 
 1. Откройте Anaconda Prompt.
 2. Выполните `conda env list`.
@@ -106,6 +106,8 @@ positional arguments:
 5. Если строка есть, запомните путь окружения в этой строке.
 
 Если путь не из раздела 1, файлы запуска находят окружение через conda. Двойной щелчок по `bearmind_gui.bat` находит conda, только если Anaconda стоит в `%USERPROFILE%\anaconda3`. Иначе запускайте окно из Anaconda Prompt.
+
+Miniforge: окружение в папке `%USERPROFILE%\miniforge3\envs\bearmind` файлы запуска находят сами. Вместо Anaconda Prompt в этой инструкции открывайте Miniforge Prompt.
 
 **Внимание.** Окно BEARMiND, запущенное через conda или из Anaconda Prompt, работает вместе с окном консоли. Не закрывайте консоль, пока работаете в окне BEARMiND: окно закроется вместе с ней.
 

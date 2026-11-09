@@ -13,20 +13,10 @@ echo.
 REM Find conda environment path
 echo Looking for %ENV_NAME% environment...
 
-set CONDA_ENV=%USERPROFILE%\.conda\envs\%ENV_NAME%
-if exist "%CONDA_ENV%\python.exe" goto :found
-
-set CONDA_ENV=%USERPROFILE%\anaconda3\envs\%ENV_NAME%
-if exist "%CONDA_ENV%\python.exe" goto :found
-
-set CONDA_ENV=%USERPROFILE%\miniconda3\envs\%ENV_NAME%
-if exist "%CONDA_ENV%\python.exe" goto :found
-
-set CONDA_ENV=C:\ProgramData\anaconda3\envs\%ENV_NAME%
-if exist "%CONDA_ENV%\python.exe" goto :found
-
-set CONDA_ENV=C:\ProgramData\miniconda3\envs\%ENV_NAME%
-if exist "%CONDA_ENV%\python.exe" goto :found
+REM The folders of the launchers (run_bearmind.bat), in their order: the env found here is the one they run.
+set "CONDA_ENV="
+for %%P in ("%USERPROFILE%\anaconda3\envs\%ENV_NAME%" "%USERPROFILE%\miniconda3\envs\%ENV_NAME%" "%ProgramData%\anaconda3\envs\%ENV_NAME%" "%ProgramData%\miniconda3\envs\%ENV_NAME%" "%USERPROFILE%\.conda\envs\%ENV_NAME%" "%USERPROFILE%\miniforge3\envs\%ENV_NAME%") do if not defined CONDA_ENV if exist "%%~P\python.exe" set "CONDA_ENV=%%~P"
+if defined CONDA_ENV goto :found
 
 echo [FAILED] Cannot find %ENV_NAME% environment
 echo Run install1_conda.bat first

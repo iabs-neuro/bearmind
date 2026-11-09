@@ -48,6 +48,10 @@ if %ERRORLEVEL%==0 (
 )
 
 echo.
+REM Miniforge's default strict channel priority cannot solve environment.yml: the OpenBLAS build of pytorch is
+REM only on defaults, and strict priority drops it because conda-forge has a pytorch too. setlocal above keeps
+REM this to the script.
+set CONDA_CHANNEL_PRIORITY=flexible
 echo Creating conda environment (5-15 minutes)...
 echo Command: %CONDA_CMD% env create -f environment.yml
 %CONDA_CMD% env create -f environment.yml
