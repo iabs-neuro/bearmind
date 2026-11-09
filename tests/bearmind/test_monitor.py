@@ -299,7 +299,9 @@ def test_warning_panel_six_kinds_present(tmp_series):
                                    "autoinspect_deleted", "export_count"}
     assert {x.kind for x in w if x.retry} == {"stage_failed"}
     mc = next(x for x in w if x.kind == "mc_shift")
-    assert "max shift 18.0 px" in mc.text and "Check the MC preview." in mc.text and mc.stage == "mc"
+    # the MC preview video is off by default; the MC video on the Thresholds tab is always there
+    assert "max shift 18.0 px" in mc.text and "Check the MC video on the Thresholds tab." in mc.text
+    assert mc.stage == "mc" and "preview" not in mc.text
     assert next(x for x in w if x.kind == "scan_data").stage == ""
     assert "Other sessions continue." in next(x for x in w if x.kind == "stage_failed").text
 
@@ -565,7 +567,7 @@ def test_warning_text_does_not_repeat_the_stage(tmp_series):
     put(tmp_series, "A_M1_2D", {"mc": done({}, [check("mc", "mc_max_shift_px", "warning", "max shift 18 px")])})
     w = {x.sid: x.text for x in view(tmp_series).warnings}
     assert w == {"A_M1_1D": "a CaImAn worker died. Other sessions continue.",
-                 "A_M1_2D": "max shift 18 px. Check the MC preview."}
+                 "A_M1_2D": "max shift 18 px. Check the MC video on the Thresholds tab."}
 
 
 def test_runner_state_exit_reason(tmp_series):

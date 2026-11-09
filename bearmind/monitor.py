@@ -21,7 +21,8 @@ STAGE_TITLE = {"crop": "Crop", "mc": "MC", "thresholds": "Thresholds", "cnmf": "
                "mc_preview": "MC preview", "cnmf_preview": "CNMF-E preview"}
 
 HINTS = {
-    "mc_shift": "Check the MC preview.",
+    # the MC preview videos are off by default; the Thresholds tab always shows the MC video
+    "mc_shift": "Check the MC video on the Thresholds tab.",
     "stage_failed": "Other sessions continue.",
     "no_progress": "stalled: no CPU progress",
     "pool_worker_died": "a CaImAn worker died",
