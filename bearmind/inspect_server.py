@@ -74,6 +74,7 @@ NONE_OPENABLE = "No other waiting session can be opened now; see the notes above
 SKIPPED = "{text} Next skips it."
 OPENING = "Opening {sid}..."
 SAVED = "Saved. Decision “cleaned” recorded for {sid}. You can close this tab."
+SAVED_NEXT = "Saved. Decision “cleaned” recorded for {sid}. Press Next for the next session, or close this tab."
 CHANGED_SINCE_SAVE = "Changed since the last save: press Save results again."
 SAVED_BEFORE = ("A result of {sid} was saved {when} by {who}. This window shows the CNMF-E output, not that "
                 "result; Save results replaces it.")
@@ -656,6 +657,19 @@ class _Page:
                           self.next_text), self.out_of_date, self.saved_before, self.wave, self.notes_div,
                       name="inspection_header")
 
+    def _show_saved_text(self, sid: str) -> None:
+        """The status line of a saved page names Next while Next is offered, else says the tab can be closed
+        (under the document lock). Only the save's own text is replaced: a text written after it (Save progress,
+        Changed since the last save) stays."""
+        status = self.doc.select_one({"name": "status"})
+        if status is None or self.next_button is None:
+            return
+        own = {html.escape(t.format(sid=sid), quote=False) for t in (SAVED, SAVED_NEXT)}
+        if status.text not in own:
+            return
+        text = SAVED_NEXT if self.next_button.visible else SAVED
+        status.text = html.escape(text.format(sid=sid), quote=False)
+
     def _notes_html(self) -> str:
         return "<br>".join(html.escape(n, quote=False) for n in self.notes)
 
@@ -745,6 +759,7 @@ class _Page:
             self.next_button.disabled = False
             self.next_button.visible = True
             self.next_text.visible = False
+        self._show_saved_text(sid)
 
     def side_files_done(self, sid: str, future) -> None:
         """Done callback of the side-file writer (its thread): a failure goes on the page through the document's
@@ -804,10 +819,11 @@ class _Page:
                 self.next_button.label = NEXT_LABEL.format(sid=offer)
                 self.next_button.visible = True
                 self.next_text.visible = False
-                return
-            self.next_button.visible = nxt is not None
-            self.next_text.text = html.escape(err if err is not None else (text or NO_MORE))
-            self.next_text.visible = True
+            else:
+                self.next_button.visible = nxt is not None
+                self.next_text.text = html.escape(err if err is not None else (text or NO_MORE))
+                self.next_text.visible = True
+            self._show_saved_text(current)
             return
         if not self._saved_now():
             # edited while the next session loaded: Next would drop the edit. The page stays as it is (the status

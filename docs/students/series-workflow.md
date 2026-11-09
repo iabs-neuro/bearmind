@@ -246,10 +246,10 @@ CNMF-E ищет компоненты по трём порогам. `gSig` — о
 8. Нажмите **Merge sel.**
 9. Повторите шаги 5–8 для остальных компонент.
 10. Нажмите **Save results**.
-11. Проверьте надпись `Saved. Decision “cleaned” recorded for <SID>. You can close this tab.`
+11. Проверьте надпись `Saved. Decision “cleaned” recorded for <SID>. Press Next for the next session, or close this tab.`
 12. Нажмите кнопку **Next** с именем следующей сессии.
 
-**Save results** сохраняет результат и записывает решение `cleaned`. **Next** открывает следующую ждущую сессию, примерно за секунду. Если ждущих сессий больше нет, страница пишет `No more sessions wait for manual inspection.`
+**Save results** сохраняет результат и записывает решение `cleaned`. Потом страница находит следующую ждущую сессию и показывает кнопку **Next** с её именем. **Next** открывает эту сессию примерно за секунду. Если ждущих сессий больше нет, страница пишет `No more sessions wait for manual inspection.`, а надпись кончается словами `You can close this tab.`
 
 Если **Manual inspection** неактивна, наведите на неё мышь: подсказка назовёт причину. Пример: `CNMF-E of <SID> is out of date: the batch recomputes it first.` Тогда откройте сессию после нового CNMF-E.
 

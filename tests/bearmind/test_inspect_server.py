@@ -1245,13 +1245,54 @@ def test_change_after_save_hides_next(series_est):
         assert not locked(srv, page, lambda: page.next_button.visible)
         # back to what was saved: Next again
         locked(srv, page, lambda: click(page.doc, "Revert change"))
-        assert status() == inspect_server.SAVED.format(sid=S1)
+        # the save's text at once; it names Next when the new offer of Next arrives (W5)
+        assert status() in (inspect_server.SAVED.format(sid=S1), inspect_server.SAVED_NEXT.format(sid=S1))
         assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S2)
+        assert status() == inspect_server.SAVED_NEXT.format(sid=S1)
         locked(srv, page, lambda: click(page.doc, "Discard all"))
         assert status() == inspect_server.CHANGED_SINCE_SAVE and not _visible_next(srv, page)
         assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
         assert until(lambda: _visible_next(srv, page)) == inspect_server.NEXT_LABEL.format(sid=S2)
     assert list(_load(series_est.manual_result(S1)).idx_components_bad) == []  # the last save: Discard all
+
+
+def _next_and_status(srv, page):
+    """(Next's label or None, the status line) read together, as one browser update shows them."""
+    return locked(srv, page, lambda: (page.next_button.label if page.next_button.visible else None,
+                                      _div(page.doc, "status").text))
+
+
+def test_saved_text_names_next_only_while_next_is_offered(series_est):
+    """W5: after Save results the status line says "Press Next for the next session, or close this tab." while Next
+    is offered, and "You can close this tab." when no session waits; a later text (Save progress) is kept."""
+    paths = series_est
+    with running(paths) as srv, tab(srv, S1) as s:
+        page = srv.page_of(s.id)
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)  # the offer of Next is still on its way
+        label, text = until(lambda: (lambda r: r if r[0] else None)(_next_and_status(srv, page)))
+        assert label == inspect_server.NEXT_LABEL.format(sid=S2)
+        assert text == inspect_server.SAVED_NEXT.format(sid=S1)
+        assert text.endswith(". Press Next for the next session, or close this tab.")
+        assert inspect_server.SAVED.format(sid=S1).endswith(". You can close this tab.")
+
+        # a text written after the save stays when the offer arrives
+        locked(srv, page, lambda: (click(page.doc, "Save results"), click(page.doc, "Save progress")))
+        label, text = until(lambda: (lambda r: r if r[0] else None)(_next_and_status(srv, page)))
+        assert text.startswith("Progress saved: ")
+
+        # Next finds nothing waiting any more: Next goes, and so does the sentence about it
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        until(lambda: _next_and_status(srv, page)[0])
+        actions.gate_not_needed(paths, [S2, S3], "ann")
+        locked(srv, page, lambda: click(page.doc, inspect_server.NEXT_LABEL.format(sid=S2)))
+        text = until(lambda: locked(srv, page, lambda: page.next_text.visible and page.next_text.text))
+        assert text == inspect_server.NO_MORE and page.sid == S1
+        assert _next_and_status(srv, page) == (None, inspect_server.SAVED.format(sid=S1))
+
+        # a save when nothing waits: the save's own text, no Next
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        until(lambda: locked(srv, page, lambda: page.next_text.visible))
+        assert _next_and_status(srv, page) == (None, inspect_server.SAVED.format(sid=S1))
 
 
 def test_saved_result_named_when_opened_again(series_est):
