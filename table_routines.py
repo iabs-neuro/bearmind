@@ -24,7 +24,7 @@ def find_time_column(df, verbose=True):
                     candidates.append(i)
                     if set(np.diff(data)) == {1}:
                         counters.append(i)
-            except:
+            except (TypeError, ValueError):  # text or mixed values: np.diff fails, the column is not a timeline
                 pass
 
         if len(candidates) == 0:
@@ -78,8 +78,8 @@ def calc_fps(df, time_col, verbose=True):
 
             return fps
 
-    except Exception:
-        print('fps computation failed')
+    except Exception as e:
+        print(f'fps computation failed: {e!r}')
         return None
 
 

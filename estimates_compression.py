@@ -16,11 +16,14 @@ Compression strategy:
 4. Convert S (spikes) to sparse matrix format
 5. Remove intermediate computation results
 """
+import logging
 import pickle
 import numpy as np
 from pathlib import Path
 from scipy import sparse
 import time
+
+log = logging.getLogger(__name__)
 
 
 def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
@@ -253,7 +256,8 @@ def compress_estimates_ultra_lightweight(est, remove_bad_components=True):
             attr = getattr(est, attr_name)
             if isinstance(attr, np.ndarray) and attr.dtype == np.float64:
                 float64_attrs.append(attr_name)
-        except:
+        except Exception as e:  # a property that cannot be read is not an array to convert
+            log.debug("compression: %s not readable, left as is: %r", attr_name, e)
             continue
 
     for attr_name in float64_attrs:

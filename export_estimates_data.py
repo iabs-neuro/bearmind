@@ -1,10 +1,7 @@
 """
-Export processed estimates data to NPZ, JSON and MAT files.
+Export processed estimates data to NPZ, JSON and MAT files: the export library of the pipeline.
 
-Usage:
-    python export_estimates_data.py path/to/session_processed.pickle
-    python export_estimates_data.py path/to/session_processed.pickle --incorporate-feedback
-    python export_estimates_data.py path/to/session_processed.pickle -o output_dir
+The export stage (bearmind/stages/export.py, python -m bearmind) calls it; it has no command line of its own.
 
 Output:
     {session_name}_data.npz - numpy arrays (C, asp, reconstructions, component_indices, fps)
@@ -18,7 +15,6 @@ Features:
     - Legacy file support: Works with files processed before autoinspection_config was added
 """
 
-import argparse
 import json
 import pickle
 from datetime import datetime
@@ -29,10 +25,13 @@ import pandas as pd
 from scipy.io import savemat
 from scipy.ndimage import gaussian_filter
 
-from naming import extract_session_id, extract_base_session
+from naming import extract_session_id
+from bearmind.config import load_defaults
+from bearmind.timestamps import fps_from_table
 
-# Default ML threshold for legacy files without autoinspection_config
-DEFAULT_ML_THRESHOLD = 0.72
+# ML threshold for processed files without autoinspection_config: autoinspect.ml_threshold of bearmind/defaults.yaml,
+# the value the export stage's hash assumes for such a file (runner.stage_params)
+DEFAULT_ML_THRESHOLD = load_defaults()["autoinspect"]["ml_threshold"]
 
 # Merge groups are sets of components that are all pairwise close (complete linkage,
 # auto_inspector.assign_merge_groups); run_auto_inspection stores this value in
@@ -41,40 +40,14 @@ DEFAULT_ML_THRESHOLD = 0.72
 # guard treats both as old: their merge groups glued distant cells.
 MERGE_GROUPING = "fbd_complete"
 
-# FPS lookup - avoid heavy import chain from ae_launch
-FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
-
-
 def get_fps_from_table(session_name: str, default_fps: float = None) -> float | None:
-    """Look up FPS for a session from fps_data.csv.
+    """FPS of a session from fps_data.csv (bearmind.timestamps.fps_from_table); default_fps when it is not there.
 
     Returned as stored, not rounded: exported traces are put on a time axis with
     this rate, and rounding 19.76 to 20 stretches it by more than one percent.
     """
-    if not FPS_TABLE_PATH.exists():
-        return default_fps
-
-    try:
-        fps_df = pd.read_csv(FPS_TABLE_PATH, sep=';')
-    except Exception:
-        return default_fps
-
-    # Exact match
-    if session_name in fps_df['Filename'].values:
-        return float(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
-
-    # Extract session identifier using flexible pattern from naming.py
-    session_id = extract_session_id(session_name)
-    if session_id:
-        if session_id in fps_df['Filename'].values:
-            return float(fps_df[fps_df['Filename'] == session_id]['FPS'].values[0])
-
-        # Try base session without trial suffix
-        base_id = extract_base_session(session_name)
-        if base_id and base_id in fps_df['Filename'].values:
-            return float(fps_df[fps_df['Filename'] == base_id]['FPS'].values[0])
-
-    return default_fps
+    fps = fps_from_table(session_name)
+    return default_fps if fps is None else fps
 
 
 def load_estimates(path: Path):
@@ -475,112 +448,3 @@ def export_filters_mat(est, component_indices: np.ndarray, output_path: Path, si
     savemat(output_path, {"A": np.array(ims)})
     print(f"Saved filters to: {output_path}")
     return output_path
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='Export processed estimates to NPZ and JSON files'
-    )
-    parser.add_argument('estimates_path', type=Path,
-                        help='Path to processed estimates pickle file')
-    parser.add_argument('-o', '--output-dir', type=Path, default=None,
-                        help='Output directory (default: same as input)')
-    parser.add_argument('--incorporate-feedback', action='store_true',
-                        help='Apply corrections from feedback CSV file')
-
-    args = parser.parse_args()
-
-    if not args.estimates_path.exists():
-        raise FileNotFoundError(f"Estimates file not found: {args.estimates_path}")
-
-    # Load estimates
-    print(f"Loading estimates from: {args.estimates_path}")
-    est = load_estimates(args.estimates_path)
-
-    # Extract session name
-    session_name = extract_session_name(est)
-    print(f"Session: {session_name}")
-
-    # Get FPS
-    fps = get_fps(session_name)
-    print(f"FPS: {fps}")
-
-    # Get component indices and apply ML threshold filter
-    component_indices = est.idx_components.copy()
-    n_before_ml_filter = len(component_indices)
-    ml_filtered = False
-    ml_threshold_used = None
-
-    # Apply ML threshold filtering if metrics available
-    if hasattr(est, 'metrics_df') and est.metrics_df is not None:
-        df = est.metrics_df
-        if 'ml_keep_probability' in df.columns:
-            # Get threshold from config (new files) or use default (legacy files)
-            threshold = DEFAULT_ML_THRESHOLD
-            if hasattr(est, 'autoinspection_config') and est.autoinspection_config:
-                threshold = est.autoinspection_config.get('ml_threshold', DEFAULT_ML_THRESHOLD)
-
-            # Filter by ml_keep_probability
-            ml_approved_indices, group_info = approved_components(est, threshold)
-            warn_merge_products_left_out(session_name, group_info)
-            component_indices = np.array([i for i in component_indices if i in ml_approved_indices])
-
-            ml_filtered = True
-            ml_threshold_used = threshold
-            print(f"ML threshold filter ({threshold}): {n_before_ml_filter} -> {len(component_indices)} components")
-
-    feedback_applied = False
-    feedback_summary = None
-
-    # Apply feedback AFTER ML filter (adds FN back, removes FP)
-    if args.incorporate_feedback:
-        feedback_path = find_feedback_file(args.estimates_path, session_name)
-        if feedback_path:
-            print(f"Loading feedback from: {feedback_path}")
-            feedback_df = load_feedback(feedback_path)
-            component_indices, feedback_summary = apply_feedback(component_indices, feedback_df)
-            feedback_applied = True
-            print(f"Applied feedback: {feedback_summary['n_fp_removed']} FP removed, "
-                  f"{feedback_summary['n_fn_added']} FN added")
-        else:
-            print("Warning: --incorporate-feedback specified but no feedback file found")
-
-    print(f"Extracting data for {len(component_indices)} components...")
-
-    # Build ML filter info for metadata
-    ml_filter_info = {
-        'ml_filtered': ml_filtered,
-        'threshold_used': ml_threshold_used,
-        'n_before': n_before_ml_filter,
-        'n_after': len(component_indices) if ml_filtered else None
-    }
-
-    # Extract data
-    data = extract_data(est, component_indices)
-
-    # Build metadata
-    metadata = build_metadata(est, fps, session_name, feedback_applied, feedback_summary,
-                              ml_filter_info, component_indices)
-
-    # Export NPZ and JSON
-    output_dir = args.output_dir or args.estimates_path.parent
-    npz_path, json_path = export(data, metadata, session_name, output_dir)
-
-    # Export spatial filters as .mat
-    mat_path = output_dir / f'{session_name}_filters.mat'
-    export_filters_mat(est, component_indices, mat_path)
-
-    # Summary
-    print(f"\nExport complete:")
-    print(f"  Components: {len(component_indices)}")
-    if ml_filtered:
-        print(f"  ML filtered: {n_before_ml_filter} -> {len(component_indices)} (threshold={ml_threshold_used})")
-    print(f"  C shape: {data['C'].shape}")
-    if 'asp' in data:
-        print(f"  ASP shape: {data['asp'].shape}")
-    if 'reconstructions' in data:
-        print(f"  Reconstructions shape: {data['reconstructions'].shape}")
-
-
-if __name__ == '__main__':
-    main()

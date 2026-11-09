@@ -125,3 +125,39 @@ def write_timestamps(ts: Timestamps, frame_idx: np.ndarray, path: Path) -> None:
         )
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
+
+
+# Frame rates of the sessions processed before the pipeline took the rate from timestamp files ('#;Filename;FPS').
+# The processed files of the paper corpus carry no timestamps, so the scripts that work on them (autoinspection
+# called without fps, the validation, the research collectors) look the rate up here.
+FPS_TABLE = Path(__file__).resolve().parent.parent / "fps_data.csv"
+
+
+def read_fps_table(path=FPS_TABLE) -> dict[str, float]:
+    """Name -> frame rate, as stored (not rounded). A name listed twice is refused: which row wins would be a
+    property of the reader, not of the table."""
+    import csv
+
+    table = {}
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for line, row in enumerate(csv.DictReader(f, delimiter=";"), start=2):
+            name = row["Filename"]
+            if name in table:
+                raise ValueError(f"{path}: {name} is listed twice (line {line})")
+            table[name] = float(row["FPS"])
+    return table
+
+
+def fps_from_table(name: str, table: dict[str, float] | None = None) -> float | None:
+    """Frame rate of the session `name` (a session ID, a file name or a path) from fps_data.csv; None when absent.
+
+    Looked up as the whole name, then as its session ID (naming.extract_session_id, trial suffix kept), then as the
+    ID without the trial suffix, as export_estimates_data's reader did: a trial without a row of its own takes its
+    session's rate."""
+    from bearmind.naming import extract_base_session, extract_session_id
+
+    table = read_fps_table() if table is None else table
+    for key in (name, extract_session_id(name), extract_base_session(name)):
+        if key and key in table:
+            return table[key]
+    return None

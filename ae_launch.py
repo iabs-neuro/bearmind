@@ -25,64 +25,44 @@ from scipy import sparse
 
 from bm_examinator import LoadEstimates
 from naming import extract_session_id, extract_base_session
+from bearmind.config import load_defaults
+from bearmind.timestamps import FPS_TABLE, fps_from_table
 
-# Path to FPS lookup table
-FPS_TABLE_PATH = Path(__file__).parent / 'fps_data.csv'
+# The parameters the autoinspect stage passes (the autoinspect section of bearmind/defaults.yaml, the one source)
+# default to the same values here, so a direct call runs as the batch does. The parameters that section does not
+# hold keep their own defaults below: the stage runs with them and its hash does not include them, so changing one
+# would change autoinspection without re-running it (audit row N22).
+_AUTOINSPECT = load_defaults()["autoinspect"]
+# model_path in defaults.yaml is relative to the repo root, as in the stage; not to the folder Python started in
+_DEFAULT_MODEL = str(Path(__file__).resolve().parent / _AUTOINSPECT["model_path"])
 
 
-def get_fps_from_table(session_name: str, default_fps: int = 30) -> int:
+def get_fps_from_table(session_name: str, default_fps: int = None) -> int:
     """
-    Look up FPS for a session from fps_data.csv with robust pattern matching.
+    FPS of a session from fps_data.csv (bearmind.timestamps.fps_from_table), rounded to an integer.
 
-    Supports any experiment identifier format:
-    - 3-char codes: NOF_H01_1D, FOF_F05_1D, RFC_F01_1D
-    - 4-char codes: LNOF_J53_3D
-    - Numeric codes: 3DM_D17_1D
-    - With trial suffix: 3DM_D17_1D_1T
-    - Future formats with any alphanumeric code length
+    Rounded on purpose: the ML model's features and the paper data were built with integer fps (the autoinspect
+    stage rounds the timestamps' rate the same way). Export reads the same table without rounding.
 
     Args:
-        session_name: Session name or filename containing session identifier
-        default_fps: Default FPS if session not found
-
-    Returns:
-        FPS value from table rounded to integer (20 or 30), or default_fps if not found
-
-    Pattern Structure:
-        CODE_MOUSEID_DAY[_TRIAL]
-        - CODE: Alphanumeric code (any length): NOF, LNOF, FOF, RFC, 3DM, etc.
-        - MOUSEID: Letter + digits: H01, J53, F05, D17, etc.
-        - DAY: Digit + letter: 1D, 2D, 3D, 4D, etc.
-        - TRIAL: (optional) Digit + letter: 1T, 2T, etc.
+        session_name: Session ID, file name or path containing it (CODE_MOUSE_DAY[_TRIAL], e.g. LNOF_J53_3D,
+            3DM_D17_1D_1T, path/NOF_H01_1D.pickle)
+        default_fps: Returned when the session is not in the table. None (default): that is an error, since a
+            silent default runs autoinspection at a rate the session may not have.
 
     Examples:
         >>> get_fps_from_table('NOF_H01_1D')
         20
-        >>> get_fps_from_table('LNOF_J53_3D')
-        20
         >>> get_fps_from_table('3DM_D17_1D_1T')
         30
-        >>> get_fps_from_table('path/NOF_H01_1D.pickle')
-        20
     """
-    if not FPS_TABLE_PATH.exists():
+    fps = fps_from_table(session_name)
+    if fps is None:
+        if default_fps is None:
+            raise ValueError(f"FPS not found for session {session_name!r} in {FPS_TABLE}; pass fps= or add the "
+                             f"session to the table")
         return default_fps
-
-    try:
-        fps_df = pd.read_csv(FPS_TABLE_PATH, sep=';')
-    except Exception:
-        return default_fps
-
-    # Strategy 1: Try exact match first (fastest, most reliable)
-    if session_name in fps_df['Filename'].values:
-        return round(fps_df[fps_df['Filename'] == session_name]['FPS'].values[0])
-
-    # Strategy 2: Extract session identifier using flexible pattern from naming.py
-    session_key = extract_session_id(session_name)
-    if session_key and session_key in fps_df['Filename'].values:
-        return round(fps_df[fps_df['Filename'] == session_key]['FPS'].values[0])
-
-    return default_fps
+    return round(fps)
 
 
 from auto_inspector import (
@@ -178,37 +158,34 @@ def run_auto_inspection(
 
     # --- Metrics extraction parameters ---
     comps_to_select: list = None,
-    cthr: float = 0.35,
-    corr_thr: float = 0.4,
+    cthr: float = _AUTOINSPECT['cthr'],
+    corr_thr: float = _AUTOINSPECT['corr_thr'],
     num_sessions: int = 1,
     match_threshold: int = 3,
     sf: int = None,
     ef: int = None,
     ds: int = 1,
-    include_event_based: bool = True,
-    include_heavy: bool = True,
-    detect_corner_artifacts: bool = True,
+    include_event_based: bool = _AUTOINSPECT['include_event_based'],
+    include_heavy: bool = _AUTOINSPECT['include_heavy'],
+    detect_corner_artifacts: bool = _AUTOINSPECT['detect_corner_artifacts'],
     corner_artifact_params: dict = None,
-    event_method: str = 'wavelet',
-    correlation_method: str = 'spearman',
-    n_iter: int = 2,
-    hybrid_kinetics: bool = True,
+    event_method: str = _AUTOINSPECT['event_method'],
+    correlation_method: str = _AUTOINSPECT['correlation_method'],
+    n_iter: int = _AUTOINSPECT['n_iter'],
+    hybrid_kinetics: bool = _AUTOINSPECT['hybrid_kinetics'],
     wavelet_backend: str = 'auto',
-    seed: int | None = 0,
+    seed: int | None = _AUTOINSPECT['seed'],
 
     # --- Decision parameters ---
     deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
-    # FBD merge cutoff (px). 15 is conservative — most NMF duplicates have
-    # FBD <= 10; the extra band 10-15 catches edge cases without merging
-    # genuinely distinct neighbouring cells.
-    pxlthr_distance_boundary: float = 15,  # For merge detection
-    d_snr_thr: float = 10,  # For merge detection
-    enable_merge: bool = True,  # Renamed from use_corr_check
+    pxlthr_distance_boundary: float = _AUTOINSPECT['pxlthr_distance_boundary'],  # For merge detection
+    d_snr_thr: float = _AUTOINSPECT['d_snr_thr'],  # For merge detection
+    enable_merge: bool = _AUTOINSPECT['enable_merge'],  # Renamed from use_corr_check
 
     # --- Brain selection ---
-    brain: str = 'ml',
-    ml_model_path: str = 'ml/production_models/ebm_v6_no3dm.pkl',
-    ml_threshold: float = 0.71,
+    brain: str = _AUTOINSPECT['brain'],
+    ml_model_path: str = _DEFAULT_MODEL,
+    ml_threshold: float = _AUTOINSPECT['ml_threshold'],
 
     # --- Tracking ---
     track_criteria_failures: bool = True,
@@ -234,7 +211,7 @@ def run_auto_inspection(
 
     Args:
         estimates_path: Path to the CaImAn estimates pickle file
-        fps: Imaging frame rate in Hz
+        fps: Imaging frame rate in Hz (None: get_fps_from_table, an error when the session is not in fps_data.csv)
 
         session_name: Name for the session (auto-derived from filename if None)
 
@@ -275,9 +252,12 @@ def run_auto_inspection(
         use_t_off_check: Enable decay time check
         use_corr_check: Enable correlation-based merge detection
 
-        brain: Decision brain type ('thresholds' or 'ml')
-        ml_model_path: Path to ML model pickle (required if brain='ml')
-        ml_threshold: P(KEEP) threshold for ML brain (default 0.5)
+        brain: Decision brain type ('thresholds', 'ml' or 'hybrid')
+        ml_model_path: Path to ML model pickle (required if brain is 'ml' or 'hybrid')
+        ml_threshold: P(KEEP) threshold for ML brain
+
+        Defaults of the parameters held by the autoinspect section of bearmind/defaults.yaml come from it
+        (model_path relative to the repo root).
 
         track_criteria_failures: Track which criteria each neuron fails
 
@@ -665,14 +645,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run auto-inspection on estimates file')
     parser.add_argument('estimates_path', help='Path to estimates pickle file')
     parser.add_argument('--fps', type=int, default=None, help='Imaging frame rate (auto from fps_data.csv if not provided)')
-    parser.add_argument('--brain', choices=['thresholds', 'ml', 'hybrid'], default='ml',
-                        help='Decision brain type (default: ml)')
-    parser.add_argument('--ml-model', type=str, default='ml/production_models/ebm_v6_no3dm.pkl',
-                        help='Path to ML model')
-    parser.add_argument('--ml-threshold', type=float, default=0.71,
-                        help='ML classification threshold (default: 0.71)')
-    parser.add_argument('--n-iter', type=int, default=2,
-                        help='Number of iterations for event reconstruction (default: 2)')
+    # defaults: the autoinspect section of bearmind/defaults.yaml, as for the function
+    parser.add_argument('--brain', choices=['thresholds', 'ml', 'hybrid'], default=_AUTOINSPECT['brain'],
+                        help='Decision brain type (default: %(default)s)')
+    parser.add_argument('--ml-model', type=str, default=_DEFAULT_MODEL,
+                        help='Path to ML model (default: %(default)s)')
+    parser.add_argument('--ml-threshold', type=float, default=_AUTOINSPECT['ml_threshold'],
+                        help='ML classification threshold (default: %(default)s)')
+    parser.add_argument('--n-iter', type=int, default=_AUTOINSPECT['n_iter'],
+                        help='Number of iterations for event reconstruction (default: %(default)s)')
     parser.add_argument('--deletion-rules', type=str, nargs='+', default=None,
                         help='Deletion rules (e.g., "area<1" "circularity>4"). Default: use DEFAULT_DELETION_RULES')
     parser.add_argument('--enable-merge', dest='enable_merge', action='store_true', default=True,

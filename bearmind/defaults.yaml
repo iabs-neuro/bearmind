@@ -84,6 +84,8 @@ autoinspect:
   correlation_method: spearman
   cthr: 0.35
   corr_thr: 0.4
+  # FBD merge cutoff (px). 15 is conservative: most NMF duplicates have FBD <= 10; the band 10-15 catches edge cases
+  # without merging distinct neighbouring cells.
   pxlthr_distance_boundary: 15
   d_snr_thr: 10
   enable_merge: true

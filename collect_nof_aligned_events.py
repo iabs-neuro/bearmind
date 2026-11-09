@@ -22,18 +22,17 @@ Detection runs on the RAW synchronized calcium trace: amplitudes are RELATIVE
 (dF/F0) which needs a meaningful F0; wavelet detection min-max normalizes
 internally, so detection on the raw trace gives identical events.
 
-FPS: read EXACTLY from fps_data.csv (semicolon-delimited '#;Filename;FPS'), keyed
-by session id. NOF sessions are 19.76 Hz; 11848 frames / 19.76 = 600 s = the
+FPS: read EXACTLY (not rounded) from fps_data.csv by bearmind.timestamps.fps_from_table,
+keyed by session id. NOF sessions are 19.76 Hz; 11848 frames / 19.76 = 600 s = the
 standard 10-min session, confirming the synchronized timeline is the calcium one.
 
 ASCII-only output. Usage (use the 'driada' env -- driada 1.1 + working LAPACK):
-  C:/Users/1/anaconda3/envs/driada/python.exe collect_nof_aligned_events.py \
-      --data-path "D:/_Projects/NOF/Synchro/synchronized" \
+  <driada env>/python.exe collect_nof_aligned_events.py \
+      --data-path "<NOF project>/Synchro/synchronized" \
       --out nof_wavelet_events.csv --backend cpu
 """
 import os
 import sys
-import csv
 import glob
 import argparse
 
@@ -41,32 +40,6 @@ import numpy as np
 import pandas as pd
 
 from event_stats import extract_event_records, RECORD_FIELDS
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-
-
-def load_exact_fps(fps_csv=None):
-    """Map session_id -> exact (unrounded) FPS from fps_data.csv.
-
-    The CSV is semicolon-delimited with header '#;Filename;FPS'. We key by the
-    full Filename and also by its first 10 chars (the canonical session id),
-    so 'NOF_H01_1D' resolves whether the CSV stores it bare or suffixed.
-    """
-    path = fps_csv or os.path.join(_HERE, "fps_data.csv")
-    fps = {}
-    with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f, delimiter=";")
-        for row in reader:
-            name = (row.get("Filename") or "").strip()
-            try:
-                val = float(row["FPS"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if not name:
-                continue
-            fps[name] = val
-            fps.setdefault(name[:10], val)
-    return fps
 
 
 def _session_name(npz_path):
@@ -167,10 +140,10 @@ def collect_session(npz_path, session_name, fps):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-path", default=r"D:/_Projects/NOF/Synchro/synchronized")
+    ap.add_argument("--data-path", required=True, help="folder with the synchronizer's *_aligned.npz files")
     ap.add_argument("--pattern", default="NOF_*_aligned.npz")
     ap.add_argument("--out", default="nof_wavelet_events.csv")
-    ap.add_argument("--fps-csv", default=None, help="override fps_data.csv path")
+    ap.add_argument("--fps-csv", default=None, help="another FPS table instead of the repo's (same columns)")
     ap.add_argument("--default-fps", type=float, default=19.76)
     ap.add_argument("--limit", type=int, default=0, help="process at most N sessions (0=all)")
     ap.add_argument("--backend", default="cpu", help="auto|gpu|cpu (set before driada is imported)")
@@ -178,7 +151,9 @@ def main():
 
     actual_backend = _cpu_only_wavelet_backend(args.backend)
     print("[INFO] wavelet backend: %s" % actual_backend)
-    fps_lookup = load_exact_fps(args.fps_csv)
+    # here, not at import: importing bearmind sets OPENBLAS_CORETYPE for the processes started after it
+    from bearmind.timestamps import fps_from_table, read_fps_table
+    fps_lookup = read_fps_table(args.fps_csv) if args.fps_csv else read_fps_table()
     print("[INFO] loaded exact FPS for %d names" % len(fps_lookup))
 
     files = sorted(glob.glob(os.path.join(args.data_path, args.pattern)))
@@ -191,8 +166,9 @@ def main():
     n_skipped = 0
     for i, fpath in enumerate(files, 1):
         sname = _session_name(fpath)
-        fps = fps_lookup.get(sname, fps_lookup.get(sname[:10], args.default_fps))
-        if sname not in fps_lookup and sname[:10] not in fps_lookup:
+        fps = fps_from_table(sname, fps_lookup)
+        if fps is None:
+            fps = args.default_fps
             print("[WARN] no FPS for %s, using default %.4f" % (sname, fps))
         print("[%d/%d] %s (fps=%.4f)" % (i, len(files), sname, fps), flush=True)
         try:

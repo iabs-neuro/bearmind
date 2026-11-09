@@ -12,6 +12,7 @@ from auto_inspector import (
     print_report
 )
 from ae_utils import save_validation_outputs
+from bearmind.timestamps import FPS_TABLE, read_fps_table
 
 # Configuration
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -35,27 +36,22 @@ VALIDATION_DELETION_RULES = [
 ]
 
 
-def load_fps_data(fps_file='fps_data.csv'):
+def load_fps_data(fps_file=None):
     """
-    Load FPS data from CSV file.
+    Load FPS data from the FPS table (bearmind.timestamps.read_fps_table).
 
     Args:
-        fps_file: Path to FPS data CSV file
+        fps_file: FPS table relative to the repo root (None: fps_data.csv)
 
     Returns:
         dict: Mapping of session_id -> fps (rounded to nearest int)
     """
-    fps_path = os.path.join(project_root, fps_file)
-    fps_df = pd.read_csv(fps_path, sep=';')
-
-    # Create mapping: filename (first 10 chars) -> rounded FPS
-    fps_map = {}
-    for _, row in fps_df.iterrows():
-        session_id = row['Filename'][:10]
-        fps_rounded = int(round(row['FPS']))
-        fps_map[session_id] = fps_rounded
-
-    return fps_map
+    table = read_fps_table(FPS_TABLE if fps_file is None else os.path.join(project_root, fps_file))
+    # Keys: the first 10 characters of the name, as build_session_mapping keys the validation corpus; its output
+    # folders capcan_artifacts_<key> carry them. extract_session_id would give other keys and folder names for every
+    # ID longer than 10 characters (LNOF_J01_1D instead of LNOF_J01_1), and the corpus (data/final_compressed) was not
+    # at hand to check its IDs. A later row with the same key wins.
+    return {name[:10]: int(round(fps)) for name, fps in table.items()}
 
 
 # Load FPS data

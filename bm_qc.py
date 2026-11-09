@@ -175,6 +175,26 @@ def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_
     return out
 
 
+IMAX_PNR_CLIP = 70  # PNR at and above this is white in the image, as in the notebook's DoCNMF
+
+
+def pnr_to_imax(pnr, clip=IMAX_PNR_CLIP):
+    """uint8 background image of manual inspection (est.imax) from a PNR map.
+
+    NaN counts as 0; values are clipped to [0, clip] and scaled so that the largest is 255 (an all-zero map gives a
+    black image). nan_to_num turns an infinite PNR (a pixel without noise) into the clip. Computed in the map's own
+    float type: scaling a float32 copy of a float64 map can put a pixel one grey level lower.
+    """
+    pnr = np.asarray(pnr)
+    if not np.issubdtype(pnr.dtype, np.floating):
+        pnr = pnr.astype(np.float32)
+    pnr = np.clip(np.nan_to_num(pnr, nan=0.0), 0, clip)
+    mx = float(pnr.max())
+    if mx <= 0:
+        return np.zeros(pnr.shape, np.uint8)
+    return (pnr * 255 / mx).astype(np.uint8)
+
+
 def count_seeds(cn, pnr, min_corr, min_pnr, gSiz, bd=1, valid=None, min_dist=None):
     """
     Candidate seed pixels as in init_neurons_corr_pnr (local maxima of medianBlur(cn*pnr) above both thresholds).

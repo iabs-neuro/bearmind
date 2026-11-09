@@ -50,7 +50,9 @@ from caiman.utils.visualization import inspect_correlation_pnr
 from caiman.utils.visualization import nb_inspect_correlation_pnr, inspect_correlation_pnr
 from config import (CONFIG, read_config, get_mouse_config_path_from_fname,
                     update_config, get_session_name_from_path, get_session_config_path)
-from table_routines import *
+# By name: table_routines.get_fps reads the rate from a timestamps table, export_estimates_data.get_fps from
+# fps_data.csv
+from table_routines import find_time_column, get_fps as get_fps_from_timestamps_df
 from utils import *
 from bm_batch_routines import extract_name_with_pattern
 from naming import extract_session_id
@@ -178,7 +180,7 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
     else:
         print('timestamp found: ', ts_files[0])
         ts_df = pd.read_csv(ts_files[0])
-        fps = get_fps(ts_df, verbose=verbose)
+        fps = get_fps_from_timestamps_df(ts_df, verbose=verbose)
         return fps
 
 
@@ -2236,11 +2238,11 @@ def build_average_image(fname, gsig, start_frame=0, end_frame=np.inf, step=5):
     data = tfl.imread(fname, key=range(start_frame, min(end_frame, tlen), step))
 
     _, pnr = cm.summary_images.correlation_pnr(data, gSig=gsig, swap_dim=False)
+    # The notebook's look, kept for this view: a pixel without noise (infinite PNR) is black here, while
+    # pnr_to_imax, as the CNMF stage uses it, makes it white.
     pnr[np.where(pnr == np.inf)] = 0
-    pnr[np.where(pnr > 70)] = 70
-    pnr[np.isnan(pnr)] = 0
-    imax = (pnr * 255 / np.max(pnr)).astype('uint8')
-    return imax
+    import bm_qc
+    return bm_qc.pnr_to_imax(pnr)
 
 
 def test_min_corr_and_pnr(fname, gsig, start_frame=0, end_frame=np.inf, step=5):

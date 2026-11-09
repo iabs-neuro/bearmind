@@ -13,9 +13,11 @@ CONFIG_PATH = Path(__file__).resolve().parent / MAIN_CONFIG
 
 DATA_PATHWAYS = ('bonsai', 'legacy')
 
+# Until update_config names the data folder, ROOT is the user's home folder, which exists on every machine.
+# TEMP_PATHWAY is CaImAn's own default temp folder (~/caiman_data/temp).
 DEFAULT_CONFIG = {
-    'ROOT': 'C:\\Users\\1\\HM_NOF_4D',
-    'TEMP_PATHWAY': "c:\\Users\\1\\caiman_data\\temp\\",
+    'ROOT': str(Path.home()),
+    'TEMP_PATHWAY': str(Path.home() / 'caiman_data' / 'temp'),
     'DATA_PATHWAY': 'bonsai',
     'CPUs': multiprocessing.cpu_count(),
     'RAM': int(psutil.virtual_memory().total/1024/1024/1024) + 1,
@@ -116,18 +118,17 @@ def create_session_configs(root=None):
             create_config(content=DEFAULT_MOUSE_CONFIG, name=session_config_path)
 
 
+# How many folders lie between a recording file and its session folder in each data layout:
+# bonsai <session>/<file>; legacy (UCLA Miniscope) <session>/<date>/<HH_MM_SS>/Miniscope/<file>.
+SESSION_FOLDER_DEPTH = {'bonsai': 0, 'legacy': 3}
+
+
 def get_session_name_from_path(fname):
-    splt_path = os.path.normpath(fname).split(os.sep)
     pathway = CONFIG['DATA_PATHWAY']
-    if pathway == 'bonsai':
-        session_name = splt_path[-2]
-    elif pathway == 'legacy':
-        session_name = splt_path[-5]
-    else:
+    if pathway not in SESSION_FOLDER_DEPTH:
         raise ValueError(f"unknown DATA_PATHWAY: {pathway!r}; expected one of "
                          + ", ".join(repr(p) for p in DATA_PATHWAYS))
-
-    return session_name
+    return Path(os.path.normpath(fname)).parents[SESSION_FOLDER_DEPTH[pathway]].name
 
 
 def get_mouse_config_path_from_fname(fname):

@@ -1,4 +1,5 @@
 import copy
+import logging
 import os
 import pickle
 from pathlib import Path
@@ -38,6 +39,11 @@ from polygon import (get_contours, get_circularities, convex_polygons_min_distan
                      convex_hull, get_aspect_ratios)
 from corner_artifacts import detect_edge_artifacts, detect_ellipse_artifacts_from_positions
 from ml.data_utils import FEATURE_COLS as ML_FEATURE_COLS, get_feature_cols, NON_FEATURE_COLS
+
+# The broad excepts below keep their fallbacks and only log what they caught: narrowing them would change the
+# metrics, and so the decisions, on edge cases. Per-neuron fallbacks log at DEBUG (they are expected); a fallback
+# that changes a whole session logs a warning.
+log = logging.getLogger(__name__)
 
 # NaN SEMANTICS for ML features:
 # - t_rise, t_off: -1 sentinel = no events detected (informative signal)
@@ -229,8 +235,8 @@ def _optimize_kinetics_hybrid(neuron, trace, fps, seed=0):
         if result.get('optimized'):
             result['kinetics_source'] = 'wavelet_standard'
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("kinetics: wavelet standard failed: %r", e)
 
     # 2. Wavelet relaxed
     try:
@@ -242,8 +248,8 @@ def _optimize_kinetics_hybrid(neuron, trace, fps, seed=0):
         if result.get('optimized'):
             result['kinetics_source'] = 'wavelet_relaxed'
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("kinetics: wavelet relaxed failed: %r", e)
 
     # 3. Threshold standard - need threshold events
     neuron_thr = None
@@ -262,8 +268,8 @@ def _optimize_kinetics_hybrid(neuron, trace, fps, seed=0):
             neuron.t_off = neuron_thr.t_off
             result['kinetics_source'] = 'threshold_standard'
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("kinetics: threshold standard failed: %r", e)
 
     # 4. Threshold relaxed
     try:
@@ -283,8 +289,8 @@ def _optimize_kinetics_hybrid(neuron, trace, fps, seed=0):
             neuron.t_off = neuron_thr.t_off
             result['kinetics_source'] = 'threshold_relaxed'
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug("kinetics: threshold relaxed failed: %r", e)
 
     # 5. All failed - use defaults
     kinetics_result['kinetics_source'] = 'defaults'
@@ -433,6 +439,7 @@ def get_single_neuron_metrics(trace, fps=DEFAULT_FPS, include_heavy=False, event
     except (ValueError, ZeroDivisionError, Exception) as e:
         # Handle flat/zero traces or other processing failures
         # Return NaN for all metrics
+        log.debug("trace metrics failed, NaN metrics: %r", e)
         nan_signal_metrics = {
             'events_per_min': np.nan,
             'events_fraction': np.nan,
@@ -722,7 +729,8 @@ def _compute_single_hurst(trace, min_window=10, max_windows=20):
     try:
         H = np.polyfit(np.log(ns), np.log(rs_values), 1)[0]
         return H
-    except Exception:
+    except Exception as e:
+        log.debug("Hurst exponent fit failed, NaN: %r", e)
         return np.nan
 
 
@@ -795,8 +803,8 @@ def get_baseline_drifts(traces):
         try:
             slope = np.polyfit(x, trace, 1)[0]
             drift_values[i] = abs(slope * n) / trace_range
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("baseline drift fit failed for trace %d: %r", i, e)
 
     return drift_values
 
@@ -877,7 +885,8 @@ def get_compactnesses(contours, areas):
                 compactnesses.append(compactness)
             else:
                 compactnesses.append(np.nan)
-        except Exception:
+        except Exception as e:
+            log.debug("footprint compactness failed for contour %d, NaN: %r", i, e)
             compactnesses.append(np.nan)
     return np.array(compactnesses)
 
@@ -1108,7 +1117,8 @@ def estimates_to_metrics(est, fps, comps_to_select=[], cthr=0.3, contours=None,
     # Eccentricity from CaImAn - measures elongation of footprint
     try:
         eccentricities = compute_eccentricity(est.A[:, comps_to_select], est.imax.shape)
-    except Exception:
+    except Exception as e:
+        log.warning("eccentricity failed, NaN for all %d components: %r", n_cells, e)
         eccentricities = np.full(n_cells, np.nan)
 
     # Spatial metrics using helper functions

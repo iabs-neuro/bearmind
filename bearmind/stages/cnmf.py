@@ -33,7 +33,6 @@ log = logging.getLogger(__name__)
 TILE = 64
 # save_memmap in CaImAn 1.13.2 adds exactly np.float32(add_to_movie), default 0.0001, in one addition.
 ADD_TO_MOVIE = np.float32(1e-4)
-IMAX_PNR_CLIP = 70  # display image for manual inspection: PNR clipped as in the notebook DoCNMF
 # Temp disk per pixel-frame at the peak: the uint8 copy (1, decode_to_memmap) and the float32 C-order memmap
 # (4, write_memmap) exist together until _imax; after that the memmap (4) and cnmf_qc's float16 residual at
 # its tsub 2 (2 bytes per 2 frames: 1) do. 567 x 520 x 108 000 frames (an hour at 30 fps): 159 GB.
@@ -186,11 +185,7 @@ def _imax(paths, sid, gSig, tsub, dims, movie, mem_gb) -> np.ndarray:
         # correlation_pnr(images[::5]) would hold ~T/5 float32 frames several times over
         pnr = bm_qc.compute_init_maps(movie, gSig=gSig, tsub=tsub, mirror=False, max_mem_gb=mem_gb,
                                       verbose=False)["pnr"]
-    pnr = np.clip(np.nan_to_num(np.asarray(pnr, np.float32), nan=0.0), 0, IMAX_PNR_CLIP)
-    mx = float(pnr.max())
-    if mx <= 0:
-        return np.zeros(pnr.shape, np.uint8)
-    return (pnr * 255 / mx).astype(np.uint8)
+    return bm_qc.pnr_to_imax(np.asarray(pnr, np.float32))
 
 
 def _unlink(path) -> None:

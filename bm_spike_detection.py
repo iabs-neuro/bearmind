@@ -40,13 +40,14 @@ def FitEvents(fname, opts):
                 #estimated values and bounds of fitting params; a,b,t0,ton,toff
                 p0 = (thr, trace[x_left], (time[x_left] + time[x_peak])/2, opts['est_ton'], opts['est_toff'])
                 bounds=((thr, -np.inf, time[x_left], 0, 0), (np.inf, np.inf, time[x_peak], np.inf, np.inf)) #((l,o,w,e,r,_),(h,i,g,h,e,r))
+                # Exception, not everything: Ctrl+C stops the fit instead of counting as a failed event
                 try:
                     popt,_ = curve_fit(EventForm, time[x_left:x_right], trace[x_left:x_right], p0 = p0, bounds = bounds)  
-                except:
+                except Exception:
                     try:
                         p0 = (thr, trace[x_left], time[x_left], opts['est_ton'], opts['est_toff'])
                         popt,_ = curve_fit(EventForm, time[x_left:x_right], trace[x_left:x_right], p0 = p0, bounds = bounds)
-                    except:
+                    except Exception:
                         print(f'FAILED to detect event at cell {cell_num} time {time[x_peak]} s')
                         if opts['draw_details']:
                             p.scatter((time[x_left] + time[x_peak])/2, (trace[x_left] + trace[x_peak])/2/np.max(trace) + cell_num, marker = 'circle_x', line_color = clnm(cell_num), fill_color = None, size = 15)
