@@ -1523,6 +1523,12 @@ class _NoStorePages(OutputTransform):
 # Before BokehJS, which opens the websocket: a browser that keeps a page in its back-forward cache anyway (Chrome
 # may, despite no-store) gets its sockets closed when the page is put there, and a page shown again from there
 # is loaded anew, so it asks for its session again.
+# The address follows the session on the page: Next replaces the document in place, so the address the tab was
+# opened with (/?sid=<first>) would stay and a reload would open the first session again. BokehJS copies the
+# document's title into the browser's title; a session page's title is TITLE ("<sid> - manual inspection") and no
+# other page's ends that way, so on every title change the script sets ?sid= to the session the title names, with
+# history.replaceState (no reload, no new history entry). Unsaved changes are still lost on a reload.
+_TITLE_SUFFIX = TITLE.split("{sid}", 1)[1]
 _PAGE_SCRIPT = """<script>
 (function () {
   const Native = window.WebSocket, sockets = [];
@@ -1533,6 +1539,17 @@ _PAGE_SCRIPT = """<script>
     if (event.persisted) for (const s of sockets) { try { s.close(); } catch (e) { } }
   });
   window.addEventListener("pageshow", (event) => { if (event.persisted) location.reload(); });
+  const suffix = """ + json.dumps(_TITLE_SUFFIX) + """;
+  const follow = () => {
+    const title = document.title;
+    if (!title.endsWith(suffix) || title.length === suffix.length) return;
+    const sid = title.slice(0, -suffix.length);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("sid") === sid) return;
+    url.searchParams.set("sid", sid);
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  };
+  new MutationObserver(follow).observe(document.head, {subtree: true, childList: true, characterData: true});
 })();
 </script>"""
 

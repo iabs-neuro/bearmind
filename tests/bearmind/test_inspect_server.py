@@ -1130,6 +1130,30 @@ def test_pages_not_kept_by_the_browser(series_est):
             assert body.index("pagehide") < body.index("static/js/bokeh"), url
 
 
+def test_address_follows_the_session_on_the_page(series_est):
+    """W6: Next replaces the document in place, so the address the tab was opened with (/?sid=S1) would stay, and a
+    reload would open S1 again. The page script sets ?sid= from the document's title with history.replaceState on
+    every title change; the title is "<sid> - manual inspection" on every session page, after Next too, and no
+    other page ends that way."""
+    prefix, suffix = inspect_server.TITLE.split("{sid}")
+    assert prefix == "" and suffix and not inspect_server.INDEX_TITLE.endswith(suffix)
+    with running(series_est) as srv:
+        # the index page: every page has the script, and a session page asked for here would hold S1 for a while
+        with urllib.request.urlopen(srv.url + "/", timeout=120) as r:
+            body = r.read().decode("utf-8")
+        script = body[body.index("<script>"):body.index("</script>")]
+        assert "history.replaceState" in script and "MutationObserver" in script and "document.title" in script
+        assert json.dumps(suffix) in script and 'searchParams.set("sid"' in script
+        with tab(srv, S1) as s:
+            page = srv.page_of(s.id)
+            assert page.doc.title == inspect_server.TITLE.format(sid=S1)
+            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            label = until(lambda: _visible_next(srv, page))
+            locked(srv, page, lambda: click(page.doc, label))
+            until(lambda: _opened(page, S2), timeout=60)
+            assert locked(srv, page, lambda: page.doc.title) == inspect_server.TITLE.format(sid=S2)
+
+
 def test_page_texts_are_english(series_est, monkeypatch, capsys):
     """Titles, status texts and refusals have no Cyrillic, also when the system's error text is localized
     (K2) and the series folder is Cyrillic; console lines are ASCII."""
