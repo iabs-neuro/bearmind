@@ -103,35 +103,50 @@ def _maps_from_filtered(filt, thresh_init, sn):
 # product with the copy)
 _MAPS_COPIES = 5
 _N_OUT_MAPS = 5  # cn, pnr, mean, cn_neg, pnr_neg
+_CORR_ROWS = 1  # rows a kept row needs on each side for the correlation image: its 3x3 neighbourhood
 
 
-def _strip_rows_held(rows, d1, margin, tsub):
+def _strip_extent(r0, r1, d1, half):
+    """(c0, c1, a0, a1) of the strip that keeps rows [r0, r1) of a d1-row frame.
+
+    [c0, c1) are the rows whose maps are computed: the kept rows and their correlation neighbours. [a0, a1) are
+    the rows the filter (half-width `half`) reads for them. Both are clipped to the frame, whose own border then
+    applies, as in the whole frame.
+    """
+    c0, c1 = max(0, r0 - _CORR_ROWS), min(d1, r1 + _CORR_ROWS)
+    return c0, c1, max(0, c0 - half), min(d1, c1 + half)
+
+
+def _strip_rows_held(rows, d1, half, tsub):
     """Strip rows (each T_ds float32 frames wide) alive at the peak of one strip of compute_init_maps.
 
+    The largest strip of `rows` kept rows lies away from the frame edges, so only the frame height clips it.
     Three steps, the largest counts: averaging by tsub holds the full-rate strip with its filter margins, the
     average and, when the frame count does not divide, the copy that appends the last partial block; filtering
     holds the averaged strip and the cut one; the maps hold _MAPS_COPIES of the cut strip.
     """
-    filtered, cut = min(d1, rows + 2 * margin), min(d1, rows + 2)
+    r0 = _CORR_ROWS + half
+    c0, c1, a0, a1 = _strip_extent(r0, r0 + rows, r0 + rows + _CORR_ROWS + half, half)
+    cut, filtered = min(d1, c1 - c0), min(d1, a1 - a0)
     averaging = (tsub + 2) * filtered if tsub > 1 else filtered
     return max(averaging, filtered + cut, _MAPS_COPIES * cut)
 
 
-def init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub=1):
+def init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub):
     """Kept rows of one strip of compute_init_maps: as many as the memory budget holds, at least 8, at most d1."""
-    margin = _psf_kernel(gSig).shape[0] // 2 + 1
+    half = _psf_kernel(gSig).shape[0] // 2
     budget_rows = max_mem_gb * 1e9 / (4 * T_ds * d2)
     rows = d1
-    while rows > 8 and _strip_rows_held(rows, d1, margin, tsub) > budget_rows:
+    while rows > 8 and _strip_rows_held(rows, d1, half, tsub) > budget_rows:
         rows -= 1
     return rows
 
 
-def init_maps_peak_bytes(max_mem_gb, T_ds, d1, d2, gSig, tsub=1):
+def init_maps_peak_bytes(max_mem_gb, T_ds, d1, d2, gSig, tsub):
     """Peak RAM of one compute_init_maps call: one strip at its largest step, plus the output maps."""
-    margin = _psf_kernel(gSig).shape[0] // 2 + 1
+    half = _psf_kernel(gSig).shape[0] // 2
     rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub)
-    return 4 * T_ds * d2 * _strip_rows_held(rows, d1, margin, tsub) + 4 * _N_OUT_MAPS * d1 * d2
+    return 4 * T_ds * d2 * _strip_rows_held(rows, d1, half, tsub) + 4 * _N_OUT_MAPS * d1 * d2
 
 
 def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_init=2,
@@ -183,9 +198,9 @@ def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_
         # edge exactly the frame's own border). The filter needs `half` more rows on each side for the rows it
         # returns there to be those of the whole frame (up to float32 rounding: OpenCV filters kernels this size
         # by DFT tiles sized from the strip). The margin rows are filtered and dropped; the noise, PNR and
-        # correlation, all per pixel or per 3x3 neighbourhood, run on the cut strip only.
-        c0, c1 = max(0, r0 - 1), min(d1, r1 + 1)
-        a0, a1 = max(0, c0 - half), min(d1, c1 + half)
+        # correlation, all per pixel or per 3x3 neighbourhood, run on the cut strip only. The memory model
+        # (_strip_rows_held) sizes the strips by the same _strip_extent.
+        c0, c1, a0, a1 = _strip_extent(r0, r1, d1, half)
         blk = _tsub_mean(mov[fs, a0:a1, :], tsub)
         out['mean'][r0:r1] = blk[:, r0 - a0:r1 - a0].mean(0)
         filt = np.empty((blk.shape[0], c1 - c0, d2), np.float32)

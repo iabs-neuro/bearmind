@@ -123,12 +123,14 @@ def _assert_same(new, ref, keys):
 @pytest.mark.parametrize("gSig", [3, 5, 7])
 @pytest.mark.parametrize("mirror", [True, False])
 @pytest.mark.parametrize("tsub", [1, 2])
-def test_same_strips_bit_identical(gSig, mirror, tsub):
+@pytest.mark.parametrize("d1", [64, 61])  # 61: the last strip is shorter than the others
+def test_same_strips_bit_identical(gSig, mirror, tsub, d1):
     """8-row strips with margins on both sides (and the frame edges): the cut strips change nothing."""
-    mov = _movie(T=601)  # odd: tsub 2 leaves an incomplete last block; not a power of two
-    T_ds = int(np.ceil(601 / tsub))
-    assert bm_qc.init_maps_strip_rows(TINY_GB, T_ds, 64, 80, gSig, tsub) == 8
-    assert ref_strip_rows(TINY_GB, T_ds, 64, 80, gSig) == 8
+    T = 595  # odd: tsub 2 leaves an incomplete last block; not a power of two; not prime (a prime length DFTs slowly)
+    mov = _movie(T=T, d=(d1, 80))
+    T_ds = int(np.ceil(T / tsub))
+    assert bm_qc.init_maps_strip_rows(TINY_GB, T_ds, d1, 80, gSig, tsub) == 8
+    assert ref_strip_rows(TINY_GB, T_ds, d1, 80, gSig) == 8
     new = bm_qc.compute_init_maps(mov, gSig=gSig, tsub=tsub, mirror=mirror, max_mem_gb=TINY_GB, verbose=False)
     ref = ref_compute_init_maps(mov, gSig=gSig, tsub=tsub, mirror=mirror, max_mem_gb=TINY_GB)
     _assert_same(new, ref, MAP_KEYS if mirror else ('cn', 'pnr', 'mean'))

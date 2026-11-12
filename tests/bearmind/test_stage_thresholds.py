@@ -164,7 +164,7 @@ def test_map_workers_fit_the_summed_peaks(monkeypatch):
     cfg["machine"]["cnmf_ram_budget_gb"] = 100
     assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 3  # 33 + 30 + 26 = 89; a fourth (+ 23) is over
     cfg["machine"]["cnmf_ram_budget_gb"] = 30
-    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 1  # not even the largest fits: serial, as before
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 1  # not even the largest fits: one gSig at a time
     cfg["machine"].update(n_cpus=4, cnmf_ram_budget_gb=152.96)
     assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 3  # CPUs - 1
     cfg["machine"]["n_cpus"] = 2
@@ -178,7 +178,7 @@ def test_map_workers():
     g = [3, 4, 5, 6, 7]
     assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 5
     assert thresholds.map_workers(107107, 567, 520, g, 1, cfg) == 5
-    assert thresholds.map_workers(71461, 435, 512, g, 1, cfg) == 5  # LT1_J01_1D: 4 and a second round before
+    assert thresholds.map_workers(71461, 435, 512, g, 1, cfg) == 5  # LT1_J01_1D: 5 x 19 GB fit, so one round
     cfg["machine"]["n_cpus"] = 2
     assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 1
     cfg["machine"].update(n_cpus=32, cnmf_ram_budget_gb=30)
