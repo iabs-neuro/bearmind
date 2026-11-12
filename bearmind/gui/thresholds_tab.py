@@ -89,8 +89,8 @@ def _rgb_image(rgb: np.ndarray) -> QImage:
     return QImage(rgb.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()  # copy: detach from numpy
 
 
-def _grey_rgb(img: np.ndarray) -> np.ndarray:
-    return np.repeat(tm.display_u8(img)[..., None], 3, axis=2)
+def _grey_rgb(img: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    return np.repeat(tm.display_u8(img, valid)[..., None], 3, axis=2)
 
 
 class _NumberBox(QDoubleSpinBox):
@@ -709,7 +709,8 @@ class ThresholdsTab(QWidget):
     def _select_gsig(self, g: int, keep_pnr: float) -> None:
         # every lookup before any change: a gSig without its maps raises here and leaves the screen and current()
         # as they were
-        base = {"corr": _grey_rgb(self._maps.cn[g]), "pnr": _grey_rgb(self._maps.pnr[g])}
+        valid = tm.valid_area(self._maps, g)
+        base = {"corr": _grey_rgb(self._maps.cn[g], valid), "pnr": _grey_rgb(self._maps.pnr[g], valid)}
         # the PNR range depends on gSig; a value above it widens the range rather than being cut to it, so the
         # slider never shows another value than the one that will be written
         top = max(tm.slider_range_pnr(self._maps, g), keep_pnr)

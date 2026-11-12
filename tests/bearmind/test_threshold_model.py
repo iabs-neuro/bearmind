@@ -18,13 +18,14 @@ def _blob(shape, cy, cx, s=2.0):
 
 
 def _maps(mirror=False, single=True, g=4, gsigs=None):
-    """Maps of gSig g; `gsigs` lists more gSigs, each with the same maps."""
+    """Maps of gSig g on an evenly lit field (no dark area); `gsigs` lists more gSigs, each with the same maps.
+    Everything lies inside the 5-px border that the counters leave out (valid_area)."""
     shape = (60, 60)
     cn = 0.1 * np.random.default_rng(0).random(shape)
     cn = cn + _blob(shape, 15, 15) + _blob(shape, 40, 40)
     pnr = 20 * cn
     if single:
-        for yx in ((5, 50), (30, 5), (55, 20)):
+        for yx in ((5, 50), (30, 5), (54, 20)):
             cn[yx], pnr[yx] = 0.95, 20.0
     cn_m, pnr_m = {}, {}
     if mirror:
@@ -33,7 +34,8 @@ def _maps(mirror=False, single=True, g=4, gsigs=None):
         cnm[10:13, 10:13], pnrm[10:13, 10:13] = 0.9, 15.0
         cn_m, pnr_m = {g: cnm}, {g: pnrm}
     gs = list(gsigs or [g])
-    return tm.ThresholdMaps(gs, cn, pnr, {k: cn for k in gs}, {k: pnr for k in gs}, cn_m, pnr_m)
+    mean, mx = np.full(shape, 60.0, np.float32), np.full(shape, 120.0, np.float32)
+    return tm.ThresholdMaps(gs, mean, mx, {k: cn for k in gs}, {k: pnr for k in gs}, cn_m, pnr_m)
 
 
 def test_passing_mask():
@@ -67,7 +69,7 @@ def test_nan_in_maps():
 
 def test_thumbnail_keeps_aspect():
     m = _maps()
-    m.cn[4], m.pnr[4] = m.cn[4][:, :30], m.pnr[4][:, :30]
+    m.cn[4], m.pnr[4], m.mean = m.cn[4][:, :30], m.pnr[4][:, :30], m.mean[:, :30]
     assert tm.gsig_thumbnail(m, 4, 20).shape == (20, 10)
 
 
@@ -181,6 +183,61 @@ def test_defaults_and_slider_range():
     assert tm.slider_range_pnr(m, 4) >= 30.0
     m.pnr[4] = m.pnr[4] * 10
     assert tm.slider_range_pnr(m, 4) > 30.0
+
+
+def _band_maps(seed, dark=True):
+    """Lit maps with two blobs (one mirror blob) and, in rows 64-79, a dark band (mean 0, as outside the
+    motion-corrected field) whose maps are rounding noise: high values that pass loose thresholds and change with
+    `seed`, as they change with the strip heights of the thresholds stage. dark=False: the band is lit
+    background instead."""
+    shape = (80, 80)
+    rng = np.random.default_rng(0)
+    cn = 0.1 * rng.random(shape) + _blob(shape, 25, 25) + _blob(shape, 45, 50)
+    pnr = 20 * cn
+    cnm, pnrm = 0.1 * rng.random(shape), 2 * rng.random(shape)
+    cnm[30:33, 60:63], pnrm[30:33, 60:63] = 0.9, 15.0
+    mean = np.full(shape, 60.0, np.float32)
+    if dark:
+        mean[64:] = 0
+        noise = np.random.default_rng(seed)
+        for c, p in ((cn, pnr), (cnm, pnrm)):
+            c[64:] = noise.uniform(0.5, 1.0, (16, 80))
+            p[64:] = 10 ** noise.uniform(0, 17, (16, 80))
+    return tm.ThresholdMaps([4], mean, mean, {4: cn}, {4: pnr}, {4: cnm}, {4: pnrm})
+
+
+def test_counters_ignore_the_dark_area():
+    """The suggestion's valid area (bm_qc.valid_mask): the counters do not depend on the noise in the dark band and
+    equal those of the same lit field without it."""
+    lit = tm.counters(_band_maps(0, dark=False), 4, 0.85, 8.0, 2)
+    assert (lit.n_blobs, lit.n_mirror_blobs) == (2, 1)
+    for seed in (1, 2):
+        assert tm.counters(_band_maps(seed), 4, 0.85, 8.0, 2) == lit
+    loose = [tm.counters(_band_maps(seed), 4, 0.3, 1.0, 1) for seed in (1, 2)]
+    assert loose[0] == loose[1] == tm.counters(_band_maps(0, dark=False), 4, 0.3, 1.0, 1)
+
+
+def test_valid_area_is_the_suggestions_rule():
+    m = _band_maps(1)
+    v = tm.valid_area(m, 4)
+    assert v.shape == (80, 80) and v.dtype == bool
+    assert not v[56:].any()  # the band, widened by the gSig 4 kernel (17 px)
+    assert not v[:5].any() and not v[:, :5].any() and not v[:, -5:].any()  # border_pix 5
+    assert v[5:56, 5:75].all()
+
+
+def test_display_scaling_ignores_the_dark_area():
+    """The images stay whole (the band is drawn), but their grey levels come from the valid area only."""
+    a, b = _band_maps(1), _band_maps(2)
+    for name in ("cn", "pnr"):
+        ua = tm.display_u8(getattr(a, name)[4], tm.valid_area(a, 4))
+        ub = tm.display_u8(getattr(b, name)[4], tm.valid_area(b, 4))
+        assert ua.shape == (80, 80) and np.array_equal(ua[:64], ub[:64])
+        assert ua[64:].any()
+    ta, tb = tm.gsig_thumbnail(a, 4), tm.gsig_thumbnail(b, 4)
+    assert np.array_equal(ta[:64], tb[:64])
+    plain = tm.display_u8(a.pnr[4])  # without a valid area: the whole map, as for any image
+    assert not np.array_equal(plain[:64], tm.display_u8(a.pnr[4], tm.valid_area(a, 4))[:64])
 
 
 def test_mask_speed():

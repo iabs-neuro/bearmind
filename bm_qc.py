@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import imageio_ffmpeg
 from scipy.ndimage import percentile_filter
 
+from bearmind.seed_mask import valid_mask  # one rule with the Thresholds tab, which must not import CaImAn
 from bearmind.video import block_mean
 
 from caiman.source_extraction.cnmf.pre_processing import get_noise_fft
@@ -276,24 +277,6 @@ def count_seeds(cn, pnr, min_corr, min_pnr, gSiz, bd=1, valid=None, min_dist=Non
         disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
         seeds &= v == cv2.dilate(v, disk)  # strongest candidate within min_dist
     return np.argwhere(seeds)
-
-
-def valid_mask(maps, border_pix=5, dark_frac=0.25):
-    """
-    Pixels usable for seeds: not within border_pix of the edge and not in dark regions (outside the lens,
-    black corners after cropping/motion correction), where PNR/correlation are meaningless.
-    """
-    mean = maps.get('mean')
-    valid = np.ones(maps['cn'].shape, bool)
-    if mean is not None:
-        dark = mean < dark_frac * np.median(mean)
-        k = 2 * int(2 * maps['gSig']) + 1
-        dark = cv2.dilate(dark.astype(np.uint8), np.ones((k, k), np.uint8)).astype(bool)
-        valid &= ~dark
-    if border_pix > 0:
-        valid[:border_pix, :] = valid[-border_pix:, :] = False
-        valid[:, :border_pix] = valid[:, -border_pix:] = False
-    return valid
 
 
 def _robust(x):
