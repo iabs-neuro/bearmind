@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Путь данных BEARMiND</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f9f9f7; --surface: #fcfcfb; --card: #ffffff; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --line: #e1e0d9; --axis: #c3c2b7; --accent: #2a78d6; --accent-soft: #e6f0fb; --orange: #eb6834; --aqua: #1baf7a;
+  --violet: #6250d6; --warn: #b07800; --warn-bg: #fff6dc; --warn-line: #fab219; --crit: #d03b3b; --crit-bg: #fdecec;
+  --good: #0a7d0a; --good-bg: #e8f6e8; --code-bg: #f0efec; --human: #6250d6; --human-bg: #efedfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0d0d0d; --surface: #1a1a19; --card: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --line: #2c2c2a; --axis: #383835; --accent: #3987e5; --accent-soft: #15253a; --orange: #d95926; --aqua: #199e70;
+    --violet: #9085e9; --warn: #f0b52b; --warn-bg: #2b2310; --warn-line: #c98500; --crit: #e66767; --crit-bg: #331616;
+    --good: #3cc23c; --good-bg: #122812; --code-bg: #262624; --human: #9085e9; --human-bg: #221f3a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d; --surface: #1a1a19; --card: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --line: #2c2c2a; --axis: #383835; --accent: #3987e5; --accent-soft: #15253a; --orange: #d95926; --aqua: #199e70;
+  --violet: #9085e9; --warn: #f0b52b; --warn-bg: #2b2310; --warn-line: #c98500; --crit: #e66767; --crit-bg: #331616;
+  --good: #3cc23c; --good-bg: #122812; --code-bg: #262624; --human: #9085e9; --human-bg: #221f3a;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .86em; }
+code { background: var(--code-bg); padding: 0 .3em; border-radius: 4px; overflow-wrap: anywhere; }
+.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1500px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 20px 14px 40px 16px; border-right: 1px solid var(--line); font-size: 14px; }
+nav.toc a { display: block; color: var(--ink2); text-decoration: none; padding: 3px 8px; border-radius: 6px; }
+nav.toc a.sub { padding-left: 20px; font-size: 13px; }
+nav.toc a.active { background: var(--accent-soft); color: var(--ink); }
+nav.toc .tools { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+button { font: inherit; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--axis); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+main { padding: 24px 32px 80px; min-width: 0; }
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 24px; margin: 52px 0 10px; padding-top: 10px; border-top: 2px solid var(--line); }
+h3 { font-size: 19px; margin: 30px 0 8px; }
+h4 { font-size: 16px; margin: 20px 0 6px; color: var(--ink2); }
+p, li { max-width: 78ch; }
+.lead { color: var(--ink2); max-width: 85ch; }
+.meta { color: var(--muted); font-size: 13px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+.attn { background: var(--warn-bg); border: 1px solid var(--warn-line); border-left: 6px solid var(--warn-line); border-radius: 8px; padding: 10px 16px; margin: 14px 0; }
+.attn > .tag { font-weight: 700; color: var(--warn); }
+.attn.crit { background: var(--crit-bg); border-color: var(--crit); }
+.attn.crit > .tag { color: var(--crit); }
+.note { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 6px; padding: 8px 14px; margin: 12px 0; }
+.human { background: var(--human-bg); border-left: 4px solid var(--human); border-radius: 6px; padding: 8px 14px; margin: 12px 0; }
+details.src { display: inline; font-size: 12.5px; }
+details.src > summary { display: inline; cursor: pointer; color: var(--muted); list-style: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+details.src > summary::-webkit-details-marker { display: none; }
+details.src[open] { display: block; background: var(--code-bg); border-radius: 6px; padding: 4px 10px 6px; margin: 4px 0 8px; }
+details.src[open] > summary { border: none; padding: 0; }
+details.more { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; margin: 10px 0; }
+details.more > summary { cursor: pointer; font-weight: 600; color: var(--ink2); }
+.tablewrap { overflow-x: auto; margin: 10px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--surface); position: sticky; top: 0; font-weight: 600; color: var(--ink2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:hover td { background: var(--accent-soft); }
+th.sortable { cursor: pointer; white-space: nowrap; }
+th.sortable:after { content: " \2195"; color: var(--muted); font-size: 11px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 0 7px; border-radius: 10px; white-space: nowrap; }
+.pill.err { background: var(--crit-bg); color: var(--crit); border: 1px solid var(--crit); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); }
+.pill.fix { background: var(--good-bg); color: var(--good); border: 1px solid var(--good); }
+.pill.info { background: var(--code-bg); color: var(--ink2); border: 1px solid var(--axis); }
+.pill.hum { background: var(--human-bg); color: var(--human); border: 1px solid var(--human); }
+figure { margin: 16px 0; }
+figure img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; cursor: zoom-in; display: block; }
+figcaption { font-size: 13.5px; color: var(--ink2); margin-top: 6px; max-width: 95ch; }
+.svgwrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; margin: 14px 0; }
+.svgwrap svg { display: block; min-width: 940px; width: 100%; height: auto; }
+svg text { fill: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+svg .box { fill: var(--surface); stroke: var(--axis); stroke-width: 1.3; }
+svg .box.stage { fill: var(--card); stroke: var(--accent); stroke-width: 1.6; }
+svg .box.inp { fill: var(--code-bg); stroke: var(--axis); }
+svg .box.side { fill: var(--surface); stroke: var(--aqua); stroke-dasharray: 5 3; }
+svg .box.hum { fill: var(--human-bg); stroke: var(--human); stroke-width: 1.6; }
+svg .box.wait { fill: var(--warn-bg); stroke: var(--warn-line); }
+svg .box.err { fill: var(--crit-bg); stroke: var(--crit); }
+svg .box.fix { fill: var(--good-bg); stroke: var(--good); }
+svg .box.warnb { fill: var(--warn-bg); stroke: var(--warn-line); }
+svg .t-title { font-weight: 700; font-size: 14px; }
+svg .t-file { font-family: ui-monospace, Consolas, monospace; font-size: 10px; fill: var(--ink2); }
+svg .t-small { font-size: 11px; fill: var(--ink2); }
+svg .t-hum { font-size: 11.5px; fill: var(--human); font-weight: 600; }
+svg .arrow { stroke: var(--ink2); stroke-width: 1.5; fill: none; }
+svg .arrow.side { stroke: var(--aqua); stroke-dasharray: 4 3; }
+svg .arrow.hum { stroke: var(--human); }
+svg .ah { fill: var(--ink2); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 14px; }
+.kv div:nth-child(odd) { color: var(--ink2); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; font-size: 14px; }
+.filters input, .filters select { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--axis); border-radius: 6px; background: var(--card); color: var(--ink); }
+#tip { position: fixed; pointer-events: none; background: var(--card); color: var(--ink); border: 1px solid var(--axis); border-radius: 6px; padding: 5px 8px; font-size: 12.5px; box-shadow: 0 2px 8px rgba(0,0,0,.18); display: none; z-index: 20; max-width: 340px; }
+#lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none; align-items: center; justify-content: center; z-index: 30; cursor: zoom-out; padding: 16px; }
+#lightbox img { max-width: 100%; max-height: 100%; background: #fff; border-radius: 6px; }
+.bar { height: 10px; background: var(--accent); border-radius: 3px; display: inline-block; vertical-align: middle; }
+.bar.o { background: var(--orange); } .bar.a { background: var(--aqua); } .bar.v { background: var(--violet); }
+ol.steps > li { margin-bottom: 4px; }
+.small { font-size: 13.5px; }
+.hl { background: var(--warn-bg); }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  main { padding: 16px 16px 60px; }
+  h1 { font-size: 24px; }
+  .kv { grid-template-columns: 1fr; }
+  .kv div:nth-child(odd) { margin-top: 6px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc">
+  <div style="font-weight:700;margin:0 0 8px 8px">Путь данных BEARMiND</div>
+  <a href="#top">Коротко</a>
+  <a href="#overview">1. Обзор конвейера</a>
+  <a href="#batch">2. Как батч решает, что считать</a>
+  <a href="#stages">3. Этапы</a>
+  <a class="sub" href="#st-scan">3.1 Скан</a>
+  <a class="sub" href="#st-crop">3.2 Кроп</a>
+  <a class="sub" href="#st-mc">3.3 MC</a>
+  <a class="sub" href="#st-thr">3.4 Пороги</a>
+  <a class="sub" href="#st-cnmf">3.5 CNMF-E</a>
+  <a class="sub" href="#st-gate">3.6 Гейт (инспекция)</a>
+  <a class="sub" href="#st-ai">3.7 Автоинспекция</a>
+  <a class="sub" href="#st-exp">3.8 Экспорт</a>
+  <a class="sub" href="#st-prev">3.9 Превью</a>
+  <a href="#anomalies">4. Аномалии скана</a>
+  <a class="sub" href="#an-table">4.1 Полный перечень</a>
+  <a class="sub" href="#an-diagram">4.2 Диаграмма решений</a>
+  <a class="sub" href="#an-lt1">4.3 Что найдено в LT1</a>
+  <a href="#fps">5. Частота кадров (FPS)</a>
+  <a class="sub" href="#fps-calc">5.1 Как считается</a>
+  <a class="sub" href="#fps-use">5.2 Кто её использует</a>
+  <a class="sub" href="#fps-verify">5.3 Проверка на выходах</a>
+  <a class="sub" href="#fps-gaps">5.4 Разрывы и джиттер</a>
+  <a href="#facts">6. Факты LT1 для решений</a>
+  <a href="#attention">7. Все «Внимание»</a>
+  <a href="#sources">8. Источники и воспроизведение</a>
+  <div class="tools">
+    <button id="btn-theme" type="button">Тема: авто</button>
+    <button id="btn-src" type="button">Раскрыть все источники</button>
+  </div>
+</nav>
+
+<main>
+<section id="top">
+<h1>Что происходит с данными в BEARMiND</h1>
+<p class="meta">Ветка <code>bearmind-batch</code>, код на коммите <code>dcac6cc</code> (код совпадает с <code>5e6d382</code>). Данные: серия LT1 <code>H:\Projects\LT1\CalciumData</code> (84 сессии, идёт батч; читалась только для чтения 12.11.2026) и готовый тестовый корень <code>H:\Projects\_bearmind_test\lt1_J03_J06</code> (8 сессий LT1, прошли все этапы 9–10.11.2026).</p>
+<p class="lead">Страница описывает каждый этап конвейера: что входит, что выходит, что делает алгоритм, какие параметры, какие проверки, что вы можете изменить. Каждое утверждение о коде несёт ссылку <span class="small">«код»</span> на файл и строку. Каждое число взято из файла; файл назван рядом. Подробности спрятаны в раскрывающиеся блоки.</p>
+
+<div class="card">
+<h3 style="margin-top:0">Коротко: главное</h3>
+<ol>
+<li><b>Цепочка.</b> Сырые AVI → скан (реестр, FPS, аномалии) → кроп → MC → карты порогов → <span class="pill hum">вы: пороги</span> → CNMF-E → <span class="pill hum">вы: инспекция или Not needed</span> → автоинспекция → экспорт. Превью — боковые этапы по флажку. Папки <code>2_Crop</code> нет: обрезанное видео пишет сразу MC в <code>3_MC</code>.</li>
+<li><b>FPS доходит до всех потребителей одинаково</b>, кроме автоинспекции: она берёт округлённое значение (20 вместо 19,756, 30 вместо 29,78). Это проверено на всех 8 сессиях тестового корня: реестр = параметры MC = <code>fr</code> CNMF-E = <code>fps</code> в JSON и NPZ экспорта (<a href="#fps-verify">5.3</a>).</li>
+<li><b>Правило разрывов на установке 29,78 Гц считает дрожание интервалов за потерю кадров.</b> Примерно 85% из 324 «разрывов» — не потери. Из-за этого FPS завышен до 0,0125 Гц, а предупреждение <code>dropped_frames</code> стоит у 55 из 84 сессий LT1 (<a href="#fps-gaps">5.4</a>).</li>
+<li><b>У LT1_J05_1D испорчена последняя строка таймстемпов.</b> Скан этого не видит. Строка попадёт в экспорт (<a href="#w-j05">Внимание</a>).</li>
+<li><b>Проверка MC «max сдвиг» срабатывает на первом кадре.</b> Первый кадр чёрный в 10 сессиях LT1; все 5 ошибок уровня ERROR (> 30 px) — из-за него (<a href="#w-frame0">Внимание</a>).</li>
+<li><b>Заголовки AVI LT1 говорят 20 к/с у всех 84 сессий</b>, хотя 60 сессий сняты с частотой 29,78 Гц. Брать FPS из видео для серий без таймстемпов нельзя без проверки (<a href="#w-avi">Внимание</a>).</li>
+</ol>
+<p class="small">Все находки «Внимание» собраны в <a href="#attention">разделе 7</a>. Код не менялся.</p>
+</div>
+</section>
+
+<!-- ============================================================ 1. OVERVIEW -->
+<section id="overview">
+<h2>1. Обзор конвейера</h2>
+<p>Серия — одна папка. Внутри неё <code>1_Raw</code> с сырыми видео. Остальные папки создаёт программа. Каждая сессия идёт через семь основных этапов. Два боковых этапа (превью) делают видео для глаз; от них ничего не зависит.</p>
+<p>Батч ждёт человека в двух местах: пороги CNMF-E и ворота ручной инспекции (гейт — точка ожидания решения человека). Ещё одно ожидание автоматическое: MC сессии ждёт, пока кроп закончится у всех сессий этой мыши.</p>
+<details class="src"><summary>код</summary>Папки: <code>bearmind/paths.py:17-126</code> (1_Raw 18, 0_TimeStamps 22, 3_MC 25-28, 4_Estimates 31, 5_Inspection 34-43, 6_Export 47-56, Preview 60-63, _bearmind 68-126). Этапы: <code>bearmind/registry.py:17-21</code>. Ожидания: <code>bearmind/runner.py:75-79</code> (WAIT_CHECKS: mc, cnmf, gate), <code>bearmind/stages/mc.py:28-45</code> (crop_finalize), <code>bearmind/stages/cnmf.py:102-103</code> (thresholds), <code>bearmind/stages/gate.py:49-64</code> (manual_inspection).</details>
+
+<div class="svgwrap">
+<svg viewBox="0 0 1000 620" role="img" aria-label="Схема конвейера BEARMiND">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+  <marker id="ahh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--human)"/></marker></defs>
+  <rect class="box inp" x="8" y="20" width="180" height="160" rx="8"/>
+  <text x="18" y="41" class="t-title">1_Raw (вход)</text>
+  <text x="18" y="56" class="t-file">1_Raw/&lt;SID&gt;/</text>
+  <text x="18" y="71" class="t-file">  &lt;SID&gt;_0.avi … _n.avi</text>
+  <text x="18" y="86" class="t-file">  &lt;SID&gt;_Mini_TS.csv</text>
+  <text x="18" y="101" class="t-file">или 0_TimeStamps/</text>
+  <text x="18" y="122" class="t-small">только чтение: программа</text>
+  <text x="18" y="137" class="t-small">сюда не пишет</text>
+  <rect class="box stage" x="206" y="20" width="180" height="160" rx="8"/>
+  <text x="216" y="41" class="t-title">Скан</text>
+  <text x="216" y="56" class="t-file">_bearmind/registry/</text>
+  <text x="216" y="71" class="t-file">  &lt;SID&gt;.json</text>
+  <text x="216" y="86" class="t-file">_bearmind/</text>
+  <text x="216" y="101" class="t-file">  scan_unrecognized.csv</text>
+  <text x="216" y="122" class="t-small">части, кадры, FPS, аномалии,</text>
+  <text x="216" y="137" class="t-small">исключение; запускает</text>
+  <text x="216" y="152" class="t-small">человек (Scan / Rescan)</text>
+  <rect class="box stage" x="404" y="20" width="180" height="160" rx="8"/>
+  <text x="414" y="41" class="t-title">Кроп</text>
+  <text x="414" y="56" class="t-file">_bearmind/crop/</text>
+  <text x="414" y="71" class="t-file">  &lt;SID&gt;_projection.npz</text>
+  <text x="414" y="86" class="t-file">_bearmind/crop_overview.png</text>
+  <text x="414" y="101" class="t-file">config/mice/: crop.box</text>
+  <text x="414" y="116" class="t-file">config/sessions/: box_pos</text>
+  <text x="414" y="137" class="t-small">видео не пишет:</text>
+  <text x="414" y="152" class="t-small">папки 2_Crop нет</text>
+  <rect class="box stage" x="602" y="20" width="180" height="160" rx="8"/>
+  <text x="612" y="41" class="t-title">MC</text>
+  <text x="612" y="56" class="t-file">3_MC/</text>
+  <text x="612" y="71" class="t-file">  &lt;SID&gt;_MC.avi (FFV1)</text>
+  <text x="612" y="86" class="t-file">  &lt;SID&gt;_MC_shifts.npy</text>
+  <text x="612" y="107" class="t-small">кроп + жёсткая коррекция</text>
+  <text x="612" y="122" class="t-small">движения; видео с частотой</text>
+  <text x="612" y="137" class="t-small">кадров сессии</text>
+  <rect class="box stage" x="800" y="20" width="192" height="160" rx="8"/>
+  <text x="810" y="41" class="t-title">Пороги (карты)</text>
+  <text x="810" y="56" class="t-file">_bearmind/thresholds/</text>
+  <text x="810" y="71" class="t-file">  &lt;SID&gt;_maps.npz</text>
+  <text x="810" y="92" class="t-small">карты корреляции и PNR</text>
+  <text x="810" y="107" class="t-small">для gSig 3–7 и зеркальные;</text>
+  <text x="810" y="122" class="t-small">подсказка порогов</text>
+  <line class="arrow" x1="188" y1="100" x2="204" y2="100" marker-end="url(#ah)"/>
+  <line class="arrow" x1="386" y1="100" x2="402" y2="100" marker-end="url(#ah)"/>
+  <line class="arrow" x1="584" y1="100" x2="600" y2="100" marker-end="url(#ah)"/>
+  <line class="arrow" x1="782" y1="100" x2="798" y2="100" marker-end="url(#ah)"/>
+  <rect class="box wait" x="404" y="196" width="180" height="42" rx="6"/>
+  <text x="414" y="213" class="t-small">MC ждёт автоматически:</text>
+  <text x="414" y="229" class="t-small">кроп всех сессий мыши</text>
+  <path class="arrow" d="M584,217 L592,217 L592,104" style="stroke-dasharray:3 3"/>
+  <rect class="box side" x="602" y="250" width="180" height="92" rx="8"/>
+  <text x="612" y="271" class="t-title" style="font-size:13px">Превью MC (флажок)</text>
+  <text x="612" y="286" class="t-file">Preview/</text>
+  <text x="612" y="301" class="t-file">  &lt;SID&gt;_raw.mp4, _raw_dff.mp4</text>
+  <text x="612" y="316" class="t-file">  &lt;SID&gt;_mc.mp4, _mc_dff.mp4</text>
+  <line class="arrow side" x1="692" y1="180" x2="692" y2="248" marker-end="url(#ah)"/>
+  <rect class="box hum" x="800" y="250" width="192" height="92" rx="8"/>
+  <text x="810" y="271" class="t-hum">ВЫ: выбор порогов</text>
+  <text x="810" y="286" class="t-file">config/sessions/&lt;SID&gt;.yaml</text>
+  <text x="810" y="301" class="t-file">  cnmf.gSig, min_corr, min_pnr</text>
+  <text x="810" y="316" class="t-file">_bearmind/threshold_choices.csv</text>
+  <line class="arrow hum" x1="896" y1="180" x2="896" y2="248" marker-end="url(#ahh)"/>
+  <rect class="box stage" x="8" y="400" width="212" height="150" rx="8"/>
+  <text x="18" y="421" class="t-title">CNMF-E</text>
+  <text x="18" y="436" class="t-file">4_Estimates/</text>
+  <text x="18" y="451" class="t-file">  &lt;SID&gt;_estimates.pickle</text>
+  <text x="18" y="466" class="t-file">Preview/</text>
+  <text x="18" y="481" class="t-file">  &lt;SID&gt;_cnmf_residual.png</text>
+  <text x="18" y="502" class="t-small">A (футпринты), C, S, фон,</text>
+  <text x="18" y="517" class="t-small">SNR, r_values, idx_components</text>
+  <rect class="box hum" x="236" y="400" width="196" height="150" rx="8"/>
+  <text x="246" y="421" class="t-title">Гейт</text>
+  <text x="246" y="438" class="t-hum">ВЫ: ручная инспекция</text>
+  <text x="246" y="453" class="t-file">5_Inspection/&lt;SID&gt;/</text>
+  <text x="246" y="468" class="t-file">  &lt;SID&gt;_manual_estimates</text>
+  <text x="246" y="483" class="t-file">  .pickle</text>
+  <text x="246" y="504" class="t-small">или Not needed;</text>
+  <text x="246" y="519" class="t-small">решение — в реестр</text>
+  <rect class="box stage" x="448" y="400" width="236" height="150" rx="8"/>
+  <text x="458" y="421" class="t-title">Автоинспекция</text>
+  <text x="458" y="436" class="t-file">5_Inspection/&lt;SID&gt;/</text>
+  <text x="458" y="451" class="t-file">  &lt;SID&gt;_processed.pickle</text>
+  <text x="458" y="466" class="t-file">  _metrics_with_decisions.csv</text>
+  <text x="458" y="481" class="t-file">  _rejected_neurons.csv</text>
+  <text x="458" y="496" class="t-file">  _FBD / _FCD / _match_mtx.npy</text>
+  <text x="458" y="517" class="t-small">правила + ML, слияния; FPS округлён</text>
+  <rect class="box stage" x="700" y="400" width="292" height="150" rx="8"/>
+  <text x="710" y="421" class="t-title">Экспорт</text>
+  <text x="710" y="436" class="t-file">6_Export/npz/</text>
+  <text x="710" y="451" class="t-file">  &lt;SID&gt;_data.npz (C, asp, recon., fps)</text>
+  <text x="710" y="466" class="t-file">  &lt;SID&gt;_metadata.json</text>
+  <text x="710" y="481" class="t-file">  &lt;SID&gt;_timestamps.csv</text>
+  <text x="710" y="496" class="t-file">6_Export/filters/&lt;SID&gt;_filters.mat</text>
+  <text x="710" y="517" class="t-small">только принятые нейроны; таймстемпы —</text>
+  <text x="710" y="532" class="t-small">из файла сессии, не из FPS</text>
+  <path class="arrow hum" d="M896,342 C896,372 114,362 114,398" marker-end="url(#ahh)"/>
+  <line class="arrow" x1="220" y1="475" x2="234" y2="475" marker-end="url(#ah)"/>
+  <line class="arrow" x1="432" y1="475" x2="446" y2="475" marker-end="url(#ah)"/>
+  <line class="arrow" x1="684" y1="475" x2="698" y2="475" marker-end="url(#ah)"/>
+  <rect class="box side" x="8" y="568" width="212" height="46" rx="8"/>
+  <text x="18" y="589" class="t-title" style="font-size:13px">Превью CNMF-E (флажок)</text>
+  <text x="18" y="604" class="t-file">Preview/&lt;SID&gt;_cnmf_qc.mp4</text>
+  <line class="arrow side" x1="114" y1="550" x2="114" y2="566" marker-end="url(#ah)"/>
+  <text x="240" y="588" class="t-small">Временные файлы этапов: machine.yaml temp_dir / &lt;хэш серии&gt;_&lt;SID&gt;;</text>
+  <text x="240" y="604" class="t-small">на этой машине C:\Users\User\AppData\Local\Temp\bearmind; удаляются после этапа.</text>
+</svg>
+</div>
+<p class="small">Синие рамки — основные этапы батча. Фиолетовые — решения человека. Пунктир бирюзовый — боковые этапы (превью). Жёлтая плашка — автоматическое ожидание.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Этап</th><th>Вход</th><th>Выход (файлы)</th><th>Поля реестра</th><th>Ждёт</th></tr></thead>
+<tbody>
+<tr><td>Скан</td><td>AVI-чанки, таймстемпы, metaData.json (legacy)</td><td><code>_bearmind/registry/&lt;SID&gt;.json</code>, <code>scan_unrecognized.csv</code></td><td>parts, n_frames, fps, fps_info, anomalies, excluded</td><td>запускает человек</td></tr>
+<tr><td>Кроп</td><td>3000 кадров (3 окна по 1000)</td><td><code>_bearmind/crop/&lt;SID&gt;_projection.npz</code>, <code>crop_overview.png</code>, рамка в конфигах</td><td>stages.crop.metrics: fov, fov_lit, fov_activity, fov_method, activity_pos_neg, frame_shape, box</td><td>—</td></tr>
+<tr><td>MC</td><td>все кадры, рамка, FPS</td><td><code>3_MC/&lt;SID&gt;_MC.avi</code>, <code>_MC_shifts.npy</code></td><td>max_shift_px, mean_template_corr, n_frames, crop</td><td>рамку мыши</td></tr>
+<tr><td>Пороги</td><td>MC-видео</td><td><code>_bearmind/thresholds/&lt;SID&gt;_maps.npz</code></td><td>suggested, gsig_range, n_frames, map_workers</td><td>—</td></tr>
+<tr><td>CNMF-E</td><td>MC-видео, пороги, FPS, карты</td><td><code>4_Estimates/&lt;SID&gt;_estimates.pickle</code>, <code>Preview/&lt;SID&gt;_cnmf_residual.png</code></td><td>n_components, n_accepted, missed_cells, median_snr, ssub_B, need_gib, patch_workers</td><td><span class="pill hum">пороги</span></td></tr>
+<tr><td>Гейт</td><td>решение человека, файл ручной инспекции</td><td>— (решение в реестре)</td><td>gate, who, when</td><td><span class="pill hum">инспекцию</span></td></tr>
+<tr><td>Автоинспекция</td><td>estimates или manual_estimates, round(FPS), модель</td><td><code>5_Inspection/&lt;SID&gt;/&lt;SID&gt;_processed.pickle</code> и таблицы</td><td>n_initial, n_after_merge, n_deleted, n_merge_groups, n_kept, deleted_frac, autoinspection_fps</td><td>—</td></tr>
+<tr><td>Экспорт</td><td>processed.pickle, таймстемпы сессии, FPS</td><td><code>6_Export/npz/…</code>, <code>6_Export/filters/…</code></td><td>n_neurons, n_exported, median_snr, …</td><td>—</td></tr>
+</tbody></table></div>
+<details class="src"><summary>код</summary>Выходы этапов: <code>bearmind/stages/crop.py:46-53</code>, <code>bearmind/stages/mc.py:175-185</code>, <code>bearmind/stages/thresholds.py:171-173</code>, <code>bearmind/stages/cnmf.py:287-303</code>, <code>bearmind/stages/gate.py:64</code>, <code>bearmind/stages/autoinspect.py:83-92</code>, <code>bearmind/stages/export.py:173-210</code>. Обязательные выходы: <code>bearmind/runner.py:82-92</code>.</details>
+</section>
+
+<!-- ============================================================ 2. BATCH -->
+<section id="batch">
+<h2>2. Как батч решает, что считать</h2>
+<ol class="steps">
+<li><b>Порядок — по этапам, не по сессиям.</b> Батч берёт самый ранний этап, который можно сделать, а среди сессий — первую по имени. Поэтому сначала кроп всех сессий, потом MC всех, потом карты. Сейчас в LT1 так и есть: в <code>_bearmind/heartbeat.json</code> кроп и MC готовы у 84 сессий, карты — у одной. <details class="src"><summary>код</summary><code>bearmind/runner.py:480-498</code> (next_ready: «lowest index in ALL_STAGES first, then sid order»). Данные: <code>H:\Projects\LT1\CalciumData\_bearmind\heartbeat.json</code> (by_stage: crop 84, mc 84, thresholds 1; 12.11.2026 18:18).</details></li>
+<li><b>Этап «актуален»</b>, если он в состоянии DONE, его хэш параметров (отпечаток набора параметров) совпадает с текущим и его обязательные файлы на месте. Иначе этап и все этапы после него считаются заново. <details class="src"><summary>код</summary><code>bearmind/runner.py:386-392</code> (current), <code>bearmind/runner.py:302-309</code> (хэш этапа включает хэши всех предыдущих), <code>bearmind/config.py:123-124</code> (sha256 JSON).</details></li>
+<li><b>Что входит в хэш</b> — функция <code>stage_params</code>. Перечень по этапам дан в каждом разделе ниже («Что вызывает пересчёт»). Машинные настройки (пул процессов, temp) в хэш не входят. Исключение: CNMF-E сам выбирает <code>ssub_B</code> под бюджет памяти машины, и это значение в хэше. <details class="src"><summary>код</summary><code>bearmind/runner.py:241-299</code>; ssub_B: <code>bearmind/stages/cnmf.py:108-109</code>, <code>65-78</code>.</details></li>
+<li><b>Конфиги слоями:</b> defaults.yaml &lt; series.yaml &lt; mice/&lt;мышь&gt;.yaml &lt; sessions/&lt;SID&gt;.yaml, плюс machine.yaml. Позднее перекрывает раннее. У LT1 в <code>series.yaml</code> только <code>preview: enabled: false</code>; в конфигах мышей — рамка кропа; в конфигах сессий — положение рамки и пороги. <details class="src"><summary>код</summary><code>bearmind/config.py:100-112</code>. Данные: <code>H:\Projects\LT1\CalciumData\_bearmind\config\</code>.</details></li>
+<li><b>Каждый этап — в своём процессе.</b> Падение этапа не останавливает батч; упавший процесс перезапускается 1 раз; этап без роста CPU 30 минут убивается. <details class="src"><summary>код</summary><code>bearmind/defaults.yaml:137-145</code>; <code>bearmind/runner.py:1377-1394</code>.</details></li>
+<li><b>Проверки (checks) никогда не останавливают батч.</b> Они пишут уровень ok / warning / error в реестр, в Monitor, в <code>summary.csv</code> и в JSON экспорта. Ошибка проверки — это сигнал вам, а не стоп. <details class="src"><summary>код</summary><code>bearmind/checks.py:1</code> («never stopping the batch»), <code>bearmind/runner.py:1344-1359</code>, <code>bearmind/provenance.py:76</code>.</details></li>
+<li><b>Аномалии этапов не исключают сессию.</b> Исключают только аномалии скана уровня error (и ваше решение Exclude). <details class="src"><summary>код</summary><code>bearmind/scan.py:378-399</code> («Anomalies tagged with a stage … do not exclude the session»).</details></li>
+</ol>
+</section>
+
+<!-- ============================================================ 3. STAGES -->
+<section id="stages">
+<h2>3. Этапы</h2>
+
+<!-- 3.1 SCAN -->
+<h3 id="st-scan">3.1 Скан</h3>
+<div class="grid2">
+<div class="card"><h4 style="margin-top:0">Вход</h4><p class="small">Папки в <code>1_Raw</code> с AVI. Bonsai: <code>&lt;SID&gt;/&lt;SID&gt;_&lt;n&gt;.avi</code> и <code>&lt;SID&gt;_Mini_TS.csv</code> (или <code>_timestamp.csv</code>, ищется ещё в <code>0_TimeStamps</code>). Legacy UCLA: <code>&lt;SID&gt;/&lt;дата&gt;/&lt;время&gt;/Miniscope/&lt;n&gt;.avi</code>, <code>timeStamps.csv</code>, <code>metaData.json</code>.</p></div>
+<div class="card"><h4 style="margin-top:0">Выход</h4><p class="small">Один JSON на сессию в <code>_bearmind/registry</code> (реестр — файл состояния сессии): части (parts) с чанками (отдельными AVI-файлами), число кадров, FPS и его сводка, аномалии, решения человека, флаг исключения, записи этапов. Папки, которые не удалось прочитать как сессию, — в <code>scan_unrecognized.csv</code>.</p></div>
+</div>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Обходит <code>1_Raw</code>. Папку с AVI определяет как bonsai или legacy по именам; иначе — в список нераспознанных. <details class="src"><summary>код</summary><code>bearmind/scan.py:98-123</code>, <code>56-64</code></details></li>
+<li>Для каждой части: читает заголовок каждого чанка (число кадров, размер). Проверяет, что последний кадр последнего чанка декодируется. <details class="src"><summary>код</summary><code>bearmind/scan.py:137-193</code>; <code>bearmind/video.py:125-147</code></details></li>
+<li>Читает таймстемпы (метки времени кадров). Bonsai пишет тики по 100 нс; программа делит на 10<sup>4</sup> и получает миллисекунды. <details class="src"><summary>код</summary><code>bearmind/timestamps.py:33-55</code></details></li>
+<li>Применяет правила отбрасывания кадров: битый последний кадр, лишний кадр в конце каждого чанка. Режет часть до числа строк таймстемпов. <details class="src"><summary>код</summary><code>bearmind/scan.py:182-201</code>, <code>264-281</code></details></li>
+<li>Склеивает части по времени старта, если частей несколько. <details class="src"><summary>код</summary><code>bearmind/scan.py:230-262</code>, <code>bearmind/timestamps.py:82-101</code></details></li>
+<li>Считает FPS функцией <code>robust_fps</code> (подробно в <a href="#fps-calc">5.1</a>) и ищет разрывы. <details class="src"><summary>код</summary><code>bearmind/scan.py:290-304</code></details></li>
+<li>Сравнивает FPS сессии с другими сессиями той же мыши. <details class="src"><summary>код</summary><code>bearmind/scan.py:458-483</code></details></li>
+<li>Пишет реестр. При пересканировании заменяет только аномалии скана; решения человека и записи этапов остаются. Пересчитывает флаг исключения. <details class="src"><summary>код</summary><code>bearmind/scan.py:485-512</code>, <code>378-399</code></details></li>
+</ol>
+<div class="kv card small">
+<div>scan.max_mismatch_frac</div><div><b>0.02</b> — допустимая доля расхождения «кадры против строк таймстемпов» (больше — ошибка)</div>
+<div>scan.gap_factor</div><div><b>2.0</b> — интервал больше 2 × медианы считается разрывом</div>
+<div>scan.fps_series_dev</div><div><b>0.05</b> — FPS дальше 5% от всех других сессий мыши — выброс</div>
+<div>scan.dropped_frames_warn</div><div><b>max_gap_s 1.0, share 0.01</b> — только для вкладки Scan: строка разрывов считается проблемой, если пауза &gt; 1 с или потеряно &gt; 1% кадров</div>
+<div>checks.min_sessions_for_relative</div><div><b>3</b> — минимум сессий мыши с FPS для проверки выброса</div>
+</div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:5-12</code>, <code>130</code>. У LT1 эти значения не переопределены (<code>_bearmind/config/series.yaml</code> содержит только preview).</details>
+<p><b>Проверки и что делать:</b> все аномалии скана, их правила и ваши действия — в <a href="#anomalies">разделе 4</a>. <b>Пересчёт:</b> скан не этап батча; его запускает человек (Scan/Rescan). Но поля реестра, которые он пишет, входят в хэши этапов: части и число кадров — в хэш кропа, FPS — в хэши MC, CNMF-E и автоинспекции, файлы таймстемпов — в хэш экспорта. Поэтому пересканирование с изменёнными файлами пересчитывает этапы. <details class="src"><summary>код</summary><code>bearmind/runner.py:252-259</code>, <code>285</code>, <code>291-298</code>; <code>bearmind/stages/cnmf.py:107</code></details></p>
+
+<!-- 3.2 CROP -->
+<h3 id="st-crop">3.2 Кроп</h3>
+<p>Кроп (обрезка кадра) находит поле, где есть клетки, и ставит одну рамку одного размера на все сессии мыши. Видео этап не пишет: он пишет числа в конфиги. Обрезает кадры уже MC.</p>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Читает 3000 кадров: три окна по 1000 подряд идущих кадров — начало, середина, конец сессии. Чанки вне окон не декодируются. <details class="src"><summary>код</summary><code>bearmind/stages/crop.py:29-30</code>; <code>bearmind/video.py:215-245</code>; <code>bearmind/defaults.yaml:15</code></details></li>
+<li>Средний кадр сглаживает гауссом (σ = 5 px). Освещённая область — самая большая связная область ярче, чем p1 + 0,2 × (p99 − p1). Она должна занимать ≥ 5% кадра, а контраст p99 − p1 должен быть ≥ 5 уровней серого; иначе поля нет. <details class="src"><summary>код</summary><code>bearmind/crop.py:26-48</code>, <code>11</code>; <code>bearmind/defaults.yaml:17-18</code></details></li>
+<li>По этим 3000 кадрам строит карты CNMF-E (корреляция cn и PNR — отношение пика к шуму) с gSig = 4, и такие же карты инвертированного видео (зеркальные). Карта активности — cn·pnr минус то же для инвертированного видео: шум даёт одинаковые значения в обоих, транзиенты только в прямом. <details class="src"><summary>код</summary><code>bearmind/stages/crop.py:34-42</code>, <code>12</code>; <code>bearmind/crop.py:64-79</code></details></li>
+<li>Карту сглаживает (σ = 10 px), обнуляет вне освещённой области, сжатой на 10 px (край линзы), и обрезает сверху по 99-му процентилю. <details class="src"><summary>код</summary><code>bearmind/crop.py:12-13</code>, <code>57-79</code></details></li>
+<li>Если положительная масса карты меньше 8 × отрицательной — активность не отличить от шума; полем становится освещённая область (<code>fallback_pos_neg</code>). <details class="src"><summary>код</summary><code>bearmind/crop.py:19</code>, <code>145-154</code></details></li>
+<li>Иначе поле — строки и столбцы, где лежит масса карты от 0,5% до 99,5%, плюс 20 px с каждой стороны. Сильные затравки (cn ≥ 0,95 и pnr ≥ 15) всегда внутри поля. Поле меньше 25% освещённой области не принимается (<code>fallback_small</code>). <details class="src"><summary>код</summary><code>bearmind/crop.py:101-133</code>, <code>14</code>, <code>23</code>; <code>bearmind/defaults.yaml:22-23</code></details></li>
+<li>Когда кроп готов у всех сессий мыши, батч ставит рамку: высота и ширина = максимум полей по сессиям + 2 × 10 px, но не больше кадра. Каждую сессию рамка центрирует на её поле и сдвигает внутрь кадра. Размер пишется в <code>config/mice/&lt;мышь&gt;.yaml</code> (<code>crop.box</code>), положение — в <code>config/sessions/&lt;SID&gt;.yaml</code> (<code>crop.box_pos</code>). Затем перерисовывается <code>crop_overview.png</code>. <details class="src"><summary>код</summary><code>bearmind/stages/crop.py:73-125</code>; <code>bearmind/crop.py:157-185</code>; <code>bearmind/runner.py:1086-1152</code>; <code>bearmind/defaults.yaml:16</code></details></li>
+<li>Если поля нет совсем, сессия идёт без кропа (<code>box_pos: null</code>) с аномалией <code>fov_not_found</code>. <details class="src"><summary>код</summary><code>bearmind/stages/crop.py:117-124</code></details></li>
+</ol>
+<p><b>Проверки:</b> числовых проверок нет. Аномалии этапа: <code>fov_not_found</code> (warning), <code>crop_finalize_failed</code> (error; рамка не поставлена, MC ждёт). Смотреть результат нужно глазами на <code>_bearmind/crop_overview.png</code>. <details class="src"><summary>код</summary><code>bearmind/runner.py:99</code>, <code>1170-1186</code>; <code>bearmind/crop_overview.py:1-5</code></details></p>
+<p><b>Что можно менять:</b> параметры <code>crop.*</code> в series.yaml; рамку мыши руками в <code>config/mice/&lt;мышь&gt;.yaml</code> (она станет <code>box_source: manual</code> и больше не пересчитывается). <b>Пересчёт кропа:</b> изменились части/чанки/число кадров, любой параметр <code>crop.*</code> кроме box/box_pos/box_source, или версия правила <code>FOV_RULE = "activity_v2"</code>. Рамка и её положение — входы хэша MC, не кропа. <details class="src"><summary>код</summary><code>bearmind/runner.py:249-256</code>, <code>222-223</code>; <code>bearmind/crop.py:10</code>; <code>bearmind/stages/crop.py:76-92</code></details></p>
+<h4>Пример LT1</h4>
+<p>По реестру LT1 у 80 сессий поле найдено по активности, у 4 — запасной вариант <code>fallback_pos_neg</code>. У LT1_J01_1D: освещённая область 480 × 545 px, поле активности 399 × 441 px, отношение масс 42,3; рамка мыши LT1_J01 — 435 × 512 px в положении (0, 0). <details class="src"><summary>файл</summary><code>H:\Projects\LT1\CalciumData\_bearmind\registry\LT1_J01_1D.json</code> → stages.crop.metrics; <code>_bearmind\config\mice\LT1_J01.yaml</code>; подсчёт fov_method по 84 файлам реестра.</details></p>
+<figure><img src="img/frames_LT1_J01_1D.png" alt="Сырой кадр с рамками, кадр после MC и кадр превью" loading="lazy">
+<figcaption>Вверху слева: сырой кадр 20000 сессии LT1_J01_1D (608 × 608) с освещённой областью (жёлтый пунктир), полем активности (зелёный) и рамкой мыши (голубая). Вверху справа: тот же кадр в <code>3_MC/LT1_J01_1D_MC.avi</code> (435 × 512). Внизу: кадр 10000 превью <code>Preview/LT1_J01_1D_mc_dff.mp4</code> (среднее кадров 20000–20001; подпись t = 671,6 с = 20000 / 29,78). Файлы прочитаны по одному кадру.</figcaption></figure>
+<figure><img src="img/crop_overview_lt1_top.png" alt="Обзор кропа LT1, первые 12 сессий" loading="lazy">
+<figcaption>Верхние 4 ряда (12 сессий) из <code>H:\Projects\LT1\CalciumData\_bearmind\crop_overview.png</code> (весь файл — 28 рядов, 1716 × 9163 px). Слева в паре — средний кадр, справа — карта активности с сильными затравками. Жёлтый — освещённая область, зелёный — поле, голубой — рамка мыши.</figcaption></figure>
+<details class="more"><summary>Обзор кропа тестового корня (8 сессий, все этапы пройдены)</summary>
+<figure><img src="img/crop_overview_test.png" alt="Обзор кропа тестового корня" loading="lazy"><figcaption><code>H:\Projects\_bearmind_test\lt1_J03_J06\_bearmind\crop_overview.png</code>. У LT1_J03_3D и _4D отношение масс 4,21 и 4,78 &lt; 8: полем стала освещённая область.</figcaption></figure>
+</details>
+
+<!-- 3.3 MC -->
+<h3 id="st-mc">3.3 MC (коррекция движения)</h3>
+<div class="grid2">
+<div class="card"><h4 style="margin-top:0">Вход</h4><p class="small">Сырые чанки сессии с правилами отбрасывания из реестра; рамка из конфигов; FPS из реестра.</p></div>
+<div class="card"><h4 style="margin-top:0">Выход</h4><p class="small"><code>3_MC/&lt;SID&gt;_MC.avi</code> — обрезанное и выровненное видео, FFV1 (сжатие без потерь), uint8, с частотой кадров сессии. <code>3_MC/&lt;SID&gt;_MC_shifts.npy</code> — сдвиг (y, x) каждого кадра, float32.</p></div>
+</div>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Ждёт рамку мыши. <details class="src"><summary>код</summary><code>bearmind/stages/mc.py:28-45</code>, <code>58-71</code></details></li>
+<li>Читает все кадры как один поток (чанки подряд, части подряд, правила отбрасывания), обрезает рамкой и пишет во временный BigTIFF uint8. <details class="src"><summary>код</summary><code>bearmind/stages/mc.py:156-157</code>, <code>85-89</code>; <code>bearmind/video.py:150-201</code></details></li>
+<li>CaImAn <code>MotionCorrect</code>, только жёсткая коррекция (pw_rigid false): видео делится на ⌈T/500⌉ кусков; каждый кадр сопоставляется с шаблоном (средним кадром) после пространственного high-pass фильтра gSig_filt = 8; поиск сдвига в пределах ±35 px. Пул — 16 процессов. <details class="src"><summary>код</summary><code>bearmind/stages/mc.py:143-163</code>; <code>bearmind/defaults.yaml:26-35</code>, <code>134-135</code></details></li>
+<li>Применяет сдвиги к кадрам по одному: OpenCV warpAffine с кубической интерполяцией, края заполняются копией (border_nan copy), результат округляется в uint8. Пишет FFV1 AVI с частотой = FPS сессии. <details class="src"><summary>код</summary><code>bearmind/stages/mc.py:92-111</code>, <code>170-171</code>; CaImAn <code>motion_correction.py:512-550</code>; <code>bearmind/video.py:248-278</code></details></li>
+<li>Считает метрики: max |сдвиг| по всем кадрам и осям; среднюю корреляцию 200 равномерно взятых кадров (после того же high-pass) с шаблоном CaImAn. <details class="src"><summary>код</summary><code>bearmind/stages/mc.py:114-131</code>, <code>175-180</code></details></li>
+</ol>
+<div class="kv card small">
+<div>mc.pw_rigid</div><div><b>false</b> (piecewise не поддерживается этапом)</div>
+<div>mc.max_shifts</div><div><b>[35, 35]</b> px</div>
+<div>mc.gSig_filt</div><div><b>[8, 8]</b> — фильтр перед сопоставлением</div>
+<div>mc.niter_rig</div><div><b>1</b></div>
+<div>mc.border_nan</div><div><b>copy</b></div>
+<div>splits_rig</div><div><b>⌈T/500⌉</b> (не в конфиге)</div>
+<div>strides / overlaps / max_deviation_rigid</div><div>48 / 24 / 15 — для piecewise, при rigid не используются</div>
+<div>checks.mc_max_shift_px</div><div><b>warn &gt; 10, error &gt; 30</b></div>
+<div>checks.mc_template_corr</div><div><b>warn &lt; 0.7</b> (назначено по 6 сессиям, помечено как временное)</div>
+</div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:24-35</code>, <code>119-124</code>; <code>bearmind/stages/mc.py:144-145</code>, <code>160-161</code>; <code>bearmind/checks.py:61-65</code></details>
+<p><b>Пересчёт MC:</b> изменились <code>mc.*</code>, рамка (<code>box</code>), положение (<code>box_pos</code>), FPS сессии, или пересчитан кроп. Число процессов пула в хэш не входит. <details class="src"><summary>код</summary><code>bearmind/runner.py:257-259</code></details></p>
+<h4>Пример LT1</h4>
+<figure><img src="img/mc_shifts_LT1_J01_1D.png" alt="Сдвиги MC и распределения проверок" loading="lazy">
+<figcaption>Слева: сдвиги LT1_J01_1D из <code>3_MC/LT1_J01_1D_MC_shifts.npy</code> (71 461 кадр); max |сдвиг| 2,8 px. В центре и справа: max сдвиг и корреляция с шаблоном по 84 сессиям LT1 (<code>_bearmind/registry/*.json</code> → stages.mc.metrics). Сдвиг &gt; 10 px — у 10 сессий; корреляция &lt; 0,7 — у 21.</figcaption></figure>
+<div class="attn crit" id="w-frame0"><span class="tag">Внимание.</span> Проверку «max сдвиг» включает первый кадр сессии. В 10 сессиях LT1 кадр 0 полностью чёрный (среднее 0,0), у большинства он темнее: медиана яркости кадра 0 / кадра 2 — 0,26. MC подбирает такому кадру случайный сдвиг вплоть до границы поиска 35 px. Все 5 проверок уровня ERROR (&gt; 30 px) в LT1 — от кадра 0: LT1_J17_2D 35,7; J18_2D 35,6; J58_2D 35,5; J53_2D 34,2; J57_2D 33,8 px. Без кадра 0 больше 10 px только у LT1_J10_2D (27,1 px, кадры 64646–64649). Тёмный кадр 0 остаётся в MC-видео и идёт в карты порогов и CNMF-E; влияние на карты не проверялось.
+<details class="src"><summary>код и данные</summary><code>bearmind/stages/mc.py:176</code> (<code>np.max(np.abs(shifts))</code> по всем кадрам). Яркость: кадры 0–2 первого чанка каждой сессии (<code>1_Raw/&lt;SID&gt;/&lt;SID&gt;_0.avi</code>), сдвиги — <code>3_MC/&lt;SID&gt;_MC_shifts.npy</code>; скрипт <code>scripts/dfr_firstframe.py</code>. Чёрный кадр 0: J17_2D, J18_2D, J24_2D, J24_3D, J26_2D, J30_2D, J53_2D, J54_2D, J57_2D, J58_2D.</details></div>
+<div class="attn"><span class="tag">Внимание.</span> Корреляция с шаблоном ниже порога 0,7 у 21 из 84 сессий LT1 (0,605–0,697), в том числе у всех 4 сессий мышей J26, J52 и J53. Порог назначен по 6 сессиям и помечен в defaults.yaml как временный. В тестовом корне у LT1_J06_1D и _2D корреляция 0,69 и 0,62, а CNMF-E дал медианный SNR 9,9 и 11,1 — выше, чем у J03 с корреляцией 0,96–0,98. Похоже, проверка на LT1 срабатывает не по делу; решать по видео.
+<details class="src"><summary>данные</summary><code>bearmind/defaults.yaml:119-124</code>; реестр LT1 stages.mc.metrics.mean_template_corr; тестовый корень: <code>_bearmind/registry/LT1_J06_1D.json</code>, <code>LT1_J06_2D.json</code> (stages.cnmf.metrics.median_snr).</details></div>
+
+<!-- 3.4 THRESHOLDS -->
+<h3 id="st-thr">3.4 Пороги</h3>
+<p>Этап строит карты, по которым CNMF-E выбирает затравки (seed — точка-кандидат в центр клетки). Затем батч ждёт, пока человек выберет три числа: gSig (радиус клетки в пикселях для фильтра), min_corr и min_pnr.</p>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Декодирует MC-видео один раз во временный uint8 memmap (файл на диске, который читается как массив). Считает средний и максимальный кадр. <details class="src"><summary>код</summary><code>bearmind/stages/thresholds.py:118-128</code>, <code>24-34</code></details></li>
+<li>Для каждого gSig из 3, 4, 5, 6, 7: фильтрует кадры ядром CNMF-E, вычитает среднее во времени, считает карту корреляции cn и карту PNR так же, как инициализация CNMF-E; то же для инвертированного видео (зеркальные карты). Каждый gSig — в своём процессе, сколько помещается в память. <details class="src"><summary>код</summary><code>bearmind/stages/thresholds.py:111-137</code>, <code>42-52</code>; <code>bm_qc.py:110-175</code></details></li>
+<li>Подсказка порогов по gSig = 4: метод <code>mirror_fdr</code> — на сетке min_corr 0,50–0,98 (шаг 0,02) и min_pnr 2–20 (шаг 0,5) считает затравки в прямых и зеркальных картах; доля ложных (FDR) = зеркальные / прямые; выбирает самую мягкую пару с FDR ≤ 0,1. Если такой пары нет — <code>robust_bg</code>: медиана + 3 робастных SD каждой карты (min_corr обрезается до 0,99). <details class="src"><summary>код</summary><code>bearmind/stages/thresholds.py:66-76</code>, <code>114</code>; <code>bm_qc.py:299-384</code> (сетка 342-343, обрезка 330); <code>bearmind/config.py:127-131</code></details></li>
+<li>Пишет <code>_bearmind/thresholds/&lt;SID&gt;_maps.npz</code> (mean, max, cn_g, pnr_g, cn_mirror_g, pnr_mirror_g) и подсказку в реестр. <details class="src"><summary>код</summary><code>bearmind/stages/thresholds.py:79-90</code>, <code>154-173</code></details></li>
+</ol>
+<div class="human"><b>Решение человека.</b> Вкладка Thresholds показывает карты, ползунки и счётчики: число «пятен» (связных групп ≥ 2 px, где cn ≥ min_corr и pnr ≥ min_pnr) на прямых и на зеркальных картах. Кнопки: <b>Accept → next</b>, <b>Accept for all sessions of this mouse</b> (только сессиям без выбора), <b>Reset to suggestion</b>. CLI: <code>thresholds accept-suggested</code>, <code>thresholds set</code>. Выбор пишется в <code>config/sessions/&lt;SID&gt;.yaml</code> (cnmf.gSig, min_corr, min_pnr), решение <code>thresholds</code> в реестр и строка в <code>threshold_choices.csv</code>. <details class="src"><summary>код</summary><code>bearmind/threshold_model.py:71-98</code>; <code>bearmind/gui/thresholds_tab.py:329-334</code>; <code>bearmind/actions.py:357-365</code>, <code>626-656</code>; <code>bearmind/cli.py:690-693</code>; <code>bearmind/defaults.yaml:49-51</code></details></div>
+<p><b>Проверки:</b> нет. Аномалия <code>no_threshold_suggestion</code> (warning), если ни один метод не дал чисел. <b>Пересчёт карт:</b> изменились <code>thresholds.gsig_range</code> или <code>cnmf.tsub</code>, или пересчитан MC. Сами пороги — вход CNMF-E, не карт. <details class="src"><summary>код</summary><code>bearmind/stages/thresholds.py:167-170</code>; <code>bearmind/runner.py:260-261</code></details></p>
+<h4>Пример LT1</h4>
+<figure><img src="img/threshold_maps_LT1_J01_1D.png" alt="Карты порогов LT1_J01_1D" loading="lazy">
+<figcaption>Карты gSig = 4 из <code>H:\Projects\LT1\CalciumData\_bearmind\thresholds\LT1_J01_1D_maps.npz</code>. Выбор автора (<code>threshold_choices.csv</code>, 12.11.2026 17:56): gSig 4, min_corr 0,92, min_pnr 19,0 — совпадает с подсказкой <code>mirror_fdr</code>. При этих порогах 164 пятна на прямых картах и 72 на зеркальных (те же числа, что в CSV: n_blobs 164, n_mirror_blobs 72; пересчитано функцией <code>threshold_model.counters</code>).</figcaption></figure>
+<div class="attn"><span class="tag">Внимание.</span> Подсказка упирается в края сетки. В тестовом корне у всех 4 сессий J03 подсказка <code>mirror_fdr</code> дала min_pnr 18–20, где 20 — верх сетки. У всех 4 сессий J06 <code>mirror_fdr</code> не нашёл пары с FDR ≤ 0,1; у LT1_J06_1D даже в самом строгом углу сетки (0,98; 20) FDR = 0,176. Тогда сработал <code>robust_bg</code> с min_corr 0,99 (верхняя обрезка) и min_pnr 30,8–47,7. Эти значения приняты без изменений (who = lt1-run-agent). Возможно, сетке не хватает верхней части; это не проверено.
+<details class="src"><summary>код и данные</summary><code>bm_qc.py:330</code>, <code>342-343</code>, <code>377-379</code>. Данные: <code>H:\Projects\_bearmind_test\lt1_J03_J06\_bearmind\threshold_choices.csv</code>; повтор подсказки по сохранённым картам — <code>scripts/dfr_suggest.py</code> (J06_1D: robust_bg 0,99 / 47,7 — совпадает с реестром; mirror_fdr: «no threshold pair reaches FDR &lt;= 0.1»).</details></div>
+
+<!-- 3.5 CNMF-E -->
+<h3 id="st-cnmf">3.5 CNMF-E</h3>
+<p>CNMF-E (метод выделения клеток для однофотонных данных) раскладывает видео на пространственные карты компонент A (футпринты), их трейсы C, спайковую оценку S и фон.</p>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Ждёт порогов: без gSig, min_corr или min_pnr в конфиге этап не начинается. <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:101-103</code>, <code>126-128</code></details></li>
+<li>Собирает параметры: всё из <code>cnmf.*</code>, плюс gSig = (g, g), gSiz = (4g+1, 4g+1), fr = FPS сессии (не делится на tsub). <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:95-110</code></details></li>
+<li>Выбирает ssub_B (прореживание фона в пространстве): самое слабое из 2, 3, 4, при котором прогноз памяти помещается в бюджет машины. <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:58-78</code>; <code>bearmind/defaults.yaml:36-45</code></details></li>
+<li>Декодирует MC-видео в uint8, пишет float32 memmap в порядке CaImAn (+0,0001, побайтно как <code>cm.save_memmap</code>). Берёт картинку imax из карты PNR этого gSig. <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:141-188</code>, <code>240-245</code></details></li>
+<li><code>CNMF.fit</code> на пуле процессов, затем <code>evaluate_components</code>: компоненты с SNR ≥ 2,5 или r_value (пространственная корреляция с данными) ≥ 0,95 принимаются (idx_components). <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:250-255</code>; <code>bearmind/defaults.yaml:75-77</code>; CaImAn <code>source_extraction/cnmf/estimates.py:1053-1066</code></details></li>
+<li>Добавляет к estimates: imax, cnmf_dict (все параметры), путь к MC-видео, число процессов. Строит карты остатка (<code>Preview/&lt;SID&gt;_cnmf_residual.png</code>) и число пропущенных клеток (residual_excess_outside). Пишет <code>4_Estimates/&lt;SID&gt;_estimates.pickle</code> последним. <details class="src"><summary>код</summary><code>bearmind/stages/cnmf.py:259-280</code></details></li>
+</ol>
+<details class="more"><summary>Все параметры CNMF-E (defaults.yaml) и что они значат</summary>
+<div class="tablewrap"><table>
+<thead><tr><th>Параметр</th><th>Значение</th><th>Смысл</th></tr></thead><tbody>
+<tr><td>method_init</td><td>corr_pnr</td><td>инициализация CNMF-E по картам корреляции и PNR</td></tr>
+<tr><td>gSig / gSiz</td><td>из конфига сессии / 4·gSig+1</td><td>радиус клетки / размер окна клетки</td></tr>
+<tr><td>min_corr, min_pnr</td><td>из конфига сессии</td><td>пороги затравок</td></tr>
+<tr><td>K</td><td>null</td><td>число компонент на патч не ограничено</td></tr>
+<tr><td>rf / stride</td><td>40 / 25</td><td>полуразмер патча / перекрытие патчей, px</td></tr>
+<tr><td>only_init</td><td>true</td><td>в патчах только инициализация, дальше обновление на всём поле</td></tr>
+<tr><td>merge_thr</td><td>0.8</td><td>порог корреляции для слияния компонент</td></tr>
+<tr><td>p</td><td>1</td><td>порядок авторегрессии трейса</td></tr>
+<tr><td>method_deconvolution</td><td>oasis</td><td>алгоритм деконволюции трейса</td></tr>
+<tr><td>tsub / ssub</td><td>1 / 1</td><td>прореживание во времени / пространстве: нет</td></tr>
+<tr><td>nb / nb_patch / low_rank_background</td><td>0 / 0 / null</td><td>фон по кольцевой модели CNMF-E</td></tr>
+<tr><td>ssub_B / ring_size_factor</td><td>2 (или больше по памяти) / 1.5</td><td>прореживание фона / размер кольца</td></tr>
+<tr><td>update_background_components, center_psf, normalize_init</td><td>true, true, false</td><td>стандарт для 1p</td></tr>
+<tr><td>del_duplicates / border_pix</td><td>true / 5</td><td>удаление дублей / край без затравок</td></tr>
+<tr><td>min_SNR / rval_thr / use_cnn</td><td>2.5 / 0.95 / false</td><td>оценка компонент</td></tr>
+<tr><td>decay_time</td><td>1 (с)</td><td>используется только в оценке компонент (см. FPS)</td></tr>
+<tr><td>fr</td><td>FPS сессии</td><td>см. <a href="#fps-use">5.2</a></td></tr>
+</tbody></table></div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:52-77</code></details>
+</details>
+<div class="kv card small">
+<div>checks.cnmf_n_components_vs_median</div><div><b>warn &gt; 2,0×, error &gt; 3,0×</b> медианы серии (нужно ≥ 3 сессий)</div>
+<div>checks.cnmf_missed_cells</div><div><b>warn &gt; 20</b></div>
+<div>аномалия cnmf_downsampled</div><div>warning: ssub_B увеличен под память; error: прогноз не помещается даже при ssub_B 4</div>
+</div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:125-126</code>; <code>bearmind/checks.py:40-56</code>, <code>66-69</code>; <code>bearmind/stages/cnmf.py:113-123</code></details>
+<p><b>Пересчёт CNMF-E:</b> изменился любой параметр <code>cnmf.*</code> (в том числе пороги), FPS, выбранный ssub_B, или пересчитаны MC/карты. <details class="src"><summary>код</summary><code>bearmind/runner.py:262-268</code></details></p>
+<h4>Пример: тестовый корень, LT1_J03_1D</h4>
+<p>Пороги 4 / 0,90 / 20,0. 209 компонент, принято 126, пропущенных клеток 0, медианный SNR принятых 3,86. ssub_B 2, прогноз памяти 22,3 ГиБ, 31 процесс. <details class="src"><summary>файл</summary><code>H:\Projects\_bearmind_test\lt1_J03_J06\_bearmind\registry\LT1_J03_1D.json</code> → stages.cnmf.metrics.</details></p>
+<figure><img src="img/cnmf_LT1_J03_1D.png" alt="Контуры компонент и трейсы CNMF-E" loading="lazy">
+<figcaption>Из <code>4_Estimates/LT1_J03_1D_estimates.pickle</code> тестового корня: imax с контурами (уровень 0,35 от максимума футпринта) 126 принятых и 83 отброшенных компонент; трейсы C восьми принятых компонент с наибольшим SNR. Ось времени — таймстемпы сессии.</figcaption></figure>
+<details class="more"><summary>Карты остатка CNMF-E (Preview/LT1_J03_1D_cnmf_residual.png)</summary>
+<figure><img src="img/residual_LT1_J03_1D.png" alt="Карты остатка" loading="lazy"><figcaption>Файл этапа CNMF-E, уменьшен до 1400 px по ширине. Из него берётся число пропущенных клеток.</figcaption></figure>
+</details>
+
+<!-- 3.6 GATE -->
+<h3 id="st-gate">3.6 Гейт (ручная инспекция)</h3>
+<p>Гейт ничего не считает. Он ждёт решения человека по последнему результату CNMF-E.</p>
+<div class="human"><b>Решение человека.</b> Два варианта. <b>Manual inspection</b>: страница инспекции (<code>python -m bearmind inspect</code>) открывает сессию; <b>Save results</b> пишет <code>5_Inspection/&lt;SID&gt;/&lt;SID&gt;_manual_estimates.pickle</code> и решение <code>cleaned</code>. <b>Not needed</b>: решение <code>not_needed</code> (вкладка Inspection, меню Monitor, CLI <code>gate</code>). <details class="src"><summary>код</summary><code>bearmind/inspect_server.py:1-18</code>; <code>bearmind/actions.py:462-495</code>; <code>bearmind/gui/inspection_tab.py:193-195</code>; <code>bearmind/stages/gate.py:33-46</code></details></div>
+<ol class="steps">
+<li>Решение считается, только если оно новее, чем окончание CNMF-E. После пересчёта CNMF-E гейт снова ждёт. <details class="src"><summary>код</summary><code>bearmind/stages/gate.py:55-57</code></details></li>
+<li>Для <code>cleaned</code> файл ручного результата должен существовать и быть новее файла estimates. <details class="src"><summary>код</summary><code>bearmind/stages/gate.py:58-63</code></details></li>
+<li>Автоинспекция берёт ручной результат, если решение <code>cleaned</code>, иначе — estimates CNMF-E. <details class="src"><summary>код</summary><code>bearmind/stages/gate.py:67-71</code></details></li>
+<li>Страница инспекции строит ось времени из таймстемпов реестра, а не из FPS. <details class="src"><summary>код</summary><code>bearmind/inspect_server.py:203-207</code>, <code>932-937</code></details></li>
+</ol>
+<p><b>Пересчёт гейта:</b> новое решение, перезаписанный файл ручного результата, новое время окончания CNMF-E, флажок <code>gate.enabled</code>. При <code>enabled: false</code> гейт проходит сам. <details class="src"><summary>код</summary><code>bearmind/runner.py:269-278</code>; <code>bearmind/stages/gate.py:50-51</code></details></p>
+<p><b>Пример:</b> в тестовом корне LT1_J03_1D — <code>cleaned</code> (User), остальные 7 — <code>not_needed</code> (lt1-run-agent). <details class="src"><summary>файл</summary>реестр тестового корня, stages.gate.metrics.</details></p>
+
+<!-- 3.7 AUTOINSPECT -->
+<h3 id="st-ai">3.7 Автоинспекция</h3>
+<p>Автоинспекция считает метрики каждой принятой компоненты, решает «оставить / удалить», сливает дубли и сохраняет всё в одном файле. Удалённые компоненты остаются в файле с пометкой; что уйдёт в экспорт, решает правило экспорта.</p>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Отказывается работать с файлами, где массивы SNR и r_values не выровнены с компонентами (сжатые старым кодом). <details class="src"><summary>код</summary><code>bearmind/stages/autoinspect.py:15-39</code></details></li>
+<li>Берёт FPS = round(FPS сессии): 20 или 30 для LT1. <details class="src"><summary>код</summary><code>bearmind/stages/autoinspect.py:53-54</code></details></li>
+<li>Считает метрики компонент: форма футпринта (площадь, круглость, выпуклость…), SNR и r_value CaImAn, шум, события (driada — библиотека лаборатории для анализа нейронов; вейвлет-детекция), кинетика (t_rise, t_off, tau_decay), реконструкции трейсов, расстояния между футпринтами (FBD — расстояние между границами, FCD — между центрами), корреляционные группы. <details class="src"><summary>код</summary><code>ae_launch.py:388-408</code>; <code>auto_inspector.py:1040</code> (estimates_to_metrics)</details></li>
+<li>Решение «удалить»: сначала правила (площадь &lt; 1, круглость &gt; 4, нет событий, event_r2_score &lt; 0), потом ML-модель EBM (объяснимый бустинг) на оставшихся: вероятность «оставить» &lt; 0,72 — удалить (brain hybrid). <details class="src"><summary>код</summary><code>auto_inspector.py:1329-1334</code>, <code>1647-1690</code>, <code>1701-1745</code>; <code>bearmind/defaults.yaml:79-81</code></details></li>
+<li>Дубли: пара в одной корреляционной группе с FBD ≤ 15 px. Если |ΔSNR| ≤ 10 — слить; иначе удалить более тусклую. Группы слияния — полная связь (каждая пара в группе близка). <details class="src"><summary>код</summary><code>auto_inspector.py:1850-1863</code>, <code>1890-1906</code>; <code>bearmind/defaults.yaml:87-91</code></details></li>
+<li>Применяет решения (слияния через CaImAn manual_merge), переводит таблицу метрик на новые номера, сохраняет <code>&lt;SID&gt;_processed.pickle</code> с <code>metrics_df</code> и <code>autoinspection_config</code>. <details class="src"><summary>код</summary><code>ae_launch.py:466-546</code>; <code>bearmind/stages/autoinspect.py:59-77</code></details></li>
+</ol>
+<div class="kv card small">
+<div>autoinspect.brain / model_path / ml_threshold</div><div>hybrid / production_models/ebm_v9_iter8.pkl / 0.72</div>
+<div>n_iter / event_method / hybrid_kinetics</div><div>3 / wavelet / true</div>
+<div>correlation_method / cthr / corr_thr</div><div>spearman / 0.35 / 0.4</div>
+<div>pxlthr_distance_boundary / d_snr_thr / enable_merge</div><div>15 px / 10 / true</div>
+<div>include_event_based / include_heavy / detect_corner_artifacts</div><div>true / true / false</div>
+<div>seed</div><div>0 (одинаковые решения при повторе)</div>
+<div>checks.auto_deleted_frac</div><div><b>warn &gt; 0,8, error &gt; 0,95</b></div>
+</div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:78-97</code>, <code>127</code>; <code>bearmind/checks.py:70-72</code></details>
+<p><b>Пересчёт:</b> изменились <code>autoinspect.*</code>, версия группировки слияний (<code>MERGE_GROUPING = "fbd_complete"</code>), sha256 файла модели, round(FPS), или прошёл гейт заново. <details class="src"><summary>код</summary><code>bearmind/runner.py:279-285</code>; <code>export_estimates_data.py:41</code></details></p>
+<p><b>Пример LT1_J03_1D (тестовый корень):</b> на входе 126 компонент, 2 группы слияния, после слияний 124, удалено 70, оставлено 54; доля удалённых 0,556. <details class="src"><summary>файл</summary>реестр тестового корня → stages.autoinspect.metrics.</details></p>
+
+<!-- 3.8 EXPORT -->
+<h3 id="st-exp">3.8 Экспорт</h3>
+<h4>Что делает, по шагам</h4>
+<ol class="steps">
+<li>Выбирает нейроны: из idx_components оставляет те, у кого вероятность ML ≥ ml_threshold (то, с которым шла автоинспекция) или кто получен слиянием, и кто не помечен delete. <details class="src"><summary>код</summary><code>bearmind/stages/export.py:19-36</code>; <code>export_estimates_data.py:174-217</code></details></li>
+<li>Берёт таймстемпы сессии из реестра (части склеены, каждая обрезана до своих кадров) и пишет столько строк, сколько кадров в C (не больше кадров реестра). <details class="src"><summary>код</summary><code>bearmind/stages/export.py:147-154</code>, <code>183</code>; <code>bearmind/timestamps.py:109-135</code></details></li>
+<li>Пишет <code>&lt;SID&gt;_data.npz</code>: C (денойзированные трейсы CNMF-E, float32), component_indices, asp и reconstructions (из автоинспекции), fps. Пишет <code>&lt;SID&gt;_metadata.json</code>: fps, autoinspection_fps, параметры CNMF-E, конфиг автоинспекции, метрики экспортированных нейронов, provenance (коммит, пакеты, модель, параметры всех этапов, решения, проверки, аномалии). Пишет <code>&lt;SID&gt;_filters.mat</code> (сглаженные футпринты). Все файлы — атомарно, JSON последним. <details class="src"><summary>код</summary><code>export_estimates_data.py:228-259</code>, <code>279-414</code>; <code>bearmind/stages/export.py:163-205</code>; <code>bearmind/provenance.py:58-78</code></details></li>
+</ol>
+<div class="kv card small">
+<div>checks.export_n_neurons</div><div><b>warn &lt; 30, error &lt; 5</b></div>
+<div>checks.export_median_snr</div><div><b>warn &lt; 3,0</b></div>
+<div>аномалии этапа</div><div>no_components, export_frames_mismatch, old_merge_grouping, export_rule_counters, no_filters (все warning)</div>
+</div>
+<details class="src"><summary>код</summary><code>bearmind/defaults.yaml:128-129</code>; <code>bearmind/stages/export.py:129-187</code></details>
+<p><b>Пересчёт:</b> изменились ml_threshold автоинспекции, правило выбора (<code>COMPONENT_RULE</code>), файлы таймстемпов (имя, формат, время старта, число кадров, размер и время изменения файла), или пересчитана автоинспекция. <details class="src"><summary>код</summary><code>bearmind/runner.py:286-298</code>; <code>bearmind/stages/__init__.py:11</code></details></p>
+<figure><img src="img/export_LT1_J03_1D.png" alt="Экспортированные трейсы и интервалы таймстемпов" loading="lazy">
+<figcaption>Тестовый корень, LT1_J03_1D: <code>6_Export/npz/LT1_J03_1D_data.npz</code> — 54 нейрона × 11 846 кадров (каждый ряд нормирован); внизу — интервалы между строками <code>LT1_J03_1D_timestamps.csv</code> и 1000/fps из NPZ (50,62 мс).</figcaption></figure>
+<details class="more"><summary>Воронка компонент по 8 сессиям тестового корня</summary>
+<div class="tablewrap"><table id="funnel"><thead><tr><th>Сессия</th><th>Пороги (метод)</th><th>Кроп</th><th class="num">MC сдвиг / корр.</th><th class="num">CNMF-E всего</th><th class="num">принято</th><th>Гейт</th><th class="num">слияний</th><th class="num">удалено</th><th class="num">экспорт</th><th>Воронка</th><th>Проверки не ok</th></tr></thead><tbody></tbody></table></div>
+<p class="small">Источник: <code>H:\Projects\_bearmind_test\lt1_J03_J06\_bearmind\registry\*.json</code>. Полосы: синяя — всего компонент CNMF-E, бирюзовая — принято, фиолетовая — экспортировано.</p>
+</details>
+
+<!-- 3.9 PREVIEWS -->
+<h3 id="st-prev">3.9 Превью</h3>
+<p>Превью — боковые этапы (от них ничего не зависит). Они идут сразу после MC и CNMF-E, если стоит флажок <code>preview.enabled</code>. У LT1 сейчас флажок снят; файлы в <code>Preview/</code> LT1 — от более раннего прогона 12.11.2026 (104 файла).</p>
+<ol class="steps">
+<li><b>Превью MC</b>: <code>&lt;SID&gt;_raw.mp4</code> (сырое, без кропа), <code>_mc.mp4</code> (MC-видео) — H.264, среднее по tbin = 2 кадрам, скорость ×4, crf 23; <code>_raw_dff.mp4</code> и <code>_mc_dff.mp4</code> — панели raw | dF/F (относительное изменение флуоресценции; F0 — 10-й процентиль за 60 с) | high-pass, скорость ×2. <details class="src"><summary>код</summary><code>bearmind/stages/previews.py:88-145</code>; <code>bearmind/video.py:281-326</code>; <code>bm_qc.py:911-1015</code>; <code>bearmind/defaults.yaml:146-151</code></details></li>
+<li><b>Превью CNMF-E</b>: <code>&lt;SID&gt;_cnmf_qc.mp4</code> — raw | raw − фон | A·C | остаток. <details class="src"><summary>код</summary><code>bearmind/stages/previews.py:148-184</code></details></li>
+<li><b>Пересчёт:</b> настройки превью (tbin, ssub, crf, speed) или хэш родительского этапа. <details class="src"><summary>код</summary><code>bearmind/runner.py:226-238</code>; <code>bearmind/stages/previews.py:32-45</code></details></li>
+</ol>
+<p class="small">Проверено на файлах LT1_J01_1D: <code>_mc.mp4</code> идёт с частотой 21382/359 = 59,56 к/с = 29,78 × 4 / 2; <code>_mc_dff.mp4</code> — 815762/27393 = 29,78 к/с = 29,78 / 2 × 2; 35 731 кадр = ⌈71 461 / 2⌉. <details class="src"><summary>файл</summary>заголовки <code>H:\Projects\LT1\CalciumData\Preview\LT1_J01_1D_mc.mp4</code>, <code>_mc_dff.mp4</code> (PyAV).</details></p>
+</section>
+
+<!-- ============================================================ 4. ANOMALIES -->
+<section id="anomalies">
+<h2>4. Аномалии скана</h2>
+<p>Аномалия скана — запись в реестре: код, уровень (warning или error), текст, флаг «исправлено автоматически» и числа. Аномалия уровня error исключает сессию, пока вы не решите иначе. Ниже — все коды, которые пишет скан, и что с ними происходит сейчас.</p>
+<details class="src"><summary>код</summary>Модель: <code>bearmind/registry.py:42-48</code>. Исключение: <code>bearmind/scan.py:378-399</code>. Показ: <code>bearmind/scan_view.py:11-24</code>, <code>202-215</code>; <code>bearmind/gui/scan_tab.py:445-469</code>.</details>
+
+<h3 id="an-table">4.1 Полный перечень</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Код</th><th>Правило (точно)</th><th>Уровень</th><th>Что программа делает сама</th><th>Что можете сделать вы</th><th>Где видно</th></tr></thead>
+<tbody>
+<tr><td><code>unreadable_video</code><br>«unreadable video»</td><td>Заголовок чанка или его последний кадр не читается (исключение при чтении). <details class="src"><summary>код</summary><code>scan.py:142-146</code>, <code>184-187</code>, <code>215-217</code></details></td><td><span class="pill err">ERROR</span></td><td>Часть пропускается. Если частей не осталось — сессия без FPS и всегда исключена.</td><td>Исправить файлы → Rescan. Open folder.</td><td rowspan="13">Scan: цвет ячейки, столбец Anomalies, панель Details (ERROR / WARN / INFO / FIXED). Monitor: Excluded. <code>summary.csv</code> (столбец anomalies). JSON экспорта: provenance.anomalies.<details class="src"><summary>код</summary><code>scan_tab.py:342-385</code>, <code>445-469</code>; <code>runner.py:1688</code>; <code>provenance.py:77</code></details></td></tr>
+<tr><td><code>broken_last_frame</code><br>«broken last frame»</td><td>Последний кадр последнего чанка части не декодируется. <details class="src"><summary>код</summary><code>scan.py:184-193</code>; <code>video.py:138-147</code></details></td><td><span class="pill warn">WARN</span></td><td><span class="pill fix">FIXED</span> Кадр отбрасывается (−1 кадр).</td><td>Ничего; Exclude при сомнении.</td></tr>
+<tr><td><code>chunk_tail_frames</code><br>«extra chunk frames»</td><td>Чанков &gt; 1 и (кадров − строк таймстемпов) ровно = чанков − 1. <details class="src"><summary>код</summary><code>scan.py:194-201</code>; <code>video.py:178-180</code></details></td><td><span class="pill warn">WARN</span></td><td><span class="pill fix">FIXED</span> Отбрасывается последний кадр каждого чанка, кроме последнего.</td><td>Ничего.</td></tr>
+<tr><td><code>no_metadata</code><br>«no recording start time»</td><td>Legacy: у части нет <code>recordingStartTime.msecSinceEpoch</code> в metaData.json. <details class="src"><summary>код</summary><code>scan.py:154-162</code>, <code>245-247</code></details></td><td><span class="pill warn">WARN</span></td><td>Ничего (если часть одна).</td><td>Положить metaData.json → Rescan.</td></tr>
+<tr><td><code>split_recording</code><br>«split recording»</td><td>Сессия из ≥ 2 частей. Error, если legacy и хотя бы у одной части нет времени старта; иначе warning. В data — паузы между частями, с. <details class="src"><summary>код</summary><code>scan.py:249-262</code></details></td><td><span class="pill warn">WARN</span> / <span class="pill err">ERROR</span></td><td>WARN: склейка по времени старта (legacy) или по первому таймстемпу (bonsai). ERROR: исключена, склейки нет.</td><td><b>Confirm stitch</b> — только отметка «проверено» (привязана к набору частей); батч её не ждёт. ERROR: исправить файлы → Rescan.<details class="src"><summary>код</summary><code>actions.py:426-450</code>; <code>scan.py:352-362</code>; в runner.py проверки нет</details></td></tr>
+<tr><td><code>frames_ts_mismatch</code><br>«frames ≠ timestamps»</td><td>В части кадров (после отбрасываний) ≠ строк таймстемпов. Доля = |разница| / строк. ≤ 0,02 — warning, &gt; 0,02 — error. <details class="src"><summary>код</summary><code>scan.py:264-281</code>; <code>defaults.yaml:6</code></details></td><td><span class="pill warn">WARN</span> / <span class="pill err">ERROR</span></td><td>В обоих случаях часть обрезается до общей длины <b>с конца</b> (лишние кадры или строки в конце). WARN: <span class="pill fix">FIXED</span>. ERROR: сессия исключена.</td><td>ERROR: <b>Accept with trimming to common length</b> (Scan), «Accept frame mismatch» (Monitor), CLI <code>decide accept-mismatch</code> — ошибка становится FIXED, сессия включается. <details class="src"><summary>код</summary><code>actions.py:413-423</code>; <code>scan.py:387-390</code>; <code>scan_tab.py:439-440</code></details></td></tr>
+<tr><td><code>no_timestamps</code><br>«no timestamps found»</td><td>У какой-либо части нет файла таймстемпов или он не читается. <details class="src"><summary>код</summary><code>scan.py:171-180</code>, <code>284-286</code></details></td><td><span class="pill err">ERROR</span></td><td>FPS не считается → <code>fps_unavailable</code> → исключена <b>всегда</b>.</td><td>Положить файл (в папку сессии или <code>0_TimeStamps</code>) → Rescan. Include не помогает.</td></tr>
+<tr><td><code>fps_unavailable</code><br>«no frame rate»</td><td>FPS = None: нет таймстемпов или &lt; 2 положительных интервалов. <details class="src"><summary>код</summary><code>scan.py:290-295</code>, <code>365-375</code>, <code>391-393</code>; <code>timestamps.py:67-70</code></details></td><td><span class="pill err">ERROR</span></td><td>Исключена всегда; батч не может её запланировать.</td><td>Только исправить таймстемпы → Rescan. <details class="src"><summary>код</summary><code>actions.py:392-393</code>; <code>runner.py:329</code>, <code>362-363</code></details></td></tr>
+<tr><td><code>dropped_frames</code><br>«dropped frames»</td><td>Есть интервалы &gt; 2 × медиана (разрывы). В data: n_gaps, max_gap_ms, n_dropped = Σ max(round(интервал/медиана) − 1, 1). <details class="src"><summary>код</summary><code>scan.py:299-313</code></details></td><td><span class="pill warn">WARN</span> (во вкладке может быть <span class="pill info">INFO</span>)</td><td>Ничего с кадрами. Разрывы выпадают из оценки FPS. Вкладка Scan показывает как INFO, если самая длинная пауза ≤ 1 с и n_dropped ≤ 1% кадров. Пауза между склеенными частями — тоже разрыв.<details class="src"><summary>код</summary><code>scan_view.py:147-164</code>, <code>179-187</code></details></td><td>Ничего; Exclude при сомнении.</td></tr>
+<tr><td><code>fps_outlier</code><br>«FPS outlier»</td><td>(а) у мыши ≥ 3 сессий с FPS, и ни одна другая сессия мыши не ближе 5% по FPS; (б) legacy: отличие от номинального frameRate metaData.json &gt; 5%. <details class="src"><summary>код</summary><code>scan.py:458-483</code></details></td><td><span class="pill warn">WARN</span></td><td>Ничего; FPS из таймстемпов используется как есть.</td><td>Проверить; Exclude при необходимости.</td></tr>
+<tr><td><code>registry_recreated</code><br>«registry file recreated»</td><td>Файл реестра сессии не читается как запись. <details class="src"><summary>код</summary><code>scan.py:408-419</code>, <code>505-508</code></details></td><td><span class="pill warn">WARN</span></td><td>Новая запись; старый файл сохранён как <code>.broken-&lt;время&gt;</code>; решения и этапы потеряны — все этапы заново.</td><td>Ничего; при нужде вернуть решения руками.</td></tr>
+<tr><td><code>not_found_in_scan</code><br>«not found by the last scan»</td><td>Запись реестра есть, папки сессии последний скан не нашёл. <details class="src"><summary>код</summary><code>scan.py:422-427</code>, <code>514-522</code></details></td><td><span class="pill err">ERROR</span></td><td>Исключена до возврата папки; этапы и решения сохраняются.</td><td>Вернуть папку → Rescan.</td></tr>
+<tr><td>(нераспознанная папка)</td><td>Папка с AVI, но имена не по шаблону: «folder name is not a session id», «AVI names do not match &lt;SID&gt;_&lt;n&gt;.avi», «legacy folder name is not a session id», «Miniscope AVI names are not &lt;n&gt;.avi». <details class="src"><summary>код</summary><code>scan.py:98-123</code></details></td><td>—</td><td>Сессии нет; строка в <code>scan_unrecognized.csv</code>.</td><td>Переименовать → Rescan.</td></tr>
+</tbody></table></div>
+<div class="note small"><b>Решения человека для всех кодов.</b> <b>Exclude</b> исключает любую сессию. <b>Include</b> на вкладке Scan и в Monitor снимает только ваше исключение («by you»); исключение по аномалии снимается исправлением файлов и Rescan, или Accept. CLI <code>decide include</code> снимает и исключение по ошибке, кроме нет-FPS и пропавшей папки. Решения хранятся в реестре; действует последнее. <details class="src"><summary>код</summary><code>scan_tab.py:36-37</code>, <code>422-430</code>; <code>actions.py:375-410</code>; <code>scan.py:378-399</code>; <code>cli.py:498-521</code></details></div>
+<div class="attn" id="w-accept"><span class="tag">Внимание.</span> Accept не привязан к конкретному расхождению. Решение <code>accept_mismatch = true</code> понижает до FIXED <b>любую</b> будущую ошибку <code>frames_ts_mismatch</code> этой сессии, какого бы размера она ни была после замены файлов. Confirm stitch, наоборот, привязан к набору частей. И обрезка всегда идёт с конца: программа не проверяет, где на самом деле лишние кадры. Руководство студента советует нажимать Accept, «если разница в конце», но программа этого не показывает.
+<details class="src"><summary>код</summary><code>bearmind/scan.py:387-390</code> (Accept), <code>352-362</code> (отпечаток склейки), <code>280-281</code> (обрезка до min); <code>docs/students/series-workflow.md:123</code>.</details></div>
+<div class="attn" id="w-split"><span class="tag">Внимание.</span> Склеенная запись идёт дальше как одно непрерывное видео. MC, CNMF-E, автоинспекция и превью считают время как «кадр / FPS», и паузы между частями для них нет. Паузу сохраняет только файл таймстемпов экспорта. В LT1 склеенных записей нет.
+<details class="src"><summary>код</summary><code>bearmind/video.py:163-187</code> (части подряд); <code>bearmind/stages/autoinspect.py:54</code>; <code>bearmind/stages/export.py:147</code>, <code>183</code>.</details></div>
+
+<h3 id="an-diagram">4.2 Диаграмма решений</h3>
+<p>Проверки идут в этом порядке для каждой сессии. Справа — исход: исправлено само (зелёный), предупреждение (жёлтый), исключение (красный).</p>
+<div class="svgwrap">
+<svg viewBox="0 0 1000 760" role="img" aria-label="Диаграмма решений скана">
+  <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+  <g id="dg"></g>
+</svg>
+</div>
+<p class="small">Диаграмма собрана по <code>bearmind/scan.py:98-305</code> и <code>378-399</code>. Отдельно скан помечает исчезнувшие папки (<code>not_found_in_scan</code>) и нечитаемые записи реестра (<code>registry_recreated</code>).</p>
+
+<h3 id="an-lt1">4.3 Что найдено в LT1</h3>
+<p>Сейчас в реестре LT1 (84 сессии, 21 мышь, все bonsai) два кода. Исключённых сессий нет. Нераспознанных папок нет. Вкладка Scan показывает «with problems 0»: все строки разрывов — INFO, расхождения — FIXED.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Код</th><th>Уровень</th><th class="num">Сессий</th><th>Как показано</th><th>Примеры</th></tr></thead>
+<tbody>
+<tr><td><code>dropped_frames</code></td><td><span class="pill warn">WARN</span></td><td class="num">55</td><td><span class="pill info">INFO</span> «no gap longer than 1 s, at most 1% of frames lost»</td><td>LT1_J01_1D: 3 gaps (max 134 ms); LT1_J10_4D: 29 gaps (max 75 ms); LT1_J03_2D: 1 gap (max 219 ms)</td></tr>
+<tr><td><code>frames_ts_mismatch</code></td><td><span class="pill warn">WARN</span></td><td class="num">7</td><td><span class="pill fix">FIXED</span> «fixed automatically»</td><td>LT1_J05_1D: 47 416 кадров, 47 309 строк (+107, 0,2%); J08_1D, J10_2D, J14_1D, J17_1D, J26_3D, J53_1D: −1 (строк на одну больше)</td></tr>
+</tbody></table></div>
+<details class="src"><summary>данные</summary><code>H:\Projects\LT1\CalciumData\_bearmind\registry\*.json</code> (anomalies), модель вкладки <code>scan_view.scan_view</code> на тех же файлах; <code>_bearmind\scan_unrecognized.csv</code> (только заголовок).</details>
+<div class="attn crit" id="w-j05"><span class="tag">Внимание.</span> LT1_J05_1D: последняя строка <code>LT1_J05_1D_Mini_TS.csv</code> обрезана — 16 цифр вместо 18 (<code>6392811466356614</code>), в конце нет перевода строки. Время в ней идёт назад на 6,3·10<sup>10</sup> с. Скан этого не видит: <code>robust_fps</code> молча выбрасывает неположительные интервалы, отдельной проверки монотонности нет. FPS от этого не пострадал (19,7563). Но строка пройдёт в <code>6_Export/npz/LT1_J05_1D_timestamps.csv</code> последней строкой и в ось времени страницы инспекции. Видео при этом на 107 кадров (5,4 с) длиннее таймстемпов; эти кадры отрезаны с конца (WARN, FIXED). Остальные 83 файла LT1 монотонны.
+<details class="src"><summary>код и данные</summary><code>bearmind/timestamps.py:67-68</code> (<code>d = d[d &gt; 0]</code>); <code>bearmind/stages/export.py:147-148</code>, <code>183</code>; <code>bearmind/timestamps.py:124-135</code>; <code>bearmind/inspect_server.py:203-207</code>. Проверка всех 84 файлов: <code>scripts/dfr_monotonic.py</code>.</details></div>
+</section>
+
+<!-- ============================================================ 5. FPS -->
+<section id="fps">
+<h2>5. Частота кадров (FPS)</h2>
+
+<h3 id="fps-calc">5.1 Как считается</h3>
+<ol class="steps">
+<li>Время кадров: таймстемпы всех частей, каждая часть обрезана до своих кадров, части по порядку старта. <details class="src"><summary>код</summary><code>bearmind/scan.py:264-288</code></details></li>
+<li>Интервалы d = разности соседних времён; неположительные выбрасываются; нужно ≥ 2 интервалов. <details class="src"><summary>код</summary><code>bearmind/timestamps.py:67-70</code></details></li>
+<li>m = медиана интервалов. Разрыв — интервал &gt; gap_factor × m = 2m. Разрывы выбрасываются. Короткие и неровные интервалы остаются: опоздание одного кадра делает один интервал длинным, а следующий коротким, и в сумме они гасятся. <details class="src"><summary>код</summary><code>bearmind/timestamps.py:58-79</code> (докстринг 59-65)</details></li>
+<li>Формула:
+<div class="card mono" style="font-size:15px">FPS = 1000 × (число оставшихся интервалов) / (сумма оставшихся интервалов, мс)</div>
+Вместе с FPS пишутся: n_outliers — интервалы вне [0,5 m; 1,5 m] (только для сведения, в FPS входят); n_gaps; max_gap_ms — самый длинный интервал; median_interval_ms; source = "timestamps". <details class="src"><summary>код</summary><code>bearmind/timestamps.py:24-30</code>, <code>72-79</code>; <code>bearmind/scan.py:296-298</code></details></li>
+<li><b>Без файла таймстемпов</b> FPS нет. Сессия получает <code>no_timestamps</code> и <code>fps_unavailable</code> и исключена всегда; Include не помогает; батч её не планирует. Запасного пути нет: ни заголовок AVI, ни <code>fps_data.csv</code>, ни номинальный frameRate батч не использует. Номинальный frameRate legacy-записей нужен только для проверки <code>fps_outlier</code>. Если таймстемпов нет хотя бы у одной части, FPS нет у всей сессии. <details class="src"><summary>код</summary><code>bearmind/scan.py:179-180</code>, <code>283-287</code>, <code>391-393</code>, <code>480-483</code>; <code>bearmind/actions.py:392-393</code>; <code>bearmind/runner.py:329</code>, <code>362-363</code></details></li>
+</ol>
+<p><b>Где хранится.</b> В реестре: <code>fps</code> (число) и <code>fps_info</code> {fps, n_outliers, n_gaps, max_gap_ms, median_interval_ms, source}. Копии: <code>stages.mc.params.fps</code>, <code>stages.cnmf.params.fr</code>, <code>stages.autoinspect.params.fps</code> (округлённый), <code>stages.autoinspect.metrics.autoinspection_fps</code>. В JSON экспорта: <code>fps</code>, <code>autoinspection_fps</code>, <code>cnmf_params.fr</code>, <code>autoinspection_config.fps</code>, <code>provenance.fps</code>. В NPZ экспорта: <code>fps</code>. <details class="src"><summary>код</summary><code>bearmind/registry.py:94-95</code>; <code>bearmind/runner.py:259</code>, <code>285</code>; <code>bearmind/stages/cnmf.py:107</code>; <code>bearmind/stages/autoinspect.py:91</code>; <code>bearmind/stages/export.py:166-168</code>; <code>bearmind/provenance.py:70-71</code>; <code>export_estimates_data.py:405</code></details></p>
+
+<h3 id="fps-use">5.2 Кто её использует</h3>
+<div class="svgwrap">
+<svg viewBox="0 0 1000 470" role="img" aria-label="Путь FPS">
+  <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>
+  <rect class="box inp" x="10" y="190" width="160" height="70" rx="8"/><text x="20" y="214" class="t-title">Таймстемпы</text><text x="20" y="234" class="t-file">&lt;SID&gt;_Mini_TS.csv</text><text x="20" y="250" class="t-small">тики 100 нс → мс</text>
+  <rect class="box stage" x="200" y="190" width="160" height="70" rx="8"/><text x="210" y="214" class="t-title">robust_fps</text><text x="210" y="234" class="t-small">без интервалов &gt; 2m</text><text x="210" y="250" class="t-file">timestamps.py:58</text>
+  <rect class="box stage" x="390" y="190" width="150" height="70" rx="8"/><text x="400" y="214" class="t-title">Реестр</text><text x="400" y="234" class="t-file">rec.fps, fps_info</text><text x="400" y="250" class="t-file">scan.py:297-298</text>
+  <line class="arrow" x1="170" y1="225" x2="198" y2="225" marker-end="url(#ah3)"/>
+  <line class="arrow" x1="360" y1="225" x2="388" y2="225" marker-end="url(#ah3)"/>
+  <g id="fpsfan"></g>
+</svg>
+</div>
+<div class="tablewrap"><table>
+<thead><tr><th>Потребитель</th><th>Что берёт</th><th>Для чего</th><th>Код</th></tr></thead>
+<tbody>
+<tr><td>MC</td><td>rec.fps как есть</td><td>частота кадров контейнера <code>_MC.avi</code> (дробь со знаменателем ≤ 1000). На сдвиги не влияет. Входит в хэш MC.</td><td><code>bearmind/stages/mc.py:146</code>, <code>171</code>; <code>bearmind/video.py:248-249</code>, <code>263</code>; <code>bearmind/runner.py:259</code></td></tr>
+<tr><td>CNMF-E</td><td><code>fr = float(rec.fps)</code></td><td>В CaImAn 1.13.2 <code>fr</code> нужен только оценке компонент: N_samples = ⌈fr × decay_time⌉ (20 или 30 кадров при decay_time 1 с) — длина окна для SNR транзиента; окно r_value: tB = min(−2, ⌊−5/30·fr⌋), tA = max(5, ⌈25/30·fr⌉). Значит, fr влияет на <code>SNR_comp</code>, <code>r_values</code> и на то, какие компоненты приняты. В саму факторизацию <code>fit</code> не входит. Входит в хэш CNMF-E.</td><td><code>bearmind/stages/cnmf.py:106-107</code>; CaImAn <code>source_extraction/cnmf/estimates.py:1058-1059</code>, <code>components_evaluation.py:574</code>, <code>401-402</code></td></tr>
+<tr><td>QC CNMF-E (карты остатка)</td><td>rec.fps</td><td>только для видео; в этапе CNMF-E видео не делается</td><td><code>bearmind/stages/cnmf.py:265</code>; <code>bm_qc.py:715-717</code>, <code>745-747</code></td></tr>
+<tr><td>Автоинспекция</td><td><b><code>round(rec.fps)</code></b>: 20 или 30</td><td>все метрики во времени: события в минуту, t_rise, t_off, tau_decay (кадры / fps), доля пересечений половины, время у пика, вейвлет-масштабы driada, длительность сессии. Сохраняется как <code>autoinspection_fps</code>. Округление намеренное: «модель ML и данные статьи построены с целым fps». Входит в хэш автоинспекции (округлённое).</td><td><code>bearmind/stages/autoinspect.py:53-54</code>, <code>61</code>, <code>91</code>; <code>ae_launch.py:343</code>, <code>388-389</code>, <code>483</code>, <code>526</code>; <code>auto_inspector.py:314-320</code>, <code>494</code>, <code>638</code>, <code>837</code>, <code>913</code>; <code>bearmind/runner.py:285</code></td></tr>
+<tr><td>Автоинспекция: est.time</td><td><code>default_fps = round(fps)</code></td><td>LoadEstimates ищет файл <code>&lt;SID&gt;*timestamp.csv</code> относительно текущей папки процесса; не находит и строит <code>linspace(0, n_frames // fps, n_frames)</code>. Метрики это поле не используют; оно сохраняется в processed.pickle.</td><td><code>bm_examinator.py:124-144</code>, <code>147-158</code>; <code>auto_inspector.py:1079</code></td></tr>
+<tr><td>Экспорт</td><td>rec.fps как есть</td><td><code>fps</code> в JSON и NPZ; <code>autoinspection_fps</code> из реестра. <b>Файл таймстемпов</b> экспорта пишется из исходных таймстемпов, не из FPS.</td><td><code>bearmind/stages/export.py:147-148</code>, <code>166-168</code>, <code>183</code>; <code>export_estimates_data.py:296-298</code>, <code>405</code></td></tr>
+<tr><td>Превью MC</td><td>rec.fps</td><td>частота mp4 = fps × speed / tbin; F0 для dF/F: бины по round(fps × 1 с), окно 60 с; подпись t = кадр / fps</td><td><code>bearmind/stages/previews.py:94</code>, <code>116</code>, <code>120</code>, <code>131</code>; <code>bearmind/video.py:296</code>; <code>bm_qc.py:919</code>, <code>1012-1014</code></td></tr>
+<tr><td>Превью CNMF-E</td><td>rec.fps</td><td>частота видео = fps / tbin × speed; подписи времени</td><td><code>bearmind/stages/previews.py:170</code>; <code>bm_qc.py:747</code>, <code>774</code></td></tr>
+<tr><td>Страница инспекции (гейт)</td><td>таймстемпы реестра</td><td>ось времени трейсов. <code>DEFAULT_FPS = 20</code> передаётся, но в режиме legacy не используется</td><td><code>bearmind/inspect_server.py:117</code>, <code>203-207</code>, <code>893-895</code>, <code>936</code>; <code>bm_examinator.py:754-760</code>, <code>794-803</code></td></tr>
+<tr><td>Скан</td><td>FPS сессий мыши</td><td>проверка <code>fps_outlier</code>; длительность в Scan = n_frames / fps / 60</td><td><code>bearmind/scan.py:458-483</code>; <code>bearmind/scan_view.py:250</code></td></tr>
+<tr><td colspan="4"><b>Старые пути, которые ещё можно вызвать (не из батча)</b></td></tr>
+<tr><td><code>ae_launch.run_auto_inspection</code> без fps</td><td><code>fps_data.csv</code>, округлённо</td><td>ошибка, если сессии нет в таблице. LT1 в таблице нет (941 строка, 3DM, NOF и др.)</td><td><code>ae_launch.py:40-65</code>, <code>300-305</code>; <code>bearmind/timestamps.py:138-171</code></td></tr>
+<tr><td><code>export_estimates_data.get_fps</code></td><td><code>fps_data.csv</code></td><td>функция есть, в репозитории не вызывается</td><td><code>export_estimates_data.py:79-87</code></td></tr>
+<tr><td><code>bm_examinator.get_fps_from_timestamps</code> → <code>table_routines.get_fps</code></td><td>среднее от 1/интервал</td><td>вызывается только в старом ноутбуке. На LT1 такой способ даёт 30,3–32,9 вместо 29,78 (джиттер завышает среднее от 1/d)</td><td><code>bm_examinator.py:173-184</code>; <code>table_routines.py:53-67</code>; <code>.ipynb_checkpoints/BEARMiND_full_pipeline-checkpoint.ipynb</code></td></tr>
+<tr><td><code>bm_examinator.LoadEstimates</code> без time</td><td>default_fps = 20</td><td>синтетическая ось времени <code>linspace(0, n // fps, n)</code> при открытии файла вне сервера</td><td><code>bm_examinator.py:124-158</code>, <code>1078</code></td></tr>
+</tbody></table></div>
+
+<h3 id="fps-verify">5.3 Проверка на реальных выходах</h3>
+<p>Тестовый корень <code>lt1_J03_J06</code>: 8 сессий, все этапы. Для каждой сессии прочитаны реестр, заголовок <code>_MC.avi</code>, <code>cnmf_dict</code> в estimates, <code>autoinspection_config</code> и <code>time</code> в processed.pickle, JSON, NPZ и файл таймстемпов экспорта.</p>
+<div class="tablewrap"><table id="verify"><thead><tr>
+<th>Сессия</th><th class="num">реестр fps</th><th class="num">MC params</th><th class="num">_MC.avi (дробь)</th><th class="num">CNMF-E fr (реестр)</th><th class="num">estimates cnmf_dict.fr</th><th class="num">автоинсп. (реестр / pickle / JSON)</th><th class="num">JSON fps</th><th class="num">NPZ fps</th><th class="num">строк ts / кадров / C</th><th class="num">FPS по ts экспорта</th><th class="num">est.time конец, с / длит. по ts, с</th>
+</tr></thead><tbody></tbody></table></div>
+<details class="src"><summary>данные</summary><code>H:\Projects\_bearmind_test\lt1_J03_J06\</code>: <code>_bearmind\registry\*.json</code>, <code>3_MC\*_MC.avi</code> (заголовок), <code>4_Estimates\*_estimates.pickle</code>, <code>5_Inspection\*\*_processed.pickle</code> и <code>*_manual_estimates.pickle</code>, <code>6_Export\npz\*</code>. Скрипт <code>scripts/dfr_fps_verify.py</code>.</details>
+<p><b>Итог проверки.</b></p>
+<ul>
+<li>Во всех 8 сессиях FPS реестра дошёл без изменений до параметров MC, <code>fr</code> CNMF-E (в реестре и в <code>cnmf_dict</code> файла estimates), <code>fps</code> в JSON и NPZ экспорта и <code>cnmf_params.fr</code> в JSON. У LT1_J03_1D (ручная инспекция) <code>cnmf_dict.fr</code> сохранился и в <code>manual_estimates.pickle</code>.</li>
+<li>Контейнер <code>_MC.avi</code> хранит FPS дробью: например 5512/279 = 19,756272 вместо 19,756274. Разница &lt; 10<sup>−5</sup> Гц.</li>
+<li><b>Автоинспекция везде получила округлённое значение</b>: 20 (J03) и 30 (J06) — в реестре, в <code>autoinspection_config.fps</code> processed.pickle и в JSON (<code>autoinspection_fps</code>, <code>autoinspection_config.fps</code>). Это расхождение на +1,2% и +0,7%.</li>
+<li>Файл таймстемпов экспорта: строк ровно столько, сколько кадров в реестре и в C; FPS по нему совпадает с реестром.</li>
+<li><code>est.time</code> в processed.pickle синтетический: конец 592,0 с (J03) и 595,0 с (J06) при длительности по таймстемпам 599,5–599,6 с.</li>
+</ul>
+<div class="attn" id="w-round"><span class="tag">Внимание.</span> Автоинспекция считает время по округлённому FPS: 20 вместо 19,756 (+1,2%), 30 вместо 29,78 (+0,7%). Все метрики во времени сдвинуты на эту долю: секунды занижены, частоты (события в минуту) завышены. Сделано намеренно, ради совместимости с обучением модели; значение пишется в <code>autoinspection_fps</code>. Если в серии появится частота, далёкая от целого (например 24,8), округление станет заметнее.
+<details class="src"><summary>код</summary><code>bearmind/stages/autoinspect.py:53-54</code>; <code>ae_launch.py:40-65</code>; <code>auto_inspector.py:314-320</code>, <code>638</code>, <code>837</code>.</details></div>
+<div class="attn" id="w-time"><span class="tag">Внимание.</span> processed.pickle несёт ложную ось времени <code>est.time</code>: <code>linspace(0, n_frames // round(fps), n_frames)</code>. Для LT1_J03_1D это 0…592 с вместо 0…599,56 с. Экспорт и метрики её не используют. Но кто откроет processed.pickle своим скриптом и возьмёт <code>.time</code>, получит неверное время. Кроме того, поиск файла таймстемпов идёт относительно текущей папки процесса.
+<details class="src"><summary>код и данные</summary><code>bm_examinator.py:133-136</code>, <code>150-158</code>; <code>ae_launch.py:343</code>. Проверено в 8 processed.pickle тестового корня (<code>scripts/dfr_fps_verify.py</code>).</details></div>
+<div class="attn" id="w-hash"><span class="tag">Внимание.</span> FPS входит в хэш MC, хотя сдвиги MC от него не зависят (только частота контейнера). Любое изменение правила FPS (например <code>scan.gap_factor</code>) после пересканирования изменит FPS сессий в последних знаках, и батч пересчитает MC, карты, CNMF-E и всё дальше у каждой такой сессии. На LT1 это десятки часов. Это стоит учесть до правки правила разрывов.
+<details class="src"><summary>код</summary><code>bearmind/runner.py:259</code> (<code>"fps": rec.fps</code> в параметрах MC), <code>302-309</code> (хэш цепочки); <code>bearmind/stages/mc.py:171</code> (единственное использование fps в MC).</details></div>
+
+<h3 id="fps-gaps">5.4 Разрывы и джиттер на LT1</h3>
+<p>LT1 снята на двух частотах. 6 мышей (J03, J05, J14, J27, J55, J61; 24 сессии) — 19,7563–19,7571 Гц. 15 мышей (60 сессий) — 29,7796–29,7979 Гц. Интервалы между кадрами на этих двух частотах устроены по-разному.</p>
+<figure><img src="img/intervals_LT1.png" alt="Распределение интервалов между кадрами" loading="lazy">
+<figcaption>Интервалы / медиана, логарифмическая шкала. Слева: LT1_J10_4D (29,79 Гц) — широкое распределение с пиками около 0,65 m, 1,0 m и 1,7 m и хвостом, который непрерывно идёт за порог разрыва 2,0 m. Справа: LT1_J27_3D (19,76 Гц) — узкий пик, ни одного интервала больше 1,82 m. Источник: <code>1_Raw/&lt;SID&gt;/&lt;SID&gt;_Mini_TS.csv</code> через <code>session_timestamps</code>.</figcaption></figure>
+<p>На 29,78 Гц «неровных» интервалов (вне 0,5–1,5 m) от 319 до 5859 на сессию; на 19,76 Гц — от 0 до 108. Порог 2m режет непрерывный хвост джиттера (дрожания интервалов). Проверим, теряются ли кадры в «разрывах».</p>
+<ol class="steps">
+<li><b>Сравнение сессий.</b> Если разрыв — потерянный кадр, то частота по длительности ((N − 1) / (t<sub>посл</sub> − t<sub>перв</sub>)) падает с числом разрывов, а robust_fps постоянна. Если разрыв — джиттер, то наоборот. На 60 сессиях 29,78 Гц частота по длительности почти постоянна (29,7729–29,7815, медиана 29,7801) и не зависит от числа разрывов. robust_fps растёт с числом разрывов (панель A).</li>
+<li><b>Окно вокруг разрыва.</b> Берём 30 интервалов до и 30 после разрыва. Если кадр потерян, сумма окна на 1 период длиннее, чем число интервалов. Из 324 разрывов (окна целиком внутри сессии) лишнее время &lt; 0,5 периода у 275 (85%), 0,5–1,5 — у 41, ≥ 1,5 — у 8. В контрольных окнах без разрыва ≥ 0,5 у 82 из 2378 (3,4%) (панель B).</li>
+<li><b>Явные потери</b> — 4 длинных разрыва (&gt; 2,5 m): LT1_J01_1D (134 ms, 3 кадра), LT1_J24_3D (89 ms — 1 кадр; 170 ms — 3 кадра), LT1_J03_2D (219 ms, 3 кадра). Окно даёт для них 2,98; 0,95; 2,96; 2,98 периода.</li>
+</ol>
+<figure><img src="img/fps_bias_LT1.png" alt="Две оценки частоты и тест окна" loading="lazy">
+<figcaption>A: robust_fps из реестра и частота по длительности для 60 сессий ~29,78 Гц против числа разрывов; круги — 40-минутные, квадраты — 10-минутные сессии. Квадрат около 29,773 — LT1_J24_3D с настоящей потерей 4 кадров. B: лишнее время в окне ±30 интервалов вокруг разрыва (синий) и в контрольных окнах (серый), в периодах кадра (период = длительность / (N − 1)). LT1_J05_1D исключена (испорченная последняя строка). Скрипты <code>scripts/dfr_registry_table.py</code>, <code>scripts/dfr_gapwindow.py</code>.</figcaption></figure>
+<div class="attn crit" id="w-gaps"><span class="tag">Внимание.</span> На установке 29,78 Гц правило <code>gap_factor = 2.0</code> принимает дрожание интервалов за потерю кадров. Около 85% из 324 «разрывов» LT1 — не потери. Следствия: (1) <code>dropped_frames</code> стоит у 55 из 84 сессий и <code>n_dropped</code> суммарно 334 кадра, хотя явных потерь около 10 кадров; (2) FPS завышен: разрывы выброшены, а короткие интервалы после них остались. Наибольший сдвиг — LT1_J10_4D: 29,7921 против 29,7796 по длительности (+0,0125 Гц, +0,04%); за 40 минут это 30 кадров, около 1 с, если считать время как кадр / FPS. На CNMF-E и MC это почти не влияет; файл таймстемпов экспорта точный. Влияет на поле <code>fps</code> экспорта и на всё, что считает время по FPS. На 19,76 Гц правило работает правильно: единственный разрыв (LT1_J03_2D, 219 ms) — настоящая потеря 3 кадров.
+<details class="src"><summary>код и данные</summary><code>bearmind/timestamps.py:71-74</code>; <code>bearmind/scan.py:299-313</code>; <code>bearmind/defaults.yaml:7</code>. Данные: <code>scripts/dfr_sessions.json</code>, <code>scripts/dfr_gapwindow.json</code>.</details></div>
+<div class="attn" id="w-comment"><span class="tag">Внимание.</span> Комментарий в коде расходится с данными. <code>bearmind/scan.py:458-459</code>: «LT1: six mice at 19.76 fps, the rest at 30.59». В реестре LT1 остальные 15 мышей — 29,7796–29,7979 Гц; 30,59 нет ни у одной сессии.
+<details class="src"><summary>данные</summary><code>H:\Projects\LT1\CalciumData\_bearmind\registry\*.json</code> → fps.</details></div>
+<div class="attn" id="w-avi"><span class="tag">Внимание (для пункта «FPS из видео»).</span> У всех 84 сессий LT1 в заголовке первого AVI-чанка записано 20,0 к/с (mpeg4, yuv420p). Для 60 сессий, снятых на 29,78 Гц, это неверно на 33%. Если сериям без таймстемпов брать FPS из заголовка видео, на такой установке результат будет ошибочным без всякого предупреждения.
+<details class="src"><summary>данные</summary>PyAV, <code>stream.average_rate</code> файла <code>1_Raw/&lt;SID&gt;/&lt;SID&gt;_0.avi</code> каждой сессии; скрипт <code>scripts/dfr_avirate.py</code>. Код чтения: <code>bearmind/video.py:125-135</code> (fps из заголовка сейчас никуда не идёт).</details></div>
+</section>
+
+<!-- ============================================================ 6. FACTS -->
+<section id="facts">
+<h2>6. Факты LT1 для решений</h2>
+<p>Таблица собрана из реестра LT1 и файлов таймстемпов (только чтение, 12.11.2026). Длительность = кадров / FPS, как во вкладке Scan. «Время в разрывах» — сумма интервалов &gt; 2m. «Потеряно (оценка скана)» — <code>n_dropped</code> из аномалии; см. <a href="#fps-gaps">5.4</a>: на 29,78 Гц большая часть этой оценки — джиттер.</p>
+<div class="grid2">
+<div class="card"><h4 style="margin-top:0">Длительности сессий</h4><div id="durhist"></div><p class="small">84 сессии, 33,5 ч записи. 42 сессии ≈ 10,0 мин, 38 ≈ 40,0 мин; отдельно: LT1_J05_1D 39,9 (обрезана на 107 кадров), LT1_J55_4D 10,51, LT1_J30_2D 10,93, LT1_J14_3D 11,29 мин.</p></div>
+<div class="card"><h4 style="margin-top:0">Сводка</h4>
+<div class="kv small">
+<div>Сессий / мышей</div><div>84 / 21, все bonsai, по одной части</div>
+<div>19,76 Гц</div><div>24 сессии, медианный интервал 50,61–50,63 мс</div>
+<div>29,78 Гц</div><div>60 сессий, медианный интервал 33,43–33,57 мс, средний 33,578–33,588 мс</div>
+<div>Сессий с разрывами</div><div>55; разрывов 326; время в них 22,6 с всего</div>
+<div>Потеряно по оценке скана</div><div>334 кадра (явных потерь около 10)</div>
+<div>frames_ts_mismatch</div><div>7 сессий, все исправлены автоматически</div>
+<div>Исключено</div><div>0</div>
+<div>Заголовок AVI</div><div>20,0 к/с у всех 84</div>
+</div></div>
+</div>
+<div class="filters">
+  <label>Поиск: <input id="f-text" type="search" placeholder="сессия, мышь, аномалия"></label>
+  <label>Частота: <select id="f-fps"><option value="">все</option><option value="20">19,76 Гц</option><option value="30">29,78 Гц</option></select></label>
+  <label><input id="f-gaps" type="checkbox"> только с разрывами</label>
+  <span class="small" id="f-count"></span>
+</div>
+<div class="tablewrap" style="max-height:620px"><table id="sessions"><thead><tr>
+<th class="sortable" data-k="sid">Сессия</th>
+<th class="sortable num" data-k="fps">FPS (реестр)</th>
+<th class="sortable num" data-k="span_fps">FPS по длит.</th>
+<th class="sortable num" data-k="dur">Длит., мин</th>
+<th class="sortable num" data-k="n">Кадров</th>
+<th class="sortable num" data-k="mean">Ср. интервал, мс</th>
+<th class="sortable num" data-k="med">Медиана, мс</th>
+<th class="sortable num" data-k="gaps">Разрывов</th>
+<th class="sortable num" data-k="gap_s">В разрывах, с</th>
+<th class="sortable num" data-k="lost">Потеряно (скан)</th>
+<th class="sortable num" data-k="maxgap">Макс. интервал, мс</th>
+<th class="sortable num" data-k="outl">Неровных</th>
+<th class="sortable num" data-k="avi">AVI fps</th>
+<th class="sortable num" data-k="mc_shift">MC max, px</th>
+<th class="sortable num" data-k="mc_shift_rest">без кадра 0</th>
+<th class="sortable num" data-k="f0">кадр0/кадр2</th>
+<th class="sortable num" data-k="mc_corr">MC корр.</th>
+<th class="sortable" data-k="crop">Поле</th>
+<th class="sortable" data-k="anom">Аномалии</th>
+</tr></thead><tbody></tbody></table></div>
+<details class="src"><summary>данные</summary><code>H:\Projects\LT1\CalciumData\_bearmind\registry\*.json</code>; <code>1_Raw\&lt;SID&gt;\&lt;SID&gt;_Mini_TS.csv</code>; <code>1_Raw\&lt;SID&gt;\&lt;SID&gt;_0.avi</code> (заголовок, кадры 0–2); <code>3_MC\&lt;SID&gt;_MC_shifts.npy</code>. Скрипты <code>scripts/dfr_registry_table.py</code>, <code>dfr_firstframe.py</code>, <code>dfr_avirate.py</code>, <code>dfr_build_data.py</code>.</details>
+</section>
+
+<!-- ============================================================ 7. ATTENTION -->
+<section id="attention">
+<h2>7. Все «Внимание»</h2>
+<ol>
+<li><a href="#w-gaps">Правило разрывов на 29,78 Гц</a>: ~85% «разрывов» — джиттер; <code>dropped_frames</code> у 55 сессий; FPS завышен до +0,0125 Гц (≈ 1 с за 40 мин).</li>
+<li><a href="#w-j05">LT1_J05_1D</a>: обрезанная последняя строка таймстемпов; скан не видит; уйдёт в экспорт и в ось времени инспекции.</li>
+<li><a href="#w-frame0">Проверка MC «max сдвиг»</a>: срабатывает на чёрном или тёмном кадре 0; все 5 ERROR в LT1 — от него.</li>
+<li><a href="#w-hash">FPS в хэше MC</a>: смена правила FPS пересчитает MC и всё дальше.</li>
+<li><a href="#w-avi">Заголовок AVI</a>: 20,0 к/с у всех 84 сессий LT1, у 60 из них неверно.</li>
+<li><a href="#w-round">Автоинспекция на округлённом FPS</a>: частоты завышены на 1,2% / 0,7%, секунды занижены на столько же.</li>
+<li><a href="#st-thr">Подсказка порогов у края сетки</a>: J03 — min_pnr 20 (верх сетки); J06 — mirror_fdr без пары, robust_bg с min_corr 0,99.</li>
+<li><a href="#st-mc">Порог корреляции MC 0,7</a>: 21 из 84 сессий ниже; по тестовому корню — без вреда для CNMF-E.</li>
+<li><a href="#w-accept">Accept не привязан к расхождению</a>; обрезка всегда с конца.</li>
+<li><a href="#w-time">Ложная ось est.time</a> в processed.pickle.</li>
+<li><a href="#w-split">Склеенные записи</a> идут как непрерывное видео; паузу знает только файл таймстемпов.</li>
+<li><a href="#w-comment">Комментарий scan.py</a> «30.59» против 29,78 в реестре.</li>
+<li>Provenance тестового корня: экспорт сделан из незакоммиченного дерева (<code>git_dirty: true</code>, коммит <code>c910d1d</code>); по нему нельзя точно восстановить код. <details class="src"><summary>файл</summary><code>6_Export\npz\*_metadata.json</code> → provenance.code.</details></li>
+</ol>
+</section>
+
+<!-- ============================================================ 8. SOURCES -->
+<section id="sources">
+<h2>8. Источники и воспроизведение</h2>
+<p>Все числа взяты из файлов ниже. Ничего на H: не изменено. Скрипты и их выходы лежат рядом со страницей в <code>docs/data-flow/scripts/</code>; запуск — Python окружения <code>bearmind</code> из папки <code>scripts/</code> (H: только читается).</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Скрипт</th><th>Что читает</th><th>Что даёт</th></tr></thead><tbody>
+<tr><td><code>dfr_registry_table.py</code></td><td>реестр LT1, таймстемпы</td><td><code>dfr_sessions.json</code>: таблица раздела 6, интервалы, разрывы, две оценки FPS</td></tr>
+<tr><td><code>dfr_gapwindow.py</code></td><td>таймстемпы LT1</td><td><code>dfr_gapwindow.json</code>: тест окна ±30 и контроль</td></tr>
+<tr><td><code>dfr_monotonic.py</code></td><td>все 84 файла <code>*_Mini_TS.csv</code></td><td>неположительные интервалы, длина чисел, перевод строки в конце</td></tr>
+<tr><td><code>dfr_firstframe.py</code></td><td>кадры 0–2 первого чанка, сдвиги MC</td><td><code>dfr_firstframe.json</code></td></tr>
+<tr><td><code>dfr_avirate.py</code></td><td>заголовки первых чанков</td><td><code>dfr_avirate.json</code></td></tr>
+<tr><td><code>dfr_fps_verify.py</code></td><td>тестовый корень: реестр, _MC.avi, pickle, экспорт</td><td><code>dfr_fps_verify.json</code>: таблица 5.3</td></tr>
+<tr><td><code>dfr_suggest.py</code></td><td>карты порогов тестового корня</td><td>повтор подсказки порогов</td></tr>
+<tr><td><code>dfr_figures.py</code></td><td>всё выше + кадры, карты, estimates, NPZ</td><td>картинки в <code>img/</code></td></tr>
+<tr><td><code>dfr_build_data.py</code></td><td>JSON выше</td><td><code>dfr_page_data.json</code>, встроен в эту страницу</td></tr>
+</tbody></table></div>
+<p class="small">Код CaImAn — установленный пакет 1.13.2 окружения <code>bearmind</code> (<code>C:\Users\User\anaconda3\envs\bearmind\Lib\site-packages\caiman</code>). Номера строк кода BEARMiND — по коммиту <code>dcac6cc</code> ветки <code>bearmind-batch</code>.</p>
+</section>
+</main>
+</div>
+<div id="tip"></div>
+<div id="lightbox"><img alt=""></div>
+
+<script>
+const DATA = {"sessions": [{"sid": "LT1_J01_1D", "mouse": "LT1_J01", "fps": 29.7799, "n": 71461, "nv": 71461, "dur": 39.99, "mean": 33.582, "med": 33.57, "gaps": 3, "gap_s": 0.27, "lost": 5, "maxgap": 134.0, "outl": 1794, "span_fps": 29.7778, "avi": 20.0, "mc_shift": 2.8, "mc_shift_rest": 2.8, "f0": 0.19, "mc_corr": 0.907, "crop": "activity", "box": [0, 0, 435, 512], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 134 ms)"}, {"sid": "LT1_J01_2D", "mouse": "LT1_J01", "fps": 29.7821, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.516, "gaps": 5, "gap_s": 0.338, "lost": 5, "maxgap": 67.8, "outl": 4699, "span_fps": 29.78, "avi": 20.0, "mc_shift": 6.1, "mc_shift_rest": 6.1, "f0": 0.17, "mc_corr": 0.938, "crop": "activity", "box": [0, 15, 435, 512], "anom": "dropped_frames", "anom_text": "5 gaps in timestamps (max 68 ms)"}, {"sid": "LT1_J01_3D", "mouse": "LT1_J01", "fps": 29.7865, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.508, "gaps": 15, "gap_s": 1.025, "lost": 15, "maxgap": 71.0, "outl": 5241, "span_fps": 29.78, "avi": 20.0, "mc_shift": 5.2, "mc_shift_rest": 5.2, "f0": 0.17, "mc_corr": 0.902, "crop": "activity", "box": [0, 0, 435, 512], "anom": "dropped_frames", "anom_text": "15 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J01_4D", "mouse": "LT1_J01", "fps": 29.7879, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.579, "med": 33.453, "gaps": 18, "gap_s": 1.23, "lost": 18, "maxgap": 72.1, "outl": 5859, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 5.0, "mc_shift_rest": 5.0, "f0": 0.16, "mc_corr": 0.906, "crop": "activity", "box": [0, 0, 435, 512], "anom": "dropped_frames", "anom_text": "18 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J03_1D", "mouse": "LT1_J03", "fps": 19.7563, "n": 11846, "nv": 11846, "dur": 9.99, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.4, "outl": 14, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 3.8, "mc_shift_rest": 3.8, "f0": 0.26, "mc_corr": 0.977, "crop": "activity", "box": [0, 11, 430, 597], "anom": "", "anom_text": ""}, {"sid": "LT1_J03_2D", "mouse": "LT1_J03", "fps": 19.7571, "n": 11842, "nv": 11842, "dur": 9.99, "mean": 50.629, "med": 50.617, "gaps": 1, "gap_s": 0.219, "lost": 3, "maxgap": 219.2, "outl": 7, "span_fps": 19.7516, "avi": 20.0, "mc_shift": 4.9, "mc_shift_rest": 4.9, "f0": 0.33, "mc_corr": 0.981, "crop": "activity", "box": [0, 11, 430, 597], "anom": "dropped_frames", "anom_text": "1 gap in timestamps (max 219 ms)"}, {"sid": "LT1_J03_3D", "mouse": "LT1_J03", "fps": 19.7563, "n": 11846, "nv": 11846, "dur": 9.99, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.6, "outl": 16, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 3.3, "mc_shift_rest": 3.3, "f0": 0.3, "mc_corr": 0.97, "crop": "fallback_pos_neg", "box": [0, 11, 430, 597], "anom": "", "anom_text": ""}, {"sid": "LT1_J03_4D", "mouse": "LT1_J03", "fps": 19.7564, "n": 11845, "nv": 11845, "dur": 9.99, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 79.2, "outl": 27, "span_fps": 19.7564, "avi": 20.0, "mc_shift": 3.6, "mc_shift_rest": 3.6, "f0": 0.23, "mc_corr": 0.961, "crop": "fallback_pos_neg", "box": [0, 11, 430, 597], "anom": "", "anom_text": ""}, {"sid": "LT1_J05_1D", "mouse": "LT1_J05", "fps": 19.7563, "n": 47309, "nv": 47416, "dur": 39.91, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 78.6, "outl": 24, "span_fps": null, "avi": 20.0, "mc_shift": 7.5, "mc_shift_rest": 7.5, "f0": 0.31, "mc_corr": 0.872, "crop": "activity", "box": [0, 20, 540, 530], "anom": "frames_ts_mismatch (auto)", "anom_text": "47416 frames in video, 47309 timestamp rows (diff 107, 0.2%)"}, {"sid": "LT1_J05_2D", "mouse": "LT1_J05", "fps": 19.7563, "n": 47410, "nv": 47410, "dur": 40.0, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 79.9, "outl": 27, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.8, "mc_shift_rest": 6.8, "f0": 0.37, "mc_corr": 0.849, "crop": "activity", "box": [0, 18, 540, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J05_3D", "mouse": "LT1_J05", "fps": 19.7563, "n": 47410, "nv": 47410, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.1, "outl": 36, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.9, "mc_shift_rest": 6.9, "f0": 0.36, "mc_corr": 0.84, "crop": "activity", "box": [0, 22, 540, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J05_4D", "mouse": "LT1_J05", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.4, "outl": 94, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.6, "mc_shift_rest": 6.6, "f0": 0.33, "mc_corr": 0.861, "crop": "activity", "box": [0, 7, 540, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J06_1D", "mouse": "LT1_J06", "fps": 29.7802, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 67.1, "outl": 487, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 4.8, "mc_shift_rest": 4.8, "f0": 0.19, "mc_corr": 0.69, "crop": "activity", "box": [0, 0, 531, 527], "anom": "", "anom_text": ""}, {"sid": "LT1_J06_2D", "mouse": "LT1_J06", "fps": 29.7838, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.579, "med": 33.555, "gaps": 2, "gap_s": 0.142, "lost": 2, "maxgap": 72.4, "outl": 762, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 6.8, "mc_shift_rest": 6.8, "f0": 0.18, "mc_corr": 0.622, "crop": "activity", "box": [0, 12, 531, 527], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J06_3D", "mouse": "LT1_J06", "fps": 29.7853, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.5, "gaps": 3, "gap_s": 0.204, "lost": 3, "maxgap": 68.5, "outl": 1437, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 7.6, "mc_shift_rest": 7.6, "f0": 0.15, "mc_corr": 0.738, "crop": "activity", "box": [0, 0, 531, 527], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J06_4D", "mouse": "LT1_J06", "fps": 29.7973, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.579, "med": 33.484, "gaps": 10, "gap_s": 0.68, "lost": 10, "maxgap": 69.8, "outl": 1389, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 4.4, "mc_shift_rest": 4.4, "f0": 0.15, "mc_corr": 0.733, "crop": "activity", "box": [0, 0, 531, 527], "anom": "dropped_frames", "anom_text": "10 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J08_1D", "mouse": "LT1_J08", "fps": 29.78, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.58, "med": 33.57, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 66.7, "outl": 319, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.8, "mc_shift_rest": 4.8, "f0": 0.28, "mc_corr": 0.778, "crop": "activity", "box": [12, 28, 550, 541], "anom": "frames_ts_mismatch (auto)", "anom_text": "17856 frames in video, 17857 timestamp rows (diff -1, 0.0%)"}, {"sid": "LT1_J08_2D", "mouse": "LT1_J08", "fps": 29.7802, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.579, "med": 33.531, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 66.9, "outl": 1210, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 5.7, "mc_shift_rest": 5.7, "f0": 0.3, "mc_corr": 0.789, "crop": "activity", "box": [11, 3, 550, 541], "anom": "", "anom_text": ""}, {"sid": "LT1_J08_3D", "mouse": "LT1_J08", "fps": 29.7837, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.579, "med": 33.5, "gaps": 2, "gap_s": 0.138, "lost": 2, "maxgap": 69.2, "outl": 1202, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 3.5, "mc_shift_rest": 3.5, "f0": 0.31, "mc_corr": 0.843, "crop": "activity", "box": [10, 33, 550, 541], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J08_4D", "mouse": "LT1_J08", "fps": 29.7901, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.58, "med": 33.477, "gaps": 6, "gap_s": 0.404, "lost": 6, "maxgap": 67.8, "outl": 1414, "span_fps": 29.78, "avi": 20.0, "mc_shift": 3.4, "mc_shift_rest": 3.4, "f0": 0.3, "mc_corr": 0.873, "crop": "activity", "box": [0, 12, 550, 541], "anom": "dropped_frames", "anom_text": "6 gaps in timestamps (max 68 ms)"}, {"sid": "LT1_J10_1D", "mouse": "LT1_J10", "fps": 29.7839, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.555, "gaps": 9, "gap_s": 0.618, "lost": 9, "maxgap": 72.2, "outl": 4028, "span_fps": 29.7799, "avi": 20.0, "mc_shift": 5.3, "mc_shift_rest": 5.3, "f0": 0.21, "mc_corr": 0.682, "crop": "activity", "box": [61, 160, 485, 438], "anom": "dropped_frames", "anom_text": "9 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J10_2D", "mouse": "LT1_J10", "fps": 29.7796, "n": 71463, "nv": 71463, "dur": 40.0, "mean": 33.581, "med": 33.57, "gaps": 2, "gap_s": 0.134, "lost": 2, "maxgap": 67.3, "outl": 1061, "span_fps": 29.7787, "avi": 20.0, "mc_shift": 27.1, "mc_shift_rest": 27.1, "f0": 0.19, "mc_corr": 0.715, "crop": "activity", "box": [62, 156, 485, 438], "anom": "frames_ts_mismatch (auto), dropped_frames", "anom_text": "71463 frames in video, 71464 timestamp rows (diff -1, 0.0%); 2 gaps in timestamps (max 67 ms)"}, {"sid": "LT1_J10_3D", "mouse": "LT1_J10", "fps": 29.7847, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.523, "gaps": 11, "gap_s": 0.746, "lost": 11, "maxgap": 68.9, "outl": 4562, "span_fps": 29.78, "avi": 20.0, "mc_shift": 6.1, "mc_shift_rest": 6.1, "f0": 0.19, "mc_corr": 0.692, "crop": "activity", "box": [62, 161, 485, 438], "anom": "dropped_frames", "anom_text": "11 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J10_4D", "mouse": "LT1_J10", "fps": 29.7921, "n": 71465, "nv": 71465, "dur": 39.98, "mean": 33.58, "med": 33.492, "gaps": 29, "gap_s": 1.982, "lost": 29, "maxgap": 74.6, "outl": 5705, "span_fps": 29.7796, "avi": 20.0, "mc_shift": 4.4, "mc_shift_rest": 4.4, "f0": 0.16, "mc_corr": 0.714, "crop": "activity", "box": [64, 159, 485, 438], "anom": "dropped_frames", "anom_text": "29 gaps in timestamps (max 75 ms)"}, {"sid": "LT1_J13_1D", "mouse": "LT1_J13", "fps": 29.7842, "n": 71467, "nv": 71467, "dur": 39.99, "mean": 33.58, "med": 33.57, "gaps": 10, "gap_s": 0.679, "lost": 10, "maxgap": 69.6, "outl": 2029, "span_fps": 29.7799, "avi": 20.0, "mc_shift": 6.6, "mc_shift_rest": 6.6, "f0": 0.1, "mc_corr": 0.919, "crop": "activity", "box": [0, 23, 401, 456], "anom": "dropped_frames", "anom_text": "10 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J13_2D", "mouse": "LT1_J13", "fps": 29.7838, "n": 71465, "nv": 71465, "dur": 39.99, "mean": 33.58, "med": 33.523, "gaps": 10, "gap_s": 0.679, "lost": 10, "maxgap": 72.2, "outl": 4005, "span_fps": 29.7796, "avi": 20.0, "mc_shift": 7.5, "mc_shift_rest": 7.5, "f0": 0.1, "mc_corr": 0.899, "crop": "activity", "box": [0, 16, 401, 456], "anom": "dropped_frames", "anom_text": "10 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J13_3D", "mouse": "LT1_J13", "fps": 29.786, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.539, "gaps": 14, "gap_s": 0.956, "lost": 14, "maxgap": 71.5, "outl": 4757, "span_fps": 29.78, "avi": 20.0, "mc_shift": 5.3, "mc_shift_rest": 5.3, "f0": 0.1, "mc_corr": 0.898, "crop": "activity", "box": [0, 18, 401, 456], "anom": "dropped_frames", "anom_text": "14 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J13_4D", "mouse": "LT1_J13", "fps": 29.7842, "n": 71465, "nv": 71465, "dur": 39.99, "mean": 33.58, "med": 33.547, "gaps": 10, "gap_s": 0.677, "lost": 10, "maxgap": 68.4, "outl": 3557, "span_fps": 29.78, "avi": 20.0, "mc_shift": 6.3, "mc_shift_rest": 6.3, "f0": 0.08, "mc_corr": 0.908, "crop": "activity", "box": [0, 30, 401, 456], "anom": "dropped_frames", "anom_text": "10 gaps in timestamps (max 68 ms)"}, {"sid": "LT1_J14_1D", "mouse": "LT1_J14", "fps": 19.7564, "n": 11845, "nv": 11845, "dur": 9.99, "mean": 50.616, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 75.7, "outl": 0, "span_fps": 19.7564, "avi": 20.0, "mc_shift": 4.6, "mc_shift_rest": 4.6, "f0": 0.26, "mc_corr": 0.956, "crop": "activity", "box": [0, 0, 553, 608], "anom": "frames_ts_mismatch (auto)", "anom_text": "11845 frames in video, 11846 timestamp rows (diff -1, 0.0%)"}, {"sid": "LT1_J14_2D", "mouse": "LT1_J14", "fps": 19.7563, "n": 11844, "nv": 11844, "dur": 9.99, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 81.5, "outl": 15, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 4.9, "mc_shift_rest": 4.9, "f0": 0.33, "mc_corr": 0.967, "crop": "activity", "box": [0, 0, 553, 608], "anom": "", "anom_text": ""}, {"sid": "LT1_J14_3D", "mouse": "LT1_J14", "fps": 19.7564, "n": 13388, "nv": 13388, "dur": 11.29, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 83.9, "outl": 12, "span_fps": 19.7564, "avi": 20.0, "mc_shift": 5.5, "mc_shift_rest": 5.5, "f0": 0.32, "mc_corr": 0.932, "crop": "fallback_pos_neg", "box": [0, 0, 553, 608], "anom": "", "anom_text": ""}, {"sid": "LT1_J14_4D", "mouse": "LT1_J14", "fps": 19.7564, "n": 11845, "nv": 11845, "dur": 9.99, "mean": 50.616, "med": 50.609, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 86.3, "outl": 17, "span_fps": 19.7564, "avi": 20.0, "mc_shift": 2.7, "mc_shift_rest": 2.7, "f0": 0.26, "mc_corr": 0.93, "crop": "fallback_pos_neg", "box": [0, 0, 553, 608], "anom": "", "anom_text": ""}, {"sid": "LT1_J17_1D", "mouse": "LT1_J17", "fps": 29.7817, "n": 71465, "nv": 71465, "dur": 39.99, "mean": 33.58, "med": 33.555, "gaps": 4, "gap_s": 0.275, "lost": 4, "maxgap": 71.6, "outl": 4150, "span_fps": 29.7799, "avi": 20.0, "mc_shift": 8.8, "mc_shift_rest": 8.8, "f0": 0.25, "mc_corr": 0.764, "crop": "activity", "box": [78, 113, 444, 491], "anom": "frames_ts_mismatch (auto), dropped_frames", "anom_text": "71465 frames in video, 71466 timestamp rows (diff -1, 0.0%); 4 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J17_2D", "mouse": "LT1_J17", "fps": 29.7835, "n": 71472, "nv": 71472, "dur": 40.0, "mean": 33.58, "med": 33.539, "gaps": 8, "gap_s": 0.548, "lost": 8, "maxgap": 69.7, "outl": 3653, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 35.7, "mc_shift_rest": 6.7, "f0": 0.0, "mc_corr": 0.747, "crop": "activity", "box": [62, 85, 444, 491], "anom": "dropped_frames", "anom_text": "8 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J17_3D", "mouse": "LT1_J17", "fps": 29.7831, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.57, "gaps": 7, "gap_s": 0.489, "lost": 7, "maxgap": 74.5, "outl": 1817, "span_fps": 29.78, "avi": 20.0, "mc_shift": 7.5, "mc_shift_rest": 7.5, "f0": 1.01, "mc_corr": 0.747, "crop": "activity", "box": [59, 84, 444, 491], "anom": "dropped_frames", "anom_text": "7 gaps in timestamps (max 74 ms)"}, {"sid": "LT1_J17_4D", "mouse": "LT1_J17", "fps": 29.7823, "n": 71467, "nv": 71467, "dur": 39.99, "mean": 33.58, "med": 33.539, "gaps": 6, "gap_s": 0.422, "lost": 6, "maxgap": 72.7, "outl": 5182, "span_fps": 29.7796, "avi": 20.0, "mc_shift": 6.7, "mc_shift_rest": 6.7, "f0": 0.66, "mc_corr": 0.759, "crop": "activity", "box": [75, 108, 444, 491], "anom": "dropped_frames", "anom_text": "6 gaps in timestamps (max 73 ms)"}, {"sid": "LT1_J18_1D", "mouse": "LT1_J18", "fps": 29.7812, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.562, "gaps": 3, "gap_s": 0.205, "lost": 3, "maxgap": 69.9, "outl": 3398, "span_fps": 29.7799, "avi": 20.0, "mc_shift": 7.8, "mc_shift_rest": 7.8, "f0": 0.22, "mc_corr": 0.733, "crop": "activity", "box": [0, 4, 452, 585], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J18_2D", "mouse": "LT1_J18", "fps": 29.7911, "n": 17862, "nv": 17862, "dur": 9.99, "mean": 33.579, "med": 33.492, "gaps": 6, "gap_s": 0.409, "lost": 6, "maxgap": 69.5, "outl": 1502, "span_fps": 29.7808, "avi": 20.0, "mc_shift": 35.6, "mc_shift_rest": 2.8, "f0": 0.0, "mc_corr": 0.8, "crop": "activity", "box": [0, 0, 452, 585], "anom": "dropped_frames", "anom_text": "6 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J18_3D", "mouse": "LT1_J18", "fps": 29.7821, "n": 71468, "nv": 71468, "dur": 39.99, "mean": 33.58, "med": 33.57, "gaps": 5, "gap_s": 0.343, "lost": 5, "maxgap": 70.5, "outl": 2606, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.4, "mc_shift_rest": 4.4, "f0": 0.86, "mc_corr": 0.798, "crop": "activity", "box": [0, 0, 452, 585], "anom": "dropped_frames", "anom_text": "5 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J18_4D", "mouse": "LT1_J18", "fps": 29.7817, "n": 71468, "nv": 71468, "dur": 40.0, "mean": 33.58, "med": 33.523, "gaps": 4, "gap_s": 0.275, "lost": 4, "maxgap": 71.3, "outl": 5281, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.7, "mc_shift_rest": 4.7, "f0": 0.71, "mc_corr": 0.774, "crop": "activity", "box": [0, 0, 452, 585], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J24_1D", "mouse": "LT1_J24", "fps": 29.7854, "n": 17854, "nv": 17854, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 3, "gap_s": 0.206, "lost": 3, "maxgap": 70.3, "outl": 637, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 3.6, "mc_shift_rest": 3.6, "f0": 0.05, "mc_corr": 0.911, "crop": "activity", "box": [98, 31, 455, 514], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J24_2D", "mouse": "LT1_J24", "fps": 29.7843, "n": 17862, "nv": 17862, "dur": 10.0, "mean": 33.579, "med": 33.547, "gaps": 2, "gap_s": 0.136, "lost": 2, "maxgap": 68.7, "outl": 777, "span_fps": 29.7809, "avi": 20.0, "mc_shift": 12.1, "mc_shift_rest": 4.1, "f0": 0.0, "mc_corr": 0.898, "crop": "activity", "box": [85, 35, 455, 514], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J24_3D", "mouse": "LT1_J24", "fps": 29.7863, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.588, "med": 33.562, "gaps": 4, "gap_s": 0.404, "lost": 8, "maxgap": 170.0, "outl": 486, "span_fps": 29.7729, "avi": 20.0, "mc_shift": 24.6, "mc_shift_rest": 4.2, "f0": 0.0, "mc_corr": 0.909, "crop": "activity", "box": [86, 34, 455, 514], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 170 ms)"}, {"sid": "LT1_J24_4D", "mouse": "LT1_J24", "fps": 29.7872, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.581, "med": 33.562, "gaps": 5, "gap_s": 0.342, "lost": 5, "maxgap": 70.0, "outl": 858, "span_fps": 29.7786, "avi": 20.0, "mc_shift": 3.7, "mc_shift_rest": 3.7, "f0": 1.0, "mc_corr": 0.914, "crop": "activity", "box": [82, 30, 455, 514], "anom": "dropped_frames", "anom_text": "5 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J26_1D", "mouse": "LT1_J26", "fps": 29.7885, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.547, "gaps": 20, "gap_s": 1.36, "lost": 20, "maxgap": 69.8, "outl": 4940, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.5, "mc_shift_rest": 4.5, "f0": 0.25, "mc_corr": 0.641, "crop": "activity", "box": [5, 0, 488, 357], "anom": "dropped_frames", "anom_text": "20 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J26_2D", "mouse": "LT1_J26", "fps": 29.7817, "n": 71473, "nv": 71473, "dur": 40.0, "mean": 33.579, "med": 33.562, "gaps": 3, "gap_s": 0.206, "lost": 3, "maxgap": 70.0, "outl": 1647, "span_fps": 29.7804, "avi": 20.0, "mc_shift": 6.2, "mc_shift_rest": 6.2, "f0": 0.0, "mc_corr": 0.673, "crop": "activity", "box": [10, 0, 488, 357], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J26_3D", "mouse": "LT1_J26", "fps": 29.7805, "n": 71465, "nv": 71465, "dur": 40.0, "mean": 33.58, "med": 33.547, "gaps": 1, "gap_s": 0.07, "lost": 1, "maxgap": 69.8, "outl": 4979, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 4.1, "mc_shift_rest": 4.1, "f0": 1.65, "mc_corr": 0.697, "crop": "activity", "box": [8, 0, 488, 357], "anom": "frames_ts_mismatch (auto), dropped_frames", "anom_text": "71465 frames in video, 71466 timestamp rows (diff -1, 0.0%); 1 gap in timestamps (max 70 ms)"}, {"sid": "LT1_J26_4D", "mouse": "LT1_J26", "fps": 29.7822, "n": 71464, "nv": 71464, "dur": 39.99, "mean": 33.581, "med": 33.562, "gaps": 9, "gap_s": 0.617, "lost": 9, "maxgap": 73.4, "outl": 3706, "span_fps": 29.7783, "avi": 20.0, "mc_shift": 5.8, "mc_shift_rest": 5.8, "f0": 0.76, "mc_corr": 0.697, "crop": "activity", "box": [6, 0, 488, 357], "anom": "dropped_frames", "anom_text": "9 gaps in timestamps (max 73 ms)"}, {"sid": "LT1_J27_1D", "mouse": "LT1_J27", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 81.1, "outl": 20, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.2, "mc_shift_rest": 6.2, "f0": 0.28, "mc_corr": 0.911, "crop": "activity", "box": [0, 0, 517, 587], "anom": "", "anom_text": ""}, {"sid": "LT1_J27_2D", "mouse": "LT1_J27", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 83.0, "outl": 62, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 8.6, "mc_shift_rest": 8.6, "f0": 0.32, "mc_corr": 0.887, "crop": "activity", "box": [0, 0, 517, 587], "anom": "", "anom_text": ""}, {"sid": "LT1_J27_3D", "mouse": "LT1_J27", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 91.8, "outl": 66, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 7.0, "mc_shift_rest": 7.0, "f0": 0.3, "mc_corr": 0.862, "crop": "activity", "box": [0, 0, 517, 587], "anom": "", "anom_text": ""}, {"sid": "LT1_J27_4D", "mouse": "LT1_J27", "fps": 19.7563, "n": 47410, "nv": 47410, "dur": 40.0, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 87.5, "outl": 108, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.7, "mc_shift_rest": 6.7, "f0": 0.31, "mc_corr": 0.867, "crop": "activity", "box": [0, 0, 517, 587], "anom": "", "anom_text": ""}, {"sid": "LT1_J30_1D", "mouse": "LT1_J30", "fps": 29.782, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 1, "gap_s": 0.068, "lost": 1, "maxgap": 67.8, "outl": 909, "span_fps": 29.7803, "avi": 20.0, "mc_shift": 4.4, "mc_shift_rest": 4.4, "f0": 0.16, "mc_corr": 0.795, "crop": "activity", "box": [0, 20, 412, 500], "anom": "dropped_frames", "anom_text": "1 gap in timestamps (max 68 ms)"}, {"sid": "LT1_J30_2D", "mouse": "LT1_J30", "fps": 29.7837, "n": 19541, "nv": 19541, "dur": 10.93, "mean": 33.579, "med": 33.547, "gaps": 2, "gap_s": 0.139, "lost": 2, "maxgap": 70.9, "outl": 794, "span_fps": 29.7805, "avi": 20.0, "mc_shift": 25.2, "mc_shift_rest": 4.0, "f0": 0.0, "mc_corr": 0.832, "crop": "activity", "box": [0, 20, 412, 500], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J30_3D", "mouse": "LT1_J30", "fps": 29.7877, "n": 17857, "nv": 17857, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 4, "gap_s": 0.284, "lost": 4, "maxgap": 75.3, "outl": 1091, "span_fps": 29.7803, "avi": 20.0, "mc_shift": 4.2, "mc_shift_rest": 4.2, "f0": 1.0, "mc_corr": 0.809, "crop": "activity", "box": [0, 1, 412, 500], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 75 ms)"}, {"sid": "LT1_J30_4D", "mouse": "LT1_J30", "fps": 29.7889, "n": 17858, "nv": 17858, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 5, "gap_s": 0.344, "lost": 5, "maxgap": 70.1, "outl": 969, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 4.7, "mc_shift_rest": 4.7, "f0": 0.56, "mc_corr": 0.865, "crop": "activity", "box": [0, 19, 412, 500], "anom": "dropped_frames", "anom_text": "5 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J52_1D", "mouse": "LT1_J52", "fps": 29.7818, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.562, "gaps": 1, "gap_s": 0.068, "lost": 1, "maxgap": 67.6, "outl": 733, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 5.2, "mc_shift_rest": 5.2, "f0": 0.23, "mc_corr": 0.605, "crop": "activity", "box": [0, 0, 521, 559], "anom": "dropped_frames", "anom_text": "1 gap in timestamps (max 68 ms)"}, {"sid": "LT1_J52_2D", "mouse": "LT1_J52", "fps": 29.789, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.547, "gaps": 5, "gap_s": 0.345, "lost": 5, "maxgap": 71.8, "outl": 1018, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 5.9, "mc_shift_rest": 5.9, "f0": 0.24, "mc_corr": 0.634, "crop": "activity", "box": [0, 0, 521, 559], "anom": "dropped_frames", "anom_text": "5 gaps in timestamps (max 72 ms)"}, {"sid": "LT1_J52_3D", "mouse": "LT1_J52", "fps": 29.787, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.516, "gaps": 4, "gap_s": 0.272, "lost": 4, "maxgap": 69.1, "outl": 1303, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 5.4, "mc_shift_rest": 5.4, "f0": 0.19, "mc_corr": 0.67, "crop": "activity", "box": [0, 0, 521, 559], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J52_4D", "mouse": "LT1_J52", "fps": 29.7852, "n": 17853, "nv": 17853, "dur": 9.99, "mean": 33.58, "med": 33.43, "gaps": 3, "gap_s": 0.204, "lost": 3, "maxgap": 69.5, "outl": 1247, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.7, "mc_shift_rest": 4.7, "f0": 0.24, "mc_corr": 0.687, "crop": "activity", "box": [0, 0, 521, 559], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J53_1D", "mouse": "LT1_J53", "fps": 29.7801, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.58, "med": 33.562, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 65.7, "outl": 527, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 4.0, "mc_shift_rest": 4.0, "f0": 0.11, "mc_corr": 0.672, "crop": "activity", "box": [23, 28, 441, 519], "anom": "frames_ts_mismatch (auto)", "anom_text": "17855 frames in video, 17856 timestamp rows (diff -1, 0.0%)"}, {"sid": "LT1_J53_2D", "mouse": "LT1_J53", "fps": 29.782, "n": 17861, "nv": 17861, "dur": 10.0, "mean": 33.579, "med": 33.562, "gaps": 1, "gap_s": 0.068, "lost": 1, "maxgap": 68.1, "outl": 525, "span_fps": 29.7803, "avi": 20.0, "mc_shift": 34.2, "mc_shift_rest": 3.9, "f0": 0.0, "mc_corr": 0.684, "crop": "activity", "box": [24, 8, 441, 519], "anom": "dropped_frames", "anom_text": "1 gap in timestamps (max 68 ms)"}, {"sid": "LT1_J53_3D", "mouse": "LT1_J53", "fps": 29.7853, "n": 17857, "nv": 17857, "dur": 9.99, "mean": 33.58, "med": 33.539, "gaps": 3, "gap_s": 0.206, "lost": 3, "maxgap": 70.5, "outl": 1319, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 4.4, "mc_shift_rest": 4.4, "f0": 0.7, "mc_corr": 0.675, "crop": "activity", "box": [18, 6, 441, 519], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J53_4D", "mouse": "LT1_J53", "fps": 29.7818, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.58, "med": 33.562, "gaps": 1, "gap_s": 0.069, "lost": 1, "maxgap": 69.1, "outl": 490, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.8, "mc_shift_rest": 4.8, "f0": 1.0, "mc_corr": 0.638, "crop": "activity", "box": [10, 10, 441, 519], "anom": "dropped_frames", "anom_text": "1 gap in timestamps (max 69 ms)"}, {"sid": "LT1_J54_1D", "mouse": "LT1_J54", "fps": 29.7836, "n": 17856, "nv": 17856, "dur": 9.99, "mean": 33.579, "med": 33.547, "gaps": 2, "gap_s": 0.138, "lost": 2, "maxgap": 70.3, "outl": 1204, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 3.5, "mc_shift_rest": 3.5, "f0": 0.15, "mc_corr": 0.682, "crop": "activity", "box": [1, 2, 568, 570], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J54_2D", "mouse": "LT1_J54", "fps": 29.7883, "n": 17861, "nv": 17861, "dur": 9.99, "mean": 33.578, "med": 33.523, "gaps": 4, "gap_s": 0.271, "lost": 4, "maxgap": 68.3, "outl": 1139, "span_fps": 29.7815, "avi": 20.0, "mc_shift": 18.7, "mc_shift_rest": 3.9, "f0": 0.0, "mc_corr": 0.702, "crop": "activity", "box": [8, 0, 568, 570], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 68 ms)"}, {"sid": "LT1_J54_3D", "mouse": "LT1_J54", "fps": 29.7803, "n": 17858, "nv": 17858, "dur": 9.99, "mean": 33.579, "med": 33.547, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 66.4, "outl": 1273, "span_fps": 29.7803, "avi": 20.0, "mc_shift": 3.8, "mc_shift_rest": 3.8, "f0": 0.71, "mc_corr": 0.669, "crop": "activity", "box": [0, 4, 568, 570], "anom": "", "anom_text": ""}, {"sid": "LT1_J54_4D", "mouse": "LT1_J54", "fps": 29.7925, "n": 17858, "nv": 17858, "dur": 9.99, "mean": 33.579, "med": 33.531, "gaps": 7, "gap_s": 0.483, "lost": 7, "maxgap": 70.4, "outl": 1321, "span_fps": 29.7802, "avi": 20.0, "mc_shift": 3.0, "mc_shift_rest": 3.0, "f0": 0.76, "mc_corr": 0.676, "crop": "activity", "box": [0, 0, 568, 570], "anom": "dropped_frames", "anom_text": "7 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J55_1D", "mouse": "LT1_J55", "fps": 19.7563, "n": 11845, "nv": 11845, "dur": 9.99, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 79.1, "outl": 16, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 5.4, "mc_shift_rest": 5.4, "f0": 0.36, "mc_corr": 0.843, "crop": "activity", "box": [0, 44, 471, 532], "anom": "", "anom_text": ""}, {"sid": "LT1_J55_2D", "mouse": "LT1_J55", "fps": 19.7563, "n": 11844, "nv": 11844, "dur": 9.99, "mean": 50.617, "med": 50.609, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 76.8, "outl": 4, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 5.6, "mc_shift_rest": 5.6, "f0": 0.39, "mc_corr": 0.861, "crop": "activity", "box": [0, 45, 471, 532], "anom": "", "anom_text": ""}, {"sid": "LT1_J55_3D", "mouse": "LT1_J55", "fps": 19.7563, "n": 11846, "nv": 11846, "dur": 9.99, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 78.2, "outl": 5, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 4.0, "mc_shift_rest": 4.0, "f0": 0.35, "mc_corr": 0.871, "crop": "activity", "box": [0, 38, 471, 532], "anom": "", "anom_text": ""}, {"sid": "LT1_J55_4D", "mouse": "LT1_J55", "fps": 19.7564, "n": 12455, "nv": 12455, "dur": 10.51, "mean": 50.616, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.8, "outl": 26, "span_fps": 19.7564, "avi": 20.0, "mc_shift": 5.5, "mc_shift_rest": 5.5, "f0": 0.36, "mc_corr": 0.853, "crop": "activity", "box": [0, 42, 471, 532], "anom": "", "anom_text": ""}, {"sid": "LT1_J57_1D", "mouse": "LT1_J57", "fps": 29.7834, "n": 71466, "nv": 71466, "dur": 39.99, "mean": 33.58, "med": 33.562, "gaps": 8, "gap_s": 0.546, "lost": 8, "maxgap": 70.2, "outl": 3388, "span_fps": 29.78, "avi": 20.0, "mc_shift": 6.6, "mc_shift_rest": 6.6, "f0": 0.16, "mc_corr": 0.774, "crop": "activity", "box": [0, 112, 486, 418], "anom": "dropped_frames", "anom_text": "8 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J57_2D", "mouse": "LT1_J57", "fps": 29.782, "n": 71472, "nv": 71472, "dur": 40.0, "mean": 33.579, "med": 33.562, "gaps": 4, "gap_s": 0.271, "lost": 4, "maxgap": 69.5, "outl": 2530, "span_fps": 29.7803, "avi": 20.0, "mc_shift": 33.8, "mc_shift_rest": 5.5, "f0": 0.0, "mc_corr": 0.833, "crop": "activity", "box": [0, 97, 486, 418], "anom": "dropped_frames", "anom_text": "4 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J57_3D", "mouse": "LT1_J57", "fps": 29.7812, "n": 71469, "nv": 71469, "dur": 40.0, "mean": 33.58, "med": 33.555, "gaps": 3, "gap_s": 0.204, "lost": 3, "maxgap": 68.6, "outl": 4483, "span_fps": 29.78, "avi": 20.0, "mc_shift": 5.6, "mc_shift_rest": 5.6, "f0": 0.92, "mc_corr": 0.851, "crop": "activity", "box": [0, 116, 486, 418], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J57_4D", "mouse": "LT1_J57", "fps": 29.7813, "n": 71468, "nv": 71468, "dur": 40.0, "mean": 33.58, "med": 33.523, "gaps": 3, "gap_s": 0.205, "lost": 3, "maxgap": 70.3, "outl": 4927, "span_fps": 29.78, "avi": 20.0, "mc_shift": 6.6, "mc_shift_rest": 6.6, "f0": 1.02, "mc_corr": 0.835, "crop": "activity", "box": [0, 112, 486, 418], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J58_1D", "mouse": "LT1_J58", "fps": 29.7799, "n": 17855, "nv": 17855, "dur": 9.99, "mean": 33.58, "med": 33.562, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 67.1, "outl": 793, "span_fps": 29.7799, "avi": 20.0, "mc_shift": 3.6, "mc_shift_rest": 3.6, "f0": 0.1, "mc_corr": 0.676, "crop": "activity", "box": [0, 0, 495, 421], "anom": "", "anom_text": ""}, {"sid": "LT1_J58_2D", "mouse": "LT1_J58", "fps": 29.7979, "n": 17862, "nv": 17862, "dur": 9.99, "mean": 33.579, "med": 33.484, "gaps": 10, "gap_s": 0.681, "lost": 10, "maxgap": 69.9, "outl": 1547, "span_fps": 29.7807, "avi": 20.0, "mc_shift": 35.5, "mc_shift_rest": 4.1, "f0": 0.0, "mc_corr": 0.733, "crop": "activity", "box": [0, 0, 495, 421], "anom": "dropped_frames", "anom_text": "10 gaps in timestamps (max 70 ms)"}, {"sid": "LT1_J58_3D", "mouse": "LT1_J58", "fps": 29.7835, "n": 17857, "nv": 17857, "dur": 9.99, "mean": 33.58, "med": 33.562, "gaps": 2, "gap_s": 0.137, "lost": 2, "maxgap": 69.1, "outl": 915, "span_fps": 29.7801, "avi": 20.0, "mc_shift": 3.4, "mc_shift_rest": 3.4, "f0": 1.02, "mc_corr": 0.731, "crop": "activity", "box": [0, 0, 495, 421], "anom": "dropped_frames", "anom_text": "2 gaps in timestamps (max 69 ms)"}, {"sid": "LT1_J58_4D", "mouse": "LT1_J58", "fps": 29.7852, "n": 17857, "nv": 17857, "dur": 9.99, "mean": 33.58, "med": 33.562, "gaps": 3, "gap_s": 0.206, "lost": 3, "maxgap": 70.5, "outl": 801, "span_fps": 29.78, "avi": 20.0, "mc_shift": 4.2, "mc_shift_rest": 4.2, "f0": 0.68, "mc_corr": 0.668, "crop": "activity", "box": [0, 0, 495, 421], "anom": "dropped_frames", "anom_text": "3 gaps in timestamps (max 71 ms)"}, {"sid": "LT1_J61_1D", "mouse": "LT1_J61", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 80.6, "outl": 35, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 5.2, "mc_shift_rest": 5.2, "f0": 0.35, "mc_corr": 0.862, "crop": "activity", "box": [36, 38, 431, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J61_2D", "mouse": "LT1_J61", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.617, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 83.4, "outl": 63, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 5.9, "mc_shift_rest": 5.9, "f0": 0.35, "mc_corr": 0.867, "crop": "activity", "box": [48, 34, 431, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J61_3D", "mouse": "LT1_J61", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 87.4, "outl": 100, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 6.8, "mc_shift_rest": 6.8, "f0": 0.36, "mc_corr": 0.873, "crop": "activity", "box": [58, 26, 431, 530], "anom": "", "anom_text": ""}, {"sid": "LT1_J61_4D", "mouse": "LT1_J61", "fps": 19.7563, "n": 47411, "nv": 47411, "dur": 40.0, "mean": 50.617, "med": 50.625, "gaps": 0, "gap_s": 0.0, "lost": 0, "maxgap": 81.5, "outl": 86, "span_fps": 19.7563, "avi": 20.0, "mc_shift": 7.0, "mc_shift_rest": 7.0, "f0": 0.35, "mc_corr": 0.842, "crop": "activity", "box": [51, 32, 431, 530], "anom": "", "anom_text": ""}], "verify": [{"sid": "LT1_J03_1D", "reg": 19.756274219160613, "mc": 19.756274219160613, "avi": "5512/279", "avi_f": 19.75627240143369, "cnmf": 19.756274219160613, "est": 19.756274219160613, "ai": 20, "proc": 20, "proc_t_last": 592.0, "proc_step": 0.049978893250226974, "ts_span": 599.56, "json": 19.756274219160613, "json_ai": 20, "json_cnmf": 19.756274219160613, "npz": 19.756274219160613, "ts_rows": 11846, "n": 11846, "C_T": 11846, "ts_fps": 19.756274, "thr": {"gSig": 4, "min_corr": 0.9, "min_pnr": 20.0, "method": "mirror_fdr"}, "crop": "activity", "pos_neg": 12.78, "box": [0, 11, 430, 597], "mc_shift": 3.8, "mc_corr": 0.977, "n_comp": 209, "n_acc": 126, "missed": 0.0, "snr": 3.86, "gate": "cleaned", "ai_n0": 126, "ai_merge": 2, "ai_after": 124, "ai_del": 70, "ai_kept": 54, "ai_frac": 0.556, "exp": 54, "exp_snr": 5.27, "checks": "", "need_gib": 22.3, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J03_2D", "reg": 19.757135279002853, "mc": 19.757135279002853, "avi": "18710/947", "avi_f": 19.7571277719113, "cnmf": 19.757135279002853, "est": 19.757135279002853, "ai": 20, "proc": 20, "proc_t_last": 592.0, "proc_step": 0.049995776265859604, "ts_span": 599.5, "json": 19.757135279002853, "json_ai": 20, "json_cnmf": 19.757135279002853, "npz": 19.757135279002853, "ts_rows": 11842, "n": 11842, "C_T": 11842, "ts_fps": 19.757135, "thr": {"gSig": 4, "min_corr": 0.9, "min_pnr": 18.0, "method": "mirror_fdr"}, "crop": "activity", "pos_neg": 8.02, "box": [0, 11, 430, 597], "mc_shift": 4.9, "mc_corr": 0.981, "n_comp": 300, "n_acc": 167, "missed": 3.0, "snr": 3.84, "gate": "not_needed", "ai_n0": 167, "ai_merge": 2, "ai_after": 165, "ai_del": 92, "ai_kept": 73, "ai_frac": 0.551, "exp": 73, "exp_snr": 5.33, "checks": "", "need_gib": 22.3, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J03_3D", "reg": 19.75627215969285, "mc": 19.75627215969285, "avi": "5512/279", "avi_f": 19.75627240143369, "cnmf": 19.75627215969285, "est": 19.75627215969285, "ai": 20, "proc": 20, "proc_t_last": 592.0, "proc_step": 0.049978893250226974, "ts_span": 599.56, "json": 19.75627215969285, "json_ai": 20, "json_cnmf": 19.75627215969285, "npz": 19.75627215969285, "ts_rows": 11846, "n": 11846, "C_T": 11846, "ts_fps": 19.756272, "thr": {"gSig": 4, "min_corr": 0.88, "min_pnr": 20.0, "method": "mirror_fdr"}, "crop": "fallback_pos_neg", "pos_neg": 4.21, "box": [0, 11, 430, 597], "mc_shift": 3.3, "mc_corr": 0.97, "n_comp": 247, "n_acc": 153, "missed": 1.0, "snr": 4.17, "gate": "not_needed", "ai_n0": 153, "ai_merge": 4, "ai_after": 149, "ai_del": 103, "ai_kept": 46, "ai_frac": 0.673, "exp": 46, "exp_snr": 5.23, "checks": "", "need_gib": 22.3, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J03_4D", "reg": 19.75637721352763, "mc": 19.75637721352763, "avi": "15489/784", "avi_f": 19.756377551020407, "cnmf": 19.75637721352763, "est": 19.75637721352763, "ai": 20, "proc": 20, "proc_t_last": 592.0, "proc_step": 0.04998311400413513, "ts_span": 599.5, "json": 19.75637721352763, "json_ai": 20, "json_cnmf": 19.75637721352763, "npz": 19.75637721352763, "ts_rows": 11845, "n": 11845, "C_T": 11845, "ts_fps": 19.756377, "thr": {"gSig": 4, "min_corr": 0.9, "min_pnr": 20.0, "method": "mirror_fdr"}, "crop": "fallback_pos_neg", "pos_neg": 4.78, "box": [0, 11, 430, 597], "mc_shift": 3.6, "mc_corr": 0.961, "n_comp": 243, "n_acc": 126, "missed": 0.0, "snr": 3.58, "gate": "not_needed", "ai_n0": 126, "ai_merge": 1, "ai_after": 125, "ai_del": 96, "ai_kept": 29, "ai_frac": 0.762, "exp": 29, "exp_snr": 4.84, "checks": "export.export_n_neurons=warning", "need_gib": 22.3, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J06_1D", "reg": 29.78018415569476, "mc": 29.78018415569476, "avi": "9619/323", "avi_f": 29.78018575851393, "cnmf": 29.78018415569476, "est": 29.78018415569476, "ai": 30, "proc": 30, "proc_t_last": 595.0, "proc_step": 0.033323999494314194, "ts_span": 599.56, "json": 29.78018415569476, "json_ai": 30, "json_cnmf": 29.78018415569476, "npz": 29.78018415569476, "ts_rows": 17856, "n": 17856, "C_T": 17856, "ts_fps": 29.780184, "thr": {"gSig": 4, "min_corr": 0.99, "min_pnr": 47.7, "method": "robust_bg"}, "crop": "activity", "pos_neg": 40.17, "box": [0, 0, 531, 527], "mc_shift": 4.8, "mc_corr": 0.69, "n_comp": 243, "n_acc": 243, "missed": 0.0, "snr": 9.89, "gate": "not_needed", "ai_n0": 243, "ai_merge": 7, "ai_after": 236, "ai_del": 28, "ai_kept": 208, "ai_frac": 0.115, "exp": 208, "exp_snr": 10.03, "checks": "mc.mc_template_corr=warning", "need_gib": 31.5, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J06_2D", "reg": 29.783785314769162, "mc": 29.783785314769162, "avi": "1102/37", "avi_f": 29.783783783783782, "cnmf": 29.783785314769162, "est": 29.783785314769162, "ai": 30, "proc": 30, "proc_t_last": 595.0, "proc_step": 0.03332586586475372, "ts_span": 599.53, "json": 29.783785314769162, "json_ai": 30, "json_cnmf": 29.783785314769162, "npz": 29.783785314769162, "ts_rows": 17855, "n": 17855, "C_T": 17855, "ts_fps": 29.783785, "thr": {"gSig": 4, "min_corr": 0.99, "min_pnr": 31.45, "method": "robust_bg"}, "crop": "activity", "pos_neg": 31.91, "box": [0, 12, 531, 527], "mc_shift": 6.8, "mc_corr": 0.622, "n_comp": 282, "n_acc": 276, "missed": 0.0, "snr": 11.07, "gate": "not_needed", "ai_n0": 276, "ai_merge": 9, "ai_after": 266, "ai_del": 100, "ai_kept": 166, "ai_frac": 0.362, "exp": 166, "exp_snr": 11.28, "checks": "mc.mc_template_corr=warning", "need_gib": 31.5, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J06_3D", "reg": 29.7853028917705, "mc": 29.7853028917705, "avi": "20671/694", "avi_f": 29.785302593659942, "cnmf": 29.7853028917705, "est": 29.7853028917705, "ai": 30, "proc": 30, "proc_t_last": 595.0, "proc_step": 0.033323999494314194, "ts_span": 599.56, "json": 29.7853028917705, "json_ai": 30, "json_cnmf": 29.7853028917705, "npz": 29.7853028917705, "ts_rows": 17856, "n": 17856, "C_T": 17856, "ts_fps": 29.785303, "thr": {"gSig": 4, "min_corr": 0.99, "min_pnr": 36.45, "method": "robust_bg"}, "crop": "activity", "pos_neg": 26.68, "box": [0, 0, 531, 527], "mc_shift": 7.6, "mc_corr": 0.738, "n_comp": 191, "n_acc": 190, "missed": 0.0, "snr": 8.74, "gate": "not_needed", "ai_n0": 190, "ai_merge": 1, "ai_after": 189, "ai_del": 26, "ai_kept": 163, "ai_frac": 0.137, "exp": 163, "exp_snr": 8.96, "checks": "", "need_gib": 31.5, "ssub_B": 2, "workers": 31}, {"sid": "LT1_J06_4D", "reg": 29.797262345733653, "mc": 29.797262345733653, "avi": "23957/804", "avi_f": 29.79726368159204, "cnmf": 29.797262345733653, "est": 29.797262345733653, "ai": 30, "proc": 30, "proc_t_last": 595.0, "proc_step": 0.03332586586475372, "ts_span": 599.53, "json": 29.797262345733653, "json_ai": 30, "json_cnmf": 29.797262345733653, "npz": 29.797262345733653, "ts_rows": 17855, "n": 17855, "C_T": 17855, "ts_fps": 29.797262, "thr": {"gSig": 4, "min_corr": 0.99, "min_pnr": 30.8, "method": "robust_bg"}, "crop": "activity", "pos_neg": 43.72, "box": [0, 0, 531, 527], "mc_shift": 4.4, "mc_corr": 0.733, "n_comp": 236, "n_acc": 233, "missed": 0.0, "snr": 9.29, "gate": "not_needed", "ai_n0": 233, "ai_merge": 6, "ai_after": 227, "ai_del": 19, "ai_kept": 208, "ai_frac": 0.082, "exp": 208, "exp_snr": 9.56, "checks": "", "need_gib": 31.5, "ssub_B": 2, "workers": 31}]};
+
+/* ---------- theme ---------- */
+(function () {
+  const btn = document.getElementById('btn-theme');
+  const names = { '': 'авто', light: 'светлая', dark: 'тёмная' };
+  let cur = '';
+  try { cur = localStorage.getItem('dfr-theme') || ''; } catch (e) { cur = ''; }
+  function apply() {
+    if (cur) document.documentElement.setAttribute('data-theme', cur); else document.documentElement.removeAttribute('data-theme');
+    btn.textContent = 'Тема: ' + names[cur];
+  }
+  btn.addEventListener('click', () => {
+    cur = cur === '' ? 'light' : cur === 'light' ? 'dark' : '';
+    try { localStorage.setItem('dfr-theme', cur); } catch (e) { /* storage off */ }
+    apply();
+  });
+  apply();
+})();
+
+/* ---------- sources toggle ---------- */
+document.getElementById('btn-src').addEventListener('click', (ev) => {
+  const all = document.querySelectorAll('details.src');
+  const open = ev.target.dataset.open !== '1';
+  all.forEach(d => { d.open = open; });
+  ev.target.dataset.open = open ? '1' : '0';
+  ev.target.textContent = open ? 'Свернуть все источники' : 'Раскрыть все источники';
+});
+
+/* ---------- toc highlight ---------- */
+(function () {
+  const links = Array.from(document.querySelectorAll('nav.toc a[href^="#"]'));
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const targets = Array.from(map.keys()).map(id => document.getElementById(id)).filter(Boolean);
+  if (!('IntersectionObserver' in window)) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(a => a.classList.remove('active'));
+        const a = map.get(e.target.id); if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '0px 0px -75% 0px' });
+  targets.forEach(t => obs.observe(t));
+})();
+
+/* ---------- lightbox ---------- */
+(function () {
+  const lb = document.getElementById('lightbox'), img = lb.querySelector('img');
+  document.querySelectorAll('figure img').forEach(i => i.addEventListener('click', () => { img.src = i.src; lb.style.display = 'flex'; }));
+  lb.addEventListener('click', () => { lb.style.display = 'none'; img.src = ''; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { lb.style.display = 'none'; } });
+})();
+
+/* ---------- tooltip ---------- */
+const tip = document.getElementById('tip');
+function showTip(ev, html) { tip.innerHTML = html; tip.style.display = 'block'; moveTip(ev); }
+function moveTip(ev) { const x = Math.min(ev.clientX + 14, window.innerWidth - 350); tip.style.left = x + 'px'; tip.style.top = (ev.clientY + 14) + 'px'; }
+function hideTip() { tip.style.display = 'none'; }
+
+const fmt = (v, d) => v === null || v === undefined ? '–' : (typeof v === 'number' ? v.toFixed(d).replace('.', ',') : String(v));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function txt(parent, x, y, s, cls) { const t = el('text', { x, y, class: cls || 't-small' }, parent); t.textContent = s; return t; }
+
+/* ---------- anomaly decision diagram ---------- */
+(function () {
+  const g = document.getElementById('dg');
+  const rows = [
+    ['Папка с AVI распознана как сессия?', 'нет', 'info', 'в scan_unrecognized.csv; сессии нет'],
+    ['Заголовки чанков и последний кадр читаются?', 'нет', 'err', 'unreadable_video ERROR: часть пропущена; без частей — исключена'],
+    ['Последний кадр последнего чанка декодируется?', 'нет', 'fix', 'broken_last_frame: кадр отброшен (FIXED)'],
+    ['Лишних кадров ровно (чанков − 1)?', 'да', 'fix', 'chunk_tail_frames: −1 кадр в конце каждого чанка, кроме последнего (FIXED)'],
+    ['Legacy: у части есть время старта?', 'нет', 'warn', 'no_metadata WARN'],
+    ['Частей больше одной?', 'да', 'warn', 'split_recording WARN: склейка по старту; legacy без старта — ERROR'],
+    ['Кадров = строк таймстемпов в каждой части?', '≤ 2%', 'fix', 'frames_ts_mismatch WARN: обрезка конца (FIXED)'],
+    ['', '> 2%', 'err', 'frames_ts_mismatch ERROR: обрезка, но исключена до Accept'],
+    ['Есть таймстемпы у всех частей?', 'нет', 'err', 'no_timestamps + fps_unavailable: исключена всегда'],
+    ['robust_fps считается (≥ 2 интервалов)?', 'нет', 'err', 'fps_unavailable: исключена всегда'],
+    ['Есть интервалы > 2 × медиана?', 'да', 'warn', 'dropped_frames WARN (в Scan INFO: пауза ≤ 1 с, ≤ 1% кадров); вне FPS'],
+    ['FPS в пределах 5% от другой сессии мыши (≥ 3 сессий)?', 'нет', 'warn', 'fps_outlier WARN; ничего не меняется'],
+    ['Legacy: FPS в пределах 5% от номинала?', 'нет', 'warn', 'fps_outlier WARN'],
+    ['Есть ERROR без решения человека?', 'да', 'err', 'excluded = true (последнее решение Exclude / Include важнее)'],
+  ];
+  const y0 = 18, dy = 52, xq = 10, wq = 400, xo = 560, wo = 430;
+  rows.forEach((r, i) => {
+    const y = y0 + i * dy;
+    if (r[0]) {
+      el('rect', { x: xq, y, width: wq, height: 38, rx: 6, class: 'box' }, g);
+      txt(g, xq + 10, y + 23, r[0], 't-small').style.fill = 'var(--ink)';
+      if (i < rows.length - 1 && rows[i + 1][0]) el('line', { x1: xq + 30, y1: y + 38, x2: xq + 30, y2: y + dy - 1, class: 'arrow', 'marker-end': 'url(#ah2)' }, g);
+      if (i < rows.length - 1 && !rows[i + 1][0]) el('line', { x1: xq + 30, y1: y + 38, x2: xq + 30, y2: y + 2 * dy - 1, class: 'arrow', 'marker-end': 'url(#ah2)' }, g);
+    }
+    const yq = r[0] ? y + 19 : y - dy + 19;
+    const path = r[0] ? `M${xq + wq},${y + 19} L${xo - 4},${y + 19}` : `M${xq + wq - 60},${yq + 19} L${xq + wq - 60},${y + 19} L${xo - 4},${y + 19}`;
+    el('path', { d: path, class: 'arrow', 'marker-end': 'url(#ah2)' }, g);
+    const lab = txt(g, (r[0] ? xq + wq + 12 : xq + wq - 50), y + 14, r[1], 't-small');
+    lab.style.fontWeight = '700';
+    const cls = { err: 'box err', warn: 'box warnb', fix: 'box fix', info: 'box' }[r[2]];
+    const box = el('rect', { x: xo, y: y + 2, width: wo, height: 34, rx: 17, class: cls }, g);
+    const t = txt(g, xo + 14, y + 23, r[3], 't-small'); t.style.fill = 'var(--ink)';
+    const words = r[3];
+    if (words.length > 80) { t.textContent = words.slice(0, 80) + '…'; const ti = el('title', {}, box); ti.textContent = words; const t2 = el('title', {}, t); t2.textContent = words; }
+  });
+  txt(g, xq + 10, y0 + rows.length * dy + 8, 'Иначе — дальше вниз. Проверки частей идут для каждой части; FPS и выброс — для сессии целиком.', 't-small');
+})();
+
+/* ---------- fps fan-out ---------- */
+(function () {
+  const g = document.getElementById('fpsfan');
+  const items = [
+    ['MC', 'частота _MC.avi; в хэше MC', 'mc.py:171'],
+    ['CNMF-E', 'fr → N_samples = ⌈fr·1 с⌉, окно r_value', 'cnmf.py:107'],
+    ['Автоинспекция', 'round(fps) → 20 / 30; метрики во времени', 'autoinspect.py:54'],
+    ['Экспорт', 'fps в JSON и NPZ; timestamps.csv — из таймстемпов', 'export.py:166-183'],
+    ['Превью', 'частоты mp4, окно F0 60 с, подписи t', 'previews.py:116-131'],
+    ['Инспекция (гейт)', 'ось времени из таймстемпов, не из fps', 'inspect_server.py:203'],
+    ['Скан', 'fps_outlier; длительность = кадров / fps', 'scan.py:458'],
+  ];
+  const x = 610, w = 380, h = 52, gap = 12, y0 = 225 - (items.length * (h + gap) - gap) / 2;
+  items.forEach((it, i) => {
+    const y = y0 + i * (h + gap);
+    el('path', { d: `M540,225 C575,225 575,${y + h / 2} ${x - 2},${y + h / 2}`, class: 'arrow' + (i === 2 ? '' : ''), 'marker-end': 'url(#ah3)' }, g);
+    const b = el('rect', { x, y, width: w, height: h, rx: 8, class: i === 2 ? 'box warnb' : 'box' }, g);
+    const t1 = txt(g, x + 10, y + 20, it[0], 't-title'); t1.style.fontSize = '13px';
+    txt(g, x + 10, y + 38, it[1], 't-small');
+    txt(g, x + w - 8, y + 20, it[2], 't-file').setAttribute('text-anchor', 'end');
+  });
+  const tl = txt(g, 200, 300, 'Старые пути вне батча: fps_data.csv (ae_launch без fps),', 't-small');
+  txt(g, 200, 316, 'table_routines (среднее 1/интервал), LoadEstimates (linspace n // fps).', 't-small');
+  txt(g, 200, 340, 'Жёлтым: потребитель, который берёт другое значение.', 't-small');
+})();
+
+/* ---------- verify table ---------- */
+(function () {
+  const tb = document.querySelector('#verify tbody');
+  DATA.verify.forEach(v => {
+    const tr = document.createElement('tr');
+    const same = (a, b) => Math.abs(a - b) < 1e-9;
+    const ok = same(v.reg, v.mc) && same(v.reg, v.cnmf) && same(v.reg, v.est) && same(v.reg, v.json) && same(v.reg, v.npz);
+    tr.innerHTML = `<td>${v.sid}</td><td class="num">${v.reg.toFixed(6)}</td><td class="num">${v.mc.toFixed(6)}</td>` +
+      `<td class="num">${v.avi} = ${v.avi_f.toFixed(6)}</td><td class="num">${v.cnmf.toFixed(6)}</td><td class="num">${v.est.toFixed(6)}</td>` +
+      `<td class="num hl">${v.ai} / ${v.proc} / ${v.json_ai}</td><td class="num">${v.json.toFixed(6)}</td><td class="num">${v.npz.toFixed(6)}</td>` +
+      `<td class="num">${v.ts_rows} / ${v.n} / ${v.C_T}</td><td class="num">${v.ts_fps.toFixed(6)}</td>` +
+      `<td class="num hl">${v.proc_t_last.toFixed(1)} / ${v.ts_span.toFixed(2)}</td>`;
+    if (!ok) tr.style.outline = '2px solid var(--crit)';
+    tb.appendChild(tr);
+  });
+})();
+
+/* ---------- funnel ---------- */
+(function () {
+  const tb = document.querySelector('#funnel tbody');
+  const mx = Math.max(...DATA.verify.map(v => v.n_comp));
+  DATA.verify.forEach(v => {
+    const tr = document.createElement('tr');
+    const t = v.thr;
+    const bar = (n, c) => `<span class="bar ${c}" style="width:${Math.round(120 * n / mx)}px" title="${n}"></span>`;
+    tr.innerHTML = `<td>${v.sid}</td><td>${t.gSig} / ${String(t.min_corr).replace('.', ',')} / ${String(t.min_pnr).replace('.', ',')} (${t.method})</td>` +
+      `<td>${v.crop} (${fmt(v.pos_neg, 1)})</td><td class="num">${fmt(v.mc_shift, 1)} / ${fmt(v.mc_corr, 3)}</td>` +
+      `<td class="num">${v.n_comp}</td><td class="num">${v.n_acc}</td><td>${v.gate}</td><td class="num">${v.ai_merge}</td>` +
+      `<td class="num">${v.ai_del}</td><td class="num">${v.exp}</td>` +
+      `<td>${bar(v.n_comp, '')}<br>${bar(v.n_acc, 'a')}<br>${bar(v.exp, 'v')}</td><td class="small">${esc(v.checks || '–')}</td>`;
+    tb.appendChild(tr);
+  });
+})();
+
+/* ---------- duration histogram ---------- */
+(function () {
+  const host = document.getElementById('durhist');
+  const W = 460, H = 210, m = { l: 36, r: 10, t: 10, b: 34 };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': 'Гистограмма длительностей' });
+  host.appendChild(svg);
+  const bins = []; for (let b = 9; b < 42; b += 0.5) bins.push({ a: b, b: b + 0.5, s: [] });
+  DATA.sessions.forEach(s => { const bi = bins.find(x => s.dur >= x.a && s.dur < x.b); if (bi) bi.s.push(s); });
+  const ymax = Math.max(...bins.map(b => b.s.length));
+  const X = v => m.l + (v - 9) / (42 - 9) * (W - m.l - m.r), Y = v => H - m.b - v / ymax * (H - m.t - m.b);
+  [0, 10, 20, 30, 40].forEach(v => { if (v > ymax) return; el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: 'var(--line)' }, svg); txt(svg, m.l - 6, Y(v) + 4, String(v), 't-small').setAttribute('text-anchor', 'end'); });
+  [10, 15, 20, 25, 30, 35, 40].forEach(v => txt(svg, X(v), H - m.b + 16, String(v), 't-small').setAttribute('text-anchor', 'middle'));
+  txt(svg, (W) / 2, H - 4, 'длительность, мин (бины по 0,5 мин)', 't-small').setAttribute('text-anchor', 'middle');
+  el('line', { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: 'var(--axis)' }, svg);
+  bins.forEach(b => {
+    if (!b.s.length) return;
+    const n20 = b.s.filter(s => s.fps < 25).length, n30 = b.s.length - n20;
+    const x = X(b.a) + 1, w = Math.max(2, X(b.b) - X(b.a) - 2);
+    const parts = [[n30, 'var(--accent)'], [n20, 'var(--orange)']];
+    let acc = 0;
+    parts.forEach(([n, c]) => {
+      if (!n) return;
+      const r = el('rect', { x, y: Y(acc + n), width: w, height: Y(acc) - Y(acc + n) - (acc ? 2 : 0), fill: c, rx: 2 }, svg);
+      acc += n;
+    });
+    const hit = el('rect', { x: x - 4, y: m.t, width: w + 8, height: H - m.b - m.t, fill: 'transparent' }, svg);
+    const list = b.s.map(s => `${s.sid} ${fmt(s.dur, 2)}`).join('<br>');
+    hit.addEventListener('mousemove', ev => showTip(ev, `<b>${fmt(b.a, 1)}–${fmt(b.b, 1)} мин: ${b.s.length}</b> (29,78 Гц: ${n30}, 19,76 Гц: ${n20})<br>${b.s.length <= 12 ? list : ''}`));
+    hit.addEventListener('mouseleave', hideTip);
+  });
+  const lg = el('g', {}, svg);
+  el('rect', { x: W - 150, y: 12, width: 10, height: 10, fill: 'var(--accent)', rx: 2 }, lg); txt(lg, W - 135, 21, '29,78 Гц', 't-small');
+  el('rect', { x: W - 150, y: 28, width: 10, height: 10, fill: 'var(--orange)', rx: 2 }, lg); txt(lg, W - 135, 37, '19,76 Гц', 't-small');
+})();
+
+/* ---------- sessions table ---------- */
+(function () {
+  const tb = document.querySelector('#sessions tbody');
+  const cnt = document.getElementById('f-count');
+  let key = 'sid', dir = 1;
+  const cols = [['sid'], ['fps', 4], ['span_fps', 4], ['dur', 2], ['n', 0], ['mean', 3], ['med', 3], ['gaps', 0], ['gap_s', 3], ['lost', 0], ['maxgap', 1], ['outl', 0], ['avi', 1], ['mc_shift', 1], ['mc_shift_rest', 1], ['f0', 2], ['mc_corr', 3], ['crop'], ['anom']];
+  function render() {
+    const q = document.getElementById('f-text').value.trim().toLowerCase();
+    const fsel = document.getElementById('f-fps').value;
+    const og = document.getElementById('f-gaps').checked;
+    let rows = DATA.sessions.filter(s => (!q || (s.sid + ' ' + s.mouse + ' ' + s.anom + ' ' + s.anom_text).toLowerCase().includes(q))
+      && (!fsel || (fsel === '20' ? s.fps < 25 : s.fps > 25)) && (!og || s.gaps > 0));
+    rows.sort((a, b) => { const x = a[key], y = b[key]; if (x === y) return 0; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x > y ? 1 : -1) * dir; });
+    tb.innerHTML = '';
+    rows.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = cols.map(([k, d]) => {
+        const v = s[k];
+        if (d === undefined) return `<td${k === 'anom' ? ' class="small" title="' + esc(s.anom_text) + '"' : ''}>${esc(v === null || v === undefined ? '–' : v)}</td>`;
+        let cls = 'num';
+        if (k === 'mc_shift' && v > 30) cls += ' hl';
+        if (k === 'mc_corr' && v < 0.7) cls += ' hl';
+        if (k === 'avi' && Math.abs(v - s.fps) > 1) cls += ' hl';
+        return `<td class="${cls}">${fmt(v, d)}</td>`;
+      }).join('');
+      tb.appendChild(tr);
+    });
+    cnt.textContent = `показано ${rows.length} из ${DATA.sessions.length}`;
+  }
+  document.querySelectorAll('#sessions th.sortable').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.k; if (k === key) dir = -dir; else { key = k; dir = 1; } render();
+  }));
+  ['f-text', 'f-fps', 'f-gaps'].forEach(id => document.getElementById(id).addEventListener('input', render));
+  render();
+})();
+</script>
+</body>
+</html>
