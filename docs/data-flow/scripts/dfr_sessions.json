@@ -1,0 +1,7684 @@
+{
+ "root": "H:\\Projects\\LT1\\CalciumData",
+ "broken": [],
+ "rows": [
+  {
+   "sid": "LT1_J01_1D",
+   "mouse": "LT1_J01",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71461,
+   "n_video_frames": 71461,
+   "fps": 29.7799437823831,
+   "fps_info": {
+    "fps": 29.7799437823831,
+    "n_outliers": 1794,
+    "n_gaps": 3,
+    "max_gap_ms": 134.0390625,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 134 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 134.0390625,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [
+    {
+     "what": "thresholds",
+     "value": "gSig=4 min_corr=0.92 min_pnr=19.0"
+    }
+   ],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "done",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 2.799999952316284,
+   "mc_template_corr": 0.9068189974403427,
+   "crop": {
+    "fov": [
+     0,
+     25,
+     399,
+     441
+    ],
+    "fov_lit": [
+     0,
+     7,
+     480,
+     545
+    ],
+    "fov_activity": [
+     0,
+     25,
+     399,
+     441
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 42.26,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     435,
+     512
+    ]
+   },
+   "ts_rows": 71461,
+   "span_s": 2399.770953125,
+   "mean_interval_ms": 33.58201725615729,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.57964700361756,
+   "n_gaps": 3,
+   "gap_total_s": 0.2701171875,
+   "gap_excess_s": 0.16940625,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 134.0390625,
+   "fps_recomputed": 29.7799437823831,
+   "fps_naive_span": 29.777841884011576,
+   "fps_mean_of_inverse": 30.629374795032103,
+   "n_outliers": 1794,
+   "gaps_ms": [
+    68.0,
+    134.0,
+    68.0
+   ]
+  },
+  {
+   "sid": "LT1_J01_2D",
+   "mouse": "LT1_J01",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.782098163675943,
+   "fps_info": {
+    "fps": 29.782098163675943,
+    "n_outliers": 4699,
+    "n_gaps": 5,
+    "max_gap_ms": 67.765625,
+    "median_interval_ms": 33.515625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "5 gaps in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 5,
+      "max_gap_ms": 67.765625,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "running",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.099999904632568,
+   "mc_template_corr": 0.9379027929651917,
+   "crop": {
+    "fov": [
+     0,
+     25,
+     399,
+     492
+    ],
+    "fov_lit": [
+     0,
+     7,
+     440,
+     545
+    ],
+    "fov_activity": [
+     0,
+     25,
+     399,
+     492
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 47.05,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     15,
+     435,
+     512
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.76553125,
+   "mean_interval_ms": 33.57959184565871,
+   "median_interval_ms": 33.515625,
+   "mean_interval_no_gaps_ms": 33.57721791474251,
+   "n_gaps": 5,
+   "gap_total_s": 0.3375390625,
+   "gap_excess_s": 0.1699609375,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 67.765625,
+   "fps_recomputed": 29.782098163675943,
+   "fps_naive_span": 29.779992699026312,
+   "fps_mean_of_inverse": 32.21373536452192,
+   "n_outliers": 4699,
+   "gaps_ms": [
+    67.2,
+    67.4,
+    67.8,
+    67.6,
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J01_3D",
+   "mouse": "LT1_J01",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.786456484897457,
+   "fps_info": {
+    "fps": 29.786456484897457,
+    "n_outliers": 5241,
+    "n_gaps": 15,
+    "max_gap_ms": 71.0,
+    "median_interval_ms": 33.5078125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "15 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 15,
+      "max_gap_ms": 71.0,
+      "n_dropped": 15
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 5.199999809265137,
+   "mc_template_corr": 0.901677291973532,
+   "crop": {
+    "fov": [
+     0,
+     35,
+     413,
+     401
+    ],
+    "fov_lit": [
+     0,
+     4,
+     486,
+     551
+    ],
+    "fov_activity": [
+     0,
+     35,
+     413,
+     401
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 25.32,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     435,
+     512
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7661484375,
+   "mean_interval_ms": 33.57960048187924,
+   "median_interval_ms": 33.5078125,
+   "mean_interval_no_gaps_ms": 33.572304933519945,
+   "n_gaps": 15,
+   "gap_total_s": 1.0249609375,
+   "gap_excess_s": 0.52234375,
+   "gap_frames_lost": 15,
+   "max_gap_ms": 71.0,
+   "fps_recomputed": 29.786456484897457,
+   "fps_naive_span": 29.77998504001368,
+   "fps_mean_of_inverse": 32.36662915849159,
+   "n_outliers": 5241,
+   "gaps_ms": [
+    67.8,
+    67.4,
+    70.2,
+    67.4,
+    69.2,
+    67.2,
+    67.7,
+    68.7,
+    67.9,
+    67.1,
+    68.0,
+    68.2,
+    69.5,
+    67.8,
+    71.0
+   ]
+  },
+  {
+   "sid": "LT1_J01_4D",
+   "mouse": "LT1_J01",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.787926567853823,
+   "fps_info": {
+    "fps": 29.787926567853823,
+    "n_outliers": 5859,
+    "n_gaps": 18,
+    "max_gap_ms": 72.078125,
+    "median_interval_ms": 33.453125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "18 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 18,
+      "max_gap_ms": 72.078125,
+      "n_dropped": 18
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 5.0,
+   "mc_template_corr": 0.9062961669108316,
+   "crop": {
+    "fov": [
+     0,
+     4,
+     415,
+     443
+    ],
+    "fov_lit": [
+     0,
+     4,
+     516,
+     555
+    ],
+    "fov_activity": [
+     0,
+     4,
+     415,
+     443
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 19.32,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     435,
+     512
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.752421875,
+   "mean_interval_ms": 33.57940840796194,
+   "median_interval_ms": 33.453125,
+   "mean_interval_no_gaps_ms": 33.570648085293996,
+   "n_gaps": 18,
+   "gap_total_s": 1.230328125,
+   "gap_excess_s": 0.628171875,
+   "gap_frames_lost": 18,
+   "max_gap_ms": 72.078125,
+   "fps_recomputed": 29.787926567853823,
+   "fps_naive_span": 29.780155381263125,
+   "fps_mean_of_inverse": 32.71532052081542,
+   "n_outliers": 5859,
+   "gaps_ms": [
+    67.8,
+    67.7,
+    67.0,
+    66.9,
+    68.3,
+    68.0,
+    68.8,
+    69.5,
+    68.2,
+    72.1,
+    71.6,
+    67.3,
+    67.8,
+    67.0,
+    70.4,
+    67.1,
+    67.5,
+    67.3
+   ]
+  },
+  {
+   "sid": "LT1_J03_1D",
+   "mouse": "LT1_J03",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11846,
+   "n_video_frames": 11846,
+   "fps": 19.756274219160613,
+   "fps_info": {
+    "fps": 19.756274219160613,
+    "n_outliers": 14,
+    "n_gaps": 0,
+    "max_gap_ms": 80.375,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 3.799999952316284,
+   "mc_template_corr": 0.9771692813807925,
+   "crop": {
+    "fov": [
+     18,
+     48,
+     392,
+     528
+    ],
+    "fov_lit": [
+     0,
+     29,
+     414,
+     579
+    ],
+    "fov_activity": [
+     18,
+     48,
+     392,
+     528
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 12.78,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     11,
+     430,
+     597
+    ]
+   },
+   "ts_rows": 11846,
+   "span_s": 599.5563671875,
+   "mean_interval_ms": 50.61683133706205,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61683133706205,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.375,
+   "fps_recomputed": 19.756274219160613,
+   "fps_naive_span": 19.756274219160613,
+   "fps_mean_of_inverse": 19.81125235276982,
+   "n_outliers": 14,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J03_2D",
+   "mouse": "LT1_J03",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11842,
+   "n_video_frames": 11842,
+   "fps": 19.757135279002853,
+   "fps_info": {
+    "fps": 19.757135279002853,
+    "n_outliers": 7,
+    "n_gaps": 1,
+    "max_gap_ms": 219.15625,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 219 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 219.15625,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 4.900000095367432,
+   "mc_template_corr": 0.981328784841192,
+   "crop": {
+    "fov": [
+     21,
+     48,
+     388,
+     560
+    ],
+    "fov_lit": [
+     0,
+     30,
+     410,
+     578
+    ],
+    "fov_activity": [
+     21,
+     48,
+     388,
+     560
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 8.02,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     11,
+     430,
+     597
+    ]
+   },
+   "ts_rows": 11842,
+   "span_s": 599.4963203125,
+   "mean_interval_ms": 50.62885907545815,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61462534311656,
+   "n_gaps": 1,
+   "gap_total_s": 0.21915625,
+   "gap_excess_s": 0.1685390625,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 219.15625,
+   "fps_recomputed": 19.757135279002853,
+   "fps_naive_span": 19.751580783394353,
+   "fps_mean_of_inverse": 19.78371385781543,
+   "n_outliers": 7,
+   "gaps_ms": [
+    219.2
+   ]
+  },
+  {
+   "sid": "LT1_J03_3D",
+   "mouse": "LT1_J03",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11846,
+   "n_video_frames": 11846,
+   "fps": 19.75627215969285,
+   "fps_info": {
+    "fps": 19.75627215969285,
+    "n_outliers": 16,
+    "n_gaps": 0,
+    "max_gap_ms": 80.5546875,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 3.299999952316284,
+   "mc_template_corr": 0.9695217292289167,
+   "crop": {
+    "fov": [
+     0,
+     31,
+     410,
+     577
+    ],
+    "fov_lit": [
+     0,
+     31,
+     410,
+     577
+    ],
+    "fov_activity": null,
+    "fov_method": "fallback_pos_neg",
+    "activity_pos_neg": 4.21,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     11,
+     430,
+     597
+    ]
+   },
+   "ts_rows": 11846,
+   "span_s": 599.5564296875,
+   "mean_interval_ms": 50.61683661355002,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61683661355002,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.5546875,
+   "fps_recomputed": 19.75627215969285,
+   "fps_naive_span": 19.756272159692852,
+   "fps_mean_of_inverse": 19.820577208599722,
+   "n_outliers": 16,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J03_4D",
+   "mouse": "LT1_J03",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11845,
+   "n_video_frames": 11845,
+   "fps": 19.75637721352763,
+   "fps_info": {
+    "fps": 19.75637721352763,
+    "n_outliers": 27,
+    "n_gaps": 0,
+    "max_gap_ms": 79.1796875,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 3.5999999046325684,
+   "mc_template_corr": 0.9613728823532878,
+   "crop": {
+    "fov": [
+     17,
+     40,
+     387,
+     568
+    ],
+    "fov_lit": [
+     17,
+     40,
+     387,
+     568
+    ],
+    "fov_activity": null,
+    "fov_method": "fallback_pos_neg",
+    "activity_pos_neg": 4.78,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     11,
+     430,
+     597
+    ]
+   },
+   "ts_rows": 11845,
+   "span_s": 599.502625,
+   "mean_interval_ms": 50.61656746031746,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61656746031746,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 79.1796875,
+   "fps_recomputed": 19.75637721352763,
+   "fps_naive_span": 19.75637721352763,
+   "fps_mean_of_inverse": 19.82503248443211,
+   "n_outliers": 27,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J05_1D",
+   "mouse": "LT1_J05",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47309,
+   "n_video_frames": 47416,
+   "fps": 19.756285262572423,
+   "fps_info": {
+    "fps": 19.756285262572423,
+    "n_outliers": 24,
+    "n_gaps": 0,
+    "max_gap_ms": 78.5703125,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "47416 frames in video, 47309 timestamp rows (diff 107, 0.2%)",
+     "data": {
+      "diff": 107,
+      "where": "end"
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 7.5,
+   "mc_template_corr": 0.8724935682742446,
+   "crop": {
+    "fov": [
+     0,
+     39,
+     520,
+     493
+    ],
+    "fov_lit": [
+     0,
+     17,
+     550,
+     591
+    ],
+    "fov_activity": [
+     0,
+     39,
+     520,
+     493
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 107.64,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     20,
+     540,
+     530
+    ]
+   },
+   "ts_rows": 47309,
+   "span_s": -63288831122.35062,
+   "mean_interval_ms": 50.61680304315429,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61680304315429,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 78.5703125,
+   "fps_recomputed": 19.756285262572423,
+   "fps_naive_span": -7.474936597982619e-07,
+   "fps_mean_of_inverse": 19.79862362366846,
+   "n_outliers": 24,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J05_2D",
+   "mouse": "LT1_J05",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47410,
+   "n_video_frames": 47410,
+   "fps": 19.756347586703694,
+   "fps_info": {
+    "fps": 19.756347586703694,
+    "n_outliers": 27,
+    "n_gaps": 0,
+    "max_gap_ms": 79.9375,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.800000190734863,
+   "mc_template_corr": 0.8492178022517715,
+   "crop": {
+    "fov": [
+     0,
+     36,
+     498,
+     494
+    ],
+    "fov_lit": [
+     0,
+     15,
+     553,
+     593
+    ],
+    "fov_activity": [
+     0,
+     36,
+     498,
+     494
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 165.98,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     18,
+     540,
+     530
+    ]
+   },
+   "ts_rows": 47410,
+   "span_s": 2399.6844453125,
+   "mean_interval_ms": 50.61664336544749,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61664336544749,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 79.9375,
+   "fps_recomputed": 19.756347586703694,
+   "fps_naive_span": 19.756347586703694,
+   "fps_mean_of_inverse": 19.81577927062519,
+   "n_outliers": 27,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J05_3D",
+   "mouse": "LT1_J05",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47410,
+   "n_video_frames": 47410,
+   "fps": 19.756324367397223,
+   "fps_info": {
+    "fps": 19.756324367397223,
+    "n_outliers": 36,
+    "n_gaps": 0,
+    "max_gap_ms": 80.1015625,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.900000095367432,
+   "mc_template_corr": 0.8404695571056031,
+   "crop": {
+    "fov": [
+     0,
+     42,
+     482,
+     491
+    ],
+    "fov_lit": [
+     0,
+     15,
+     560,
+     593
+    ],
+    "fov_activity": [
+     0,
+     42,
+     482,
+     491
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 62.09,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     22,
+     540,
+     530
+    ]
+   },
+   "ts_rows": 47410,
+   "span_s": 2399.687265625,
+   "mean_interval_ms": 50.61670285441583,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61670285441583,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.1015625,
+   "fps_recomputed": 19.756324367397223,
+   "fps_naive_span": 19.756324367397223,
+   "fps_mean_of_inverse": 19.79825873100485,
+   "n_outliers": 36,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J05_4D",
+   "mouse": "LT1_J05",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.75631953956024,
+   "fps_info": {
+    "fps": 19.75631953956024,
+    "n_outliers": 94,
+    "n_gaps": 0,
+    "max_gap_ms": 80.390625,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.599999904632568,
+   "mc_template_corr": 0.8605674170907837,
+   "crop": {
+    "fov": [
+     0,
+     17,
+     501,
+     510
+    ],
+    "fov_lit": [
+     0,
+     17,
+     555,
+     585
+    ],
+    "fov_activity": [
+     0,
+     17,
+     501,
+     510
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 105.02,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     7,
+     540,
+     530
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.73846875,
+   "mean_interval_ms": 50.61671522358152,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61671522358152,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.390625,
+   "fps_recomputed": 19.75631953956024,
+   "fps_naive_span": 19.756319539560245,
+   "fps_mean_of_inverse": 19.82200945353324,
+   "n_outliers": 94,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J06_1D",
+   "mouse": "LT1_J06",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.78018415569476,
+   "fps_info": {
+    "fps": 29.78018415569476,
+    "n_outliers": 487,
+    "n_gaps": 0,
+    "max_gap_ms": 67.0703125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 4.800000190734863,
+   "mc_template_corr": 0.6895434076521877,
+   "crop": {
+    "fov": [
+     0,
+     18,
+     479,
+     465
+    ],
+    "fov_lit": [
+     0,
+     18,
+     528,
+     526
+    ],
+    "fov_activity": [
+     0,
+     18,
+     479,
+     465
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 40.17,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     531,
+     527
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5597578125,
+   "mean_interval_ms": 33.579375962615515,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.579375962615515,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 67.0703125,
+   "fps_recomputed": 29.78018415569476,
+   "fps_naive_span": 29.78018415569476,
+   "fps_mean_of_inverse": 30.712518236024337,
+   "n_outliers": 487,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J06_2D",
+   "mouse": "LT1_J06",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.783785314769162,
+   "fps_info": {
+    "fps": 29.783785314769162,
+    "n_outliers": 762,
+    "n_gaps": 2,
+    "max_gap_ms": 72.4375,
+    "median_interval_ms": 33.5546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 72.4375,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.800000190734863,
+   "mc_template_corr": 0.6218746792732216,
+   "crop": {
+    "fov": [
+     0,
+     22,
+     511,
+     507
+    ],
+    "fov_lit": [
+     0,
+     22,
+     525,
+     527
+    ],
+    "fov_activity": [
+     0,
+     22,
+     511,
+     507
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 31.91,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     12,
+     531,
+     527
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5280546875,
+   "mean_interval_ms": 33.579481051165004,
+   "median_interval_ms": 33.5546875,
+   "mean_interval_no_gaps_ms": 33.575315878473,
+   "n_gaps": 2,
+   "gap_total_s": 0.141515625,
+   "gap_excess_s": 0.07440625,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 72.4375,
+   "fps_recomputed": 29.783785314769162,
+   "fps_naive_span": 29.78009095722181,
+   "fps_mean_of_inverse": 31.190326953360138,
+   "n_outliers": 762,
+   "gaps_ms": [
+    69.1,
+    72.4
+   ]
+  },
+  {
+   "sid": "LT1_J06_3D",
+   "mouse": "LT1_J06",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.7853028917705,
+   "fps_info": {
+    "fps": 29.7853028917705,
+    "n_outliers": 1437,
+    "n_gaps": 3,
+    "max_gap_ms": 68.5078125,
+    "median_interval_ms": 33.5,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 68.5078125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 7.599999904632568,
+   "mc_template_corr": 0.7381500009082137,
+   "crop": {
+    "fov": [
+     4,
+     20,
+     483,
+     422
+    ],
+    "fov_lit": [
+     0,
+     20,
+     529,
+     528
+    ],
+    "fov_activity": [
+     4,
+     20,
+     483,
+     422
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 26.68,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     531,
+     527
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5599453125,
+   "mean_interval_ms": 33.579386463875665,
+   "median_interval_ms": 33.5,
+   "mean_interval_no_gaps_ms": 33.57360519829711,
+   "n_gaps": 3,
+   "gap_total_s": 0.2039453125,
+   "gap_excess_s": 0.1034453125,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 68.5078125,
+   "fps_recomputed": 29.7853028917705,
+   "fps_naive_span": 29.78017484255673,
+   "fps_mean_of_inverse": 32.627592072985635,
+   "n_outliers": 1437,
+   "gaps_ms": [
+    67.5,
+    68.0,
+    68.5
+   ]
+  },
+  {
+   "sid": "LT1_J06_4D",
+   "mouse": "LT1_J06",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.797262345733653,
+   "fps_info": {
+    "fps": 29.797262345733653,
+    "n_outliers": 1389,
+    "n_gaps": 10,
+    "max_gap_ms": 69.8359375,
+    "median_interval_ms": 33.484375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "10 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 10,
+      "max_gap_ms": 69.8359375,
+      "n_dropped": 10
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 4.400000095367432,
+   "mc_template_corr": 0.732764936217161,
+   "crop": {
+    "fov": [
+     0,
+     21,
+     477,
+     464
+    ],
+    "fov_lit": [
+     0,
+     21,
+     528,
+     528
+    ],
+    "fov_activity": [
+     0,
+     21,
+     477,
+     464
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 43.72,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     531,
+     527
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5268125,
+   "mean_interval_ms": 33.57941147641985,
+   "median_interval_ms": 33.484375,
+   "mean_interval_no_gaps_ms": 33.560130068230215,
+   "n_gaps": 10,
+   "gap_total_s": 0.6798515625,
+   "gap_excess_s": 0.3450078125,
+   "gap_frames_lost": 10,
+   "max_gap_ms": 69.8359375,
+   "fps_recomputed": 29.797262345733653,
+   "fps_naive_span": 29.78015265997799,
+   "fps_mean_of_inverse": 32.20309509927354,
+   "n_outliers": 1389,
+   "gaps_ms": [
+    67.5,
+    67.9,
+    69.8,
+    67.3,
+    67.7,
+    67.8,
+    67.3,
+    69.1,
+    68.0,
+    67.5
+   ]
+  },
+  {
+   "sid": "LT1_J08_1D",
+   "mouse": "LT1_J08",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.780009535325966,
+   "fps_info": {
+    "fps": 29.780009535325966,
+    "n_outliers": 319,
+    "n_gaps": 0,
+    "max_gap_ms": 66.703125,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "17856 frames in video, 17857 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 4.800000190734863,
+   "mc_template_corr": 0.7778708069183782,
+   "crop": {
+    "fov": [
+     22,
+     65,
+     530,
+     468
+    ],
+    "fov_lit": [
+     0,
+     17,
+     552,
+     545
+    ],
+    "fov_activity": [
+     22,
+     65,
+     530,
+     468
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 127.18,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     12,
+     28,
+     550,
+     541
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5632734375,
+   "mean_interval_ms": 33.57957286124335,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.57957286124335,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 66.703125,
+   "fps_recomputed": 29.780009535325966,
+   "fps_naive_span": 29.780009535325966,
+   "fps_mean_of_inverse": 30.386578545395025,
+   "n_outliers": 319,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J08_2D",
+   "mouse": "LT1_J08",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.78023764721173,
+   "fps_info": {
+    "fps": 29.78023764721173,
+    "n_outliers": 1210,
+    "n_gaps": 0,
+    "max_gap_ms": 66.9140625,
+    "median_interval_ms": 33.53125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 5.699999809265137,
+   "mc_template_corr": 0.7891918806385172,
+   "crop": {
+    "fov": [
+     21,
+     35,
+     530,
+     477
+    ],
+    "fov_lit": [
+     0,
+     16,
+     551,
+     542
+    ],
+    "fov_activity": [
+     21,
+     35,
+     530,
+     477
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 99.78,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     11,
+     3,
+     550,
+     541
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5251015625,
+   "mean_interval_ms": 33.57931564705388,
+   "median_interval_ms": 33.53125,
+   "mean_interval_no_gaps_ms": 33.57931564705388,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 66.9140625,
+   "fps_recomputed": 29.78023764721173,
+   "fps_naive_span": 29.78023764721173,
+   "fps_mean_of_inverse": 32.101783263948086,
+   "n_outliers": 1210,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J08_3D",
+   "mouse": "LT1_J08",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.783650219477966,
+   "fps_info": {
+    "fps": 29.783650219477966,
+    "n_outliers": 1202,
+    "n_gaps": 2,
+    "max_gap_ms": 69.21875,
+    "median_interval_ms": 33.5,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 69.21875,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 3.5,
+   "mc_template_corr": 0.8431720206199768,
+   "crop": {
+    "fov": [
+     20,
+     43,
+     530,
+     521
+    ],
+    "fov_lit": [
+     0,
+     15,
+     550,
+     549
+    ],
+    "fov_activity": [
+     20,
+     43,
+     530,
+     521
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 115.42,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     10,
+     33,
+     550,
+     541
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.527015625,
+   "mean_interval_ms": 33.5794228534222,
+   "median_interval_ms": 33.5,
+   "mean_interval_no_gaps_ms": 33.57546817233363,
+   "n_gaps": 2,
+   "gap_total_s": 0.1377578125,
+   "gap_excess_s": 0.0707578125,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 69.21875,
+   "fps_recomputed": 29.783650219477966,
+   "fps_naive_span": 29.78014257020163,
+   "fps_mean_of_inverse": 32.45302194376189,
+   "n_outliers": 1202,
+   "gaps_ms": [
+    68.5,
+    69.2
+   ]
+  },
+  {
+   "sid": "LT1_J08_4D",
+   "mouse": "LT1_J08",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.790137381591375,
+   "fps_info": {
+    "fps": 29.790137381591375,
+    "n_outliers": 1414,
+    "n_gaps": 6,
+    "max_gap_ms": 67.765625,
+    "median_interval_ms": 33.4765625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "6 gaps in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 6,
+      "max_gap_ms": 67.765625,
+      "n_dropped": 6
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 3.4000000953674316,
+   "mc_template_corr": 0.8734647694862607,
+   "crop": {
+    "fov": [
+     4,
+     44,
+     518,
+     478
+    ],
+    "fov_lit": [
+     0,
+     17,
+     551,
+     545
+    ],
+    "fov_activity": [
+     4,
+     44,
+     518,
+     478
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 90.9,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     12,
+     550,
+     541
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.52890625,
+   "mean_interval_ms": 33.579528747059484,
+   "median_interval_ms": 33.4765625,
+   "mean_interval_no_gaps_ms": 33.568156708734875,
+   "n_gaps": 6,
+   "gap_total_s": 0.4044453125,
+   "gap_excess_s": 0.2035859375,
+   "gap_frames_lost": 6,
+   "max_gap_ms": 67.765625,
+   "fps_recomputed": 29.790137381591375,
+   "fps_naive_span": 29.7800486579958,
+   "fps_mean_of_inverse": 32.48770553802516,
+   "n_outliers": 1414,
+   "gaps_ms": [
+    67.6,
+    67.3,
+    67.8,
+    67.7,
+    67.1,
+    67.1
+   ]
+  },
+  {
+   "sid": "LT1_J10_1D",
+   "mouse": "LT1_J10",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.783861327205923,
+   "fps_info": {
+    "fps": 29.783861327205923,
+    "n_outliers": 4028,
+    "n_gaps": 9,
+    "max_gap_ms": 72.2421875,
+    "median_interval_ms": 33.5546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "9 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 9,
+      "max_gap_ms": 72.2421875,
+      "n_dropped": 9
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 5.300000190734863,
+   "mc_template_corr": 0.6816429733630024,
+   "crop": {
+    "fov": [
+     71,
+     171,
+     465,
+     415
+    ],
+    "fov_lit": [
+     54,
+     171,
+     482,
+     415
+    ],
+    "fov_activity": [
+     71,
+     171,
+     465,
+     415
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 794.49,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     61,
+     160,
+     485,
+     438
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7695078125,
+   "mean_interval_ms": 33.57964748915553,
+   "median_interval_ms": 33.5546875,
+   "mean_interval_no_gaps_ms": 33.575230189732146,
+   "n_gaps": 9,
+   "gap_total_s": 0.617859375,
+   "gap_excess_s": 0.3158671875,
+   "gap_frames_lost": 9,
+   "max_gap_ms": 72.2421875,
+   "fps_recomputed": 29.783861327205923,
+   "fps_naive_span": 29.779943351786162,
+   "fps_mean_of_inverse": 31.814159115454338,
+   "n_outliers": 4028,
+   "gaps_ms": [
+    72.2,
+    67.2,
+    67.9,
+    67.1,
+    67.7,
+    69.2,
+    67.2,
+    67.7,
+    71.7
+   ]
+  },
+  {
+   "sid": "LT1_J10_2D",
+   "mouse": "LT1_J10",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71463,
+   "n_video_frames": 71463,
+   "fps": 29.77955320837955,
+   "fps_info": {
+    "fps": 29.77955320837955,
+    "n_outliers": 1061,
+    "n_gaps": 2,
+    "max_gap_ms": 67.2578125,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "71463 frames in video, 71464 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    },
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 67 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 67.2578125,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 27.100000381469727,
+   "mc_template_corr": 0.7148399486999044,
+   "crop": {
+    "fov": [
+     73,
+     166,
+     463,
+     418
+    ],
+    "fov_lit": [
+     48,
+     163,
+     488,
+     421
+    ],
+    "fov_activity": [
+     73,
+     166,
+     463,
+     418
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 1140.1,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     62,
+     156,
+     485,
+     438
+    ]
+   },
+   "ts_rows": 71463,
+   "span_s": 2399.76746875,
+   "mean_interval_ms": 33.58102864109597,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.580087417786174,
+   "n_gaps": 2,
+   "gap_total_s": 0.134421875,
+   "gap_excess_s": 0.06728125,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 67.2578125,
+   "fps_recomputed": 29.77955320837955,
+   "fps_naive_span": 29.77871853443509,
+   "fps_mean_of_inverse": 30.316417968496907,
+   "n_outliers": 1061,
+   "gaps_ms": [
+    67.2,
+    67.3
+   ]
+  },
+  {
+   "sid": "LT1_J10_3D",
+   "mouse": "LT1_J10",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.784651012932443,
+   "fps_info": {
+    "fps": 29.784651012932443,
+    "n_outliers": 4562,
+    "n_gaps": 11,
+    "max_gap_ms": 68.890625,
+    "median_interval_ms": 33.5234375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "11 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 11,
+      "max_gap_ms": 68.890625,
+      "n_dropped": 11
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.099999904632568,
+   "mc_template_corr": 0.6921111272305771,
+   "crop": {
+    "fov": [
+     75,
+     177,
+     459,
+     406
+    ],
+    "fov_lit": [
+     66,
+     177,
+     468,
+     406
+    ],
+    "fov_activity": [
+     75,
+     177,
+     459,
+     406
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 3274.71,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     62,
+     161,
+     485,
+     438
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7667578125,
+   "mean_interval_ms": 33.57960900878052,
+   "median_interval_ms": 33.5234375,
+   "mean_interval_no_gaps_ms": 33.57434000370868,
+   "n_gaps": 11,
+   "gap_total_s": 0.7458671875,
+   "gap_excess_s": 0.377109375,
+   "gap_frames_lost": 11,
+   "max_gap_ms": 68.890625,
+   "fps_recomputed": 29.784651012932443,
+   "fps_naive_span": 29.77997747795444,
+   "fps_mean_of_inverse": 32.35318272585772,
+   "n_outliers": 4562,
+   "gaps_ms": [
+    67.2,
+    67.4,
+    67.9,
+    68.5,
+    68.9,
+    67.6,
+    67.2,
+    67.5,
+    68.9,
+    67.5,
+    67.3
+   ]
+  },
+  {
+   "sid": "LT1_J10_4D",
+   "mouse": "LT1_J10",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71465,
+   "n_video_frames": 71465,
+   "fps": 29.792077289348185,
+   "fps_info": {
+    "fps": 29.792077289348185,
+    "n_outliers": 5705,
+    "n_gaps": 29,
+    "max_gap_ms": 74.5703125,
+    "median_interval_ms": 33.4921875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "29 gaps in timestamps (max 75 ms)",
+     "data": {
+      "n_gaps": 29,
+      "max_gap_ms": 74.5703125,
+      "n_dropped": 29
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 4.400000095367432,
+   "mc_template_corr": 0.7138018516969927,
+   "crop": {
+    "fov": [
+     75,
+     171,
+     463,
+     414
+    ],
+    "fov_lit": [
+     59,
+     169,
+     480,
+     416
+    ],
+    "fov_activity": [
+     75,
+     171,
+     463,
+     414
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 597.29,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     64,
+     159,
+     485,
+     438
+    ]
+   },
+   "ts_rows": 71465,
+   "span_s": 2399.76703125,
+   "mean_interval_ms": 33.58008271647263,
+   "median_interval_ms": 33.4921875,
+   "mean_interval_no_gaps_ms": 33.56597092199202,
+   "n_gaps": 29,
+   "gap_total_s": 1.9818984375,
+   "gap_excess_s": 1.010625,
+   "gap_frames_lost": 29,
+   "max_gap_ms": 74.5703125,
+   "fps_recomputed": 29.792077289348185,
+   "fps_naive_span": 29.779557377607425,
+   "fps_mean_of_inverse": 32.428932371275984,
+   "n_outliers": 5705,
+   "gaps_ms": [
+    67.2,
+    67.2,
+    68.2,
+    68.8,
+    67.3,
+    67.5,
+    67.3,
+    69.9,
+    70.0,
+    68.6,
+    67.4,
+    67.1,
+    67.3,
+    68.8,
+    67.0,
+    68.0,
+    67.1,
+    67.6,
+    67.1,
+    68.2,
+    68.3,
+    71.1,
+    67.1,
+    67.0,
+    68.5,
+    68.6,
+    70.6,
+    68.3,
+    74.6
+   ]
+  },
+  {
+   "sid": "LT1_J13_1D",
+   "mouse": "LT1_J13",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71467,
+   "n_video_frames": 71467,
+   "fps": 29.784195257041137,
+   "fps_info": {
+    "fps": 29.784195257041137,
+    "n_outliers": 2029,
+    "n_gaps": 10,
+    "max_gap_ms": 69.6328125,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "10 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 10,
+      "max_gap_ms": 69.6328125,
+      "n_dropped": 10
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 6.599999904632568,
+   "mc_template_corr": 0.9193879894098229,
+   "crop": {
+    "fov": [
+     9,
+     39,
+     377,
+     424
+    ],
+    "fov_lit": [
+     0,
+     4,
+     409,
+     552
+    ],
+    "fov_activity": [
+     9,
+     39,
+     377,
+     424
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 35.8,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     23,
+     401,
+     456
+    ]
+   },
+   "ts_rows": 71467,
+   "span_s": 2399.8035703125,
+   "mean_interval_ms": 33.57965424555033,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.57485375615764,
+   "n_gaps": 10,
+   "gap_total_s": 0.6788203125,
+   "gap_excess_s": 0.3431171875,
+   "gap_frames_lost": 10,
+   "max_gap_ms": 69.6328125,
+   "fps_recomputed": 29.784195257041137,
+   "fps_naive_span": 29.77993735991224,
+   "fps_mean_of_inverse": 30.72264571430168,
+   "n_outliers": 2029,
+   "gaps_ms": [
+    69.6,
+    67.2,
+    68.3,
+    68.2,
+    67.7,
+    67.3,
+    67.6,
+    67.2,
+    67.2,
+    68.4
+   ]
+  },
+  {
+   "sid": "LT1_J13_2D",
+   "mouse": "LT1_J13",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71465,
+   "n_video_frames": 71465,
+   "fps": 29.783842583097783,
+   "fps_info": {
+    "fps": 29.783842583097783,
+    "n_outliers": 4005,
+    "n_gaps": 10,
+    "max_gap_ms": 72.15625,
+    "median_interval_ms": 33.5234375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "10 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 10,
+      "max_gap_ms": 72.15625,
+      "n_dropped": 10
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending",
+    "mc_preview": "done"
+   },
+   "mc_max_shift_px": 7.5,
+   "mc_template_corr": 0.8986713058665279,
+   "crop": {
+    "fov": [
+     4,
+     26,
+     381,
+     436
+    ],
+    "fov_lit": [
+     0,
+     8,
+     407,
+     548
+    ],
+    "fov_activity": [
+     4,
+     26,
+     381,
+     436
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 46.95,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     16,
+     401,
+     456
+    ]
+   },
+   "ts_rows": 71465,
+   "span_s": 2399.76503125,
+   "mean_interval_ms": 33.580054730353744,
+   "median_interval_ms": 33.5234375,
+   "mean_interval_no_gaps_ms": 33.575251319905114,
+   "n_gaps": 10,
+   "gap_total_s": 0.6790234375,
+   "gap_excess_s": 0.3437890625,
+   "gap_frames_lost": 10,
+   "max_gap_ms": 72.15625,
+   "fps_recomputed": 29.783842583097783,
+   "fps_naive_span": 29.77958219633508,
+   "fps_mean_of_inverse": 31.692153075415582,
+   "n_outliers": 4005,
+   "gaps_ms": [
+    67.1,
+    67.3,
+    68.1,
+    67.3,
+    67.2,
+    72.2,
+    67.3,
+    67.6,
+    67.4,
+    67.5
+   ]
+  },
+  {
+   "sid": "LT1_J13_3D",
+   "mouse": "LT1_J13",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.786011334432217,
+   "fps_info": {
+    "fps": 29.786011334432217,
+    "n_outliers": 4757,
+    "n_gaps": 14,
+    "max_gap_ms": 71.4921875,
+    "median_interval_ms": 33.5390625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "14 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 14,
+      "max_gap_ms": 71.4921875,
+      "n_dropped": 14
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.300000190734863,
+   "mc_template_corr": 0.8984090896847776,
+   "crop": {
+    "fov": [
+     7,
+     38,
+     369,
+     415
+    ],
+    "fov_lit": [
+     0,
+     9,
+     406,
+     551
+    ],
+    "fov_activity": [
+     7,
+     38,
+     369,
+     415
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 27.08,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     18,
+     401,
+     456
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.76665625,
+   "mean_interval_ms": 33.579607587630306,
+   "median_interval_ms": 33.5390625,
+   "mean_interval_no_gaps_ms": 33.57280666995563,
+   "n_gaps": 14,
+   "gap_total_s": 0.956046875,
+   "gap_excess_s": 0.4865,
+   "gap_frames_lost": 14,
+   "max_gap_ms": 71.4921875,
+   "fps_recomputed": 29.786011334432217,
+   "fps_naive_span": 29.779978738297384,
+   "fps_mean_of_inverse": 31.955914124334477,
+   "n_outliers": 4757,
+   "gaps_ms": [
+    67.3,
+    67.4,
+    67.9,
+    67.4,
+    69.9,
+    68.1,
+    67.8,
+    71.5,
+    67.5,
+    69.9,
+    67.5,
+    68.7,
+    67.8,
+    67.4
+   ]
+  },
+  {
+   "sid": "LT1_J13_4D",
+   "mouse": "LT1_J13",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71465,
+   "n_video_frames": 71465,
+   "fps": 29.784218810311206,
+   "fps_info": {
+    "fps": 29.784218810311206,
+    "n_outliers": 3557,
+    "n_gaps": 10,
+    "max_gap_ms": 68.3828125,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "10 gaps in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 10,
+      "max_gap_ms": 68.3828125,
+      "n_dropped": 10
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.300000190734863,
+   "mc_template_corr": 0.9079097694915507,
+   "crop": {
+    "fov": [
+     9,
+     43,
+     373,
+     430
+    ],
+    "fov_lit": [
+     0,
+     9,
+     412,
+     554
+    ],
+    "fov_activity": [
+     9,
+     43,
+     373,
+     430
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 32.25,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     30,
+     401,
+     456
+    ]
+   },
+   "ts_rows": 71465,
+   "span_s": 2399.7325546875,
+   "mean_interval_ms": 33.57960028388419,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.574827205264924,
+   "n_gaps": 10,
+   "gap_total_s": 0.6768515625,
+   "gap_excess_s": 0.3413828125,
+   "gap_frames_lost": 10,
+   "max_gap_ms": 68.3828125,
+   "fps_recomputed": 29.784218810311206,
+   "fps_naive_span": 29.779985215605098,
+   "fps_mean_of_inverse": 31.491060875007484,
+   "n_outliers": 3557,
+   "gaps_ms": [
+    67.5,
+    67.9,
+    67.3,
+    67.7,
+    67.2,
+    67.6,
+    67.9,
+    67.8,
+    68.4,
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J14_1D",
+   "mouse": "LT1_J14",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11845,
+   "n_video_frames": 11845,
+   "fps": 19.756437973782873,
+   "fps_info": {
+    "fps": 19.756437973782873,
+    "n_outliers": 0,
+    "n_gaps": 0,
+    "max_gap_ms": 75.7109375,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "11845 frames in video, 11846 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.599999904632568,
+   "mc_template_corr": 0.9562299521240644,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     491,
+     585
+    ],
+    "fov_lit": [
+     0,
+     0,
+     521,
+     608
+    ],
+    "fov_activity": [
+     0,
+     0,
+     491,
+     585
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 10.84,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     553,
+     608
+    ]
+   },
+   "ts_rows": 11845,
+   "span_s": 599.50078125,
+   "mean_interval_ms": 50.61641179078014,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61641179078014,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 75.7109375,
+   "fps_recomputed": 19.756437973782873,
+   "fps_naive_span": 19.756437973782873,
+   "fps_mean_of_inverse": 19.79641749008226,
+   "n_outliers": 0,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J14_2D",
+   "mouse": "LT1_J14",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11844,
+   "n_video_frames": 11844,
+   "fps": 19.756328312948902,
+   "fps_info": {
+    "fps": 19.756328312948902,
+    "n_outliers": 15,
+    "n_gaps": 0,
+    "max_gap_ms": 81.53125,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.900000095367432,
+   "mc_template_corr": 0.9665218552869845,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     475,
+     582
+    ],
+    "fov_lit": [
+     0,
+     0,
+     515,
+     608
+    ],
+    "fov_activity": [
+     0,
+     0,
+     475,
+     582
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 8.84,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     553,
+     608
+    ]
+   },
+   "ts_rows": 11844,
+   "span_s": 599.4534921875,
+   "mean_interval_ms": 50.616692745714765,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.616692745714765,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 81.53125,
+   "fps_recomputed": 19.756328312948902,
+   "fps_naive_span": 19.756328312948902,
+   "fps_mean_of_inverse": 19.795541727168978,
+   "n_outliers": 15,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J14_3D",
+   "mouse": "LT1_J14",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 13388,
+   "n_video_frames": 13388,
+   "fps": 19.75635865826624,
+   "fps_info": {
+    "fps": 19.75635865826624,
+    "n_outliers": 12,
+    "n_gaps": 0,
+    "max_gap_ms": 83.8515625,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.5,
+   "mc_template_corr": 0.9316181184851393,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     525,
+     608
+    ],
+    "fov_lit": [
+     0,
+     0,
+     525,
+     608
+    ],
+    "fov_activity": null,
+    "fov_method": "fallback_pos_neg",
+    "activity_pos_neg": 7.91,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     553,
+     608
+    ]
+   },
+   "ts_rows": 13388,
+   "span_s": 677.604625,
+   "mean_interval_ms": 50.616614999626506,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.616614999626506,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 83.8515625,
+   "fps_recomputed": 19.75635865826624,
+   "fps_naive_span": 19.75635865826624,
+   "fps_mean_of_inverse": 19.818485743773415,
+   "n_outliers": 12,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J14_4D",
+   "mouse": "LT1_J14",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11845,
+   "n_video_frames": 11845,
+   "fps": 19.75641711958535,
+   "fps_info": {
+    "fps": 19.75641711958535,
+    "n_outliers": 17,
+    "n_gaps": 0,
+    "max_gap_ms": 86.2734375,
+    "median_interval_ms": 50.609375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 2.700000047683716,
+   "mc_template_corr": 0.9299576302391374,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     533,
+     608
+    ],
+    "fov_lit": [
+     0,
+     0,
+     533,
+     608
+    ],
+    "fov_activity": null,
+    "fov_method": "fallback_pos_neg",
+    "activity_pos_neg": 7.02,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     553,
+     608
+    ]
+   },
+   "ts_rows": 11845,
+   "span_s": 599.5014140625,
+   "mean_interval_ms": 50.61646521973151,
+   "median_interval_ms": 50.609375,
+   "mean_interval_no_gaps_ms": 50.61646521973151,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 86.2734375,
+   "fps_recomputed": 19.75641711958535,
+   "fps_naive_span": 19.75641711958535,
+   "fps_mean_of_inverse": 19.829567903373785,
+   "n_outliers": 17,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J17_1D",
+   "mouse": "LT1_J17",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71465,
+   "n_video_frames": 71465,
+   "fps": 29.78167809536328,
+   "fps_info": {
+    "fps": 29.78167809536328,
+    "n_outliers": 4150,
+    "n_gaps": 4,
+    "max_gap_ms": 71.640625,
+    "median_interval_ms": 33.5546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "71465 frames in video, 71466 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    },
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 71.640625,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 8.800000190734863,
+   "mc_template_corr": 0.764369741602526,
+   "crop": {
+    "fov": [
+     99,
+     123,
+     403,
+     471
+    ],
+    "fov_lit": [
+     51,
+     123,
+     470,
+     471
+    ],
+    "fov_activity": [
+     99,
+     123,
+     403,
+     471
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 128.11,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     78,
+     113,
+     444,
+     491
+    ]
+   },
+   "ts_rows": 71465,
+   "span_s": 2399.7366484375,
+   "mean_interval_ms": 33.57965756797129,
+   "median_interval_ms": 33.5546875,
+   "mean_interval_no_gaps_ms": 33.5776915188567,
+   "n_gaps": 4,
+   "gap_total_s": 0.2748125,
+   "gap_excess_s": 0.14059375,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 71.640625,
+   "fps_recomputed": 29.78167809536328,
+   "fps_naive_span": 29.779934413441218,
+   "fps_mean_of_inverse": 31.679185850002654,
+   "n_outliers": 4150,
+   "gaps_ms": [
+    68.1,
+    67.2,
+    67.8,
+    71.6
+   ]
+  },
+  {
+   "sid": "LT1_J17_2D",
+   "mouse": "LT1_J17",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71472,
+   "n_video_frames": 71472,
+   "fps": 29.7835162278344,
+   "fps_info": {
+    "fps": 29.7835162278344,
+    "n_outliers": 3653,
+    "n_gaps": 8,
+    "max_gap_ms": 69.6953125,
+    "median_interval_ms": 33.5390625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "8 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 8,
+      "max_gap_ms": 69.6953125,
+      "n_dropped": 8
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 35.70000076293945,
+   "mc_template_corr": 0.7470467239003873,
+   "crop": {
+    "fov": [
+     72,
+     115,
+     424,
+     431
+    ],
+    "fov_lit": [
+     27,
+     109,
+     499,
+     480
+    ],
+    "fov_activity": [
+     72,
+     115,
+     424,
+     431
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 149.09,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     62,
+     85,
+     444,
+     491
+    ]
+   },
+   "ts_rows": 71472,
+   "span_s": 2399.9620078125,
+   "mean_interval_ms": 33.57952187338221,
+   "median_interval_ms": 33.5390625,
+   "mean_interval_no_gaps_ms": 33.57561922340932,
+   "n_gaps": 8,
+   "gap_total_s": 0.54753125,
+   "gap_excess_s": 0.27921875,
+   "gap_frames_lost": 8,
+   "max_gap_ms": 69.6953125,
+   "fps_recomputed": 29.7835162278344,
+   "fps_naive_span": 29.780054753926656,
+   "fps_mean_of_inverse": 31.451180507320124,
+   "n_outliers": 3653,
+   "gaps_ms": [
+    69.6,
+    67.7,
+    69.7,
+    67.9,
+    67.5,
+    69.6,
+    67.2,
+    68.3
+   ]
+  },
+  {
+   "sid": "LT1_J17_3D",
+   "mouse": "LT1_J17",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.783115853108896,
+   "fps_info": {
+    "fps": 29.783115853108896,
+    "n_outliers": 1817,
+    "n_gaps": 7,
+    "max_gap_ms": 74.453125,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "7 gaps in timestamps (max 74 ms)",
+     "data": {
+      "n_gaps": 7,
+      "max_gap_ms": 74.453125,
+      "n_dropped": 7
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 7.5,
+   "mc_template_corr": 0.7467104055910128,
+   "crop": {
+    "fov": [
+     72,
+     114,
+     418,
+     430
+    ],
+    "fov_lit": [
+     33,
+     93,
+     494,
+     498
+    ],
+    "fov_activity": [
+     72,
+     114,
+     418,
+     430
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 289.51,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     59,
+     84,
+     444,
+     491
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7681796875,
+   "mean_interval_ms": 33.579628904883506,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.576070580795715,
+   "n_gaps": 7,
+   "gap_total_s": 0.489328125,
+   "gap_excess_s": 0.2543359375,
+   "gap_frames_lost": 7,
+   "max_gap_ms": 74.453125,
+   "fps_recomputed": 29.783115853108896,
+   "fps_naive_span": 29.779959833164487,
+   "fps_mean_of_inverse": 30.60915668068603,
+   "n_outliers": 1817,
+   "gaps_ms": [
+    69.9,
+    69.7,
+    67.2,
+    69.1,
+    70.5,
+    74.5,
+    68.5
+   ]
+  },
+  {
+   "sid": "LT1_J17_4D",
+   "mouse": "LT1_J17",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71467,
+   "n_video_frames": 71467,
+   "fps": 29.782294529313067,
+   "fps_info": {
+    "fps": 29.782294529313067,
+    "n_outliers": 5182,
+    "n_gaps": 6,
+    "max_gap_ms": 72.6796875,
+    "median_interval_ms": 33.5390625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "6 gaps in timestamps (max 73 ms)",
+     "data": {
+      "n_gaps": 6,
+      "max_gap_ms": 72.6796875,
+      "n_dropped": 6
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.699999809265137,
+   "mc_template_corr": 0.7586569174189549,
+   "crop": {
+    "fov": [
+     91,
+     120,
+     412,
+     466
+    ],
+    "fov_lit": [
+     46,
+     120,
+     478,
+     469
+    ],
+    "fov_activity": [
+     91,
+     120,
+     412,
+     466
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 176.87,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     75,
+     108,
+     444,
+     491
+    ]
+   },
+   "ts_rows": 71467,
+   "span_s": 2399.83446875,
+   "mean_interval_ms": 33.580086597123106,
+   "median_interval_ms": 33.5390625,
+   "mean_interval_no_gaps_ms": 33.57699652777778,
+   "n_gaps": 6,
+   "gap_total_s": 0.422296875,
+   "gap_excess_s": 0.2210625,
+   "gap_frames_lost": 6,
+   "max_gap_ms": 72.6796875,
+   "fps_recomputed": 29.782294529313067,
+   "fps_naive_span": 29.77955393616146,
+   "fps_mean_of_inverse": 32.20510768772668,
+   "n_outliers": 5182,
+   "gaps_ms": [
+    72.7,
+    67.7,
+    69.3,
+    71.1,
+    69.7,
+    71.8
+   ]
+  },
+  {
+   "sid": "LT1_J18_1D",
+   "mouse": "LT1_J18",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.781237580957644,
+   "fps_info": {
+    "fps": 29.781237580957644,
+    "n_outliers": 3398,
+    "n_gaps": 3,
+    "max_gap_ms": 69.859375,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 69.859375,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 7.800000190734863,
+   "mc_template_corr": 0.7334170391158383,
+   "crop": {
+    "fov": [
+     0,
+     27,
+     430,
+     538
+    ],
+    "fov_lit": [
+     0,
+     11,
+     496,
+     580
+    ],
+    "fov_activity": [
+     0,
+     27,
+     430,
+     538
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 109.62,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     4,
+     452,
+     585
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7692421875,
+   "mean_interval_ms": 33.579643772301125,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57818818917747,
+   "n_gaps": 3,
+   "gap_total_s": 0.2047578125,
+   "gap_excess_s": 0.1040703125,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 69.859375,
+   "fps_recomputed": 29.781237580957644,
+   "fps_naive_span": 29.779946648060363,
+   "fps_mean_of_inverse": 31.258830254468908,
+   "n_outliers": 3398,
+   "gaps_ms": [
+    67.7,
+    67.2,
+    69.9
+   ]
+  },
+  {
+   "sid": "LT1_J18_2D",
+   "mouse": "LT1_J18",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17862,
+   "n_video_frames": 17862,
+   "fps": 29.79111092554815,
+   "fps_info": {
+    "fps": 29.79111092554815,
+    "n_outliers": 1502,
+    "n_gaps": 6,
+    "max_gap_ms": 69.53125,
+    "median_interval_ms": 33.4921875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "6 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 6,
+      "max_gap_ms": 69.53125,
+      "n_dropped": 6
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 35.599998474121094,
+   "mc_template_corr": 0.8004666841935031,
+   "crop": {
+    "fov": [
+     0,
+     4,
+     426,
+     556
+    ],
+    "fov_lit": [
+     0,
+     0,
+     493,
+     589
+    ],
+    "fov_activity": [
+     0,
+     4,
+     426,
+     556
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 47.26,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     452,
+     585
+    ]
+   },
+   "ts_rows": 17862,
+   "span_s": 599.7490625,
+   "mean_interval_ms": 33.57869450198757,
+   "median_interval_ms": 33.4921875,
+   "mean_interval_no_gaps_ms": 33.56705973466816,
+   "n_gaps": 6,
+   "gap_total_s": 0.4092109375,
+   "gap_excess_s": 0.2082578125,
+   "gap_frames_lost": 6,
+   "max_gap_ms": 69.53125,
+   "fps_recomputed": 29.79111092554815,
+   "fps_naive_span": 29.780788527701947,
+   "fps_mean_of_inverse": 32.41174987024435,
+   "n_outliers": 1502,
+   "gaps_ms": [
+    68.5,
+    67.0,
+    69.5,
+    67.9,
+    67.8,
+    68.5
+   ]
+  },
+  {
+   "sid": "LT1_J18_3D",
+   "mouse": "LT1_J18",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71468,
+   "n_video_frames": 71468,
+   "fps": 29.78213372821201,
+   "fps_info": {
+    "fps": 29.78213372821201,
+    "n_outliers": 2606,
+    "n_gaps": 5,
+    "max_gap_ms": 70.4921875,
+    "median_interval_ms": 33.5703125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "5 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 5,
+      "max_gap_ms": 70.4921875,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.400000095367432,
+   "mc_template_corr": 0.7978228274267042,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     426,
+     557
+    ],
+    "fov_lit": [
+     0,
+     0,
+     496,
+     582
+    ],
+    "fov_activity": [
+     0,
+     0,
+     426,
+     557
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 114.93,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     452,
+     585
+    ]
+   },
+   "ts_rows": 71468,
+   "span_s": 2399.835046875,
+   "mean_interval_ms": 33.57962481809786,
+   "median_interval_ms": 33.5703125,
+   "mean_interval_no_gaps_ms": 33.577177818281044,
+   "n_gaps": 5,
+   "gap_total_s": 0.342765625,
+   "gap_excess_s": 0.1749140625,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 70.4921875,
+   "fps_recomputed": 29.78213372821201,
+   "fps_naive_span": 29.77996345751446,
+   "fps_mean_of_inverse": 31.07932327229486,
+   "n_outliers": 2606,
+   "gaps_ms": [
+    69.0,
+    67.9,
+    67.6,
+    67.8,
+    70.5
+   ]
+  },
+  {
+   "sid": "LT1_J18_4D",
+   "mouse": "LT1_J18",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71468,
+   "n_video_frames": 71468,
+   "fps": 29.78171143461481,
+   "fps_info": {
+    "fps": 29.78171143461481,
+    "n_outliers": 5281,
+    "n_gaps": 4,
+    "max_gap_ms": 71.2734375,
+    "median_interval_ms": 33.5234375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 71.2734375,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.699999809265137,
+   "mc_template_corr": 0.7735733845009146,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     432,
+     565
+    ],
+    "fov_lit": [
+     0,
+     0,
+     497,
+     585
+    ],
+    "fov_activity": [
+     0,
+     0,
+     432,
+     565
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 121.84,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     452,
+     585
+    ]
+   },
+   "ts_rows": 71468,
+   "span_s": 2399.8348671875,
+   "mean_interval_ms": 33.579622303825545,
+   "median_interval_ms": 33.5234375,
+   "mean_interval_no_gaps_ms": 33.57765393018065,
+   "n_gaps": 4,
+   "gap_total_s": 0.274984375,
+   "gap_excess_s": 0.140890625,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 71.2734375,
+   "fps_recomputed": 29.78171143461481,
+   "fps_naive_span": 29.77996568728754,
+   "fps_mean_of_inverse": 32.48363913603266,
+   "n_outliers": 5281,
+   "gaps_ms": [
+    67.2,
+    68.6,
+    71.3,
+    67.9
+   ]
+  },
+  {
+   "sid": "LT1_J24_1D",
+   "mouse": "LT1_J24",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17854,
+   "n_video_frames": 17854,
+   "fps": 29.785388765026447,
+   "fps_info": {
+    "fps": 29.785388765026447,
+    "n_outliers": 637,
+    "n_gaps": 3,
+    "max_gap_ms": 70.3203125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 70.3203125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.5999999046325684,
+   "mc_template_corr": 0.9114282027601358,
+   "crop": {
+    "fov": [
+     110,
+     52,
+     431,
+     472
+    ],
+    "fov_lit": [
+     61,
+     21,
+     487,
+     525
+    ],
+    "fov_activity": [
+     110,
+     52,
+     431,
+     472
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 29.58,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     98,
+     31,
+     455,
+     514
+    ]
+   },
+   "ts_rows": 17854,
+   "span_s": 599.4933984375,
+   "mean_interval_ms": 33.57942073811124,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.573508403361345,
+   "n_gaps": 3,
+   "gap_total_s": 0.2062734375,
+   "gap_excess_s": 0.1055859375,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 70.3203125,
+   "fps_recomputed": 29.785388765026447,
+   "fps_naive_span": 29.78014444617985,
+   "fps_mean_of_inverse": 31.013988146004746,
+   "n_outliers": 637,
+   "gaps_ms": [
+    68.2,
+    70.3,
+    67.7
+   ]
+  },
+  {
+   "sid": "LT1_J24_2D",
+   "mouse": "LT1_J24",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17862,
+   "n_video_frames": 17862,
+   "fps": 29.784272518526148,
+   "fps_info": {
+    "fps": 29.784272518526148,
+    "n_outliers": 777,
+    "n_gaps": 2,
+    "max_gap_ms": 68.6640625,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 68.6640625,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 12.100000381469727,
+   "mc_template_corr": 0.8981620782948744,
+   "crop": {
+    "fov": [
+     95,
+     45,
+     435,
+     494
+    ],
+    "fov_lit": [
+     57,
+     24,
+     495,
+     528
+    ],
+    "fov_activity": [
+     95,
+     45,
+     435,
+     494
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 23.71,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     85,
+     35,
+     455,
+     514
+    ]
+   },
+   "ts_rows": 17862,
+   "span_s": 599.7477890625,
+   "mean_interval_ms": 33.57862320488774,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.57476666176718,
+   "n_gaps": 2,
+   "gap_total_s": 0.13603125,
+   "gap_excess_s": 0.0689375,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 68.6640625,
+   "fps_recomputed": 29.784272518526148,
+   "fps_naive_span": 29.78085176090361,
+   "fps_mean_of_inverse": 31.308682461167678,
+   "n_outliers": 777,
+   "gaps_ms": [
+    68.7,
+    67.4
+   ]
+  },
+  {
+   "sid": "LT1_J24_3D",
+   "mouse": "LT1_J24",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.786274982754378,
+   "fps_info": {
+    "fps": 29.786274982754378,
+    "n_outliers": 486,
+    "n_gaps": 4,
+    "max_gap_ms": 170.0,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 170 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 170.0,
+      "n_dropped": 8
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 24.600000381469727,
+   "mc_template_corr": 0.909398206977763,
+   "crop": {
+    "fov": [
+     96,
+     57,
+     435,
+     469
+    ],
+    "fov_lit": [
+     60,
+     23,
+     490,
+     525
+    ],
+    "fov_activity": [
+     96,
+     57,
+     435,
+     469
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 28.23,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     86,
+     34,
+     455,
+     514
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.7072109375,
+   "mean_interval_ms": 33.58763432861944,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.572509505769986,
+   "n_gaps": 4,
+   "gap_total_s": 0.40434375,
+   "gap_excess_s": 0.27009375,
+   "gap_frames_lost": 8,
+   "max_gap_ms": 170.0,
+   "fps_recomputed": 29.786274982754378,
+   "fps_naive_span": 29.772861947229117,
+   "fps_mean_of_inverse": 30.68233469785593,
+   "n_outliers": 486,
+   "gaps_ms": [
+    77.5,
+    89.2,
+    170.0,
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J24_4D",
+   "mouse": "LT1_J24",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.787235984253492,
+   "fps_info": {
+    "fps": 29.787235984253492,
+    "n_outliers": 858,
+    "n_gaps": 5,
+    "max_gap_ms": 69.9765625,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "5 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 5,
+      "max_gap_ms": 69.9765625,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.700000047683716,
+   "mc_template_corr": 0.9140785679447234,
+   "crop": {
+    "fov": [
+     95,
+     44,
+     429,
+     487
+    ],
+    "fov_lit": [
+     71,
+     27,
+     475,
+     519
+    ],
+    "fov_activity": [
+     95,
+     44,
+     429,
+     487
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 20.11,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     82,
+     30,
+     455,
+     514
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5919296875,
+   "mean_interval_ms": 33.58117780383646,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57142638305322,
+   "n_gaps": 5,
+   "gap_total_s": 0.34196875,
+   "gap_excess_s": 0.17415625,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 69.9765625,
+   "fps_recomputed": 29.787235984253492,
+   "fps_naive_span": 29.778586261669343,
+   "fps_mean_of_inverse": 31.266663761407404,
+   "n_outliers": 858,
+   "gaps_ms": [
+    67.8,
+    67.2,
+    68.3,
+    68.7,
+    70.0
+   ]
+  },
+  {
+   "sid": "LT1_J26_1D",
+   "mouse": "LT1_J26",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.788536589377188,
+   "fps_info": {
+    "fps": 29.788536589377188,
+    "n_outliers": 4940,
+    "n_gaps": 20,
+    "max_gap_ms": 69.8046875,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "20 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 20,
+      "max_gap_ms": 69.8046875,
+      "n_dropped": 20
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.5,
+   "mc_template_corr": 0.6406652927123387,
+   "crop": {
+    "fov": [
+     21,
+     0,
+     456,
+     334
+    ],
+    "fov_lit": [
+     8,
+     0,
+     513,
+     363
+    ],
+    "fov_activity": [
+     21,
+     0,
+     456,
+     334
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 2459.11,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     5,
+     0,
+     488,
+     357
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7661875,
+   "mean_interval_ms": 33.57960102847548,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.5699606121842,
+   "n_gaps": 20,
+   "gap_total_s": 1.3603515625,
+   "gap_excess_s": 0.6894140625,
+   "gap_frames_lost": 20,
+   "max_gap_ms": 69.8046875,
+   "fps_recomputed": 29.788536589377188,
+   "fps_naive_span": 29.77998455526618,
+   "fps_mean_of_inverse": 32.02655369530318,
+   "n_outliers": 4940,
+   "gaps_ms": [
+    67.7,
+    67.5,
+    67.8,
+    67.8,
+    67.5,
+    68.8,
+    67.6,
+    67.1,
+    67.8,
+    67.8,
+    67.3,
+    69.2,
+    67.5,
+    68.9,
+    68.5,
+    67.4,
+    67.6,
+    67.7,
+    68.8,
+    69.8
+   ]
+  },
+  {
+   "sid": "LT1_J26_2D",
+   "mouse": "LT1_J26",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71473,
+   "n_video_frames": 71473,
+   "fps": 29.78166660624951,
+   "fps_info": {
+    "fps": 29.78166660624951,
+    "n_outliers": 1647,
+    "n_gaps": 3,
+    "max_gap_ms": 70.0,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 70.0,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.199999809265137,
+   "mc_template_corr": 0.6731256954551471,
+   "crop": {
+    "fov": [
+     33,
+     0,
+     442,
+     334
+    ],
+    "fov_lit": [
+     0,
+     0,
+     534,
+     370
+    ],
+    "fov_activity": [
+     33,
+     0,
+     442,
+     334
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 385.27,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     10,
+     0,
+     488,
+     357
+    ]
+   },
+   "ts_rows": 71473,
+   "span_s": 2399.971265625,
+   "mean_interval_ms": 33.57918157635158,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57770447239363,
+   "n_gaps": 3,
+   "gap_total_s": 0.2063046875,
+   "gap_excess_s": 0.1056171875,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 70.0,
+   "fps_recomputed": 29.78166660624951,
+   "fps_naive_span": 29.780356549971977,
+   "fps_mean_of_inverse": 30.609939285581422,
+   "n_outliers": 1647,
+   "gaps_ms": [
+    68.6,
+    67.8,
+    70.0
+   ]
+  },
+  {
+   "sid": "LT1_J26_3D",
+   "mouse": "LT1_J26",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71465,
+   "n_video_frames": 71465,
+   "fps": 29.78051698969993,
+   "fps_info": {
+    "fps": 29.78051698969993,
+    "n_outliers": 4979,
+    "n_gaps": 1,
+    "max_gap_ms": 69.78125,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "71465 frames in video, 71466 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    },
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 69.78125,
+      "n_dropped": 1
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.099999904632568,
+   "mc_template_corr": 0.6968612624717924,
+   "crop": {
+    "fov": [
+     18,
+     0,
+     468,
+     337
+    ],
+    "fov_lit": [
+     0,
+     0,
+     530,
+     366
+    ],
+    "fov_activity": [
+     18,
+     0,
+     468,
+     337
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 164.45,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     8,
+     0,
+     488,
+     357
+    ]
+   },
+   "ts_rows": 71465,
+   "span_s": 2399.72590625,
+   "mean_interval_ms": 33.57950725190305,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.579000671676255,
+   "n_gaps": 1,
+   "gap_total_s": 0.06978125,
+   "gap_excess_s": 0.036234375,
+   "gap_frames_lost": 1,
+   "max_gap_ms": 69.78125,
+   "fps_recomputed": 29.78051698969993,
+   "fps_naive_span": 29.780067721015374,
+   "fps_mean_of_inverse": 32.67720151489052,
+   "n_outliers": 4979,
+   "gaps_ms": [
+    69.8
+   ]
+  },
+  {
+   "sid": "LT1_J26_4D",
+   "mouse": "LT1_J26",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71464,
+   "n_video_frames": 71464,
+   "fps": 29.782223721539864,
+   "fps_info": {
+    "fps": 29.782223721539864,
+    "n_outliers": 3706,
+    "n_gaps": 9,
+    "max_gap_ms": 73.3671875,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "9 gaps in timestamps (max 73 ms)",
+     "data": {
+      "n_gaps": 9,
+      "max_gap_ms": 73.3671875,
+      "n_dropped": 9
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.800000190734863,
+   "mc_template_corr": 0.6974687416807959,
+   "crop": {
+    "fov": [
+     25,
+     0,
+     450,
+     335
+    ],
+    "fov_lit": [
+     0,
+     0,
+     535,
+     375
+    ],
+    "fov_activity": [
+     25,
+     0,
+     450,
+     335
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 712.39,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     6,
+     0,
+     488,
+     357
+    ]
+   },
+   "ts_rows": 71464,
+   "span_s": 2399.8335859375,
+   "mean_interval_ms": 33.581483927871766,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57707635769166,
+   "n_gaps": 9,
+   "gap_total_s": 0.617171875,
+   "gap_excess_s": 0.315109375,
+   "gap_frames_lost": 9,
+   "max_gap_ms": 73.3671875,
+   "fps_recomputed": 29.782223721539864,
+   "fps_naive_span": 29.778314804308742,
+   "fps_mean_of_inverse": 31.406089044724517,
+   "n_outliers": 3706,
+   "gaps_ms": [
+    67.9,
+    68.5,
+    67.9,
+    69.4,
+    67.6,
+    67.7,
+    67.5,
+    67.2,
+    73.4
+   ]
+  },
+  {
+   "sid": "LT1_J27_1D",
+   "mouse": "LT1_J27",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756297542847605,
+   "fps_info": {
+    "fps": 19.756297542847605,
+    "n_outliers": 20,
+    "n_gaps": 0,
+    "max_gap_ms": 81.1015625,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.199999809265137,
+   "mc_template_corr": 0.9107701688673666,
+   "crop": {
+    "fov": [
+     0,
+     1,
+     497,
+     567
+    ],
+    "fov_lit": [
+     0,
+     0,
+     515,
+     608
+    ],
+    "fov_activity": [
+     0,
+     1,
+     497,
+     567
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 25.35,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     517,
+     587
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.741140625,
+   "mean_interval_ms": 50.616771580362794,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.616771580362794,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 81.1015625,
+   "fps_recomputed": 19.756297542847605,
+   "fps_naive_span": 19.75629754284761,
+   "fps_mean_of_inverse": 19.79992609433933,
+   "n_outliers": 20,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J27_2D",
+   "mouse": "LT1_J27",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756297928754424,
+   "fps_info": {
+    "fps": 19.756297928754424,
+    "n_outliers": 62,
+    "n_gaps": 0,
+    "max_gap_ms": 82.9921875,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 8.600000381469727,
+   "mc_template_corr": 0.8871461120470593,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     476,
+     562
+    ],
+    "fov_lit": [
+     0,
+     0,
+     513,
+     608
+    ],
+    "fov_activity": [
+     0,
+     0,
+     476,
+     562
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 28.35,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     517,
+     587
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.74109375,
+   "mean_interval_ms": 50.61677059164733,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61677059164733,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 82.9921875,
+   "fps_recomputed": 19.756297928754424,
+   "fps_naive_span": 19.756297928754424,
+   "fps_mean_of_inverse": 19.832862650592006,
+   "n_outliers": 62,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J27_3D",
+   "mouse": "LT1_J27",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756312014363566,
+   "fps_info": {
+    "fps": 19.756312014363566,
+    "n_outliers": 66,
+    "n_gaps": 0,
+    "max_gap_ms": 91.7734375,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 7.0,
+   "mc_template_corr": 0.8618656038430791,
+   "crop": {
+    "fov": [
+     0,
+     5,
+     483,
+     556
+    ],
+    "fov_lit": [
+     0,
+     0,
+     508,
+     608
+    ],
+    "fov_activity": [
+     0,
+     5,
+     483,
+     556
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 21.83,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     517,
+     587
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.7393828125,
+   "mean_interval_ms": 50.61673450353301,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61673450353301,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 91.7734375,
+   "fps_recomputed": 19.756312014363566,
+   "fps_naive_span": 19.756312014363566,
+   "fps_mean_of_inverse": 19.818750385872477,
+   "n_outliers": 66,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J27_4D",
+   "mouse": "LT1_J27",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47410,
+   "n_video_frames": 47410,
+   "fps": 19.756300504953536,
+   "fps_info": {
+    "fps": 19.756300504953536,
+    "n_outliers": 108,
+    "n_gaps": 0,
+    "max_gap_ms": 87.5390625,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.699999809265137,
+   "mc_template_corr": 0.8673631868784187,
+   "crop": {
+    "fov": [
+     0,
+     4,
+     484,
+     565
+    ],
+    "fov_lit": [
+     0,
+     0,
+     507,
+     608
+    ],
+    "fov_activity": [
+     0,
+     4,
+     484,
+     565
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 17.01,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     517,
+     587
+    ]
+   },
+   "ts_rows": 47410,
+   "span_s": 2399.6901640625,
+   "mean_interval_ms": 50.61676399127803,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61676399127803,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 87.5390625,
+   "fps_recomputed": 19.756300504953536,
+   "fps_naive_span": 19.756300504953533,
+   "fps_mean_of_inverse": 19.842659655468037,
+   "n_outliers": 108,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J30_1D",
+   "mouse": "LT1_J30",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.781967804518615,
+   "fps_info": {
+    "fps": 29.781967804518615,
+    "n_outliers": 909,
+    "n_gaps": 1,
+    "max_gap_ms": 67.8046875,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 67.8046875,
+      "n_dropped": 1
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.400000095367432,
+   "mc_template_corr": 0.7952220822556978,
+   "crop": {
+    "fov": [
+     0,
+     33,
+     387,
+     474
+    ],
+    "fov_lit": [
+     0,
+     15,
+     430,
+     558
+    ],
+    "fov_activity": [
+     0,
+     33,
+     387,
+     474
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 107.03,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     20,
+     412,
+     500
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5245,
+   "mean_interval_ms": 33.57928195362384,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57736488615359,
+   "n_gaps": 1,
+   "gap_total_s": 0.0678046875,
+   "gap_excess_s": 0.0342421875,
+   "gap_frames_lost": 1,
+   "max_gap_ms": 67.8046875,
+   "fps_recomputed": 29.781967804518615,
+   "fps_naive_span": 29.780267528683147,
+   "fps_mean_of_inverse": 31.771264836748088,
+   "n_outliers": 909,
+   "gaps_ms": [
+    67.8
+   ]
+  },
+  {
+   "sid": "LT1_J30_2D",
+   "mouse": "LT1_J30",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 19541,
+   "n_video_frames": 19541,
+   "fps": 29.78369265463948,
+   "fps_info": {
+    "fps": 29.78369265463948,
+    "n_outliers": 794,
+    "n_gaps": 2,
+    "max_gap_ms": 70.8984375,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 70.8984375,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 25.200000762939453,
+   "mc_template_corr": 0.8315057647228516,
+   "crop": {
+    "fov": [
+     0,
+     32,
+     383,
+     475
+    ],
+    "fov_lit": [
+     0,
+     16,
+     426,
+     550
+    ],
+    "fov_activity": [
+     0,
+     32,
+     383,
+     475
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 48.9,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     20,
+     412,
+     500
+    ]
+   },
+   "ts_rows": 19541,
+   "span_s": 656.13509375,
+   "mean_interval_ms": 33.57907337512794,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.575420334732314,
+   "n_gaps": 2,
+   "gap_total_s": 0.13853125,
+   "gap_excess_s": 0.0714375,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 70.8984375,
+   "fps_recomputed": 29.78369265463948,
+   "fps_naive_span": 29.780452510661032,
+   "fps_mean_of_inverse": 31.15765478746842,
+   "n_outliers": 794,
+   "gaps_ms": [
+    70.9,
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J30_3D",
+   "mouse": "LT1_J30",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17857,
+   "n_video_frames": 17857,
+   "fps": 29.787706717870545,
+   "fps_info": {
+    "fps": 29.787706717870545,
+    "n_outliers": 1091,
+    "n_gaps": 4,
+    "max_gap_ms": 75.3046875,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 75 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 75.3046875,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.199999809265137,
+   "mc_template_corr": 0.8088382817431403,
+   "crop": {
+    "fov": [
+     7,
+     31,
+     387,
+     440
+    ],
+    "fov_lit": [
+     0,
+     16,
+     425,
+     547
+    ],
+    "fov_activity": [
+     7,
+     31,
+     387,
+     440
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 83.53,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     1,
+     412,
+     500
+    ]
+   },
+   "ts_rows": 17857,
+   "span_s": 599.5911640625,
+   "mean_interval_ms": 33.579254259772625,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.570895855506386,
+   "n_gaps": 4,
+   "gap_total_s": 0.28353125,
+   "gap_excess_s": 0.14928125,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 75.3046875,
+   "fps_recomputed": 29.787706717870545,
+   "fps_naive_span": 29.78029208939232,
+   "fps_mean_of_inverse": 31.65235000465788,
+   "n_outliers": 1091,
+   "gaps_ms": [
+    70.6,
+    68.1,
+    69.5,
+    75.3
+   ]
+  },
+  {
+   "sid": "LT1_J30_4D",
+   "mouse": "LT1_J30",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17858,
+   "n_video_frames": 17858,
+   "fps": 29.788869359949878,
+   "fps_info": {
+    "fps": 29.788869359949878,
+    "n_outliers": 969,
+    "n_gaps": 5,
+    "max_gap_ms": 70.1484375,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "5 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 5,
+      "max_gap_ms": 70.1484375,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.699999809265137,
+   "mc_template_corr": 0.8646049698565341,
+   "crop": {
+    "fov": [
+     3,
+     29,
+     392,
+     480
+    ],
+    "fov_lit": [
+     0,
+     13,
+     429,
+     546
+    ],
+    "fov_activity": [
+     3,
+     29,
+     392,
+     480
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 54.96,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     19,
+     412,
+     500
+    ]
+   },
+   "ts_rows": 17858,
+   "span_s": 599.628328125,
+   "mean_interval_ms": 33.57945501064008,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.569585603153705,
+   "n_gaps": 5,
+   "gap_total_s": 0.3440859375,
+   "gap_excess_s": 0.1762734375,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 70.1484375,
+   "fps_recomputed": 29.788869359949878,
+   "fps_naive_span": 29.780114051378646,
+   "fps_mean_of_inverse": 31.41995329079447,
+   "n_outliers": 969,
+   "gaps_ms": [
+    68.1,
+    69.1,
+    68.1,
+    70.1,
+    68.6
+   ]
+  },
+  {
+   "sid": "LT1_J52_1D",
+   "mouse": "LT1_J52",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.781843570231736,
+   "fps_info": {
+    "fps": 29.781843570231736,
+    "n_outliers": 733,
+    "n_gaps": 1,
+    "max_gap_ms": 67.6328125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 67.6328125,
+      "n_dropped": 1
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.199999809265137,
+   "mc_template_corr": 0.6049500794858939,
+   "crop": {
+    "fov": [
+     0,
+     4,
+     479,
+     532
+    ],
+    "fov_lit": [
+     0,
+     0,
+     510,
+     557
+    ],
+    "fov_activity": [
+     0,
+     4,
+     479,
+     532
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 660.8,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     521,
+     559
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.56040625,
+   "mean_interval_ms": 33.57941227947354,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57750495337179,
+   "n_gaps": 1,
+   "gap_total_s": 0.0676328125,
+   "gap_excess_s": 0.0340703125,
+   "gap_frames_lost": 1,
+   "max_gap_ms": 67.6328125,
+   "fps_recomputed": 29.781843570231736,
+   "fps_naive_span": 29.780151947783825,
+   "fps_mean_of_inverse": 31.10912380993955,
+   "n_outliers": 733,
+   "gaps_ms": [
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J52_2D",
+   "mouse": "LT1_J52",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.789016241597995,
+   "fps_info": {
+    "fps": 29.789016241597995,
+    "n_outliers": 1018,
+    "n_gaps": 5,
+    "max_gap_ms": 71.78125,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "5 gaps in timestamps (max 72 ms)",
+     "data": {
+      "n_gaps": 5,
+      "max_gap_ms": 71.78125,
+      "n_dropped": 5
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.900000095367432,
+   "mc_template_corr": 0.6343847765612451,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     501,
+     539
+    ],
+    "fov_lit": [
+     0,
+     0,
+     515,
+     568
+    ],
+    "fov_activity": [
+     0,
+     0,
+     501,
+     539
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 447.36,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     521,
+     559
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.559078125,
+   "mean_interval_ms": 33.57933789554747,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.56942008053221,
+   "n_gaps": 5,
+   "gap_total_s": 0.3449296875,
+   "gap_excess_s": 0.1771953125,
+   "gap_frames_lost": 5,
+   "max_gap_ms": 71.78125,
+   "fps_recomputed": 29.789016241597995,
+   "fps_naive_span": 29.780217915868953,
+   "fps_mean_of_inverse": 31.766499217686007,
+   "n_outliers": 1018,
+   "gaps_ms": [
+    68.4,
+    67.9,
+    69.6,
+    71.8,
+    67.2
+   ]
+  },
+  {
+   "sid": "LT1_J52_3D",
+   "mouse": "LT1_J52",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.78695256993369,
+   "fps_info": {
+    "fps": 29.78695256993369,
+    "n_outliers": 1303,
+    "n_gaps": 4,
+    "max_gap_ms": 69.0546875,
+    "median_interval_ms": 33.515625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 69.0546875,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.400000095367432,
+   "mc_template_corr": 0.6697059487673204,
+   "crop": {
+    "fov": [
+     0,
+     3,
+     477,
+     539
+    ],
+    "fov_lit": [
+     0,
+     0,
+     519,
+     571
+    ],
+    "fov_activity": [
+     0,
+     3,
+     477,
+     539
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 669.91,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     521,
+     559
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5607421875,
+   "mean_interval_ms": 33.57943109423131,
+   "median_interval_ms": 33.515625,
+   "mean_interval_no_gaps_ms": 33.571745805557114,
+   "n_gaps": 4,
+   "gap_total_s": 0.2715078125,
+   "gap_excess_s": 0.1374453125,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 69.0546875,
+   "fps_recomputed": 29.78695256993369,
+   "fps_naive_span": 29.78013526178508,
+   "fps_mean_of_inverse": 32.25778455132878,
+   "n_outliers": 1303,
+   "gaps_ms": [
+    67.3,
+    67.3,
+    67.9,
+    69.1
+   ]
+  },
+  {
+   "sid": "LT1_J52_4D",
+   "mouse": "LT1_J52",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17853,
+   "n_video_frames": 17853,
+   "fps": 29.785170763799854,
+   "fps_info": {
+    "fps": 29.785170763799854,
+    "n_outliers": 1247,
+    "n_gaps": 3,
+    "max_gap_ms": 69.453125,
+    "median_interval_ms": 33.4296875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 69.453125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.699999809265137,
+   "mc_template_corr": 0.6872253394738129,
+   "crop": {
+    "fov": [
+     0,
+     10,
+     497,
+     515
+    ],
+    "fov_lit": [
+     0,
+     0,
+     518,
+     563
+    ],
+    "fov_activity": [
+     0,
+     10,
+     497,
+     515
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 235.56,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     521,
+     559
+    ]
+   },
+   "ts_rows": 17853,
+   "span_s": 599.4623671875,
+   "mean_interval_ms": 33.57956347678131,
+   "median_interval_ms": 33.4296875,
+   "mean_interval_no_gaps_ms": 33.57375413188414,
+   "n_gaps": 3,
+   "gap_total_s": 0.2044296875,
+   "gap_excess_s": 0.104140625,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 69.453125,
+   "fps_recomputed": 29.785170763799854,
+   "fps_naive_span": 29.78001785792876,
+   "fps_mean_of_inverse": 32.48536641290992,
+   "n_outliers": 1247,
+   "gaps_ms": [
+    67.8,
+    67.2,
+    69.5
+   ]
+  },
+  {
+   "sid": "LT1_J53_1D",
+   "mouse": "LT1_J53",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.78005913577453,
+   "fps_info": {
+    "fps": 29.78005913577453,
+    "n_outliers": 527,
+    "n_gaps": 0,
+    "max_gap_ms": 65.6640625,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "frames_ts_mismatch",
+     "level": "warning",
+     "auto_fixed": true,
+     "message": "17855 frames in video, 17856 timestamp rows (diff -1, 0.0%)",
+     "data": {
+      "diff": -1,
+      "where": "end"
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.0,
+   "mc_template_corr": 0.6718892141656064,
+   "crop": {
+    "fov": [
+     35,
+     38,
+     417,
+     499
+    ],
+    "fov_lit": [
+     28,
+     35,
+     461,
+     502
+    ],
+    "fov_activity": [
+     35,
+     38,
+     417,
+     499
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 63.52,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     23,
+     28,
+     441,
+     519
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5286953125,
+   "mean_interval_ms": 33.57951693248012,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57951693248012,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 65.6640625,
+   "fps_recomputed": 29.78005913577453,
+   "fps_naive_span": 29.780059135774533,
+   "fps_mean_of_inverse": 30.78592604774446,
+   "n_outliers": 527,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J53_2D",
+   "mouse": "LT1_J53",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17861,
+   "n_video_frames": 17861,
+   "fps": 29.781969518048303,
+   "fps_info": {
+    "fps": 29.781969518048303,
+    "n_outliers": 525,
+    "n_gaps": 1,
+    "max_gap_ms": 68.0625,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 68.0625,
+      "n_dropped": 1
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 34.20000076293945,
+   "mc_template_corr": 0.6838855724125341,
+   "crop": {
+    "fov": [
+     43,
+     33,
+     402,
+     468
+    ],
+    "fov_lit": [
+     29,
+     33,
+     463,
+     501
+    ],
+    "fov_activity": [
+     43,
+     33,
+     402,
+     468
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 226.2,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     24,
+     8,
+     441,
+     519
+    ]
+   },
+   "ts_rows": 17861,
+   "span_s": 599.7261875,
+   "mean_interval_ms": 33.579293812989924,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.577362954252756,
+   "n_gaps": 1,
+   "gap_total_s": 0.0680625,
+   "gap_excess_s": 0.0345,
+   "gap_frames_lost": 1,
+   "max_gap_ms": 68.0625,
+   "fps_recomputed": 29.781969518048303,
+   "fps_naive_span": 29.780257011038056,
+   "fps_mean_of_inverse": 30.700499561427982,
+   "n_outliers": 525,
+   "gaps_ms": [
+    68.1
+   ]
+  },
+  {
+   "sid": "LT1_J53_3D",
+   "mouse": "LT1_J53",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17857,
+   "n_video_frames": 17857,
+   "fps": 29.785294514458435,
+   "fps_info": {
+    "fps": 29.785294514458435,
+    "n_outliers": 1319,
+    "n_gaps": 3,
+    "max_gap_ms": 70.53125,
+    "median_interval_ms": 33.5390625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 70.53125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.400000095367432,
+   "mc_template_corr": 0.6746224183086866,
+   "crop": {
+    "fov": [
+     28,
+     38,
+     421,
+     454
+    ],
+    "fov_lit": [
+     18,
+     38,
+     468,
+     492
+    ],
+    "fov_activity": [
+     28,
+     38,
+     421,
+     454
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 194.25,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     18,
+     6,
+     441,
+     519
+    ]
+   },
+   "ts_rows": 17857,
+   "span_s": 599.595734375,
+   "mean_interval_ms": 33.57951021365368,
+   "median_interval_ms": 33.5390625,
+   "mean_interval_no_gaps_ms": 33.57361464109673,
+   "n_gaps": 3,
+   "gap_total_s": 0.2059921875,
+   "gap_excess_s": 0.105375,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 70.53125,
+   "fps_recomputed": 29.785294514458435,
+   "fps_naive_span": 29.780065094379868,
+   "fps_mean_of_inverse": 32.30881956937988,
+   "n_outliers": 1319,
+   "gaps_ms": [
+    67.9,
+    70.5,
+    67.5
+   ]
+  },
+  {
+   "sid": "LT1_J53_4D",
+   "mouse": "LT1_J53",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.781780696135726,
+   "fps_info": {
+    "fps": 29.781780696135726,
+    "n_outliers": 490,
+    "n_gaps": 1,
+    "max_gap_ms": 69.1484375,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "1 gap in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 1,
+      "max_gap_ms": 69.1484375,
+      "n_dropped": 1
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.800000190734863,
+   "mc_template_corr": 0.6376104408476216,
+   "crop": {
+    "fov": [
+     21,
+     29,
+     420,
+     480
+    ],
+    "fov_lit": [
+     19,
+     29,
+     470,
+     507
+    ],
+    "fov_activity": [
+     21,
+     29,
+     420,
+     480
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 218.26,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     10,
+     10,
+     441,
+     519
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5631875,
+   "mean_interval_ms": 33.57956804816578,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57757584084799,
+   "n_gaps": 1,
+   "gap_total_s": 0.0691484375,
+   "gap_excess_s": 0.0355859375,
+   "gap_frames_lost": 1,
+   "max_gap_ms": 69.1484375,
+   "fps_recomputed": 29.781780696135726,
+   "fps_naive_span": 29.780013803799452,
+   "fps_mean_of_inverse": 30.655346933989783,
+   "n_outliers": 490,
+   "gaps_ms": [
+    69.1
+   ]
+  },
+  {
+   "sid": "LT1_J54_1D",
+   "mouse": "LT1_J54",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17856,
+   "n_video_frames": 17856,
+   "fps": 29.783594965817766,
+   "fps_info": {
+    "fps": 29.783594965817766,
+    "n_outliers": 1204,
+    "n_gaps": 2,
+    "max_gap_ms": 70.2890625,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 70.2890625,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.5,
+   "mc_template_corr": 0.6824895234959965,
+   "crop": {
+    "fov": [
+     12,
+     18,
+     546,
+     537
+    ],
+    "fov_lit": [
+     0,
+     10,
+     558,
+     562
+    ],
+    "fov_activity": [
+     12,
+     18,
+     546,
+     537
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 483.55,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     1,
+     2,
+     568,
+     570
+    ]
+   },
+   "ts_rows": 17856,
+   "span_s": 599.5616640625,
+   "mean_interval_ms": 33.57948272542705,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.57553046056685,
+   "n_gaps": 2,
+   "gap_total_s": 0.13771875,
+   "gap_excess_s": 0.070625,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 70.2890625,
+   "fps_recomputed": 29.783594965817766,
+   "fps_naive_span": 29.780089472396195,
+   "fps_mean_of_inverse": 31.95606049817407,
+   "n_outliers": 1204,
+   "gaps_ms": [
+    67.4,
+    70.3
+   ]
+  },
+  {
+   "sid": "LT1_J54_2D",
+   "mouse": "LT1_J54",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17861,
+   "n_video_frames": 17861,
+   "fps": 29.78825928378774,
+   "fps_info": {
+    "fps": 29.78825928378774,
+    "n_outliers": 1139,
+    "n_gaps": 4,
+    "max_gap_ms": 68.3359375,
+    "median_interval_ms": 33.5234375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 68 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 68.3359375,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 18.700000762939453,
+   "mc_template_corr": 0.7022465109578852,
+   "crop": {
+    "fov": [
+     24,
+     12,
+     537,
+     544
+    ],
+    "fov_lit": [
+     0,
+     10,
+     561,
+     562
+    ],
+    "fov_activity": [
+     24,
+     12,
+     537,
+     544
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 810.18,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     8,
+     0,
+     568,
+     570
+    ]
+   },
+   "ts_rows": 17861,
+   "span_s": 599.7014609375,
+   "mean_interval_ms": 33.57790934700448,
+   "median_interval_ms": 33.5234375,
+   "mean_interval_no_gaps_ms": 33.57027312247984,
+   "n_gaps": 4,
+   "gap_total_s": 0.2706640625,
+   "gap_excess_s": 0.1365703125,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 68.3359375,
+   "fps_recomputed": 29.78825928378774,
+   "fps_naive_span": 29.781484894300338,
+   "fps_mean_of_inverse": 31.810790969928846,
+   "n_outliers": 1139,
+   "gaps_ms": [
+    67.8,
+    67.3,
+    67.2,
+    68.3
+   ]
+  },
+  {
+   "sid": "LT1_J54_3D",
+   "mouse": "LT1_J54",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17858,
+   "n_video_frames": 17858,
+   "fps": 29.780322022037502,
+   "fps_info": {
+    "fps": 29.780322022037502,
+    "n_outliers": 1273,
+    "n_gaps": 0,
+    "max_gap_ms": 66.4140625,
+    "median_interval_ms": 33.546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.799999952316284,
+   "mc_template_corr": 0.6685069631561253,
+   "crop": {
+    "fov": [
+     0,
+     14,
+     546,
+     550
+    ],
+    "fov_lit": [
+     0,
+     14,
+     553,
+     553
+    ],
+    "fov_activity": [
+     0,
+     14,
+     546,
+     550
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 1988.27,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     4,
+     568,
+     570
+    ]
+   },
+   "ts_rows": 17858,
+   "span_s": 599.624140625,
+   "mean_interval_ms": 33.57922050876407,
+   "median_interval_ms": 33.546875,
+   "mean_interval_no_gaps_ms": 33.57922050876407,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 66.4140625,
+   "fps_recomputed": 29.780322022037502,
+   "fps_naive_span": 29.780322022037502,
+   "fps_mean_of_inverse": 32.24826543945584,
+   "n_outliers": 1273,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J54_4D",
+   "mouse": "LT1_J54",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17858,
+   "n_video_frames": 17858,
+   "fps": 29.792467843974208,
+   "fps_info": {
+    "fps": 29.792467843974208,
+    "n_outliers": 1321,
+    "n_gaps": 7,
+    "max_gap_ms": 70.3515625,
+    "median_interval_ms": 33.53125,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "7 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 7,
+      "max_gap_ms": 70.3515625,
+      "n_dropped": 7
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.0,
+   "mc_template_corr": 0.6755749833073924,
+   "crop": {
+    "fov": [
+     0,
+     16,
+     548,
+     534
+    ],
+    "fov_lit": [
+     0,
+     14,
+     551,
+     551
+    ],
+    "fov_activity": [
+     0,
+     16,
+     548,
+     534
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 240.15,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     568,
+     570
+    ]
+   },
+   "ts_rows": 17858,
+   "span_s": 599.627578125,
+   "mean_interval_ms": 33.57941301030408,
+   "median_interval_ms": 33.53125,
+   "mean_interval_no_gaps_ms": 33.565530899859944,
+   "n_gaps": 7,
+   "gap_total_s": 0.4828515625,
+   "gap_excess_s": 0.2481328125,
+   "gap_frames_lost": 7,
+   "max_gap_ms": 70.3515625,
+   "fps_recomputed": 29.792467843974208,
+   "fps_naive_span": 29.780151299641325,
+   "fps_mean_of_inverse": 32.16938460924646,
+   "n_outliers": 1321,
+   "gaps_ms": [
+    68.4,
+    70.4,
+    70.2,
+    68.0,
+    67.6,
+    68.7,
+    69.6
+   ]
+  },
+  {
+   "sid": "LT1_J55_1D",
+   "mouse": "LT1_J55",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11845,
+   "n_video_frames": 11845,
+   "fps": 19.756302293557937,
+   "fps_info": {
+    "fps": 19.756302293557937,
+    "n_outliers": 16,
+    "n_gaps": 0,
+    "max_gap_ms": 79.1171875,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.400000095367432,
+   "mc_template_corr": 0.8426268945366749,
+   "crop": {
+    "fov": [
+     1,
+     54,
+     445,
+     512
+    ],
+    "fov_lit": [
+     0,
+     25,
+     479,
+     547
+    ],
+    "fov_activity": [
+     1,
+     54,
+     445,
+     512
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 21.46,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     44,
+     471,
+     532
+    ]
+   },
+   "ts_rows": 11845,
+   "span_s": 599.5048984375,
+   "mean_interval_ms": 50.616759408772374,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.616759408772374,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 79.1171875,
+   "fps_recomputed": 19.756302293557937,
+   "fps_naive_span": 19.75630229355794,
+   "fps_mean_of_inverse": 19.81134085308656,
+   "n_outliers": 16,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J55_2D",
+   "mouse": "LT1_J55",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11844,
+   "n_video_frames": 11844,
+   "fps": 19.7562590515071,
+   "fps_info": {
+    "fps": 19.7562590515071,
+    "n_outliers": 4,
+    "n_gaps": 0,
+    "max_gap_ms": 76.7890625,
+    "median_interval_ms": 50.609375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.599999904632568,
+   "mc_template_corr": 0.8605321020297615,
+   "crop": {
+    "fov": [
+     0,
+     63,
+     437,
+     496
+    ],
+    "fov_lit": [
+     0,
+     21,
+     486,
+     556
+    ],
+    "fov_activity": [
+     0,
+     63,
+     437,
+     496
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 27.22,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     45,
+     471,
+     532
+    ]
+   },
+   "ts_rows": 11844,
+   "span_s": 599.45559375,
+   "mean_interval_ms": 50.61687019758507,
+   "median_interval_ms": 50.609375,
+   "mean_interval_no_gaps_ms": 50.61687019758507,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 76.7890625,
+   "fps_recomputed": 19.7562590515071,
+   "fps_naive_span": 19.756259051507097,
+   "fps_mean_of_inverse": 19.79289974617745,
+   "n_outliers": 4,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J55_3D",
+   "mouse": "LT1_J55",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 11846,
+   "n_video_frames": 11846,
+   "fps": 19.756343726449384,
+   "fps_info": {
+    "fps": 19.756343726449384,
+    "n_outliers": 5,
+    "n_gaps": 0,
+    "max_gap_ms": 78.2421875,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.0,
+   "mc_template_corr": 0.8714925826991771,
+   "crop": {
+    "fov": [
+     0,
+     52,
+     450,
+     504
+    ],
+    "fov_lit": [
+     0,
+     22,
+     489,
+     546
+    ],
+    "fov_activity": [
+     0,
+     52,
+     450,
+     504
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 16.12,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     38,
+     471,
+     532
+    ]
+   },
+   "ts_rows": 11846,
+   "span_s": 599.5542578125,
+   "mean_interval_ms": 50.61665325559308,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.61665325559308,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 78.2421875,
+   "fps_recomputed": 19.756343726449384,
+   "fps_naive_span": 19.75634372644938,
+   "fps_mean_of_inverse": 19.804093182217994,
+   "n_outliers": 5,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J55_4D",
+   "mouse": "LT1_J55",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 12455,
+   "n_video_frames": 12455,
+   "fps": 19.756406494230557,
+   "fps_info": {
+    "fps": 19.756406494230557,
+    "n_outliers": 26,
+    "n_gaps": 0,
+    "max_gap_ms": 80.765625,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.5,
+   "mc_template_corr": 0.8534129403182554,
+   "crop": {
+    "fov": [
+     0,
+     56,
+     451,
+     505
+    ],
+    "fov_lit": [
+     0,
+     22,
+     491,
+     547
+    ],
+    "fov_activity": [
+     0,
+     56,
+     451,
+     505
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 19.87,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     42,
+     471,
+     532
+    ]
+   },
+   "ts_rows": 12455,
+   "span_s": 630.377796875,
+   "mean_interval_ms": 50.61649244218725,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61649244218725,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.765625,
+   "fps_recomputed": 19.756406494230557,
+   "fps_naive_span": 19.756406494230557,
+   "fps_mean_of_inverse": 19.833394471083547,
+   "n_outliers": 26,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J57_1D",
+   "mouse": "LT1_J57",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71466,
+   "n_video_frames": 71466,
+   "fps": 29.783408957305305,
+   "fps_info": {
+    "fps": 29.783408957305305,
+    "n_outliers": 3388,
+    "n_gaps": 8,
+    "max_gap_ms": 70.1953125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "8 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 8,
+      "max_gap_ms": 70.1953125,
+      "n_dropped": 8
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.599999904632568,
+   "mc_template_corr": 0.7737311252299203,
+   "crop": {
+    "fov": [
+     0,
+     122,
+     466,
+     398
+    ],
+    "fov_lit": [
+     0,
+     112,
+     466,
+     408
+    ],
+    "fov_activity": [
+     0,
+     122,
+     466,
+     398
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 126.87,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     112,
+     486,
+     418
+    ]
+   },
+   "ts_rows": 71466,
+   "span_s": 2399.7675078125,
+   "mean_interval_ms": 33.579619503428255,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57574015229439,
+   "n_gaps": 8,
+   "gap_total_s": 0.54584375,
+   "gap_excess_s": 0.27734375,
+   "gap_frames_lost": 8,
+   "max_gap_ms": 70.1953125,
+   "fps_recomputed": 29.783408957305305,
+   "fps_naive_span": 29.77996817080988,
+   "fps_mean_of_inverse": 31.31847123314427,
+   "n_outliers": 3388,
+   "gaps_ms": [
+    67.2,
+    67.1,
+    68.2,
+    70.2,
+    69.2,
+    67.2,
+    69.1,
+    67.6
+   ]
+  },
+  {
+   "sid": "LT1_J57_2D",
+   "mouse": "LT1_J57",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71472,
+   "n_video_frames": 71472,
+   "fps": 29.78195235388212,
+   "fps_info": {
+    "fps": 29.78195235388212,
+    "n_outliers": 2530,
+    "n_gaps": 4,
+    "max_gap_ms": 69.5390625,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "4 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 4,
+      "max_gap_ms": 69.5390625,
+      "n_dropped": 4
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 33.79999923706055,
+   "mc_template_corr": 0.8327233886145774,
+   "crop": {
+    "fov": [
+     0,
+     128,
+     449,
+     356
+    ],
+    "fov_lit": [
+     0,
+     116,
+     471,
+     406
+    ],
+    "fov_activity": [
+     0,
+     128,
+     449,
+     356
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 380.5,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     97,
+     486,
+     418
+    ]
+   },
+   "ts_rows": 71472,
+   "span_s": 2399.946265625,
+   "mean_interval_ms": 33.579301613591525,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57738230581947,
+   "n_gaps": 4,
+   "gap_total_s": 0.271484375,
+   "gap_excess_s": 0.137234375,
+   "gap_frames_lost": 4,
+   "max_gap_ms": 69.5390625,
+   "fps_recomputed": 29.78195235388212,
+   "fps_naive_span": 29.780250092969208,
+   "fps_mean_of_inverse": 30.99178447987486,
+   "n_outliers": 2530,
+   "gaps_ms": [
+    67.4,
+    67.3,
+    67.3,
+    69.5
+   ]
+  },
+  {
+   "sid": "LT1_J57_3D",
+   "mouse": "LT1_J57",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71469,
+   "n_video_frames": 71469,
+   "fps": 29.781230117572523,
+   "fps_info": {
+    "fps": 29.781230117572523,
+    "n_outliers": 4483,
+    "n_gaps": 3,
+    "max_gap_ms": 68.6328125,
+    "median_interval_ms": 33.5546875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 68.6328125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.599999904632568,
+   "mc_template_corr": 0.851178705751569,
+   "crop": {
+    "fov": [
+     4,
+     130,
+     451,
+     389
+    ],
+    "fov_lit": [
+     3,
+     117,
+     467,
+     402
+    ],
+    "fov_activity": [
+     4,
+     130,
+     451,
+     389
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 152.61,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     116,
+     486,
+     418
+    ]
+   },
+   "ts_rows": 71469,
+   "span_s": 2399.8694453125,
+   "mean_interval_ms": 33.57963627515112,
+   "median_interval_ms": 33.5546875,
+   "mean_interval_no_gaps_ms": 33.57819660410691,
+   "n_gaps": 3,
+   "gap_total_s": 0.203625,
+   "gap_excess_s": 0.1029609375,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 68.6328125,
+   "fps_recomputed": 29.781230117572523,
+   "fps_naive_span": 29.77995329687352,
+   "fps_mean_of_inverse": 31.797269986502478,
+   "n_outliers": 4483,
+   "gaps_ms": [
+    67.5,
+    67.5,
+    68.6
+   ]
+  },
+  {
+   "sid": "LT1_J57_4D",
+   "mouse": "LT1_J57",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 71468,
+   "n_video_frames": 71468,
+   "fps": 29.78125600475021,
+   "fps_info": {
+    "fps": 29.78125600475021,
+    "n_outliers": 4927,
+    "n_gaps": 3,
+    "max_gap_ms": 70.328125,
+    "median_interval_ms": 33.5234375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 70.328125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.599999904632568,
+   "mc_template_corr": 0.834553940079227,
+   "crop": {
+    "fov": [
+     3,
+     128,
+     458,
+     386
+    ],
+    "fov_lit": [
+     0,
+     128,
+     464,
+     386
+    ],
+    "fov_activity": [
+     3,
+     128,
+     458,
+     386
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 641.21,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     112,
+     486,
+     418
+    ]
+   },
+   "ts_rows": 71468,
+   "span_s": 2399.8354296875,
+   "mean_interval_ms": 33.57963017459107,
+   "median_interval_ms": 33.5234375,
+   "mean_interval_no_gaps_ms": 33.57816741646143,
+   "n_gaps": 3,
+   "gap_total_s": 0.2052734375,
+   "gap_excess_s": 0.104703125,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 70.328125,
+   "fps_recomputed": 29.78125600475021,
+   "fps_naive_span": 29.779958707129445,
+   "fps_mean_of_inverse": 32.89574118774155,
+   "n_outliers": 4927,
+   "gaps_ms": [
+    67.2,
+    70.3,
+    67.7
+   ]
+  },
+  {
+   "sid": "LT1_J58_1D",
+   "mouse": "LT1_J58",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17855,
+   "n_video_frames": 17855,
+   "fps": 29.779935343230164,
+   "fps_info": {
+    "fps": 29.779935343230164,
+    "n_outliers": 793,
+    "n_gaps": 0,
+    "max_gap_ms": 67.1015625,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.5999999046325684,
+   "mc_template_corr": 0.675910992699065,
+   "crop": {
+    "fov": [
+     1,
+     0,
+     465,
+     388
+    ],
+    "fov_lit": [
+     0,
+     0,
+     490,
+     400
+    ],
+    "fov_activity": [
+     1,
+     0,
+     465,
+     388
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 145.6,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     495,
+     421
+    ]
+   },
+   "ts_rows": 17855,
+   "span_s": 599.5311875,
+   "mean_interval_ms": 33.57965651954744,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57965651954744,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 67.1015625,
+   "fps_recomputed": 29.779935343230164,
+   "fps_naive_span": 29.779935343230164,
+   "fps_mean_of_inverse": 31.23497718949136,
+   "n_outliers": 793,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J58_2D",
+   "mouse": "LT1_J58",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17862,
+   "n_video_frames": 17862,
+   "fps": 29.79785761389051,
+   "fps_info": {
+    "fps": 29.79785761389051,
+    "n_outliers": 1547,
+    "n_gaps": 10,
+    "max_gap_ms": 69.859375,
+    "median_interval_ms": 33.484375,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "10 gaps in timestamps (max 70 ms)",
+     "data": {
+      "n_gaps": 10,
+      "max_gap_ms": 69.859375,
+      "n_dropped": 10
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 35.5,
+   "mc_template_corr": 0.7334243066372823,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     475,
+     397
+    ],
+    "fov_lit": [
+     0,
+     0,
+     494,
+     410
+    ],
+    "fov_activity": [
+     0,
+     0,
+     475,
+     397
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 518.05,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     495,
+     421
+    ]
+   },
+   "ts_rows": 17862,
+   "span_s": 599.75059375,
+   "mean_interval_ms": 33.57878023346957,
+   "median_interval_ms": 33.484375,
+   "mean_interval_no_gaps_ms": 33.55945964161672,
+   "n_gaps": 10,
+   "gap_total_s": 0.6806796875,
+   "gap_excess_s": 0.3458359375,
+   "gap_frames_lost": 10,
+   "max_gap_ms": 69.859375,
+   "fps_recomputed": 29.79785761389051,
+   "fps_naive_span": 29.780712493042028,
+   "fps_mean_of_inverse": 32.47367505198132,
+   "n_outliers": 1547,
+   "gaps_ms": [
+    68.5,
+    68.6,
+    67.3,
+    67.3,
+    67.3,
+    69.9,
+    68.8,
+    67.5,
+    68.4,
+    67.1
+   ]
+  },
+  {
+   "sid": "LT1_J58_3D",
+   "mouse": "LT1_J58",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17857,
+   "n_video_frames": 17857,
+   "fps": 29.783530402793385,
+   "fps_info": {
+    "fps": 29.783530402793385,
+    "n_outliers": 915,
+    "n_gaps": 2,
+    "max_gap_ms": 69.0703125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "2 gaps in timestamps (max 69 ms)",
+     "data": {
+      "n_gaps": 2,
+      "max_gap_ms": 69.0703125,
+      "n_dropped": 2
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 3.4000000953674316,
+   "mc_template_corr": 0.7314649196874479,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     473,
+     397
+    ],
+    "fov_lit": [
+     0,
+     0,
+     487,
+     397
+    ],
+    "fov_activity": [
+     0,
+     0,
+     473,
+     397
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 137.87,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     495,
+     421
+    ]
+   },
+   "ts_rows": 17857,
+   "span_s": 599.5956015625,
+   "mean_interval_ms": 33.579502775677646,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.575603243670884,
+   "n_gaps": 2,
+   "gap_total_s": 0.13678125,
+   "gap_excess_s": 0.06965625,
+   "gap_frames_lost": 2,
+   "max_gap_ms": 69.0703125,
+   "fps_recomputed": 29.783530402793385,
+   "fps_naive_span": 29.78007169076731,
+   "fps_mean_of_inverse": 31.3749792272835,
+   "n_outliers": 915,
+   "gaps_ms": [
+    67.7,
+    69.1
+   ]
+  },
+  {
+   "sid": "LT1_J58_4D",
+   "mouse": "LT1_J58",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 17857,
+   "n_video_frames": 17857,
+   "fps": 29.785195905833753,
+   "fps_info": {
+    "fps": 29.785195905833753,
+    "n_outliers": 801,
+    "n_gaps": 3,
+    "max_gap_ms": 70.5078125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [
+    {
+     "code": "dropped_frames",
+     "level": "warning",
+     "auto_fixed": false,
+     "message": "3 gaps in timestamps (max 71 ms)",
+     "data": {
+      "n_gaps": 3,
+      "max_gap_ms": 70.5078125,
+      "n_dropped": 3
+     }
+    }
+   ],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 4.199999809265137,
+   "mc_template_corr": 0.6677622929087126,
+   "crop": {
+    "fov": [
+     0,
+     0,
+     475,
+     401
+    ],
+    "fov_lit": [
+     0,
+     0,
+     493,
+     401
+    ],
+    "fov_activity": [
+     0,
+     0,
+     475,
+     401
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 222.04,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     0,
+     0,
+     495,
+     421
+    ]
+   },
+   "ts_rows": 17857,
+   "span_s": 599.5972890625,
+   "mean_interval_ms": 33.57959728172603,
+   "median_interval_ms": 33.5625,
+   "mean_interval_no_gaps_ms": 33.57372579188372,
+   "n_gaps": 3,
+   "gap_total_s": 0.2055625,
+   "gap_excess_s": 0.104875,
+   "gap_frames_lost": 3,
+   "max_gap_ms": 70.5078125,
+   "fps_recomputed": 29.785195905833753,
+   "fps_naive_span": 29.779987878061856,
+   "fps_mean_of_inverse": 31.517958647154224,
+   "n_outliers": 801,
+   "gaps_ms": [
+    67.4,
+    67.6,
+    70.5
+   ]
+  },
+  {
+   "sid": "LT1_J61_1D",
+   "mouse": "LT1_J61",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756326421582735,
+   "fps_info": {
+    "fps": 19.756326421582735,
+    "n_outliers": 35,
+    "n_gaps": 0,
+    "max_gap_ms": 80.5546875,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.199999809265137,
+   "mc_template_corr": 0.8618778577586688,
+   "crop": {
+    "fov": [
+     63,
+     75,
+     378,
+     456
+    ],
+    "fov_lit": [
+     62,
+     15,
+     465,
+     582
+    ],
+    "fov_activity": [
+     63,
+     75,
+     378,
+     456
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 22.12,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     36,
+     38,
+     431,
+     530
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.7376328125,
+   "mean_interval_ms": 50.616697591489135,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.616697591489135,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 80.5546875,
+   "fps_recomputed": 19.756326421582735,
+   "fps_naive_span": 19.756326421582735,
+   "fps_mean_of_inverse": 19.79799822040124,
+   "n_outliers": 35,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J61_2D",
+   "mouse": "LT1_J61",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756319025016698,
+   "fps_info": {
+    "fps": 19.756319025016698,
+    "n_outliers": 63,
+    "n_gaps": 0,
+    "max_gap_ms": 83.4453125,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 5.900000095367432,
+   "mc_template_corr": 0.866726581823394,
+   "crop": {
+    "fov": [
+     65,
+     57,
+     397,
+     485
+    ],
+    "fov_lit": [
+     62,
+     15,
+     464,
+     575
+    ],
+    "fov_activity": [
+     65,
+     57,
+     397,
+     485
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 28.76,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     48,
+     34,
+     431,
+     530
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.73853125,
+   "mean_interval_ms": 50.616716541868804,
+   "median_interval_ms": 50.6171875,
+   "mean_interval_no_gaps_ms": 50.616716541868804,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 83.4453125,
+   "fps_recomputed": 19.756319025016698,
+   "fps_naive_span": 19.756319025016698,
+   "fps_mean_of_inverse": 19.834703357395874,
+   "n_outliers": 63,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J61_3D",
+   "mouse": "LT1_J61",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756325714084873,
+   "fps_info": {
+    "fps": 19.756325714084873,
+    "n_outliers": 100,
+    "n_gaps": 0,
+    "max_gap_ms": 87.375,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 6.800000190734863,
+   "mc_template_corr": 0.8727673274853623,
+   "crop": {
+    "fov": [
+     79,
+     43,
+     389,
+     497
+    ],
+    "fov_lit": [
+     63,
+     14,
+     464,
+     577
+    ],
+    "fov_activity": [
+     79,
+     43,
+     389,
+     497
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 133.01,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     58,
+     26,
+     431,
+     530
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.73771875,
+   "mean_interval_ms": 50.616699404134145,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.616699404134145,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 87.375,
+   "fps_recomputed": 19.756325714084873,
+   "fps_naive_span": 19.756325714084873,
+   "fps_mean_of_inverse": 19.82589396258487,
+   "n_outliers": 100,
+   "gaps_ms": []
+  },
+  {
+   "sid": "LT1_J61_4D",
+   "mouse": "LT1_J61",
+   "mode": "bonsai",
+   "n_parts": 1,
+   "n_frames": 47411,
+   "n_video_frames": 47411,
+   "fps": 19.756321211826947,
+   "fps_info": {
+    "fps": 19.756321211826947,
+    "n_outliers": 86,
+    "n_gaps": 0,
+    "max_gap_ms": 81.53125,
+    "median_interval_ms": 50.625,
+    "source": "timestamps"
+   },
+   "excluded": false,
+   "anomalies": [],
+   "decisions": [],
+   "stages": {
+    "crop": "done",
+    "mc": "done",
+    "thresholds": "pending",
+    "cnmf": "pending",
+    "gate": "pending",
+    "autoinspect": "pending",
+    "export": "pending"
+   },
+   "mc_max_shift_px": 7.0,
+   "mc_template_corr": 0.8419782166616531,
+   "crop": {
+    "fov": [
+     61,
+     42,
+     411,
+     510
+    ],
+    "fov_lit": [
+     61,
+     14,
+     466,
+     579
+    ],
+    "fov_activity": [
+     61,
+     42,
+     411,
+     510
+    ],
+    "fov_method": "activity",
+    "activity_pos_neg": 50.06,
+    "frame_shape": [
+     608,
+     608
+    ],
+    "box": [
+     51,
+     32,
+     431,
+     530
+    ]
+   },
+   "ts_rows": 47411,
+   "span_s": 2399.738265625,
+   "mean_interval_ms": 50.61671093914786,
+   "median_interval_ms": 50.625,
+   "mean_interval_no_gaps_ms": 50.61671093914786,
+   "n_gaps": 0,
+   "gap_total_s": 0.0,
+   "gap_excess_s": 0.0,
+   "gap_frames_lost": 0,
+   "max_gap_ms": 81.53125,
+   "fps_recomputed": 19.756321211826947,
+   "fps_naive_span": 19.756321211826947,
+   "fps_mean_of_inverse": 19.823958489263187,
+   "n_outliers": 86,
+   "gaps_ms": []
+  }
+ ]
+}
