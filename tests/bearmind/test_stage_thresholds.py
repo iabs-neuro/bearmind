@@ -141,16 +141,44 @@ def test_thresholds_fail_at_once_without_temp_space(tmp_path, monkeypatch):
 
 
 def test_map_peak_follows_compute_init_maps_strips():
+    # long sessions: the strips fill the budget whatever the filter margins (the margins are filtered only)
     assert thresholds.map_peak_gb(17861, 461, 608, 7, 1, 19.12) == pytest.approx(19.12, rel=0.02)
-    assert thresholds.map_peak_gb(107107, 567, 520, 7, 1, 19.12) == pytest.approx(50.8, abs=0.2)
-    assert thresholds.map_peak_gb(100, 20, 30, 7, 1, 19.12) == pytest.approx(24 * 100 * 30 * 20 / 1e9)
+    assert thresholds.map_peak_gb(107107, 567, 520, 7, 1, 19.12) == pytest.approx(19.12, rel=0.02)
+    assert thresholds.map_peak_gb(71461, 435, 512, 3, 1, 19.12) == pytest.approx(19.12, rel=0.02)  # LT1_J01_1D
+    # one strip holds the frame: 5 float32 copies of the movie, plus the 5 output maps
+    assert thresholds.map_peak_gb(100, 20, 30, 7, 1, 19.12) == pytest.approx(5 * 4 * 20 * 30 * (100 + 1) / 1e9)
+    # tsub 2, 8-row strips with margins of 7: the block averaging binds (the full-rate strip, its average and the
+    # copy that appends the last partial block)
+    assert thresholds.map_peak_gb(20001, 400, 500, 3, 2, 1.0) == pytest.approx(
+        (4 * 500 * 10001 * 4 * (8 + 2 * 7) + 5 * 4 * 400 * 500) / 1e9)
+
+
+def test_map_workers_fit_the_summed_peaks(monkeypatch):
+    """One worker per gSig while the summed peaks fit the budget: any n of the jobs may run at once, so n workers
+    must hold the n largest peaks."""
+    peaks = {3: 19.0, 4: 23.0, 5: 26.0, 6: 30.0, 7: 33.0}
+    monkeypatch.setattr(thresholds, "map_peak_gb", lambda T, h, w, g, tsub, mem_gb: peaks[g])
+    cfg = {"machine": {"n_cpus": 32, "ram_gb": 191.2, "cnmf_ram_budget_gb": 152.96}}
+    g = [3, 4, 5, 6, 7]
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 5  # 131 GB; 5 times the largest would be 165
+    cfg["machine"]["cnmf_ram_budget_gb"] = 100
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 3  # 33 + 30 + 26 = 89; a fourth (+ 23) is over
+    cfg["machine"]["cnmf_ram_budget_gb"] = 30
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 1  # not even the largest fits: serial, as before
+    cfg["machine"].update(n_cpus=4, cnmf_ram_budget_gb=152.96)
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 3  # CPUs - 1
+    cfg["machine"]["n_cpus"] = 2
+    assert thresholds.map_workers(1, 1, 1, g, 1, cfg) == 1
+    cfg["machine"]["n_cpus"] = 32
+    assert thresholds.map_workers(1, 1, 1, [5], 1, cfg) == 1  # one gSig
 
 
 def test_map_workers():
     cfg = {"machine": {"n_cpus": 32, "ram_gb": 191.2, "cnmf_ram_budget_gb": 152.96}}
     g = [3, 4, 5, 6, 7]
     assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 5
-    assert thresholds.map_workers(107107, 567, 520, g, 1, cfg) == 3
+    assert thresholds.map_workers(107107, 567, 520, g, 1, cfg) == 5
+    assert thresholds.map_workers(71461, 435, 512, g, 1, cfg) == 5  # LT1_J01_1D: 4 and a second round before
     cfg["machine"]["n_cpus"] = 2
     assert thresholds.map_workers(17861, 461, 608, g, 1, cfg) == 1
     cfg["machine"].update(n_cpus=32, cnmf_ram_budget_gb=30)

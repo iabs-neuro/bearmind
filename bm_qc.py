@@ -77,11 +77,20 @@ def _psf_kernel(gSig):
     return psf
 
 
-def _maps_from_filtered(filt, thresh_init):
-    """PNR and correlation images from spatially filtered, mean-subtracted data (T, h, w)."""
+def _noise(filt):
+    """Per-pixel noise of spatially filtered, mean-subtracted data (T, h, w), as CNMF-E estimates it.
+
+    get_noise_fft averages the power spectrum, which -filt shares bit for bit (the DFT is linear and IEEE
+    rounding is symmetric in sign), so the mirror maps reuse it.
+    """
     T, h, w = filt.shape
     sn = get_noise_fft(filt.reshape(T, -1).T, noise_method='mean')[0].reshape(h, w)
     sn[sn <= 0] = np.inf
+    return sn
+
+
+def _maps_from_filtered(filt, thresh_init, sn):
+    """PNR and correlation images from spatially filtered, mean-subtracted data (T, h, w) and its noise."""
     pnr = filt.max(0) / sn
     tmp = filt.copy()
     tmp[tmp < thresh_init * sn] = 0
@@ -89,22 +98,40 @@ def _maps_from_filtered(filt, thresh_init):
     return np.nan_to_num(cn).astype(np.float32), np.nan_to_num(pnr).astype(np.float32)
 
 
-def init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig):
-    """Rows of one strip of compute_init_maps: the memory budget's worth, at least 8 and at most d1.
+# float32 copies of a cut strip alive at the peak of _maps_from_filtered: filt, the thresholded copy, and inside
+# local_correlations_fft its float32 copy, the convolved frames as a list and stacked (or stacked and their
+# product with the copy)
+_MAPS_COPIES = 5
+_N_OUT_MAPS = 5  # cn, pnr, mean, cn_neg, pnr_neg
 
-    ~6 float32 copies of a strip live at the same time (data, filtered, thresholded, fft buffers); the strip
-    also carries a margin of rows on each side for the filter.
+
+def _strip_rows_held(rows, d1, margin, tsub):
+    """Strip rows (each T_ds float32 frames wide) alive at the peak of one strip of compute_init_maps.
+
+    Three steps, the largest counts: averaging by tsub holds the full-rate strip with its filter margins, the
+    average and, when the frame count does not divide, the copy that appends the last partial block; filtering
+    holds the averaged strip and the cut one; the maps hold _MAPS_COPIES of the cut strip.
     """
-    margin = _psf_kernel(gSig).shape[0] // 2 + 1
-    rows = int(max_mem_gb * 1e9 / (6 * 4 * T_ds * d2)) - 2 * margin
-    return int(np.clip(rows, 8, d1))
+    filtered, cut = min(d1, rows + 2 * margin), min(d1, rows + 2)
+    averaging = (tsub + 2) * filtered if tsub > 1 else filtered
+    return max(averaging, filtered + cut, _MAPS_COPIES * cut)
 
 
-def init_maps_peak_bytes(max_mem_gb, T_ds, d1, d2, gSig):
-    """Peak RAM of one compute_init_maps call: its 6 float32 copies of a strip with the filter margins."""
+def init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub=1):
+    """Kept rows of one strip of compute_init_maps: as many as the memory budget holds, at least 8, at most d1."""
     margin = _psf_kernel(gSig).shape[0] // 2 + 1
-    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig)
-    return 6 * 4 * T_ds * d2 * min(d1, rows + 2 * margin)
+    budget_rows = max_mem_gb * 1e9 / (4 * T_ds * d2)
+    rows = d1
+    while rows > 8 and _strip_rows_held(rows, d1, margin, tsub) > budget_rows:
+        rows -= 1
+    return rows
+
+
+def init_maps_peak_bytes(max_mem_gb, T_ds, d1, d2, gSig, tsub=1):
+    """Peak RAM of one compute_init_maps call: one strip at its largest step, plus the output maps."""
+    margin = _psf_kernel(gSig).shape[0] // 2 + 1
+    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub)
+    return 4 * T_ds * d2 * _strip_rows_held(rows, d1, margin, tsub) + 4 * _N_OUT_MAPS * d1 * d2
 
 
 def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_init=2,
@@ -138,8 +165,8 @@ def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_
     T_ds = int(np.ceil(T_used / tsub))
 
     psf = _psf_kernel(gSig)
-    margin = psf.shape[0] // 2 + 1
-    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig)
+    half = psf.shape[0] // 2
+    rows = init_maps_strip_rows(max_mem_gb, T_ds, d1, d2, gSig, tsub)
 
     out = {'cn': np.zeros((d1, d2), np.float32), 'pnr': np.zeros((d1, d2), np.float32),
            'mean': np.zeros((d1, d2), np.float32)}
@@ -151,23 +178,31 @@ def compute_init_maps(movie, gSig, tsub=2, pre_tsub=1, frame_slice=None, thresh_
     strips = range(0, d1, rows)
     for r0 in tqdm.tqdm(strips, desc='seed maps', disable=not verbose):
         r1 = min(d1, r0 + rows)
-        a0, a1 = max(0, r0 - margin), min(d1, r1 + margin)
+        # Rows [c0, c1) are the kept rows and their neighbours in the correlation image (local_correlations_fft
+        # takes the 8 neighbours with a zero border, so a kept row needs one row on each side, and at the frame
+        # edge exactly the frame's own border). The filter needs `half` more rows on each side for the rows it
+        # returns there to be those of the whole frame (up to float32 rounding: OpenCV filters kernels this size
+        # by DFT tiles sized from the strip). The margin rows are filtered and dropped; the noise, PNR and
+        # correlation, all per pixel or per 3x3 neighbourhood, run on the cut strip only.
+        c0, c1 = max(0, r0 - 1), min(d1, r1 + 1)
+        a0, a1 = max(0, c0 - half), min(d1, c1 + half)
         blk = _tsub_mean(mov[fs, a0:a1, :], tsub)
         out['mean'][r0:r1] = blk[:, r0 - a0:r1 - a0].mean(0)
-        filt = np.empty_like(blk)
+        filt = np.empty((blk.shape[0], c1 - c0, d2), np.float32)
         for t in range(blk.shape[0]):
-            filt[t] = cv2.filter2D(blk[t], -1, psf, borderType=1)
+            filt[t] = cv2.filter2D(blk[t], -1, psf, borderType=1)[c0 - a0:c1 - a0]
         del blk
         filt -= filt.mean(0)
 
-        cn, pnr = _maps_from_filtered(filt, thresh_init)
-        out['cn'][r0:r1] = cn[r0 - a0:r1 - a0]
-        out['pnr'][r0:r1] = pnr[r0 - a0:r1 - a0] / pnr_div
+        sn = _noise(filt)
+        cn, pnr = _maps_from_filtered(filt, thresh_init, sn)
+        out['cn'][r0:r1] = cn[r0 - c0:r1 - c0]
+        out['pnr'][r0:r1] = pnr[r0 - c0:r1 - c0] / pnr_div
         if mirror:
             np.negative(filt, out=filt)
-            cn, pnr = _maps_from_filtered(filt, thresh_init)
-            out['cn_neg'][r0:r1] = cn[r0 - a0:r1 - a0]
-            out['pnr_neg'][r0:r1] = pnr[r0 - a0:r1 - a0] / pnr_div
+            cn, pnr = _maps_from_filtered(filt, thresh_init, sn)
+            out['cn_neg'][r0:r1] = cn[r0 - c0:r1 - c0]
+            out['pnr_neg'][r0:r1] = pnr[r0 - c0:r1 - c0] / pnr_div
         del filt
 
     out.update({'gSig': gSig, 'tsub': tsub, 'pre_tsub': pre_tsub, 'n_frames': T_used,
