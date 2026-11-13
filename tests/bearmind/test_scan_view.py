@@ -367,3 +367,55 @@ def test_included_by_you_over_an_error():
     assert not row.excluded and row.excluded_by == "included" and row.level == "error"
     plain = scan_view._row(_rec(decisions=[Decision("exclude", "false", "me", "t")]), RULE)
     assert plain.excluded_by == ""
+
+
+def _window_drop(frames_certain=0, frames_probable=1, lost_ms=33.0, max_gap_ms=68.0, n_gaps=1, n_frames=18000):
+    frames = frames_certain + frames_probable
+    data = {"rule": "window", "n_gaps": n_gaps, "n_dropped": frames, "lost_ms": lost_ms, "max_gap_ms": max_gap_ms,
+            "frames_certain": frames_certain, "frames_probable": frames_probable}
+    an = Anomaly("dropped_frames", "warning", "1 frame lost (33 ms) in 1 gap: probable 1 frame lost (33 ms)",
+                 data=data)
+    return scan_view._row(_rec(anomalies=[an], n_frames=n_frames), RULE)
+
+
+def test_window_rule_line_says_frames_and_time():
+    row = _window_drop(frames_certain=2, frames_probable=1, lost_ms=100.0, max_gap_ms=140.0, n_gaps=2)
+    assert row.anomalies[0].short == "dropped frames: 3 frames lost (100 ms) in 2 gaps"
+
+
+def test_window_rule_line_is_never_the_pause_between_parts():
+    """The window rule judges each part alone, so its line cannot be the stitch pause even when the counts match."""
+    split = Anomaly("split_recording", "warning", "split", data={"gaps_s": [3.0]})
+    drops = Anomaly("dropped_frames", "warning", "d", data={"rule": "window", "n_gaps": 1, "max_gap_ms": 3000.0,
+                                                           "n_dropped": 90, "lost_ms": 3000.0})
+    rec = _rec(anomalies=[split, drops])
+    rec.parts = rec.parts * 2
+    rec.decisions = [Decision("stitch_confirmed", scan.stitch_fingerprint(rec.parts), "me", "t")]
+    line = next(x for x in scan_view._row(rec, RULE).anomalies if x.code == "dropped_frames")
+    assert not line.reviewed and "(the pause between parts)" not in line.short
+
+
+def test_timing_jitter_is_information_in_details_but_not_in_the_cell():
+    jitter = Anomaly("timing_jitter", "info", "timing jitter: 5 gaps, no frames lost", data={"n_gaps": 5})
+    row = scan_view._row(_rec(anomalies=[jitter]), RULE)
+    line = row.anomalies[0]
+    assert line.info and not line.counts and row.level == "ok"
+    assert line.text == "timing jitter: 5 gaps, no frames lost" and line.short == "timing jitter: 5 gaps"
+    assert row.summary == "–" and row.summary_parts == []
+
+
+def test_skipped_gap_test_is_information():
+    skipped = Anomaly("gap_test_skipped", "info", "frame loss test skipped: the timestamps do not increase")
+    row = scan_view._row(_rec(anomalies=[skipped]), RULE)
+    assert row.anomalies[0].info and row.level == "ok" and row.summary_parts
+
+
+def test_interval_column_values():
+    row = scan_view._row(_rec(fps=29.78), RULE)
+    assert row.interval_ms == 1000 / 29.78
+    assert row.interval_tip == "median of the timestamp intervals: 33.00 ms"
+    old = _rec(fps=20.0)
+    old.fps_info = {}
+    row = scan_view._row(old, RULE)
+    assert row.interval_ms == 50.0 and row.interval_tip == ""
+    assert scan_view._row(_rec(fps=None), RULE).interval_ms is None

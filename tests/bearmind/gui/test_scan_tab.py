@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QHeaderView, QLabel, QPushButton
 
 from bearmind import actions, fileio, monitor, registry, scan, scan_view
 from bearmind.gui.app import MainWindow
-from bearmind.gui.monitor_tab import CELL_BG, EXCLUDED_INK, MonitorTab
+from bearmind.gui.monitor_tab import CELL_BG, EXCLUDED_INK, SELECTION_STYLE, MonitorTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.paths import SeriesPaths
 from bearmind.registry import Anomaly
@@ -136,14 +136,14 @@ def test_columns_and_excluded_text(qapp, make_series, tmp_path):
     tab = make_tab(root)
     wait_scan(tab)
     heads = [tab.model.headerData(c, Qt.Orientation.Horizontal) for c in range(tab.model.columnCount())]
-    assert heads == ["Session", "Mode", "Parts", "Chunks", "Video frames", "Frames to process", "FPS", "Min",
-                     "Anomalies", "Excluded"]
+    assert heads == ["Session", "Mode", "Parts", "Video files", "Video frames", "Frames to process", "FPS",
+                     "Interval, ms", "Min", "Anomalies", "Excluded"]
     bad, good = row_of(tab, "NOF_H03_1D"), row_of(tab, "NOF_H01_1D")
-    assert tab.model.item(bad, 9).text() == "by anomaly"
-    assert tab.model.item(good, 9).text() == ""
+    assert tab.model.item(bad, 10).text() == "by anomaly"
+    assert tab.model.item(good, 10).text() == ""
     select(tab, "NOF_H01_1D")
     tab.exclude_button.click()
-    assert tab.model.item(good, 9).text() == "by you"
+    assert tab.model.item(good, 10).text() == "by you"
     assert tab.model.item(good, 0).foreground().color().name() == EXCLUDED_INK
     assert tab.model.item(good, 4).foreground().color().name() == EXCLUDED_INK
 
@@ -382,10 +382,10 @@ def test_rescan_after_fix_reincludes(qapp, make_series, tmp_path):
     sid = "NOF_H01_1D"
     tab = make_tab(root)
     wait_scan(tab)
-    assert tab.model.item(0, 9).text() == "by anomaly"
+    assert tab.model.item(0, 10).text() == "by anomaly"
     make_series(root, sid=sid)  # writes the timestamps (the chunks are rewritten identically)
     assert wait_scan(tab)
-    assert tab.model.item(0, 9).text() == ""
+    assert tab.model.item(0, 10).text() == ""
     assert registry.load_record(SeriesPaths(root), sid).excluded is False
 
 
@@ -394,7 +394,7 @@ def test_manual_exclude_survives_rescan(qapp, make_series, tmp_path):
     select(tab, SIDS[0])
     tab.exclude_button.click()
     assert wait_scan(tab)
-    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by you"
 
 
 def _widget_texts(tab):
@@ -540,9 +540,9 @@ def test_tab_refreshes_when_shown(qapp, make_series, tmp_path):
     from bearmind import actions
     tab = scanned(qapp, make_series, tmp_path)
     actions.set_excluded(tab.paths, [SIDS[0]], True, "monitor")  # what Monitor's menu does
-    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == ""
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == ""
     tab.show()
-    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by you"
     tab.close()
 
 
@@ -571,8 +571,8 @@ def test_finish_text_uses_the_scan_total(qapp, make_series, tmp_path):
     assert wait_scan(tab)
     assert tab.model.rowCount() == 2 and tab.progress_label.text() == "Scan finished — 1 / 1"
     assert said[-1] == "Scanned 1 session"
-    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 9).text() == "by anomaly"
-    assert "not found by the last scan" in tab.model.item(row_of(tab, "NOF_H01_2D"), 8).text()
+    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 10).text() == "by anomaly"
+    assert "not found by the last scan" in tab.model.item(row_of(tab, "NOF_H01_2D"), 9).text()
     assert "not found by the last scan 1" in tab.summary_label.text()
 
 
@@ -631,7 +631,7 @@ def test_included_by_you_over_an_error(qapp, make_series, tmp_path):
     tab = _excluded_three(make_series, tmp_path)
     actions.set_excluded(tab.paths, ["NOF_H01_2D"], False, "me")
     tab.refresh()
-    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 9).text() == "included by you"
+    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 10).text() == "included by you"
 
 
 def test_failure_after_the_writes_refreshes_the_table(qapp, make_series, tmp_path, monkeypatch):
@@ -639,7 +639,7 @@ def test_failure_after_the_writes_refreshes_the_table(qapp, make_series, tmp_pat
     root = build(make_series, tmp_path, sids=("NOF_H01_1D",), ts_rows=25)
     tab = make_tab(root)
     wait_scan(tab)
-    assert tab.model.item(0, 9).text() == "by anomaly"
+    assert tab.model.item(0, 10).text() == "by anomaly"
     make_series(root, sid="NOF_H01_1D")  # the person fixes the timestamps
     real = fileio.write_atomic
 
@@ -651,7 +651,7 @@ def test_failure_after_the_writes_refreshes_the_table(qapp, make_series, tmp_pat
     monkeypatch.setattr(fileio, "write_atomic", locked)
     assert wait_scan(tab) is False
     assert tab.dlg.messages[-1] == ("Scan failed", "PermissionError: scan_unrecognized.csv is open in Excel")
-    assert tab.model.item(0, 9).text() == ""
+    assert tab.model.item(0, 10).text() == ""
     assert registry.load_record(tab.paths, "NOF_H01_1D").excluded is False
 
 
@@ -692,7 +692,7 @@ def test_odd_record_row_does_not_break_the_tab(qapp, tmp_path):
     registry.save_record(paths, rec)
     tab = make_tab(paths.root)
     assert tab.model.rowCount() == 1
-    assert tab.model.item(0, 8).text().startswith("cannot show: ValueError")
+    assert tab.model.item(0, 9).text().startswith("cannot show: ValueError")
     assert tab.model.item(0, 4).text() == "–"
 
 
@@ -701,8 +701,8 @@ def test_layout_excluded_column_does_not_stretch(qapp, make_series, tmp_path):
     tab = scanned(qapp, make_series, tmp_path)
     head = tab.table.horizontalHeader()
     assert not head.stretchLastSection()
-    assert head.sectionResizeMode(8) == QHeaderView.ResizeMode.Stretch
-    assert head.sectionResizeMode(9) != QHeaderView.ResizeMode.Stretch
+    assert head.sectionResizeMode(9) == QHeaderView.ResizeMode.Stretch
+    assert head.sectionResizeMode(10) != QHeaderView.ResizeMode.Stretch
     assert not tab.table.wordWrap()
 
 
@@ -716,7 +716,7 @@ def test_anomalies_cell_greys_fixed_lines(qapp, make_series, tmp_path):
     wait_scan(tab)
     add_anomalies(root, "NOF_H01_1D", Anomaly("no_metadata", "warning", "no start time"))
     tab.refresh()
-    item = tab.model.item(0, 8)
+    item = tab.model.item(0, 9)
     assert item.data(SUMMARY_ROLE) == [("no recording start time", False), ("extra chunk frames: 2 (fixed)", True)]
     assert item.text() == "no recording start time; extra chunk frames: 2 (fixed)"
     assert item.toolTip().splitlines() == ["extra chunk frames: 2 (fixed automatically)", "no recording start time"]
@@ -727,7 +727,7 @@ def test_anomalies_cell_greys_fixed_lines(qapp, make_series, tmp_path):
     opt.rect = pix.rect()
     opt.widget = tab.table
     try:
-        tab.table.itemDelegateForColumn(8).paint(painter, opt, tab.model.index(0, 8))
+        tab.table.itemDelegateForColumn(9).paint(painter, opt, tab.model.index(0, 9))
     finally:
         painter.end()
 
@@ -791,12 +791,12 @@ def test_timer_refreshes_only_while_visible(qapp, make_series, tmp_path):
     assert tab.timer.interval() == int(config.load_defaults()["monitor"]["refresh_ms"])
     actions.set_excluded(tab.paths, [SIDS[0]], True, "monitor")
     tab.timer.timeout.emit()
-    assert tab.model.item(row_of(tab, SIDS[0]), 9).text() == ""  # hidden: not refreshed
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == ""  # hidden: not refreshed
     tab.show()
     actions.set_excluded(tab.paths, [SIDS[1]], True, "monitor")
     select(tab, SIDS[2])
     tab.timer.timeout.emit()
-    assert tab.model.item(row_of(tab, SIDS[1]), 9).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[1]), 10).text() == "by you"
     assert tab.selected_sids() == [SIDS[2]]
     tab.shutdown()
     assert not tab.timer.isActive()
@@ -830,3 +830,68 @@ def test_include_leaves_out_not_found_sessions(qapp, make_series, tmp_path):
     assert not tab.include_button.isEnabled()
     assert "The session folder was not found by the last scan: restore it and Rescan" in \
         tab.include_button.toolTip()
+
+
+def test_every_header_has_a_tooltip_and_video_files_says_what_it_counts(qapp, make_series, tmp_path):
+    tab = make_tab(build(make_series, tmp_path))
+    for c in range(tab.model.columnCount()):
+        tip = tab.model.headerData(c, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+        assert tip and tip.isascii(), c
+    video_files = tab.model.headerData(3, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+    assert ".avi" in video_files and "timestamp file is not counted" in video_files
+
+
+def test_interval_column_is_the_period_and_its_tooltip_the_median(qapp, make_series, tmp_path):
+    tab = scanned(qapp, make_series, tmp_path)
+    i = row_of(tab, SIDS[0])
+    rec = registry.load_record(SeriesPaths(tab.series), SIDS[0])
+    fps = tab.model.item(i, 6)
+    interval = tab.model.item(i, 7)
+    assert fps.text() == f"{rec.fps:.1f}"
+    assert interval.text() == f"{1000.0 / rec.fps:.2f}"
+    assert interval.toolTip() == f"median of the timestamp intervals: {rec.fps_info['median_interval_ms']:.2f} ms"
+
+
+def test_details_put_each_gap_on_its_own_line(qapp, make_series, tmp_path):
+    root = build(make_series, tmp_path)
+    tab = make_tab(root)
+    wait_scan(tab)
+    add_anomalies(root, SIDS[0], Anomaly("dropped_frames", "warning", "3 frames lost (134 ms) in 2 gaps\n"
+                                         "2 frames lost (90 ms) at 12:03.4, certain\n"
+                                         "1 frame lost (44 ms) at 20:00.0, probable",
+                                         data={"rule": "window", "n_gaps": 2, "n_dropped": 3, "lost_ms": 134.0,
+                                               "max_gap_ms": 100.0}))
+    tab.refresh()
+    select(tab, SIDS[0])
+    lines = tab.details.toPlainText().splitlines()
+    assert any(x.endswith("2 gaps") for x in lines) and "2 frames lost (90 ms) at 12:03.4, certain" in lines
+
+
+def test_selected_row_text_is_black_even_when_the_row_is_excluded_grey(qapp, tmp_path):
+    from PySide6.QtGui import QBrush, QColor, QStandardItem, QStandardItemModel
+    from PySide6.QtWidgets import QAbstractItemView, QTableView
+    qapp.setStyleSheet(SELECTION_STYLE)
+    try:
+        model = QStandardItemModel(2, 2)
+        for r in range(2):
+            for c in range(2):
+                item = QStandardItem("MMMMMMMM")
+                item.setForeground(QBrush(QColor(EXCLUDED_INK)))
+                model.setItem(r, c, item)
+        table = QTableView()
+        table.setModel(model)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.resize(300, 120)
+        table.show()
+        table.setFocus()
+        table.selectRow(0)
+        qapp.processEvents()
+        img = table.viewport().grab().toImage()
+        row = table.rowHeight(0)
+        darkest = min(img.pixelColor(x, y).lightness() for x in range(img.width()) for y in range(row))
+        assert darkest < 60  # black text; the excluded grey (#8a8f98) has lightness 143
+        # the right end of the last cell: no text and no focus outline (that one is drawn on the current cell)
+        x = table.columnViewportPosition(1) + table.columnWidth(1) - 8
+        assert img.pixelColor(x, row // 2).name() == "#b3d1f2"
+    finally:
+        qapp.setStyleSheet("")

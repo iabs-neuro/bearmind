@@ -46,6 +46,12 @@ LOG_MIN_H = 52  # about three log lines
 CELL_BG = {"ok": "#c8e6c9", "warning": "#fff3b0", "error": "#ffcdd2", "running": "#bbdefb", "waiting": "#e1bee7"}
 CELL_INK = "#1d2330"
 EXCLUDED_INK = "#8a8f98"
+# A selected row of every table and list: light blue with black text. The system theme draws it grey with white
+# text in dark mode, which is hard to read on the light cell colours. The ::item rule is needed: the native Windows
+# style ignores selection-color, and an item's own foreground (the grey of an excluded row) would stay on it.
+SELECTION_BG = "#b3d1f2"
+SELECTION_INK = "#000000"
+SELECTION_STYLE = f"QAbstractItemView::item:selected {{ background: {SELECTION_BG}; color: {SELECTION_INK}; }}"
 SEGMENTS = (("done", "#43a047"), ("running", "#1e88e5"), ("waiting", "#8e24aa"), ("failed", "#e53935"))
 LEGEND = (("done", "#43a047"), ("running", "#1e88e5"), ("waits for you", "#8e24aa"), ("failed", "#e53935"))
 BAR_BG = "#eef0f3"

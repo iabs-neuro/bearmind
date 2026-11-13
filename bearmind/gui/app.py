@@ -12,12 +12,17 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
 
 from bearmind import config
 from bearmind.gui.inspection_tab import InspectionTab
-from bearmind.gui.monitor_tab import MonitorTab
+from bearmind.gui.monitor_tab import SELECTION_STYLE, MonitorTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.gui.thresholds_tab import ThresholdsTab
 
 TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
 MAX_RECENT = 10
+NO_RAW_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
+              "Opening it creates a _bearmind folder inside it. Open it as a series anyway?")
+NO_RAW_LEFT_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
+                   "It already has a _bearmind folder ({service}), probably left by an earlier open. "
+                   "That folder can be deleted. Open this folder as a series anyway?")
 SCAN_RUNNING = "A scan is running. Wait for it to finish, then try again."
 
 
@@ -35,10 +40,15 @@ def _default_message(title: str, text: str) -> None:
     QMessageBox.warning(None, title, text)
 
 
+def _default_confirm(text: str) -> bool:
+    return QMessageBox.question(None, "BEARMiND", text) == QMessageBox.StandardButton.Yes
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, series: Path | None = None, message=None):
+    def __init__(self, series: Path | None = None, message=None, confirm=None):
         super().__init__()
         self._message = message or _default_message
+        self._confirm = confirm or _default_confirm
         self.series: Path | None = None
         self.resize(1100, 700)
         self.setWindowTitle("BEARMiND")
@@ -84,6 +94,12 @@ class MainWindow(QMainWindow):
             self._message("BEARMiND", f"Series folder not found: {series}")
             return False
         series = series.resolve()
+        if not (series / "1_Raw").is_dir():
+            # The scan cannot work without 1_Raw. Opening 1_Raw itself (or any other folder of a series) would put
+            # _bearmind inside it; one left there by an earlier open is asked about again, not reused silently.
+            ask = NO_RAW_LEFT_ASK if (series / "_bearmind").exists() else NO_RAW_ASK
+            if not self._confirm(ask.format(series=series, service=series / "_bearmind")):
+                return False
         # the new tabs first: if building them fails, the window keeps the old series, tabs, title and recent list
         built = []
         try:
@@ -213,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = _gui_log_handler()
     try:
         app = QApplication.instance() or QApplication(sys.argv[:1])
+        app.setStyleSheet(SELECTION_STYLE)
         # before the window exists: under pythonw an exception in the constructor would otherwise vanish
         sys.excepthook = lambda t, e, tb: _report(_default_message, t, e, tb)
         try:

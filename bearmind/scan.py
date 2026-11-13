@@ -296,21 +296,190 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         if est is not None:
             fps = est.fps
             fps_info = {**dataclasses.asdict(est), "source": "timestamps"}
-            if est.n_gaps > 0:
-                anomalies.append(Anomaly(
-                    "dropped_frames", "warning",
-                    f"{plural(est.n_gaps, 'gap')} in timestamps (max {duration_text(est.max_gap_ms)})",
-                    data={"n_gaps": est.n_gaps, "max_gap_ms": est.max_gap_ms,
-                          "n_dropped": _n_dropped(st.t_ms, est, cfg_scan["gap_factor"])}))
+            # Losses are judged per part; FPS above still counts the gaps (it is in the MC stage hash).
+            anomalies += _gap_anomalies(tss, cfg_scan["gap_factor"])
     return parts, mode, n_frames, fps, fps_info, anomalies, nominal
 
 
-def _n_dropped(t_ms, est, gap_factor: float) -> int:
-    """Frames missing in the timestamp gaps (each gap counts at least one). A pause between stitched parts is
-    a gap too, so it counts as its length in frames; the Scan tab judges the share of dropped frames by it."""
-    d = np.diff(np.asarray(t_ms, dtype=np.float64))
-    gaps = d[d > gap_factor * est.median_interval_ms] / est.median_interval_ms
-    return int(np.maximum(np.rint(gaps) - 1, 1).sum())
+# Intervals on each side of a gap that the window test sums (the window is 2 * K + 1 intervals).
+WINDOW_K = 30
+CERTAIN_INTERVAL = 2.5  # an interval above this many medians is a lost frame whatever the window says
+LOSS_MIN_EXCESS = 0.5   # window excess below this is timing jitter
+CERTAIN_EXCESS = 1.5
+MAX_GAP_LINES = 20  # places (clusters of gaps) listed in the message; data["gaps"] has all of them
+
+
+@dataclasses.dataclass
+class GapLoss:
+    """A cluster of gaps (one gap, or several whose windows overlap) and the frames lost in it, or a long pause
+    that the window test could not judge (tested False)."""
+    part: int
+    index: int          # the first gap is the interval between frames index and index + 1 of the part
+    at_ms: float        # where the first gap begins, from the part's first frame
+    interval_ms: float  # the longest interval of the cluster
+    excess: float       # the window's time in periods minus the number of intervals (0 when not tested)
+    frames: int         # round(excess), at least 1; untested: round(interval / median - 1)
+    lost_ms: float      # frames * period
+    certain: bool
+    n_gaps: int = 1
+    tested: bool = True
+
+
+@dataclasses.dataclass
+class SessionGaps:
+    gaps: list[GapLoss]   # clusters with at least one lost frame, and the untested long pauses
+    n_jitter: int         # gaps (interval above gap_factor * median) in clusters with no frame lost
+    damaged: list[int]    # parts with a non-positive interval: the window test is not run on them
+    too_few: bool         # fewer than 2 * k + 1 intervals outside the gaps: no period, no window test
+
+
+def _untested(part: int, t: np.ndarray, d: np.ndarray, m: float) -> list[GapLoss]:
+    """Every interval above CERTAIN_INTERVAL * median as lost frames by its length alone: when the window test
+    cannot run, a real pause must not go unreported."""
+    out = []
+    for i in np.flatnonzero(d > CERTAIN_INTERVAL * m):
+        frames = max(int(round(d[i] / m - 1)), 1)
+        out.append(GapLoss(part=part, index=int(i), at_ms=float(t[i] - t[0]), interval_ms=float(d[i]), excess=0.0,
+                           frames=frames, lost_ms=frames * m, certain=True, tested=False))
+    return out
+
+
+def session_gap_losses(parts_t_ms, gap_factor: float = 2.0, k: int = WINDOW_K) -> SessionGaps:
+    """Frames lost at the gaps of a session's timestamps (a list of parts) by the window test.
+
+    A late frame makes one interval long and the next ones short, and the frame clock goes on: judged by its own
+    length a gap of 2.1 medians is mostly jitter (85 % of the 324 gaps of LT1). Around a gap the intervals of the
+    window, in units of the period u, count the frames the clock produced; the excess over the number of intervals
+    is the number of frames missing.
+
+    The windows come first, from the median rule alone: a gap is an interval above gap_factor * median, its window
+    the 2 * k + 1 intervals around it, cut to the intervals that exist. Gaps whose windows share an interval (at most
+    2 * k intervals apart, inclusive) form a cluster with one window (k before its first gap to k after its last)
+    and one excess, so the same time is not counted once per gap. u is the mean of all intervals outside every
+    window, pooled over the parts (one camera clock): inside a window late frames cancel, outside nothing is lost.
+    The mean, not the median: the intervals are uneven. A short part has no such intervals of its own, so it
+    borrows the session's. A part is judged alone otherwise: timestamps restart per part, and the pause between
+    parts is not a gap.
+
+    With fewer than 2 * k + 1 intervals outside the windows, or in a part with a non-positive interval, the window
+    test does not run; the intervals above CERTAIN_INTERVAL * median are then reported untested.
+    """
+    found = []  # (part, t, d, m, clusters) of the parts the window test can judge
+    gaps, damaged, outside = [], [], []
+    for n, t_ms in enumerate(parts_t_ms):
+        t = np.asarray(t_ms, dtype=np.float64)
+        if len(t) < 2:
+            continue
+        d = np.diff(t)
+        m = float(np.median(d))
+        if np.any(d <= 0):
+            damaged.append(n)
+            if m > 0:
+                gaps += _untested(n, t, d, m)
+            continue
+        clusters: list[list[int]] = []
+        for i in np.flatnonzero(d > gap_factor * m):
+            if clusters and i - clusters[-1][-1] <= 2 * k:
+                clusters[-1].append(int(i))
+            else:
+                clusters.append([int(i)])
+        in_window = np.zeros(len(d), bool)
+        for c in clusters:
+            in_window[max(0, c[0] - k):c[-1] + k + 1] = True
+        outside.append(d[~in_window])
+        found.append((n, t, d, m, clusters))
+    pool = np.concatenate(outside) if outside else np.empty(0)
+    if found and len(pool) < 2 * k + 1:
+        # nothing is skipped in a session without a gap, so no note either
+        for n, t, d, m, _ in found:
+            gaps += _untested(n, t, d, m)
+        no_gap = not any(c for *_, c in found)
+        return SessionGaps(sorted(gaps, key=lambda g: (g.part, g.index)), 0, damaged, not no_gap)
+    u = float(pool.mean()) if len(pool) else 1.0
+    n_jitter = 0
+    for n, t, d, m, clusters in found:
+        for c in clusters:
+            window = d[max(0, c[0] - k):c[-1] + k + 1]
+            excess = float(window.sum() / u - len(window))
+            if excess < LOSS_MIN_EXCESS:
+                n_jitter += len(c)
+                continue
+            frames = max(int(round(excess)), 1)
+            longest = float(d[c].max())
+            gaps.append(GapLoss(
+                part=n, index=c[0], at_ms=float(t[c[0]] - t[0]), interval_ms=longest, excess=excess, frames=frames,
+                lost_ms=frames * u, certain=bool(longest > CERTAIN_INTERVAL * m or excess >= CERTAIN_EXCESS),
+                n_gaps=len(c)))
+    return SessionGaps(sorted(gaps, key=lambda g: (g.part, g.index)), n_jitter, damaged, False)
+
+
+def part_gap_losses(t_ms, gap_factor: float = 2.0, k: int = WINDOW_K) -> SessionGaps:
+    """session_gap_losses of one part."""
+    return session_gap_losses([t_ms], gap_factor, k)
+
+
+def position_text(ms: float) -> str:
+    """A place in a part for a person: "12:03.4" (minutes:seconds), "1:01:02.0" from one hour."""
+    tenths = int(round(ms / 100.0))
+    s, tenth = divmod(tenths, 10)
+    m, s = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}.{tenth}" if h else f"{m}:{s:02d}.{tenth}"
+
+
+def _frames_ms_text(frames: int, ms: float) -> str:
+    return f"{plural(frames, 'frame')} lost ({duration_text(ms)})"
+
+
+def _gap_anomalies(tss, gap_factor: float) -> list[Anomaly]:
+    """dropped_frames, timing_jitter and gap_test_skipped from the window test of the session."""
+    multi = len(tss) > 1
+    r = session_gap_losses([ts.t_ms for ts in tss], gap_factor)
+    out = []
+    if r.gaps:
+        rows = [{"part": g.part, "index": g.index, "at_ms": round(g.at_ms, 1), "interval_ms": round(g.interval_ms, 1),
+                 "excess": round(g.excess, 2), "frames": g.frames, "lost_ms": round(g.lost_ms, 1),
+                 "certain": g.certain, "n_gaps": g.n_gaps, "tested": g.tested} for g in r.gaps]
+        frames = sum(x["frames"] for x in rows)
+        lost = sum(x["lost_ms"] for x in rows)
+        n_gaps = sum(x["n_gaps"] for x in rows)
+        data = {"rule": "window", "n_gaps": n_gaps, "n_clusters": len(rows), "n_dropped": frames,
+                "lost_ms": round(lost, 1), "max_gap_ms": max(x["interval_ms"] for x in rows), "gaps": rows}
+        lines = [f"{_frames_ms_text(frames, lost)} in {plural(n_gaps, 'gap')}"]
+        parts = []
+        for name, sel in (("certain", True), ("probable", False)):
+            sub = [x for x in rows if x["certain"] is sel]
+            data[f"n_{name}"] = len(sub)
+            data[f"frames_{name}"] = sum(x["frames"] for x in sub)
+            data[f"lost_ms_{name}"] = round(sum(x["lost_ms"] for x in sub), 1)
+            if sub:
+                parts.append(f"{name} {_frames_ms_text(data[f'frames_{name}'], data[f'lost_ms_{name}'])}")
+        lines[0] += ": " + ", ".join(parts)
+        for x in rows[:MAX_GAP_LINES]:
+            place = f"{'part ' + str(x['part'] + 1) + ' ' if multi else ''}at {position_text(x['at_ms'])}"
+            if not x["tested"]:
+                lines.append(f"gap of {duration_text(x['interval_ms'])}, not tested ({plural(x['frames'], 'frame')}) "
+                             f"{place}")
+                continue
+            group = f"{plural(x['n_gaps'], 'gap')}, " if x["n_gaps"] > 1 else ""
+            lines.append(f"{group}{_frames_ms_text(x['frames'], x['lost_ms'])} {place}, "
+                         f"{'certain' if x['certain'] else 'probable'}")
+        if len(rows) > MAX_GAP_LINES:
+            lines.append(f"and {len(rows) - MAX_GAP_LINES} more places")
+        out.append(Anomaly("dropped_frames", "warning", "\n".join(lines), data=data))
+    if r.n_jitter:
+        out.append(Anomaly("timing_jitter", "info", f"timing jitter: {plural(r.n_jitter, 'gap')}, no frames lost",
+                           data={"n_gaps": r.n_jitter}))
+    if r.too_few:
+        out.append(Anomaly("gap_test_skipped", "info", "gap test skipped: too few intervals outside the gaps",
+                           data={"reason": "too_few"}))
+    if r.damaged:
+        names = ", ".join(str(k + 1) for k in r.damaged) if multi else ""
+        out.append(Anomaly("gap_test_skipped", "info",
+                           "frame loss test skipped" + (f" for part {names}" if multi else "") +
+                           ": the timestamps do not increase (a damaged row)",
+                           data={"reason": "damaged", "parts": r.damaged}))
+    return out
 
 
 def rates_text(rates) -> str:

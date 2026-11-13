@@ -186,3 +186,45 @@ def test_open_series_failure_keeps_the_old_series(qapp, tmp_path, monkeypatch):
     assert recent == [str(a.resolve())]
     assert len(made) == 1 and not made[0].timer.isActive()
     assert old_tabs[0].timer.isActive()
+
+
+def test_folder_without_raw_is_opened_only_after_the_question(qapp, tmp_path):
+    """Opening 1_Raw itself used to create 1_Raw/_bearmind at once: nothing is created before a yes."""
+    folder = tmp_path / "1_Raw"
+    folder.mkdir()
+    asked = []
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(folder) is False
+    assert len(asked) == 1 and str(folder.resolve()) in asked[0] and "_bearmind" in asked[0]
+    assert w.series is None and not (folder / "_bearmind").exists()
+    yes = MainWindow(confirm=lambda text: True)
+    assert yes.open_series(folder) is True and yes.series == folder.resolve()
+
+
+def test_series_with_raw_opens_without_a_question(qapp, tmp_path):
+    asked = []
+    plain = tmp_path / "a"
+    (plain / "1_Raw").mkdir(parents=True)
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(plain) is True and asked == []
+
+
+def test_folder_without_raw_asks_also_when_a_service_folder_is_left_there(qapp, tmp_path):
+    """The author opened 1_Raw once: 1_Raw/_bearmind was created. Opening it again asks again, names that folder and
+    says it can be deleted (the scan cannot work without 1_Raw: it raises when the folder is missing)."""
+    folder = tmp_path / "1_Raw"
+    (folder / "_bearmind").mkdir(parents=True)
+    asked = []
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(folder) is False and w.series is None
+    assert len(asked) == 1
+    assert str(folder.resolve() / "_bearmind") in asked[0] and "can be deleted" in asked[0]
+    assert "creates a _bearmind folder" not in asked[0]
+
+
+def test_scan_cannot_work_without_raw(tmp_path):
+    import pytest
+
+    from bearmind import scan
+    with pytest.raises(FileNotFoundError):
+        scan.scan_series(tmp_path)

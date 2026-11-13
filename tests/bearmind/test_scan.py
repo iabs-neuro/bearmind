@@ -268,16 +268,94 @@ def test_no_fps_outlier_for_a_mouse_with_few_sessions(make_series, tmp_path):
     assert not [sid for sid, r in recs.items() if "fps_outlier" in codes(r)]
 
 
-def test_dropped_frames_flag(make_series, tmp_path):
-    root = make_series(tmp_path / "s", "bonsai")
+def _write_bonsai_ts(root, values_ms):
     ts = root / "0_TimeStamps" / "NOF_H01_1D_Mini_TS.csv"
-    vals = [i * 500000 for i in range(30)]
-    vals[15:] = [v + 1500000 for v in vals[15:]]
-    ts.write_text("".join(f"{v}\n" for v in vals), encoding="utf-8")
+    ts.write_text("".join(f"{int(round(v * 1e4))}\n" for v in values_ms), encoding="utf-8")
+
+
+def _gappy_series(make_series, tmp_path, shifts):
+    """400 frames at 50 ms; a shift of s periods from frame j on is a gap of 1 + s periods at j (2 m is not above 2 m: use s above 1)."""
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
+    t = np.arange(400) * 50.0
+    for j, s in shifts:
+        t[j:] += s * 50.0
+    _write_bonsai_ts(root, t)
+    return root
+
+
+def test_lost_frames_flag_lists_each_gap(make_series, tmp_path):
+    root = _gappy_series(make_series, tmp_path, [(200, 1.05)])
     a = codes(scan.scan_series(root)[0])["dropped_frames"]
-    # one 200 ms interval at 50 ms per frame: 3 frames are missing; "1 gap", not "1 gaps"
-    assert a.message == "1 gap in timestamps (max 200 ms)"
-    assert a.data == {"n_gaps": 1, "max_gap_ms": 200.0, "n_dropped": 3}
+    assert a.level == "warning" and a.data["rule"] == "window"
+    assert a.data["n_gaps"] == 1 and a.data["n_dropped"] == 1 and a.data["max_gap_ms"] == 102.5
+    assert a.data["frames_probable"] == 1 and a.data["frames_certain"] == 0
+    first, second = a.message.splitlines()
+    assert first == "1 frame lost (50 ms) in 1 gap: probable 1 frame lost (50 ms)"
+    assert second.startswith("1 frame lost (") and second.endswith("at 0:10.0, probable")
+
+
+def test_tiny_series_keeps_the_old_loss(make_series, tmp_path):
+    """One 200 ms interval at 50 ms per frame in a 30-frame session: 3 frames lost, as the first rule counted."""
+    root = make_series(tmp_path / "s", "bonsai")
+    t = np.arange(30) * 50.0
+    t[15:] += 150.0
+    _write_bonsai_ts(root, t)
+    a = codes(scan.scan_series(root)[0])["dropped_frames"]
+    assert a.data["n_dropped"] == 3 and a.message.splitlines()[0].startswith("3 frames lost (150 ms) in 1 gap")
+
+
+def test_close_gaps_are_one_line_with_their_count(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
+    t = np.arange(400) * 50.0
+    t[200:] += 52.5
+    t[210:] += 52.5
+    _write_bonsai_ts(root, t)
+    a = codes(scan.scan_series(root)[0])["dropped_frames"]
+    assert a.data["n_gaps"] == 2 and a.data["n_clusters"] == 1 and a.data["n_dropped"] == 2
+    assert a.message.splitlines()[1].startswith("2 gaps, 2 frames lost (")
+
+
+def test_long_pause_in_a_short_session_is_reported_not_tested(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=2, chunk_frames=50)
+    t = np.arange(100) * 50.0
+    t[50:] += 10000.0
+    _write_bonsai_ts(root, t)
+    c = codes(scan.scan_series(root)[0])
+    a = c["dropped_frames"]
+    assert a.message.splitlines()[1].startswith("gap of 10 s, not tested (200 frames) at 0:02.4")
+    assert a.data["gaps"][0]["tested"] is False and a.data["n_dropped"] == 200
+    assert c["gap_test_skipped"].message == "gap test skipped: too few intervals outside the gaps"
+
+
+def test_gap_without_loss_is_one_info_line_and_no_dropped_frames(make_series, tmp_path):
+    """Frame 200 is late by 1.05 periods and the next two catch up: the interval is above 2 m, the clock goes on."""
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
+    t = np.arange(400) * 50.0
+    t[200:203] += np.array([1.05, 1.0, 0.5]) * 50.0
+    _write_bonsai_ts(root, t)
+    c = codes(scan.scan_series(root)[0])
+    assert "dropped_frames" not in c
+    assert c["timing_jitter"].level == "info" and c["timing_jitter"].message == "timing jitter: 1 gap, no frames lost"
+
+
+def test_gaps_are_judged_per_part_not_across_the_pause(make_series, tmp_path):
+    """The pause between two parts is not a lost-frame gap (split_recording reports it)."""
+    root = make_series(tmp_path / "s", "legacy_split", n_chunks=2, chunk_frames=100)
+    recs = scan.scan_series(root)
+    c = codes(recs[0])
+    assert "split_recording" in c and "dropped_frames" not in c and "timing_jitter" not in c
+
+
+def test_damaged_timestamp_row_skips_the_test_and_says_so(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
+    t = np.arange(400) * 50.0
+    t[300] = t[299] - 10
+    _write_bonsai_ts(root, t)
+    rec = scan.scan_series(root)[0]
+    c = codes(rec)
+    assert c["gap_test_skipped"].level == "info" and "damaged row" in c["gap_test_skipped"].message
+    assert "dropped_frames" not in c and rec.fps is not None
+    assert not rec.excluded
 
 
 def test_cyrillic_space_root(make_series, tmp_path):
