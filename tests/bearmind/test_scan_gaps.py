@@ -84,6 +84,7 @@ def test_close_gaps_form_one_cluster_counted_once():
     assert len(r.gaps) == 1
     g = r.gaps[0]
     assert g.n_gaps == 2 and g.frames == 2 and g.index == 999
+    assert g.interval_ms < 2.5 * T and g.certain  # certain by the excess (2 >= 1.5) alone
     assert g.lost_ms == pytest.approx(2 * T, rel=0.02)
 
 
