@@ -1,0 +1,44 @@
+карты порогов на GPU можно ускорить примерно в 10 раз (оценка по прототипу). Для MC и CNMF-E в CaImAn пути на GPU нет. Больше всего времени LT1 впереди уйдёт на CNMF-E: по модели 75–107 ч.
+@@
+Да, но только карты порогов: перенести их на GPU, а на машинах без GPU оставить расчёт на CPU. Пакет CUDA ставлю в отдельную копию окружения. Это нужно для следующих серий: карты LT1 будут готовы раньше. MC и CNMF-E на GPU не переносить.
+@@
+<div class="card">
+  <div class="stat">
+    <div><b>≈ 32 → ≈ 3 мин</b>карты одной 40-минутной сессии (оценка)</div>
+    <div><b>5 из 32</b>логических ядер заняты картами сейчас</div>
+    <div><b>75–107 ч</b>CNMF-E LT1 впереди (модель)</div>
+  </div>
+  <h3 style="margin-top:12px">Время LT1 по этапам, часы</h3>
+  <p class="tag">Тёмная часть полосы — нижняя оценка, светлая — разброс до верхней. MC и кроп уже посчитаны.</p>
+  <div id="hours"></div>
+  <ul class="plain" style="margin-top:10px">
+    <li><b>Карты порогов.</b> Сейчас карты считают 5 процессов, по одному на gSig, и каждый занимает одно ядро. Диск не мешает: H: читает 3,9 ГБ/с, а сессия читает около 2 ГБ. Прототип на вашей видеокарте посчитал карты синтетического фильма за 0,31–0,34 мс на кадр и gSig. Памяти видеокарты ему хватило 4,3 ГБ из 12. Повторные запуски дают битово те же карты. Побитово совпасть с картами CPU они не могут. По точности GPU не хуже нынешних карт CPU: по PNR ближе к точному расчёту, по корреляции так же.</li>
+    <li><b>MC.</b> В CaImAn 1.13.2 нет пути на GPU: параметр <code>use_cuda</code> только пишет «cuda is no longer supported». Перенос — это переписать коррекцию. Тогда изменится видео MC и всё после него.</li>
+    <li><b>CNMF-E.</b> Пути на GPU тоже нет: только переписать или взять другой пакет. Модель времени построена по сессиям 10 мин; длинную сессию ещё не считали.</li>
+    <li><b>Без GPU, дёшево.</b> Если делить карты на задачи по полосам и запускать 7 процессов вместо 5, они ускорятся в 1,4–1,7 раза при битово тех же картах. Это запасной путь, если пакет CUDA ставить нельзя.</li>
+  </ul>
+  <p style="margin-top:8px"><b>Что решить вместе с Р7:</b></p>
+  <ul class="plain">
+    <li>Можно ли ставить пакет CUDA (<code>cupy</code>) в копию окружения <code>bearmind</code>?</li>
+    <li>Какой критерий совпадения с картами CPU? Предлагаю такой: те же подсказка и счётчики Thresholds, карты в пределах допуска в освещённом поле. Проверка — на 47 готовых картах LT1.</li>
+    <li>Есть ли видеокарта NVIDIA на других машинах, где идёт батч (например, MINI3)? Если нет, там расчёт останется на CPU.</li>
+  </ul>
+  <div class="links">Разведка: <a href="../../../../.superpowers/sdd/2026-11-12-lt1-fixes/gpu-recon-report.md">отчёт (локально)</a>. Прототип — на синтетических данных; на настоящем фильме LT1 GPU не запускался.</div>
+</div>
+<script>
+(function () {
+  const rows = [["Кроп", 1.5, 1.5], ["MC", 13.3, 13.3], ["Карты порогов", 18, 28], ["CNMF-E", 75, 107], ["Автоинспекция", 15, 15]];
+  const max = 110, box = document.getElementById('hours');
+  rows.forEach(([name, lo, hi]) => {
+    const r = document.createElement('div');
+    r.style.cssText = 'display:grid;grid-template-columns:120px 1fr 70px;gap:8px;align-items:center;margin:4px 0;font-size:13px';
+    const val = lo === hi ? String(lo).replace('.', ',') : lo + '–' + hi;
+    r.innerHTML = '<span style="color:var(--text-secondary)">' + name + '</span>' +
+      '<div style="position:relative;height:12px;background:var(--surface-2);border-radius:3px">' +
+      '<i style="position:absolute;left:0;top:0;bottom:0;width:' + (hi / max * 100) + '%;background:var(--series-1);opacity:.35;border-radius:0 4px 4px 0"></i>' +
+      '<i style="position:absolute;left:0;top:0;bottom:0;width:' + (lo / max * 100) + '%;background:var(--series-1);border-radius:0 4px 4px 0"></i></div>' +
+      '<span style="color:var(--text-primary);font-variant-numeric:tabular-nums">' + val + ' ч</span>';
+    box.appendChild(r);
+  });
+})();
+</script>

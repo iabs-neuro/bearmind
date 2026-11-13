@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LT1: что нужно от вас</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f3f0; --surface-1: #fcfcfb; --surface-2: #efeee9; --border: #dddbd3;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77756f;
+  --series-1: #2a78d6; --series-2: #eb6834; --proj: #8f8d86; --grid: #e4e2db;
+  --accent: #2a78d6; --accent-soft: #e3eefb;
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --you: #6250d6; --you-soft: #ecebfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #34332f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a988f;
+    --series-1: #3987e5; --series-2: #d95926; --proj: #8a887f; --grid: #2c2b28;
+    --accent: #3987e5; --accent-soft: #1d2a3b;
+    --you: #9085e9; --you-soft: #26233f;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #34332f;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a988f;
+  --series-1: #3987e5; --series-2: #d95926; --proj: #8a887f; --grid: #2c2b28;
+  --accent: #3987e5; --accent-soft: #1d2a3b;
+  --you: #9085e9; --you-soft: #26233f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; }
+h2 { font-size: 20px; margin: 36px 0 12px; }
+h3 { font-size: 16px; margin: 0 0 6px; }
+p { margin: 6px 0; }
+a { color: var(--accent); }
+code { font: 13px Consolas, monospace; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+.sub { color: var(--text-secondary); margin: 0 0 18px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.lead { border-left: 4px solid var(--you); }
+.lead ul { margin: 6px 0 0; padding-left: 20px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+ol.steps { margin: 6px 0; padding-left: 22px; }
+ol.steps li { margin: 4px 0; }
+.warn { background: var(--surface-2); border-radius: 6px; padding: 6px 10px; margin: 8px 0; font-size: 14px; }
+table { border-collapse: collapse; width: 100%; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 14px; }
+th { background: var(--surface-2); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+td.id { font-weight: 700; white-space: nowrap; color: var(--you); }
+.when { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.when.now { background: var(--you-soft); color: var(--you); }
+.when.before { background: #fdeee6; color: #a3431a; }
+.when.later { background: var(--surface-2); color: var(--text-secondary); }
+:root[data-theme="dark"] .when.before { background: #3b2419; color: #f3a481; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .when.before { background: #3b2419; color: #f3a481; } }
+.tablewrap { overflow-x: auto; }
+/* pipeline */
+.pipe { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.st { flex: 1 1 90px; min-width: 90px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; font-size: 13px; position: relative; }
+.st b { display: block; font-size: 13px; }
+.st .n { font-size: 18px; font-weight: 700; }
+.st .bar { height: 6px; background: var(--surface-2); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.st .bar i { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+.st.you { border: 2px dashed var(--you); background: var(--you-soft); }
+.st.you b { color: var(--you); }
+.st.now { outline: 2px solid var(--series-1); }
+/* timeline */
+.tl { position: relative; margin: 8px 0 0; padding-left: 26px; }
+.tl::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+.tl .ev { position: relative; margin: 0 0 14px; }
+.tl .ev::before { content: ""; position: absolute; left: -22px; top: 5px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--surface-1); border: 2px solid var(--series-1); }
+.tl .ev.you::before { border-color: var(--you); background: var(--you); }
+.tl .t { font-weight: 700; }
+.tl .d { color: var(--text-secondary); font-size: 14px; }
+/* charts */
+.chart { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 12px 6px; }
+.chart h3 { margin-bottom: 2px; }
+.chart .cap { color: var(--text-secondary); font-size: 13px; margin: 0 0 6px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin: 2px 0 4px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.legend span.dash::before { border-radius: 0; height: 0; border-top: 2px dashed var(--c); background: none; vertical-align: 3px; width: 16px; }
+.legend span.line::before { border-radius: 0; height: 2px; vertical-align: 3px; width: 16px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--text-muted); font-size: 11px; font-family: inherit; }
+svg .lbl { fill: var(--text-secondary); font-size: 12px; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15); display: none; z-index: 10; max-width: 260px; }
+/* results */
+.res { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .res { grid-template-columns: 1fr; } }
+.res .card p { font-size: 14px; }
+.res .links { font-size: 13px; margin-top: 6px; color: var(--text-muted); }
+.tag { font-size: 12px; color: var(--text-muted); }
+.stat { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.stat div { background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--text-secondary); }
+.stat div b { display: block; font-size: 18px; color: var(--text-primary); }
+ul.plain { padding-left: 18px; margin: 6px 0; }
+ul.plain li { margin: 3px 0; }
+.files li { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>LT1: что нужно от вас</h1>
+<p class="sub">Снимок батча 13.11.2026 20:44. Батч идёт; сейчас его останавливать не нужно.</p>
+
+<div class="card lead">
+  <h3>Коротко</h3>
+  <ul>
+    <li><b>Карты порогов: 47 из 84 готовы, остальные — около 02:50 14.11.</b> Потом батч сразу начнёт CNMF-E 8 сессий, у которых вы уже выбрали пороги: LT1_J01 1D–4D; LT1_J03 1D–3D; LT1_J05 1D.</li>
+    <li><b>Сейчас два действия: Д1, потом Д2.</b> Батч при этом идёт дальше.</li>
+    <li><b>Решения Р1–Р8.</b> Ответ «по рекомендациям» одобряет все рекомендации. Без ответа Р1, Р4 и Р5 идут по рекомендации, а Р2, Р3, Р6–Р8 я не делаю.</li>
+    <li><b>Р2 нужен до того, как вы продолжите выбирать пороги:</b> выбрано 8 из 84.</li>
+    <li><b>GPU:</b> карты порогов на GPU можно ускорить примерно в 10 раз (оценка по прототипу). Для MC и CNMF-E в CaImAn пути на GPU нет. Больше всего времени LT1 впереди уйдёт на CNMF-E: по модели 75–107 ч.</li>
+  </ul>
+</div>
+
+<h2>Где сейчас батч и где нужны вы</h2>
+<div class="pipe" id="pipe"></div>
+<p class="tag">Пунктирная рамка — шаг человека. Синяя рамка — этап, который идёт сейчас.</p>
+
+<h2>Сейчас: два действия</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>Д1. Перезапустите окно BEARMiND</h3>
+    <p>Окно открыто в 17:15, а правки скана внесены в код в 18:16. Старое окно их не видит.</p>
+    <p class="warn">Батч не остановится: он идёт отдельным процессом. Если окно не закрывается, дождитесь конца скана.</p>
+    <ol class="steps">
+      <li>Закройте окно BEARMiND.</li>
+      <li>Дважды щёлкните <code>bearmind_gui.bat</code>.</li>
+      <li>Откройте серию <code>H:\Projects\LT1\CalciumData</code>.</li>
+    </ol>
+    <p>Сначала Д1, потом Д2.</p>
+  </div>
+  <div class="card">
+    <h3>Д2. Во вкладке Scan нажмите Rescan</h3>
+    <p>Rescan пересчитает только аномалии скана. Я проверил его вхолостую на всех 84 сессиях, ничего не записывая. Число кадров, FPS и исключение не меняются ни у одной сессии, поэтому батч ничего не пересчитает.</p>
+    <p>Окно спросит «Batch is running… Rescan?». Ответьте Yes: файлы сессий не менялись.</p>
+    <p>Что вы увидите: колонку <code>Interval, ms</code>. Аномалия <code>dropped_frames</code> останется у 27 сессий вместо 55: найдено 58 потерянных кадров вместо 334. Бесспорных потерь (certain) — 18 кадров в 5 сессиях, остальные вероятные (probable). В Details — строка на каждую группу близких разрывов.</p>
+  </div>
+</div>
+
+<h2>Решения</h2>
+<p>Ответьте одной строкой: «по рекомендациям» или, например, «по рекомендациям, кроме Р6».</p>
+<p class="warn"><b>Остановка для Р2 и Р3.</b> Простоя после карт не будет: батч сразу возьмёт CNMF-E. Когда правки будут готовы и проверены, я попрошу вас нажать во вкладке Monitor <b>Stop after current stage</b> или разрешить мне сделать это командой. Батч доделает текущую сессию и остановится. Я внесу правки и запущу его снова. Готовые этапы не теряются.</p>
+<div class="tablewrap">
+<table>
+<tr><th>№</th><th>Вопрос</th><th>Рекомендация</th><th>Без ответа</th><th>Срок</th></tr>
+<tr><td class="id">Р1</td>
+  <td>CNMF-E: оставить <code>tsub</code> 1, то есть поиск клеток по всем кадрам? <span class="tag">п. 14</span></td>
+  <td>Да. При <code>tsub</code> 5 или 8 CNMF-E теряет 9–22 % принятых клеток и находит вместо них другие. Выигрыш — <code>fit</code> в 1,4–2,1 раза быстрее.</td>
+  <td><code>tsub</code> 1</td>
+  <td><span class="when before">до ≈ 02:50, если хотите не 1</span></td></tr>
+<tr><td class="id">Р2</td>
+  <td>Подсказка ищет пороги методом <code>mirror_fdr</code> на сетке: <code>min_corr</code> 0,50–0,98, <code>min_pnr</code> 2–20. Если точки в сетке нет, работает запасной <code>robust_bg</code>. У 31 из 47 готовых сессий точки внутри сетки нет: подсказка на краю сетки (20) или от запасного метода (11). Расширить сетку и пересчитать подсказки всех 84 сессий по готовым картам? <span class="tag">п. 21</span></td>
+  <td>Да. Нужная точка, скорее всего, за краем сетки. Карты не пересчитываются. Уже выбранные пороги не меняются.</td>
+  <td>не делаю</td>
+  <td><span class="when before">до выбора остальных порогов</span></td></tr>
+<tr><td class="id">Р3</td>
+  <td>Четыре правки, подробно под таблицей: проверка MC на чёрных кадрах; FPS вне хэша MC; битая строка таймстемпов в экспорте; проверка MC template corr и ось времени. Внести их в код в ту же остановку? <span class="tag">пп. 16, 17, 18, 22</span></td>
+  <td>Да. Новый порог template corr сначала покажу вам.</td>
+  <td>не делаю</td>
+  <td><span class="when before">в ту же остановку</span></td></tr>
+<tr><td class="id">Р4</td>
+  <td>Скан, три вопроса дизайна. <span class="tag">пп. 9, 11, 13</span><br>
+    (1) Флажок «исправлять аномалии скана автоматически» по умолчанию включён. Это обрезка лишних кадров, склейка частей и т. п. С выключенным флажком каждое исправление ждёт вашего Approve.<br>
+    (2) Серии без таймстемпов: FPS задаёт только человек (FPS, длительность или одно значение на серию). Заголовок AVI — только подсказка.<br>
+    (3) Стандартные длительности находятся автоматически, плюс необязательный список в конфиге серии. До max(2 с; 0,1 %) от стандарта — норма. Дальше, но в пределах ±25 % — предупреждение. Ещё дальше — справка.</td>
+  <td>Да, все три. Правило (3) можно внести без остановки батча, потом нажать Rescan ещё раз. На LT1 оно отметит 4 сессии.</td>
+  <td>по рекомендациям</td>
+  <td><span class="when later">когда удобно</span></td></tr>
+<tr><td class="id">Р5</td>
+  <td>Пп. 1 и 2 уже сделаны по умолчанию: колонка <code>Video files</code>; окно спрашивает, если в папке нет <code>1_Raw</code>. Оставить?</td>
+  <td>Да.</td>
+  <td>остаются</td>
+  <td><span class="when later">когда удобно</span></td></tr>
+<tr><td class="id">Р6</td>
+  <td>Четыре правки окна и порядка батча, на результаты не влияют: превью после основных этапов, а не до карт (п. 3); вкладка Thresholds пишет, что делает батч и сколько сессий впереди (п. 4); одно правило, какие сессии ждут ваших порогов: сейчас окно и <code>bearmind status</code> отвечают по-разному (п. 8); заметка про VirtualDub2 в руководстве (п. 7).</td>
+  <td>Да, все четыре. Порядок батча по мышам (п. 6) обсудим позже.</td>
+  <td>не делаю</td>
+  <td><span class="when later">когда удобно</span></td></tr>
+<tr><td class="id">Р7</td>
+  <td>GPU для карт порогов (раздел GPU ниже).</td>
+  <td>Да, но только карты порогов: перенести их на GPU, а на машинах без GPU оставить расчёт на CPU. Пакет CUDA ставлю в отдельную копию окружения. Это нужно для следующих серий: карты LT1 будут готовы раньше. MC и CNMF-E на GPU не переносить.</td>
+  <td>не делаю</td>
+  <td><span class="when later">когда удобно</span></td></tr>
+<tr><td class="id">Р8</td>
+  <td>Повтор CNMF-E на LT1_J03_2D дал 298 компонент, а батч раньше дал 300. Выяснить причину: запустить CNMF-E с настройками батча (пул 31 процесс). Около 15 мин и около 110 ГБ свободной памяти.</td>
+  <td>Нет. Что результат зависит от размера пула, известно с 31.10; проверка это только подтвердит. Ей нужен простой батча.</td>
+  <td>не делаю</td>
+  <td><span class="when later">—</span></td></tr>
+</table>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <h3>Р3 подробно</h3>
+  <ul class="plain">
+    <li><b>П. 17.</b> Кадр 0 чёрный в 10 сессиях. Проверка MC «max shift» ловит на нём ложный сдвиг: у 5 сессий это ERROR. Предлагаю не учитывать чёрные кадры в этой проверке. MC не пересчитывается.</li>
+    <li><b>П. 18.</b> FPS входит в хэш MC, хотя MC берёт FPS только для заголовка AVI. Предлагаю убрать FPS из хэша так, чтобы готовые MC не устарели. Зачем: потом можно уточнить FPS без пересчёта MC всех сессий.</li>
+    <li><b>П. 16.</b> У LT1_J05_1D последняя строка таймстемпов обрезана, время в ней идёт назад. Предлагаю не пускать такую строку в экспорт.</li>
+    <li><b>П. 22.</b> Порог MC template corr 0,7 отмечает 21 из 84 сессий. Предлагаю проверить эти сессии и показать вам новый порог. Ещё ось <code>est.time</code> в <code>processed.pickle</code> короче записи: исправить. Экспорт эту ось не использует.</li>
+  </ul>
+  <p class="tag">Описания и проверки — в отчёте о пути данных и в списке правок (ссылки ниже).</p>
+</div>
+
+<h2>Что будет дальше</h2>
+<div class="tl">
+  <div class="ev"><div class="t">Сейчас, 20:44</div><div class="d">Батч считает карты: 47 из 84 готовы, идёт LT1_J26_4D.</div></div>
+  <div class="ev you"><div class="t">Когда удобно</div><div class="d">Вы: Д1, Д2 и ответ на решения.</div></div>
+  <div class="ev"><div class="t">≈ 02:50 14.11</div><div class="d">Все карты готовы. Батч сразу начинает CNMF-E 8 сессий с выбранными порогами.</div></div>
+  <div class="ev you"><div class="t">Когда правки Р2 и Р3 готовы</div><div class="d">Вы нажимаете Stop after current stage. Батч доделывает текущую сессию. Я вношу правки, пересчитываю подсказки по готовым картам и запускаю батч снова.</div></div>
+  <div class="ev you"><div class="t">Вы: пороги остальных 76 сессий</div><div class="d">Вкладка Thresholds, по когорте мышей. Сессия с порогами встаёт в очередь CNMF-E; батч берёт сессии по порядку.</div></div>
+  <div class="ev"><div class="t">CNMF-E</div><div class="d">Идёт сессия за сессией.</div></div>
+  <div class="ev you"><div class="t">Вы: ручная инспекция или «не нужна»</div><div class="d">После решения батч сам делает автоинспекцию и экспорт.</div></div>
+</div>
+
+<h2>Батч: карты порогов</h2>
+<div class="grid2">
+  <div class="chart">
+    <h3>Готово карт и прогноз</h3>
+    <p class="cap">Прогноз — по скорости нового кода и размеру кадра каждой оставшейся сессии.</p>
+    <div class="legend"><span class="line" style="--c:var(--series-1)">готово</span><span class="dash" style="--c:var(--proj)">прогноз</span></div>
+    <svg id="cum" viewBox="0 0 500 270" role="img" aria-label="Число готовых карт порогов по времени и прогноз"></svg>
+  </div>
+  <div class="chart">
+    <h3>Время карт одной сессии</h3>
+    <p class="cap">С тех пор как ускорение внесено в код (13.11 15:57), 40-минутные сессии считаются вдвое быстрее.</p>
+    <div class="legend"><span style="--c:var(--series-2)">сессии 40 мин</span><span style="--c:var(--series-1)">сессии 10 мин</span></div>
+    <svg id="dur" viewBox="0 0 500 270" role="img" aria-label="Длительность этапа карт порогов по сессиям"></svg>
+  </div>
+</div>
+<p class="tag">Медиана 40-минутных сессий: 66 мин старым кодом, 31 мин новым. 10-минутных: 6,9 и 4,9 мин. У разных мышей разный размер кадра, поэтому время разное. Наведите курсор на точку — будет сессия.</p>
+
+<h2>Результаты, которые вы могли пропустить</h2>
+<div class="res">
+  <div class="card">
+    <h3>Ускорение карт порогов</h3>
+    <p>Карты те же: в освещённом поле разница с картами старого кода не больше 1e-4. Подсказки и счётчики те же. Проверено на LT1_J01_1D, gSig 7.</p>
+    <p>Счётчики вкладки Thresholds теперь считаются только в рабочей области. Ваше окно их уже показывает: оно открыто после этой правки.</p>
+    <div class="links"><a href="../../../../.superpowers/sdd/2026-11-12-lt1-fixes/maps-speedup-report.md">отчёт</a> · <a href="../../../../.superpowers/sdd/2026-11-12-lt1-fixes/maps-speedup-fix1-report.md">проверка на LT1_J01_1D</a> <span>(локально)</span></div>
+  </div>
+  <div class="card">
+    <h3>Карты по каждому 5-му / 8-му кадру — отклонено</h3>
+    <p>На 17 сессиях подсказка <code>min_pnr</code> занижена всегда, медиана −9,5. На картах по всем кадрам такие пороги дают в 1,63 раза больше затравок. Вы решили 13.11: карты по всем кадрам.</p>
+    <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-12-maps-subsample-validation.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-12-maps-subsample-validation.md">файл</a></div>
+  </div>
+  <div class="card">
+    <h3>Что говорят авторы CaImAn о <code>tsub</code> и порогах</h3>
+    <p><code>tsub</code> действует только на инициализацию. CaImAn усредняет блоки по <code>tsub</code> кадров. <code>min_pnr</code> он сам умножает на √tsub, <code>min_corr</code> не меняет. Мейнтейнер: <code>min_corr</code> с полных карт при <code>tsub</code> &gt; 1 может оказаться слишком низким.</p>
+    <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-12-caiman-tsub-thresholds-sources.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-12-caiman-tsub-thresholds-sources.md">файл</a></div>
+  </div>
+  <div class="card">
+    <h3>CNMF-E при <code>tsub</code> 1 и 5/8</h3>
+    <p>При одной настройке CNMF-E даёт битово тот же результат. <code>tsub</code> k меняет набор клеток: LT1_J03_2D сохраняет 91 % принятых клеток, LT1_J06_2D — 78 %. Это основа Р1.</p>
+    <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-13-cnmf-tsub-comparison.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-13-cnmf-tsub-comparison.md">файл</a></div>
+  </div>
+  <div class="card">
+    <h3>Скан, шаг 1: потери кадров по проверке окна</h3>
+    <p>Старое правило принимало дрожание интервалов за потерю. Теперь потеря считается по ±30 интервалам вокруг разрыва. Внесено в код 13.11 в 18:16. Вступит в силу после Д1 и Д2.</p>
+    <div class="links"><a href="../../../../.superpowers/sdd/2026-11-12-lt1-fixes/scan-step1-report.md">отчёт (локально)</a> · руководство студента: <a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/students/series-workflow.md">GitHub</a> · <a href="../../../../docs/students/series-workflow.md">файл</a></div>
+  </div>
+  <div class="card">
+    <h3>Отчёт о пути данных</h3>
+    <p>Что происходит с кадрами и FPS на каждом этапе. Из него пришли находки 16–22: Р3 и Р2 — оттуда.</p>
+    <div class="links"><a href="../../../data-flow/index.html">открыть страницу</a></div>
+  </div>
+  <div class="card">
+    <h3>Дизайн: подтверждение исправлений, серии без таймстемпов, длительности</h3>
+    <p>Три вопроса Р4 и порядок работ по скану.</p>
+    <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-12-scan-approval-design.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-12-scan-approval-design.md">файл</a></div>
+  </div>
+  <div class="card">
+    <h3>Список всех правок LT1</h3>
+    <p>Пункты 1–23: статус и коммиты.</p>
+    <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-11-lt1-feedback.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-11-lt1-feedback.md">файл</a></div>
+  </div>
+</div>
+
+<h2>GPU</h2>
+<div class="card">
+  <div class="stat">
+    <div><b>≈ 32 → ≈ 3 мин</b>карты одной 40-минутной сессии (оценка)</div>
+    <div><b>5 из 32</b>логических ядер заняты картами сейчас</div>
+    <div><b>75–107 ч</b>CNMF-E LT1 впереди (модель)</div>
+  </div>
+  <h3 style="margin-top:12px">Время LT1 по этапам, часы</h3>
+  <p class="tag">Тёмная часть полосы — нижняя оценка, светлая — разброс до верхней. MC и кроп уже посчитаны.</p>
+  <div id="hours"></div>
+  <ul class="plain" style="margin-top:10px">
+    <li><b>Карты порогов.</b> Сейчас карты считают 5 процессов, по одному на gSig, и каждый занимает одно ядро. Диск не мешает: H: читает 3,9 ГБ/с, а сессия читает около 2 ГБ. Прототип на вашей видеокарте посчитал карты синтетического фильма за 0,31–0,34 мс на кадр и gSig. Памяти видеокарты ему хватило 4,3 ГБ из 12. Повторные запуски дают битово те же карты. Побитово совпасть с картами CPU они не могут. По точности GPU не хуже нынешних карт CPU: по PNR ближе к точному расчёту, по корреляции так же.</li>
+    <li><b>MC.</b> В CaImAn 1.13.2 нет пути на GPU: параметр <code>use_cuda</code> только пишет «cuda is no longer supported». Перенос — это переписать коррекцию. Тогда изменится видео MC и всё после него.</li>
+    <li><b>CNMF-E.</b> Пути на GPU тоже нет: только переписать или взять другой пакет. Модель времени построена по сессиям 10 мин; длинную сессию ещё не считали.</li>
+    <li><b>Без GPU, дёшево.</b> Если делить карты на задачи по полосам и запускать 7 процессов вместо 5, они ускорятся в 1,4–1,7 раза при битово тех же картах. Это запасной путь, если пакет CUDA ставить нельзя.</li>
+  </ul>
+  <p style="margin-top:8px"><b>Что решить вместе с Р7:</b></p>
+  <ul class="plain">
+    <li>Можно ли ставить пакет CUDA (<code>cupy</code>) в копию окружения <code>bearmind</code>?</li>
+    <li>Какой критерий совпадения с картами CPU? Предлагаю такой: те же подсказка и счётчики Thresholds, карты в пределах допуска в освещённом поле. Проверка — на 47 готовых картах LT1.</li>
+    <li>Есть ли видеокарта NVIDIA на других машинах, где идёт батч (например, MINI3)? Если нет, там расчёт останется на CPU.</li>
+  </ul>
+  <div class="links">Разведка: <a href="../../../../.superpowers/sdd/2026-11-12-lt1-fixes/gpu-recon-report.md">отчёт (локально)</a>. Прототип — на синтетических данных; на настоящем фильме LT1 GPU не запускался.</div>
+</div>
+<script>
+(function () {
+  const rows = [["Кроп", 1.5, 1.5], ["MC", 13.3, 13.3], ["Карты порогов", 18, 28], ["CNMF-E", 75, 107], ["Автоинспекция", 15, 15]];
+  const max = 110, box = document.getElementById('hours');
+  rows.forEach(([name, lo, hi]) => {
+    const r = document.createElement('div');
+    r.style.cssText = 'display:grid;grid-template-columns:120px 1fr 70px;gap:8px;align-items:center;margin:4px 0;font-size:13px';
+    const val = lo === hi ? String(lo).replace('.', ',') : lo + '–' + hi;
+    r.innerHTML = '<span style="color:var(--text-secondary)">' + name + '</span>' +
+      '<div style="position:relative;height:12px;background:var(--surface-2);border-radius:3px">' +
+      '<i style="position:absolute;left:0;top:0;bottom:0;width:' + (hi / max * 100) + '%;background:var(--series-1);opacity:.35;border-radius:0 4px 4px 0"></i>' +
+      '<i style="position:absolute;left:0;top:0;bottom:0;width:' + (lo / max * 100) + '%;background:var(--series-1);border-radius:0 4px 4px 0"></i></div>' +
+      '<span style="color:var(--text-primary);font-variant-numeric:tabular-nums">' + val + ' ч</span>';
+    box.appendChild(r);
+  });
+})();
+</script>
+
+
+<h2>Отложено вами</h2>
+<div class="card">
+  <p><b>Переобучение ML и статья.</b> Вы сказали «погоди пока с ML». Ждём исходные данные от коллеги-инженера. В статье AUC 0,978 — это не проверка на отложенных данных: в среднем 67 % проверочных сессий были и в обучении. Честная оценка на отложенной выборке — 0,9655. Исправить до подачи; решаете вы с коллегой.</p>
+  <div class="links"><a href="https://github.com/iabs-neuro/bearmind/blob/bearmind-batch/docs/superpowers/specs/2026-11-09-ml-retrain-recon.md">GitHub</a> · <a href="../../../../docs/superpowers/specs/2026-11-09-ml-retrain-recon.md">файл</a></div>
+</div>
+
+<h2>Файлы</h2>
+<ul class="plain files">
+  <li>Эта страница и данные графиков: <code>docs/superpowers/specs/report-lt1-actions-2026-11-13/</code> (<code>batch_snapshot.json</code>, <code>dropped_after.json</code>, <code>facts.md</code>).</li>
+  <li>Снимок батча: <code>collect.py</code> (читает реестр LT1, на H: ничего не пишет). Холостой Rescan: <code>dry_rescan.py</code>.</li>
+  <li>Сборка страницы: <code>build_page.py</code>; раздел GPU — <code>gpu_section.html</code>.</li>
+  <li>Разведка GPU: <code>.superpowers/sdd/2026-11-12-lt1-fixes/gpu-recon-report.md</code> (локально, не в git).</li>
+  <li>Состояние батча: <code>H:\Projects\LT1\CalciumData\_bearmind\heartbeat.json</code>, лог <code>_bearmind\logs\runner_console.log</code>.</li>
+</ul>
+</main>
+<div id="tip"></div>
+<script>
+const DATA = {"sessions": [{"sid": "LT1_J01_1D", "minutes": 39.993919242091906, "n_frames": 71461, "box": [435, 512], "thresholds_started": "2026-11-12T15:26:05.827", "thresholds_finished": "2026-11-12T17:07:57.800", "thresholds_min": 101.86621666666666, "maps_code": "old"}, {"sid": "LT1_J01_2D", "minutes": 39.99382425824981, "n_frames": 71466, "box": [435, 512], "thresholds_started": "2026-11-12T17:07:58.260", "thresholds_finished": "2026-11-12T18:55:14.042", "thresholds_min": 107.26303333333334, "maps_code": "old"}, {"sid": "LT1_J01_3D", "minutes": 39.987972406315606, "n_frames": 71466, "box": [435, 512], "thresholds_started": "2026-11-12T18:55:14.372", "thresholds_finished": "2026-11-12T21:08:32.133", "thresholds_min": 133.29601666666667, "maps_code": "old"}, {"sid": "LT1_J01_4D", "minutes": 39.98599893439368, "n_frames": 71466, "box": [435, 512], "thresholds_started": "2026-11-12T21:08:32.735", "thresholds_finished": "2026-11-12T23:07:44.641", "thresholds_min": 119.19843333333333, "maps_code": "old"}, {"sid": "LT1_J03_1D", "minutes": 9.993449733647283, "n_frames": 11846, "box": [430, 597], "thresholds_started": "2026-11-12T23:07:45.139", "thresholds_finished": "2026-11-12T23:12:49.348", "thresholds_min": 5.07015, "maps_code": "old"}, {"sid": "LT1_J03_2D", "minutes": 9.989639888553105, "n_frames": 11842, "box": [430, 597], "thresholds_started": "2026-11-12T23:12:49.632", "thresholds_finished": "2026-11-12T23:18:04.710", "thresholds_min": 5.2513, "maps_code": "old"}, {"sid": "LT1_J03_3D", "minutes": 9.993450775401893, "n_frames": 11846, "box": [430, 597], "thresholds_started": "2026-11-12T23:18:05.028", "thresholds_finished": "2026-11-12T23:23:08.618", "thresholds_min": 5.059833333333333, "maps_code": "old"}, {"sid": "LT1_J03_4D", "minutes": 9.992554026124338, "n_frames": 11845, "box": [430, 597], "thresholds_started": "2026-11-12T23:23:08.953", "thresholds_finished": "2026-11-12T23:28:16.837", "thresholds_min": 5.1314, "maps_code": "old"}, {"sid": "LT1_J05_1D", "minutes": 39.9105055861431, "n_frames": 47309, "box": [540, 530], "thresholds_started": "2026-11-12T23:28:17.151", "thresholds_finished": "2026-11-13T00:29:04.653", "thresholds_min": 60.7917, "maps_code": "old"}, {"sid": "LT1_J05_2D", "minutes": 39.995584365931094, "n_frames": 47410, "box": [540, 530], "thresholds_started": "2026-11-13T00:29:04.896", "thresholds_finished": "2026-11-13T01:26:45.877", "thresholds_min": 57.68301666666667, "maps_code": "old"}, {"sid": "LT1_J05_3D", "minutes": 39.99563137213091, "n_frames": 47410, "box": [540, 530], "thresholds_started": "2026-11-13T01:26:46.138", "thresholds_finished": "2026-11-13T02:25:09.304", "thresholds_min": 58.386100000000006, "maps_code": "old"}, {"sid": "LT1_J05_4D", "minutes": 39.99648475775373, "n_frames": 47411, "box": [540, 530], "thresholds_started": "2026-11-13T02:25:09.557", "thresholds_finished": "2026-11-13T03:24:05.251", "thresholds_min": 58.92823333333333, "maps_code": "old"}, {"sid": "LT1_J06_1D", "minutes": 9.993222286474378, "n_frames": 17856, "box": [531, 527], "thresholds_started": "2026-11-13T03:24:05.474", "thresholds_finished": "2026-11-13T03:32:00.557", "thresholds_min": 7.91805, "maps_code": "old"}, {"sid": "LT1_J06_2D", "minutes": 9.99145441683559, "n_frames": 17855, "box": [531, 527], "thresholds_started": "2026-11-13T03:32:00.795", "thresholds_finished": "2026-11-13T03:39:52.415", "thresholds_min": 7.860333333333333, "maps_code": "old"}, {"sid": "LT1_J06_3D", "minutes": 9.991504907013221, "n_frames": 17856, "box": [531, 527], "thresholds_started": "2026-11-13T03:39:52.653", "thresholds_finished": "2026-11-13T03:47:39.149", "thresholds_min": 7.774933333333333, "maps_code": "old"}, {"sid": "LT1_J06_4D", "minutes": 9.986935372804174, "n_frames": 17855, "box": [531, 527], "thresholds_started": "2026-11-13T03:47:39.388", "thresholds_finished": "2026-11-13T03:55:26.166", "thresholds_min": 7.779633333333334, "maps_code": "old"}, {"sid": "LT1_J08_1D", "minutes": 9.99328088350602, "n_frames": 17856, "box": [550, 541], "thresholds_started": "2026-11-13T03:55:26.394", "thresholds_finished": "2026-11-13T04:03:52.739", "thresholds_min": 8.439083333333334, "maps_code": "old"}, {"sid": "LT1_J08_2D", "minutes": 9.992644681302453, "n_frames": 17855, "box": [550, 541], "thresholds_started": "2026-11-13T04:03:52.962", "thresholds_finished": "2026-11-13T04:12:14.513", "thresholds_min": 8.359183333333332, "maps_code": "old"}, {"sid": "LT1_J08_3D", "minutes": 9.991499736950283, "n_frames": 17855, "box": [550, 541], "thresholds_started": "2026-11-13T04:12:14.737", "thresholds_finished": "2026-11-13T04:20:46.514", "thresholds_min": 8.529616666666666, "maps_code": "old"}, {"sid": "LT1_J08_4D", "minutes": 9.989323967241019, "n_frames": 17855, "box": [550, 541], "thresholds_started": "2026-11-13T04:20:46.752", "thresholds_finished": "2026-11-13T04:29:12.819", "thresholds_min": 8.43445, "maps_code": "old"}, {"sid": "LT1_J10_1D", "minutes": 39.991456678989955, "n_frames": 71466, "box": [485, 438], "thresholds_started": "2026-11-13T04:29:13.094", "thresholds_finished": "2026-11-13T05:35:36.130", "thresholds_min": 66.38393333333333, "maps_code": "old"}, {"sid": "LT1_J10_2D", "minutes": 39.99556311895422, "n_frames": 71463, "box": [485, 438], "thresholds_started": "2026-11-13T05:35:36.352", "thresholds_finished": "2026-11-13T06:41:50.154", "thresholds_min": 66.23003333333334, "maps_code": "old"}, {"sid": "LT1_J10_3D", "minutes": 39.99039637841741, "n_frames": 71466, "box": [485, 438], "thresholds_started": "2026-11-13T06:41:50.395", "thresholds_finished": "2026-11-13T07:47:41.622", "thresholds_min": 65.85378333333333, "maps_code": "old"}, {"sid": "LT1_J10_4D", "minutes": 39.97986853233599, "n_frames": 71465, "box": [485, 438], "thresholds_started": "2026-11-13T07:47:42.082", "thresholds_finished": "2026-11-13T08:54:40.381", "thresholds_min": 66.97165, "maps_code": "old"}, {"sid": "LT1_J13_1D", "minutes": 39.9915678898553, "n_frames": 71467, "box": [401, 456], "thresholds_started": "2026-11-13T08:54:40.603", "thresholds_finished": "2026-11-13T09:52:45.167", "thresholds_min": 58.07606666666666, "maps_code": "old"}, {"sid": "LT1_J13_2D", "minutes": 39.99092225961699, "n_frames": 71465, "box": [401, 456], "thresholds_started": "2026-11-13T09:52:45.405", "thresholds_finished": "2026-11-13T10:48:09.008", "thresholds_min": 55.39338333333333, "maps_code": "old"}, {"sid": "LT1_J13_3D", "minutes": 39.988570024584156, "n_frames": 71466, "box": [401, 456], "thresholds_started": "2026-11-13T10:48:09.249", "thresholds_finished": "2026-11-13T11:42:23.802", "thresholds_min": 54.24255, "maps_code": "old"}, {"sid": "LT1_J13_4D", "minutes": 39.990417103737634, "n_frames": 71465, "box": [401, 456], "thresholds_started": "2026-11-13T11:42:24.043", "thresholds_finished": "2026-11-13T12:36:32.114", "thresholds_min": 54.13451666666666, "maps_code": "old"}, {"sid": "LT1_J14_1D", "minutes": 9.99252329436318, "n_frames": 11845, "box": [553, 608], "thresholds_started": "2026-11-13T12:36:32.366", "thresholds_finished": "2026-11-13T12:42:20.566", "thresholds_min": 5.803333333333333, "maps_code": "old"}, {"sid": "LT1_J14_2D", "minutes": 9.991735148004095, "n_frames": 11844, "box": [553, 608], "thresholds_started": "2026-11-13T12:42:20.812", "thresholds_finished": "2026-11-13T12:48:04.420", "thresholds_min": 5.7268, "maps_code": "old"}, {"sid": "LT1_J14_3D", "minutes": 11.294254026916661, "n_frames": 13388, "box": [553, 608], "thresholds_started": "2026-11-13T12:48:04.640", "thresholds_finished": "2026-11-13T12:54:01.672", "thresholds_min": 5.9505333333333335, "maps_code": "old"}, {"sid": "LT1_J14_4D", "minutes": 9.992533842128662, "n_frames": 11845, "box": [553, 608], "thresholds_started": "2026-11-13T12:54:01.911", "thresholds_finished": "2026-11-13T12:59:47.720", "thresholds_min": 5.763483333333334, "maps_code": "old"}, {"sid": "LT1_J17_1D", "minutes": 39.99382873991824, "n_frames": 71465, "box": [444, 491], "thresholds_started": "2026-11-13T12:59:47.963", "thresholds_finished": "2026-11-13T15:00:21.597", "thresholds_min": 120.56056666666667, "maps_code": "old"}, {"sid": "LT1_J17_2D", "minutes": 39.99527761892518, "n_frames": 71472, "box": [444, 491], "thresholds_started": "2026-11-13T15:57:54.727", "thresholds_finished": "2026-11-13T16:30:18.784", "thresholds_min": 32.40095, "maps_code": "new"}, {"sid": "LT1_J17_3D", "minutes": 39.99245766878577, "n_frames": 71466, "box": [444, 491], "thresholds_started": "2026-11-13T16:30:19.339", "thresholds_finished": "2026-11-13T17:05:20.517", "thresholds_min": 35.01963333333333, "maps_code": "new"}, {"sid": "LT1_J17_4D", "minutes": 39.99412018084491, "n_frames": 71467, "box": [444, 491], "thresholds_started": "2026-11-13T17:05:20.918", "thresholds_finished": "2026-11-13T17:36:00.976", "thresholds_min": 30.667633333333335, "maps_code": "new"}, {"sid": "LT1_J18_1D", "minutes": 39.99497995212928, "n_frames": 71466, "box": [452, 585], "thresholds_started": "2026-11-13T17:36:01.614", "thresholds_finished": "2026-11-13T18:14:07.520", "thresholds_min": 38.09843333333333, "maps_code": "new"}, {"sid": "LT1_J18_2D", "minutes": 9.99291368301071, "n_frames": 17862, "box": [452, 585], "thresholds_started": "2026-11-13T18:14:07.837", "thresholds_finished": "2026-11-13T18:19:40.135", "thresholds_min": 5.5383000000000004, "maps_code": "new"}, {"sid": "LT1_J18_3D", "minutes": 39.994895738615156, "n_frames": 71468, "box": [452, 585], "thresholds_started": "2026-11-13T18:19:40.398", "thresholds_finished": "2026-11-13T18:50:40.071", "thresholds_min": 30.99455, "maps_code": "new"}, {"sid": "LT1_J18_4D", "minutes": 39.99546285136918, "n_frames": 71468, "box": [452, 585], "thresholds_started": "2026-11-13T18:50:40.310", "thresholds_finished": "2026-11-13T19:21:29.274", "thresholds_min": 30.816066666666664, "maps_code": "new"}, {"sid": "LT1_J24_1D", "minutes": 9.990356983893557, "n_frames": 17854, "box": [455, 514], "thresholds_started": "2026-11-13T19:21:29.524", "thresholds_finished": "2026-11-13T19:26:22.354", "thresholds_min": 4.8805, "maps_code": "new"}, {"sid": "LT1_J24_2D", "minutes": 9.995208035208089, "n_frames": 17862, "box": [455, 514], "thresholds_started": "2026-11-13T19:26:22.614", "thresholds_finished": "2026-11-13T19:31:11.879", "thresholds_min": 4.821083333333333, "maps_code": "new"}, {"sid": "LT1_J24_3D", "minutes": 9.991178828917148, "n_frames": 17856, "box": [455, 514], "thresholds_started": "2026-11-13T19:31:12.146", "thresholds_finished": "2026-11-13T19:36:07.547", "thresholds_min": 4.92335, "maps_code": "new"}, {"sid": "LT1_J24_4D", "minutes": 9.99085649159664, "n_frames": 17856, "box": [455, 514], "thresholds_started": "2026-11-13T19:36:07.794", "thresholds_finished": "2026-11-13T19:40:59.897", "thresholds_min": 4.868383333333333, "maps_code": "new"}, {"sid": "LT1_J26_1D", "minutes": 39.9851800851726, "n_frames": 71466, "box": [488, 357], "thresholds_started": "2026-11-13T19:41:00.161", "thresholds_finished": "2026-11-13T19:59:26.868", "thresholds_min": 18.445116666666667, "maps_code": "new"}, {"sid": "LT1_J26_2D", "minutes": 39.99832119592316, "n_frames": 71473, "box": [488, 357], "thresholds_started": "2026-11-13T19:59:27.131", "thresholds_finished": "2026-11-13T20:16:45.192", "thresholds_min": 17.301016666666666, "maps_code": "new"}, {"sid": "LT1_J26_3D", "minutes": 39.99538805002239, "n_frames": 71465, "box": [488, 357], "thresholds_started": "2026-11-13T20:16:45.443", "thresholds_finished": "2026-11-13T20:34:27.916", "thresholds_min": 17.70788333333333, "maps_code": "new"}, {"sid": "LT1_J26_4D", "minutes": 39.99253641376795, "n_frames": 71464, "box": [488, 357], "thresholds_started": "2026-11-13T20:34:28.160", "thresholds_finished": null, "thresholds_min": null, "maps_code": "new"}, {"sid": "LT1_J27_1D", "minutes": 39.99652928994301, "n_frames": 47411, "box": [517, 587], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J27_2D", "minutes": 39.996528508676526, "n_frames": 47411, "box": [517, 587], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J27_3D", "minutes": 39.996499992450055, "n_frames": 47411, "box": [517, 587], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J27_4D", "minutes": 39.99567968044152, "n_frames": 47410, "box": [517, 587], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J30_1D", "minutes": 9.992064167371206, "n_frames": 17855, "box": [412, 500], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J30_2D", "minutes": 10.934954812683404, "n_frames": 19541, "box": [412, 500], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J30_3D", "minutes": 9.991258121529626, "n_frames": 17857, "box": [412, 500], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J30_4D", "minutes": 9.991427661685316, "n_frames": 17858, "box": [412, 500], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J52_1D", "minutes": 9.992665474123445, "n_frames": 17856, "box": [521, 559], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J52_2D", "minutes": 9.990259415966387, "n_frames": 17856, "box": [521, 559], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J52_3D", "minutes": 9.990951551733795, "n_frames": 17856, "box": [521, 559], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J52_4D", "minutes": 9.989870541942127, "n_frames": 17853, "box": [521, 559], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J53_1D", "minutes": 9.99270458049054, "n_frames": 17855, "box": [441, 519], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J53_2D", "minutes": 9.995421328765142, "n_frames": 17861, "box": [441, 519], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J53_3D", "minutes": 9.992067277434407, "n_frames": 17857, "box": [441, 519], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J53_4D", "minutes": 9.992686570236362, "n_frames": 17856, "box": [441, 519], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J54_1D", "minutes": 9.992077865064696, "n_frames": 17856, "box": [568, 570], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J54_2D", "minutes": 9.993310804010207, "n_frames": 17861, "box": [568, 570], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J54_3D", "minutes": 9.99429533075848, "n_frames": 17858, "box": [568, 570], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J54_4D", "minutes": 9.990220846828315, "n_frames": 17858, "box": [568, 570], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J55_1D", "minutes": 9.99259191994848, "n_frames": 11845, "box": [471, 532], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J55_2D", "minutes": 9.991770177003293, "n_frames": 11844, "box": [471, 532], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J55_3D", "minutes": 9.99341457442926, "n_frames": 11846, "box": [471, 532], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J55_4D", "minutes": 10.507140222790701, "n_frames": 12455, "box": [471, 532], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J57_1D", "minutes": 39.99206409539784, "n_frames": 71466, "box": [486, 418], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J57_2D", "minutes": 39.99737780269216, "n_frames": 71472, "box": [486, 418], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J57_3D", "minutes": 39.996668884981936, "n_frames": 71469, "box": [486, 418], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J57_4D", "minutes": 39.996074481994434, "n_frames": 71468, "box": [486, 418], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J58_1D", "minutes": 9.992746119275326, "n_frames": 17855, "box": [495, 421], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J58_2D", "minutes": 9.990651135309296, "n_frames": 17862, "box": [495, 421], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J58_3D", "minutes": 9.99265911870385, "n_frames": 17857, "box": [495, 421], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J58_4D", "minutes": 9.992100357761126, "n_frames": 17857, "box": [495, 421], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J61_1D", "minutes": 39.996470825168196, "n_frames": 47411, "box": [431, 530], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J61_2D", "minutes": 39.99648579944236, "n_frames": 47411, "box": [431, 530], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J61_3D", "minutes": 39.99647225749007, "n_frames": 47411, "box": [431, 530], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}, {"sid": "LT1_J61_4D", "minutes": 39.996481372265656, "n_frames": 47411, "box": [431, 530], "thresholds_started": null, "thresholds_finished": null, "thresholds_min": null, "maps_code": null}], "projection": [{"sid": "LT1_J26_4D", "t": "2026-11-13T20:52:54"}, {"sid": "LT1_J27_1D", "t": "2026-11-13T21:14:13"}, {"sid": "LT1_J27_2D", "t": "2026-11-13T21:35:32"}, {"sid": "LT1_J27_3D", "t": "2026-11-13T21:56:51"}, {"sid": "LT1_J27_4D", "t": "2026-11-13T22:18:10"}, {"sid": "LT1_J30_1D", "t": "2026-11-13T22:22:28"}, {"sid": "LT1_J30_2D", "t": "2026-11-13T22:27:10"}, {"sid": "LT1_J30_3D", "t": "2026-11-13T22:31:28"}, {"sid": "LT1_J30_4D", "t": "2026-11-13T22:35:46"}, {"sid": "LT1_J52_1D", "t": "2026-11-13T22:41:51"}, {"sid": "LT1_J52_2D", "t": "2026-11-13T22:47:56"}, {"sid": "LT1_J52_3D", "t": "2026-11-13T22:54:00"}, {"sid": "LT1_J52_4D", "t": "2026-11-13T23:00:05"}, {"sid": "LT1_J53_1D", "t": "2026-11-13T23:04:52"}, {"sid": "LT1_J53_2D", "t": "2026-11-13T23:09:38"}, {"sid": "LT1_J53_3D", "t": "2026-11-13T23:14:25"}, {"sid": "LT1_J53_4D", "t": "2026-11-13T23:19:12"}, {"sid": "LT1_J54_1D", "t": "2026-11-13T23:25:57"}, {"sid": "LT1_J54_2D", "t": "2026-11-13T23:32:43"}, {"sid": "LT1_J54_3D", "t": "2026-11-13T23:39:28"}, {"sid": "LT1_J54_4D", "t": "2026-11-13T23:46:14"}, {"sid": "LT1_J55_1D", "t": "2026-11-13T23:49:42"}, {"sid": "LT1_J55_2D", "t": "2026-11-13T23:53:10"}, {"sid": "LT1_J55_3D", "t": "2026-11-13T23:56:38"}, {"sid": "LT1_J55_4D", "t": "2026-11-14T00:00:17"}, {"sid": "LT1_J57_1D", "t": "2026-11-14T00:21:47"}, {"sid": "LT1_J57_2D", "t": "2026-11-14T00:43:18"}, {"sid": "LT1_J57_3D", "t": "2026-11-14T01:04:48"}, {"sid": "LT1_J57_4D", "t": "2026-11-14T01:26:19"}, {"sid": "LT1_J58_1D", "t": "2026-11-14T01:30:40"}, {"sid": "LT1_J58_2D", "t": "2026-11-14T01:35:01"}, {"sid": "LT1_J58_3D", "t": "2026-11-14T01:39:22"}, {"sid": "LT1_J58_4D", "t": "2026-11-14T01:43:43"}, {"sid": "LT1_J61_1D", "t": "2026-11-14T01:59:46"}, {"sid": "LT1_J61_2D", "t": "2026-11-14T02:15:48"}, {"sid": "LT1_J61_3D", "t": "2026-11-14T02:31:51"}, {"sid": "LT1_J61_4D", "t": "2026-11-14T02:47:54"}], "pipeline": [{"name": "Скан", "done": 84, "total": 84, "note": "Rescan — Д2"}, {"name": "Кроп", "done": 84, "total": 84}, {"name": "MC", "done": 84, "total": 84}, {"name": "Карты порогов", "done": 47, "total": 84, "now": true, "note": "≈ 02:50 все"}, {"name": "Вы: пороги", "you": true, "note": "выбрано 8 из 84"}, {"name": "CNMF-E", "done": 0, "total": 84}, {"name": "Вы: инспекция", "you": true, "note": "ручная или «не нужна»"}, {"name": "Автоинспекция", "done": 0, "total": 84}, {"name": "Экспорт", "done": 0, "total": 84}], "t_first": "2026-11-12T15:26:05.827", "snapshot_iso": "2026-11-13T20:44:59", "new_code_iso": "2026-11-13T15:57:00", "eta_iso": "2026-11-14T02:47:54", "eta_hi_iso": "2026-11-14T03:16:07", "eta": "02:50"};
+const tip = document.getElementById('tip');
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = 'block';
+  const x = Math.min(e.clientX + 14, window.innerWidth - 270); tip.style.left = x + 'px'; tip.style.top = (e.clientY + 14) + 'px'; }
+function hideTip() { tip.style.display = 'none'; }
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) { const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]); if (parent) parent.appendChild(n); return n; }
+function txt(parent, x, y, s, attrs) { const t = el('text', Object.assign({x, y}, attrs || {}), parent); t.textContent = s; return t; }
+const ms = s => new Date(s).getTime();
+function hm(t) { const d = new Date(t); return d.toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}); }
+
+// pipeline
+(function () {
+  const pipe = document.getElementById('pipe');
+  DATA.pipeline.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'st' + (s.you ? ' you' : '') + (s.now ? ' now' : '');
+    const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
+    d.innerHTML = '<b>' + s.name + '</b>' + (s.you ? '<span class="tag">' + s.note + '</span>' :
+      '<span class="n">' + s.done + '</span><span class="tag"> / ' + s.total + '</span>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' + (s.note ? '<span class="tag">' + s.note + '</span>' : ''));
+    pipe.appendChild(d);
+  });
+})();
+
+function ticks12(t0, t1) {  // local midnight and noon between t0 and t1
+  const d = new Date(t0); d.setMinutes(0, 0, 0); d.setHours(d.getHours() < 12 ? 12 : 24);
+  const out = []; for (; d.getTime() <= t1; d.setHours(d.getHours() + 12))
+    out.push({v: d.getTime(), s: d.toLocaleString('ru-RU', {day: '2-digit', month: '2-digit'}) + ' ' + String(d.getHours()).padStart(2, '0') + ':00'});
+  return out;
+}
+function axes(svg, X, Y, x0, x1, yTicks, yLabel, xTicks) {
+  const g = el('g', {}, svg);
+  yTicks.forEach(v => { el('line', {x1: X(x0), x2: X(x1), y1: Y(v), y2: Y(v), stroke: 'var(--grid)', 'stroke-width': 1}, g);
+    txt(g, X(x0) - 6, Y(v) + 4, v, {'text-anchor': 'end'}); });
+  txt(g, X(x0) - 36, Y(yTicks[yTicks.length - 1]) - 10, yLabel, {class: 'lbl'});
+  xTicks.forEach(t => { txt(g, X(t.v), Y(yTicks[0]) + 16, t.s, {'text-anchor': 'middle'}); });
+}
+function marker(svg, X, Y, t, y0, y1, label) {
+  el('line', {x1: X(t), x2: X(t), y1: Y(y0), y2: Y(y1), stroke: 'var(--text-muted)', 'stroke-dasharray': '3 3', 'stroke-width': 1}, svg);
+  txt(svg, X(t) + 4, Y(y1) + 10, label, {class: 'lbl'});
+}
+
+// cumulative maps chart
+(function () {
+  const svg = document.getElementById('cum');
+  const L = 46, R = 486, T = 18, B = 238;
+  const t0 = ms(DATA.t_first), t1 = ms(DATA.eta_hi_iso);
+  const X = t => L + (t - t0) / (t1 - t0) * (R - L), Y = v => B - v / 84 * (B - T);
+  const days = ticks12(t0, t1);
+  axes(svg, X, Y, t0, t1, [0, 21, 42, 63, 84], 'карт', days);
+  marker(svg, X, Y, ms(DATA.new_code_iso), 0, 84, 'новый код');
+  // actual steps
+  const done = DATA.sessions.filter(s => s.thresholds_finished).sort((a, b) => ms(a.thresholds_finished) - ms(b.thresholds_finished));
+  let p = 'M' + X(t0) + ',' + Y(0), n = 0;
+  done.forEach(s => { const x = X(ms(s.thresholds_finished)); p += ' H' + x + ' V' + Y(++n); });
+  p += ' H' + X(ms(DATA.snapshot_iso));
+  el('path', {d: p, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2}, svg);
+  // projection
+  let q = 'M' + X(ms(DATA.snapshot_iso)) + ',' + Y(n), m = n;
+  DATA.projection.forEach(pt => { q += ' H' + X(ms(pt.t)) + ' V' + Y(++m); });
+  el('path', {d: q, fill: 'none', stroke: 'var(--proj)', 'stroke-width': 2, 'stroke-dasharray': '5 4'}, svg);
+  el('circle', {cx: X(ms(DATA.eta_iso)), cy: Y(84), r: 4, fill: 'var(--proj)'}, svg);
+  txt(svg, X(ms(DATA.eta_iso)) - 6, Y(84) - 6, '84 ≈ ' + DATA.eta, {'text-anchor': 'end', class: 'lbl'});
+  txt(svg, X(ms(DATA.snapshot_iso)) - 6, Y(n) - 8, n + ' сейчас', {'text-anchor': 'end', class: 'lbl'});
+  // hover targets
+  n = 0;
+  done.forEach(s => { n++; const c = el('circle', {cx: X(ms(s.thresholds_finished)), cy: Y(n), r: 7, fill: 'transparent'}, svg);
+    const k = n; c.addEventListener('mousemove', e => showTip(e, '<b>' + s.sid + '</b><br>' + k + '-я карта, ' + hm(ms(s.thresholds_finished))));
+    c.addEventListener('mouseleave', hideTip); });
+})();
+
+// per-session duration chart
+(function () {
+  const svg = document.getElementById('dur');
+  const L = 46, R = 486, T = 18, B = 238;
+  const ss = DATA.sessions.filter(s => s.thresholds_min);
+  const t0 = ms(DATA.t_first), t1 = ms(DATA.snapshot_iso);
+  const ymax = 140;
+  const X = t => L + (t - t0) / (t1 - t0) * (R - L), Y = v => B - Math.min(v, ymax) / ymax * (B - T);
+  const days = ticks12(t0, t1);
+  axes(svg, X, Y, t0, t1, [0, 35, 70, 105, 140], 'мин', days);
+  marker(svg, X, Y, ms(DATA.new_code_iso), 0, 140, 'новый код');
+  ss.forEach(s => {
+    const long = s.minutes > 30, col = long ? 'var(--series-2)' : 'var(--series-1)';
+    const c = el('circle', {cx: X(ms(s.thresholds_started)), cy: Y(s.thresholds_min), r: 4.5, fill: col,
+      stroke: 'var(--surface-1)', 'stroke-width': 2}, svg);
+    const hit = el('circle', {cx: X(ms(s.thresholds_started)), cy: Y(s.thresholds_min), r: 9, fill: 'transparent'}, svg);
+    hit.addEventListener('mousemove', e => showTip(e, '<b>' + s.sid + '</b><br>' + s.thresholds_min.toFixed(1) + ' мин, ' +
+      (s.maps_code === 'new' ? 'новый код' : 'старый код') + '<br>' + s.n_frames.toLocaleString('ru-RU') + ' кадров, кадр ' + s.box[0] + '×' + s.box[1]));
+    hit.addEventListener('mouseleave', hideTip);
+  });
+})();
+</script>
+</body>
+</html>
