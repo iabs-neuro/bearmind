@@ -883,12 +883,15 @@ def test_selected_row_text_is_black_even_when_the_row_is_excluded_grey(qapp, tmp
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.resize(300, 120)
         table.show()
+        table.setFocus()
         table.selectRow(0)
         qapp.processEvents()
         img = table.viewport().grab().toImage()
         row = table.rowHeight(0)
         darkest = min(img.pixelColor(x, y).lightness() for x in range(img.width()) for y in range(row))
         assert darkest < 60  # black text; the excluded grey (#8a8f98) has lightness 143
-        assert img.pixelColor(5, row - 2).name() == "#b3d1f2"
+        # the right end of the last cell: no text and no focus outline (that one is drawn on the current cell)
+        x = table.columnViewportPosition(1) + table.columnWidth(1) - 8
+        assert img.pixelColor(x, row // 2).name() == "#b3d1f2"
     finally:
         qapp.setStyleSheet("")
