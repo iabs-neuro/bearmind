@@ -296,21 +296,129 @@ def _build_record(paths: SeriesPaths, sid: str, items, cfg_scan: dict):
         if est is not None:
             fps = est.fps
             fps_info = {**dataclasses.asdict(est), "source": "timestamps"}
-            if est.n_gaps > 0:
-                anomalies.append(Anomaly(
-                    "dropped_frames", "warning",
-                    f"{plural(est.n_gaps, 'gap')} in timestamps (max {duration_text(est.max_gap_ms)})",
-                    data={"n_gaps": est.n_gaps, "max_gap_ms": est.max_gap_ms,
-                          "n_dropped": _n_dropped(st.t_ms, est, cfg_scan["gap_factor"])}))
+            # Losses are judged per part; FPS above still counts the gaps (it is in the MC stage hash).
+            anomalies += _gap_anomalies(tss, cfg_scan["gap_factor"])
     return parts, mode, n_frames, fps, fps_info, anomalies, nominal
 
 
-def _n_dropped(t_ms, est, gap_factor: float) -> int:
-    """Frames missing in the timestamp gaps (each gap counts at least one). A pause between stitched parts is
-    a gap too, so it counts as its length in frames; the Scan tab judges the share of dropped frames by it."""
-    d = np.diff(np.asarray(t_ms, dtype=np.float64))
-    gaps = d[d > gap_factor * est.median_interval_ms] / est.median_interval_ms
-    return int(np.maximum(np.rint(gaps) - 1, 1).sum())
+# Intervals on each side of a gap that the window test sums (the window is 2 * K + 1 intervals).
+WINDOW_K = 30
+CERTAIN_INTERVAL = 2.5  # an interval above this many medians is a lost frame whatever the window says
+LOSS_MIN_EXCESS = 0.5   # window excess below this is timing jitter
+CERTAIN_EXCESS = 1.5
+MAX_GAP_LINES = 20  # gaps listed in the message; data["gaps"] has all of them
+
+
+@dataclasses.dataclass
+class GapLoss:
+    index: int          # the gap is the interval between frames index and index + 1 of the part
+    at_ms: float        # where it begins, from the part's first frame
+    interval_ms: float
+    excess: float       # the window's time in periods minus the number of intervals
+    frames: int         # round(excess), at least 1
+    lost_ms: float      # frames * period
+    certain: bool
+
+
+@dataclasses.dataclass
+class PartGaps:
+    gaps: list[GapLoss]   # the gaps with at least one lost frame
+    n_jitter: int         # gaps (interval above gap_factor * median) with no frame lost
+    damaged: bool         # a non-positive interval: the span is not a duration, the test is not run
+
+
+def part_gap_losses(t_ms, gap_factor: float = 2.0, k: int = WINDOW_K) -> PartGaps:
+    """Frames lost at the gaps of one part's timestamps by the window test.
+
+    A late frame makes one interval long and the next ones short, and the frame clock goes on: judged by its own
+    length a gap of 2.1 medians is mostly jitter (85 % of the 324 gaps of LT1). Around a gap the intervals of the
+    window, in units of the period u = span / (N - 1), count the frames the clock produced; the excess over the
+    number of intervals is the number of frames missing. The window is the 2 * k + 1 intervals around the gap
+    interval; near the start or the end of the part it is cut to the intervals that exist. A part is judged
+    alone: timestamps restart per part, and the pause between parts is not a gap.
+    """
+    t = np.asarray(t_ms, dtype=np.float64)
+    if len(t) < 2:
+        return PartGaps([], 0, False)
+    d = np.diff(t)
+    if np.any(d <= 0):
+        return PartGaps([], 0, True)
+    m = float(np.median(d))
+    u = float(t[-1] - t[0]) / (len(t) - 1)
+    gaps, n_jitter = [], 0
+    for i in np.flatnonzero(d > gap_factor * m):
+        window = d[max(0, i - k):i + k + 1]
+        excess = float(window.sum() / u - len(window))
+        if excess < LOSS_MIN_EXCESS:
+            n_jitter += 1
+            continue
+        frames = max(int(round(excess)), 1)
+        gaps.append(GapLoss(
+            index=int(i), at_ms=float(t[i] - t[0]), interval_ms=float(d[i]), excess=excess, frames=frames,
+            lost_ms=frames * u, certain=bool(d[i] > CERTAIN_INTERVAL * m or excess >= CERTAIN_EXCESS)))
+    return PartGaps(gaps, n_jitter, False)
+
+
+def position_text(ms: float) -> str:
+    """A place in a part for a person: "12:03.4" (minutes:seconds), "1:01:02.0" from one hour."""
+    tenths = int(round(ms / 100.0))
+    s, tenth = divmod(tenths, 10)
+    m, s = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}.{tenth}" if h else f"{m}:{s:02d}.{tenth}"
+
+
+def _frames_ms_text(frames: int, ms: float) -> str:
+    return f"{plural(frames, 'frame')} lost ({duration_text(ms)})"
+
+
+def _gap_anomalies(tss, gap_factor: float) -> list[Anomaly]:
+    """dropped_frames, timing_jitter and gap_test_skipped from the window test of each part."""
+    multi = len(tss) > 1
+    found: list[tuple[int, GapLoss]] = []
+    n_jitter, damaged = 0, []
+    for k, ts in enumerate(tss):
+        r = part_gap_losses(ts.t_ms, gap_factor)
+        found += [(k, g) for g in r.gaps]
+        n_jitter += r.n_jitter
+        if r.damaged:
+            damaged.append(k)
+    out = []
+    if found:
+        rows = [{"part": k, "index": g.index, "at_ms": round(g.at_ms, 1), "interval_ms": round(g.interval_ms, 1),
+                 "excess": round(g.excess, 2), "frames": g.frames, "lost_ms": round(g.lost_ms, 1),
+                 "certain": g.certain} for k, g in found]
+        frames = sum(r["frames"] for r in rows)
+        lost = sum(r["lost_ms"] for r in rows)
+        data = {"rule": "window", "n_gaps": len(rows), "n_dropped": frames, "lost_ms": round(lost, 1),
+                "max_gap_ms": max(r["interval_ms"] for r in rows), "gaps": rows}
+        lines = [f"{_frames_ms_text(frames, lost)} in {plural(len(rows), 'gap')}"]
+        parts = []
+        for name, sel in (("certain", True), ("probable", False)):
+            sub = [r for r in rows if r["certain"] is sel]
+            data[f"n_{name}"] = len(sub)
+            data[f"frames_{name}"] = sum(r["frames"] for r in sub)
+            data[f"lost_ms_{name}"] = round(sum(r["lost_ms"] for r in sub), 1)
+            if sub:
+                parts.append(f"{name} {_frames_ms_text(data[f'frames_{name}'], data[f'lost_ms_{name}'])}")
+        lines[0] += ": " + ", ".join(parts)
+        shown = rows[:MAX_GAP_LINES]
+        for r in shown:
+            place = f"{'part ' + str(r['part'] + 1) + ' ' if multi else ''}at {position_text(r['at_ms'])}"
+            lines.append(f"{_frames_ms_text(r['frames'], r['lost_ms'])} {place}, "
+                         f"{'certain' if r['certain'] else 'probable'}")
+        if len(rows) > len(shown):
+            lines.append(f"and {len(rows) - len(shown)} more gaps")
+        out.append(Anomaly("dropped_frames", "warning", "\n".join(lines), data=data))
+    if n_jitter:
+        out.append(Anomaly("timing_jitter", "info", f"timing jitter: {plural(n_jitter, 'gap')}, no frames lost",
+                           data={"n_gaps": n_jitter}))
+    if damaged:
+        names = ", ".join(str(k + 1) for k in damaged) if multi else ""
+        out.append(Anomaly("gap_test_skipped", "info",
+                           "frame loss test skipped" + (f" for part {names}" if multi else "") +
+                           ": the timestamps do not increase (a damaged row)", data={"parts": damaged}))
+    return out
 
 
 def rates_text(rates) -> str:

@@ -14,6 +14,8 @@ ANOMALY_TITLE = {
     "no_timestamps": "no timestamps found",
     "fps_outlier": "FPS outlier",
     "dropped_frames": "dropped frames",
+    "timing_jitter": "timing jitter",
+    "gap_test_skipped": "frame loss test skipped",
     "broken_last_frame": "broken last frame",
     "chunk_tail_frames": "extra chunk frames",
     "no_metadata": "no recording start time",
@@ -25,6 +27,9 @@ ANOMALY_TITLE = {
 
 _RANK = {"ok": 0, "warning": 1, "error": 2}
 _SUMMARY_LINES = 3
+# Shown in the details only: nothing to fix, and nearly every session has jitter, so the cell would be noise.
+_INFO_CODES = ("timing_jitter", "gap_test_skipped")
+_NOT_IN_CELL = ("timing_jitter",)
 
 
 @dataclass
@@ -66,6 +71,8 @@ class ScanRow:
     decisions: list[str]
     summary_parts: list[tuple[str, bool]] = field(default_factory=list)  # (text, greyed): the Anomalies cell
     folder: str = ""  # what Open folder opens: the first part, else the folder of an unreadable session
+    interval_ms: float | None = None  # 1000 / fps: the period the pipeline works with
+    interval_tip: str = ""  # the median of the raw timestamp intervals, when the record has it
 
 
 @dataclass
@@ -134,6 +141,11 @@ def _short(a, n_parts: int, split_pause: bool) -> str:
                else f"mouse median {d['median']:.1f}" if "median" in d
                else f"nominal {d['nominal']:g}" if "nominal" in d else "")
         return f"{title}: {d['fps']:.1f}" + (f" ({ref})" if ref else "")
+    if a.code == "dropped_frames" and d.get("rule") == "window":
+        return (f"{title}: {scan.plural(d['n_dropped'], 'frame')} lost ({scan.duration_text(d['lost_ms'])})"
+                f" in {scan.plural(d['n_gaps'], 'gap')}")
+    if a.code == "timing_jitter" and "n_gaps" in d:
+        return f"{title}: {scan.plural(d['n_gaps'], 'gap')}"
     if a.code == "dropped_frames" and "n_gaps" in d:
         text = f"{title}: {scan.plural(d['n_gaps'], 'gap')}"
         if d.get("max_gap_ms") is not None:
@@ -176,6 +188,11 @@ def _fps_text(rec: SessionRecord) -> str:
             f" · longest pause {scan.duration_text(info.get('max_gap_ms', 0.0))}")
 
 
+def _interval_tip(rec: SessionRecord) -> str:
+    median = (rec.fps_info or {}).get("median_interval_ms")
+    return f"median of the timestamp intervals: {median:.2f} ms" if median else ""
+
+
 def _is_split_pause(a, gaps: list[float]) -> bool:
     """A dropped_frames line that only reports the pause between the stitched parts.
 
@@ -183,6 +200,8 @@ def _is_split_pause(a, gaps: list[float]) -> bool:
     so a count above the number of pauses means a real drop is in the line and it stays unreviewed.
     """
     if a.code != "dropped_frames" or not gaps or a.data.get("n_gaps", 0) != len(gaps):
+        return False
+    if a.data.get("rule") == "window":  # judged per part: the pause between parts is not in it
         return False
     return abs(a.data.get("max_gap_ms", 0.0) - max(gaps) * 1000.0) <= 0.01 * max(gaps) * 1000.0
 
@@ -208,6 +227,8 @@ def _line(a, rec: SessionRecord, n_parts: int, split, gaps, confirmed: bool, rul
         note = "accepted by you" if accepted else "fixed automatically"
     elif reviewed:
         note = "checked by you"
+    elif a.code in _INFO_CODES:
+        info = True
     elif a.code == "dropped_frames" and not pause:
         counts, note = _dropped_counts(a.data, rec.n_frames, rule)
         info = not counts
@@ -220,6 +241,7 @@ def _summary_parts(lines: list[AnomalyLine]) -> list[tuple[str, bool]]:
     checked, which are marked and greyed so they do not read as errors; at most three and "and N more"."""
     order = sorted(lines, key=lambda x: (0 if x.counts else 1 if x.info else 2, -_RANK.get(x.level, 1)))
     parts = []
+    order = [x for x in order if x.code not in _NOT_IN_CELL]
     for x in order[:_SUMMARY_LINES]:
         if x.auto_fixed:
             parts.append((f"{x.short} ({'accepted' if x.note == 'accepted by you' else 'fixed'})", True))
@@ -252,7 +274,8 @@ def _build_row(rec: SessionRecord, rule: dict) -> ScanRow:
         summary="; ".join(t for t, _ in parts) if parts else "–", anomalies=lines,
         folders=[p.folder for p in rec.parts], fps_text=_fps_text(rec),
         decisions=[f"{d.when} {d.who}: {d.what} = {d.value}" for d in rec.decisions],
-        summary_parts=parts, folder=rec.parts[0].folder if rec.parts else unreadable)
+        summary_parts=parts, folder=rec.parts[0].folder if rec.parts else unreadable,
+        interval_ms=1000.0 / rec.fps if rec.fps else None, interval_tip=_interval_tip(rec))
 
 
 def _row(rec: SessionRecord, rule: dict) -> ScanRow:
