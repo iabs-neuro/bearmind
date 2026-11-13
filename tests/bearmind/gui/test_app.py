@@ -201,17 +201,30 @@ def test_folder_without_raw_is_opened_only_after_the_question(qapp, tmp_path):
     assert yes.open_series(folder) is True and yes.series == folder.resolve()
 
 
-def test_series_with_raw_or_with_service_folder_opens_without_a_question(qapp, tmp_path):
+def test_series_with_raw_opens_without_a_question(qapp, tmp_path):
     asked = []
-
-    def no(text):
-        asked.append(text)
-        return False
-
     plain = tmp_path / "a"
     (plain / "1_Raw").mkdir(parents=True)
-    known = tmp_path / "b"
-    (known / "_bearmind").mkdir(parents=True)
-    w = MainWindow(confirm=no)
-    assert w.open_series(plain) is True and w.open_series(known) is True
-    assert asked == []
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(plain) is True and asked == []
+
+
+def test_folder_without_raw_asks_also_when_a_service_folder_is_left_there(qapp, tmp_path):
+    """The author opened 1_Raw once: 1_Raw/_bearmind was created. Opening it again asks again, names that folder and
+    says it can be deleted (the scan cannot work without 1_Raw: it raises when the folder is missing)."""
+    folder = tmp_path / "1_Raw"
+    (folder / "_bearmind").mkdir(parents=True)
+    asked = []
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(folder) is False and w.series is None
+    assert len(asked) == 1
+    assert str(folder.resolve() / "_bearmind") in asked[0] and "can be deleted" in asked[0]
+    assert "creates a _bearmind folder" not in asked[0]
+
+
+def test_scan_cannot_work_without_raw(tmp_path):
+    import pytest
+
+    from bearmind import scan
+    with pytest.raises(FileNotFoundError):
+        scan.scan_series(tmp_path)

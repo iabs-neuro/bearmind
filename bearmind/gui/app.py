@@ -20,6 +20,9 @@ TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
 MAX_RECENT = 10
 NO_RAW_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
               "Opening it creates a _bearmind folder inside it. Open it as a series anyway?")
+NO_RAW_LEFT_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
+                   "It already has a _bearmind folder ({service}), probably left by an earlier open. "
+                   "That folder can be deleted. Open this folder as a series anyway?")
 SCAN_RUNNING = "A scan is running. Wait for it to finish, then try again."
 
 
@@ -91,9 +94,11 @@ class MainWindow(QMainWindow):
             self._message("BEARMiND", f"Series folder not found: {series}")
             return False
         series = series.resolve()
-        if not (series / "1_Raw").is_dir() and not (series / "_bearmind").exists():
-            # opening 1_Raw itself (or any other folder of a series) would put _bearmind inside it
-            if not self._confirm(NO_RAW_ASK.format(series=series)):
+        if not (series / "1_Raw").is_dir():
+            # The scan cannot work without 1_Raw. Opening 1_Raw itself (or any other folder of a series) would put
+            # _bearmind inside it; one left there by an earlier open is asked about again, not reused silently.
+            ask = NO_RAW_LEFT_ASK if (series / "_bearmind").exists() else NO_RAW_ASK
+            if not self._confirm(ask.format(series=series, service=series / "_bearmind")):
                 return False
         # the new tabs first: if building them fails, the window keeps the old series, tabs, title and recent list
         built = []
