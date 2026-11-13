@@ -251,6 +251,8 @@ def failed_sids(paths) -> list:
     return [s for s, r in sorted(_records(paths).items()) if not r.excluded and failed_stage(r, paths) is not None]
 
 
+# n_blobs, single_frac, n_mirror_blobs: what the person saw, threshold_model.counters, counted in the area the
+# suggestion uses (valid_area), so rows of sessions whose maps differ only by rounding noise compare
 CHOICE_COLUMNS = ("sid", "mouse", "when", "who", "source", "suggested_gSig", "suggested_min_corr",
                   "suggested_min_pnr", "suggested_method", "gSig", "min_corr", "min_pnr", "n_blobs",
                   "single_frac", "n_mirror_blobs")

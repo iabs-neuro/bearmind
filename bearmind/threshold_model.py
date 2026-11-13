@@ -2,13 +2,13 @@
 blob counters and the list of sessions with their states."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
 
-from bearmind import actions, config, registry, runner
+from bearmind import actions, config, registry, runner, seed_mask
 from bearmind.registry import State
 
 STATE_TEXT = {"waiting": "waiting", "chosen": "chosen", "cnmf_done": "CNMF-E done", "no_maps": "no maps",
@@ -28,6 +28,8 @@ class ThresholdMaps:
     pnr: dict[int, np.ndarray]
     cn_mirror: dict[int, np.ndarray]      # empty when the file has no mirrored maps
     pnr_mirror: dict[int, np.ndarray]
+    # valid_area by gSig, computed once: the counters of every gSig are redone on each slider release
+    _valid: dict[int, np.ndarray] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     @property
     def usable_gsigs(self) -> list[int]:
@@ -86,24 +88,42 @@ def _known(maps: ThresholdMaps, g: int) -> int:
     return g if g in usable else config.fallback_gsig(usable)
 
 
-def counters(maps: ThresholdMaps, g: int, min_corr: float, min_pnr: float, min_blob_px: int) -> Counters:
+def valid_area(maps: ThresholdMaps, g: int) -> np.ndarray:
+    """Where the maps of gSig g are counted and scaled for display: the area the threshold suggestion uses
+    (bm_qc.valid_mask with its defaults). Outside it, at the frame border and in the dark area outside the
+    motion-corrected field, the maps are ratios of rounding noise that change with the strip heights of the
+    thresholds stage, so counting them there would make sessions incomparable."""
     g = _known(maps, g)
-    sizes = _group_sizes(passing_mask(maps.cn[g], maps.pnr[g], min_corr, min_pnr))
+    v = maps._valid.get(g)
+    if v is None or v.shape != maps.cn[g].shape:
+        v = maps._valid[g] = seed_mask.valid_mask({"cn": maps.cn[g], "mean": maps.mean, "gSig": g})
+    return v
+
+
+def counters(maps: ThresholdMaps, g: int, min_corr: float, min_pnr: float, min_blob_px: int) -> Counters:
+    """Blobs, the share of single pixels and blobs on the mirrored maps, in valid_area."""
+    g = _known(maps, g)
+    valid = valid_area(maps, g)
+    sizes = _group_sizes(passing_mask(maps.cn[g], maps.pnr[g], min_corr, min_pnr) & valid)
     n_blobs = int((sizes >= min_blob_px).sum())
     single = float((sizes == 1).sum() / len(sizes)) if len(sizes) else 0.0
     n_mirror = None
     if g in maps.cn_mirror and g in maps.pnr_mirror:
-        ms = _group_sizes(passing_mask(maps.cn_mirror[g], maps.pnr_mirror[g], min_corr, min_pnr))
+        ms = _group_sizes(passing_mask(maps.cn_mirror[g], maps.pnr_mirror[g], min_corr, min_pnr) & valid)
         n_mirror = int((ms >= min_blob_px).sum())
     return Counters(n_blobs, single, n_mirror)
 
 
-def display_u8(img: np.ndarray, lo_pct: float = 1.0, hi_pct: float = 99.5) -> np.ndarray:
+def display_u8(img: np.ndarray, valid: np.ndarray | None = None, lo_pct: float = 1.0,
+               hi_pct: float = 99.5) -> np.ndarray:
+    """The whole image in grey levels that span the lo_pct..hi_pct percentiles of its finite pixels in `valid`
+    (of all its finite pixels when valid is None or holds none)."""
     img = np.asarray(img, dtype=float)
     fin = np.isfinite(img)
-    if not fin.any():
+    ref = fin & valid if valid is not None and (fin & valid).any() else fin
+    if not ref.any():
         return np.zeros(img.shape, dtype=np.uint8)
-    lo, hi = np.percentile(img[fin], [lo_pct, hi_pct])
+    lo, hi = np.percentile(img[ref], [lo_pct, hi_pct])
     if hi <= lo:
         return np.zeros(img.shape, dtype=np.uint8)
     out = (np.clip(np.where(fin, img, lo), lo, hi) - lo) / (hi - lo)
@@ -114,10 +134,12 @@ def display_u8(img: np.ndarray, lo_pct: float = 1.0, hi_pct: float = 99.5) -> np
 def gsig_thumbnail(maps: ThresholdMaps, g: int, size: int = 160) -> np.ndarray:
     g = _known(maps, g)
     prod = np.nan_to_num(maps.cn[g] * maps.pnr[g], nan=0.0, posinf=0.0, neginf=0.0)
+    valid = valid_area(maps, g)
     scale = size / max(prod.shape)
     if scale < 1:
         prod = ndimage.zoom(prod, scale, order=1)
-    return display_u8(prod)
+        valid = ndimage.zoom(valid.astype(np.uint8), scale, order=0).astype(bool)
+    return display_u8(prod, valid)
 
 
 def last_line(text: str) -> str:

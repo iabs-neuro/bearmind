@@ -190,3 +190,10 @@ def test_model_chunker_reads_ssub_B_from_W_when_frame_does_not_divide(dims, ssub
     # the ring part is one value per ssub_B x ssub_B block (nearest-neighbour upsampling), cut at the frame edge
     ring = B[0] - est.b0.reshape((d1, d2), order="F")
     assert np.allclose(ring[:ssub_B, :ssub_B], ring[0, 0], atol=1e-4)
+
+
+def test_valid_mask_is_the_window_rule():
+    """The Thresholds tab counts in the area the suggestion uses: one function, importable without CaImAn."""
+    from bearmind import seed_mask
+
+    assert bm_qc.valid_mask is seed_mask.valid_mask

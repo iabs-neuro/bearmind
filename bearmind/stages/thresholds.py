@@ -36,20 +36,28 @@ def _projections(movie):
 
 def map_peak_gb(T: int, h: int, w: int, g: int, tsub: int, mem_gb: float) -> float:
     """Peak RAM of one compute_init_maps call (the strip model lives in bm_qc, next to the strips)."""
-    return bm_qc.init_maps_peak_bytes(mem_gb, math.ceil(T / tsub), h, w, g) / 1e9
+    return bm_qc.init_maps_peak_bytes(mem_gb, math.ceil(T / tsub), h, w, g, tsub) / 1e9
 
 
 def map_workers(T: int, h: int, w: int, gsigs: list, tsub: int, cfg) -> int:
-    """Processes for the gSig maps: one per gSig, within the CPUs and the machine RAM budget."""
+    """Processes for the gSig maps: one per gSig, within the CPUs and the machine RAM budget.
+
+    n workers may run any n of the gSig jobs at once, so the n largest per-gSig peaks must fit together.
+    """
     cap = min(len(gsigs), int(cfg["machine"]["n_cpus"]) - 1)
     if cap <= 1:
         return 1
     mem_gb = mem_budget_gb(cfg)
-    peak = max(map_peak_gb(T, h, w, g, tsub, mem_gb) for g in gsigs)
+    peaks = sorted((map_peak_gb(T, h, w, g, tsub, mem_gb) for g in gsigs), reverse=True)
     # strip RAM only: each worker's baseline (imports) and the returned maps fit in the headroom between
     # cnmf_ram_budget_gb and physical RAM
-    by_ram = math.floor(float(cfg["machine"]["cnmf_ram_budget_gb"]) / peak)
-    return int(max(1, min(cap, by_ram)))
+    budget = float(cfg["machine"]["cnmf_ram_budget_gb"])
+    n, held = 0, 0.0
+    for p in peaks[:cap]:
+        if held + p > budget:
+            break
+        n, held = n + 1, held + p
+    return max(1, n)
 
 
 def _maps_job(args):
