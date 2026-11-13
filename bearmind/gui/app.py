@@ -18,6 +18,8 @@ from bearmind.gui.thresholds_tab import ThresholdsTab
 
 TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
 MAX_RECENT = 10
+NO_RAW_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
+              "Opening it creates a _bearmind folder inside it. Open it as a series anyway?")
 SCAN_RUNNING = "A scan is running. Wait for it to finish, then try again."
 
 
@@ -35,10 +37,15 @@ def _default_message(title: str, text: str) -> None:
     QMessageBox.warning(None, title, text)
 
 
+def _default_confirm(text: str) -> bool:
+    return QMessageBox.question(None, "BEARMiND", text) == QMessageBox.StandardButton.Yes
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, series: Path | None = None, message=None):
+    def __init__(self, series: Path | None = None, message=None, confirm=None):
         super().__init__()
         self._message = message or _default_message
+        self._confirm = confirm or _default_confirm
         self.series: Path | None = None
         self.resize(1100, 700)
         self.setWindowTitle("BEARMiND")
@@ -84,6 +91,10 @@ class MainWindow(QMainWindow):
             self._message("BEARMiND", f"Series folder not found: {series}")
             return False
         series = series.resolve()
+        if not (series / "1_Raw").is_dir() and not (series / "_bearmind").exists():
+            # opening 1_Raw itself (or any other folder of a series) would put _bearmind inside it
+            if not self._confirm(NO_RAW_ASK.format(series=series)):
+                return False
         # the new tabs first: if building them fails, the window keeps the old series, tabs, title and recent list
         built = []
         try:

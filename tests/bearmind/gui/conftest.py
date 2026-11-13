@@ -20,6 +20,15 @@ def tmp_series(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _no_modal_series_question(monkeypatch):
+    """Opening a folder without 1_Raw asks first; a modal dialog would block an offscreen test for ever, so the
+    window's default answer is yes. A test of the question passes its own `confirm`."""
+    from bearmind.gui import app
+
+    monkeypatch.setattr(app, "_default_confirm", lambda text: True)
+
+
+@pytest.fixture(autouse=True)
 def _refresh_errors_fail_tests(monkeypatch):
     """A programming error inside refresh() is reported to the window; in tests it must fail the test.
     A test that passes its own `report` keeps it. The Inspection tab of a test never starts a real inspection

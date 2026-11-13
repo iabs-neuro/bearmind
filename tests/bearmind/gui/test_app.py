@@ -186,3 +186,32 @@ def test_open_series_failure_keeps_the_old_series(qapp, tmp_path, monkeypatch):
     assert recent == [str(a.resolve())]
     assert len(made) == 1 and not made[0].timer.isActive()
     assert old_tabs[0].timer.isActive()
+
+
+def test_folder_without_raw_is_opened_only_after_the_question(qapp, tmp_path):
+    """Opening 1_Raw itself used to create 1_Raw/_bearmind at once: nothing is created before a yes."""
+    folder = tmp_path / "1_Raw"
+    folder.mkdir()
+    asked = []
+    w = MainWindow(confirm=lambda text: (asked.append(text), False)[1])
+    assert w.open_series(folder) is False
+    assert len(asked) == 1 and str(folder.resolve()) in asked[0] and "_bearmind" in asked[0]
+    assert w.series is None and not (folder / "_bearmind").exists()
+    yes = MainWindow(confirm=lambda text: True)
+    assert yes.open_series(folder) is True and yes.series == folder.resolve()
+
+
+def test_series_with_raw_or_with_service_folder_opens_without_a_question(qapp, tmp_path):
+    asked = []
+
+    def no(text):
+        asked.append(text)
+        return False
+
+    plain = tmp_path / "a"
+    (plain / "1_Raw").mkdir(parents=True)
+    known = tmp_path / "b"
+    (known / "_bearmind").mkdir(parents=True)
+    w = MainWindow(confirm=no)
+    assert w.open_series(plain) is True and w.open_series(known) is True
+    assert asked == []
