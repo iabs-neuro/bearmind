@@ -19,15 +19,30 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHBoxLayout, QHe
                                QWidget)
 
 from bearmind import actions, config, monitor, scan_view
-from bearmind.gui.monitor_tab import (ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, WARNING_TEXT, MonitorTab,
-                                      named, plural)
+from bearmind.gui.monitor_tab import (ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, SELECTION_INK, WARNING_TEXT,
+                                      MonitorTab, named, plural)
 from bearmind.paths import SeriesPaths
 
 log = logging.getLogger("bearmind")
 
-COLUMNS = ("Session", "Mode", "Parts", "Chunks", "Video frames", "Frames to process", "FPS", "Min", "Anomalies",
-           "Excluded")
+COLUMNS = ("Session", "Mode", "Parts", "Video files", "Video frames", "Frames to process", "FPS", "Interval, ms",
+           "Min", "Anomalies", "Excluded")
+COLUMN_TIPS = {
+    "Session": "Session ID: mouse, day and trial",
+    "Mode": "Folder layout of the recording: bonsai (Bonsai) or legacy (Miniscope software)",
+    "Parts": "Recording parts (folders) of the session; parts are stitched by start time",
+    "Video files": "Number of <SID>_<n>.avi files in all parts of the session; the timestamp file is not counted",
+    "Video frames": "Frames in the video files, before they are cut to the timestamp rows",
+    "Frames to process": "Frames the pipeline uses: the video frames cut to the timestamp rows of each part",
+    "FPS": "Frames per second from the timestamps; the gaps are left out of the estimate",
+    "Interval, ms": "1000 / FPS: the mean frame period the pipeline works with. "
+                    "The cell's tooltip: the median of the raw timestamp intervals",
+    "Min": "Duration of the frames to process, in minutes: frames / FPS / 60",
+    "Anomalies": "Problems the scan found. The cell's tooltip lists every line; select the row for the details",
+    "Excluded": "Who excluded the session: the scan (by anomaly) or a person (by you)",
+}
 ANOMALIES_COLUMN = COLUMNS.index("Anomalies")
+INTERVAL_COLUMN = COLUMNS.index("Interval, ms")
 NOT_SCANNED = "Not scanned yet. Press Scan."
 ASK_RESCAN = "Batch is running. If session files changed, their stages will be recomputed. Rescan?"
 EXCLUDED_TEXT = {"anomaly": "by anomaly", "you": "by you", "included": "included by you", "": ""}
@@ -74,7 +89,7 @@ class _SummaryDelegate(QStyledItemDelegate):
         style = opt.widget.style() if opt.widget is not None else QApplication.style()
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)  # background, selection
         selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        ink = opt.palette.color(QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text)
+        ink = QColor(SELECTION_INK) if selected else opt.palette.color(QPalette.ColorRole.Text)
         fg = index.data(Qt.ItemDataRole.ForegroundRole)
         if fg is not None and not selected:  # an excluded row is grey as a whole
             ink = fg.color()
@@ -163,6 +178,8 @@ class ScanTab(QWidget):
 
         self.model = QStandardItemModel(0, len(COLUMNS), self)
         self.model.setHorizontalHeaderLabels(list(COLUMNS))
+        for c, name in enumerate(COLUMNS):
+            self.model.setHeaderData(c, Qt.Orientation.Horizontal, COLUMN_TIPS[name], Qt.ItemDataRole.ToolTipRole)
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -364,7 +381,7 @@ class ScanTab(QWidget):
     @staticmethod
     def _items(r: scan_view.ScanRow) -> list[QStandardItem]:
         texts = [r.sid, r.mode, _num(r.n_parts), _num(r.n_chunks), _count(r.n_video_frames), _count(r.n_frames),
-                 _num(r.fps, ".1f"), _num(r.duration_min, ".1f"), r.summary, EXCLUDED_TEXT.get(r.excluded_by, "")]
+                 _num(r.fps, ".1f"), _num(r.interval_ms, ".2f"), _num(r.duration_min, ".1f"), r.summary, EXCLUDED_TEXT.get(r.excluded_by, "")]
         if r.fps is None:  # no frame rate: no frames to process either
             texts[5] = "–"
         items = []
@@ -376,6 +393,8 @@ class ScanTab(QWidget):
                 if bg:
                     item.setBackground(QBrush(QColor(bg)))
                     item.setForeground(QBrush(QColor(CELL_INK)))
+            if c == INTERVAL_COLUMN and r.interval_tip:
+                item.setToolTip(r.interval_tip)
             if c == ANOMALIES_COLUMN:
                 item.setData(r.summary_parts, SUMMARY_ROLE)
                 item.setToolTip("\n".join(a.short + (f" ({a.note})" if a.note else "") for a in r.anomalies))
@@ -460,7 +479,9 @@ class ScanTab(QWidget):
             else:
                 word, ink = LEVEL_INK.get(a.level, ("WARN", LEVEL_INK["warning"][1]))
                 tag = f'<span style="color:{ink}"><b>{word}</b></span>'
-            out.append(f"{tag} {html.escape(a.text)}" + (f" ({html.escape(a.note)})" if a.note else ""))
+            # a message may list its parts one per line (the lost frames at each gap)
+            out.append(f"{tag} {html.escape(a.text).replace(chr(10), '<br>')}"
+                       + (f" ({html.escape(a.note)})" if a.note else ""))
         folders = ", ".join(f.replace("/", os.sep) for f in r.folders)  # as Explorer shows them
         out.append(f"Part folders: {html.escape(folders or '–')}")
         out.append(f"FPS: {html.escape(r.fps_text or '–')}")

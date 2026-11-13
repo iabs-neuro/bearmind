@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
 
 from bearmind import config
 from bearmind.gui.inspection_tab import InspectionTab
-from bearmind.gui.monitor_tab import MonitorTab
+from bearmind.gui.monitor_tab import SELECTION_STYLE, MonitorTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.gui.thresholds_tab import ThresholdsTab
 
@@ -213,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = _gui_log_handler()
     try:
         app = QApplication.instance() or QApplication(sys.argv[:1])
+        app.setStyleSheet(SELECTION_STYLE)
         # before the window exists: under pythonw an exception in the constructor would otherwise vanish
         sys.excepthook = lambda t, e, tb: _report(_default_message, t, e, tb)
         try:
