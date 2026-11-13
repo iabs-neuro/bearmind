@@ -49,11 +49,9 @@ def test_three_lost_frames_are_certain():
 
 
 def test_certain_by_the_interval_alone():
-    """An interval above 2.5 m is certain although the excess is below 1.5. The short part's period u takes in the
-    gap, so the excess falls short of the 2 lost frames: the rule counts 1, which is why certain exists."""
-    r = scan.part_gap_losses(lose(clock(150), 70, 2))
-    g = r.gaps[0]
-    assert g.interval_ms > 2.5 * T and g.excess < 1.5 and g.certain
+    """An interval above 2.5 m is certain even in a short part."""
+    g = scan.part_gap_losses(lose(clock(150), 70, 2)).gaps[0]
+    assert g.interval_ms > 2.5 * T and g.certain and g.frames == 2
 
 
 def test_gap_at_the_start_and_the_end_uses_the_intervals_that_exist():
@@ -79,12 +77,44 @@ def test_short_parts_do_not_crash():
         assert r.gaps == [] and not r.damaged
 
 
-def test_two_lost_frames_two_gaps_in_one_window_are_counted_in_each_window():
-    """Each gap has its own window, so two gaps closer than K intervals both see the excess of the pair. The
-    reference script does the same; the tests pins it so a change is deliberate."""
+def test_close_gaps_form_one_cluster_counted_once():
+    """Two lost frames in two gaps 10 intervals apart: one window, one excess, 2 frames (not 4)."""
     t = lose(lose(clock(2000), 1000, 1), 1010, 1)
     r = scan.part_gap_losses(t)
-    assert len(r.gaps) == 2 and all(g.frames == 2 for g in r.gaps)
+    assert len(r.gaps) == 1
+    g = r.gaps[0]
+    assert g.n_gaps == 2 and g.frames == 2 and g.index == 999
+    assert g.lost_ms == pytest.approx(2 * T, rel=0.02)
+
+
+def test_far_gaps_are_separate_clusters():
+    t = lose(lose(clock(2000), 800, 1), 1200, 1)
+    assert [(g.n_gaps, g.frames) for g in scan.part_gap_losses(t).gaps] == [(1, 1), (1, 1)]
+
+
+def test_two_close_jitter_gaps_are_no_loss():
+    t = clock(2000)
+    for j in (1000, 1010):
+        t[j] += 1.05 * T
+        t[j + 1] += 1.0 * T
+        t[j + 2] += 0.5 * T
+    r = scan.part_gap_losses(t)
+    assert r.gaps == [] and r.n_jitter == 2
+
+
+def test_a_cluster_is_certain_when_any_gap_is_above_2_5_m():
+    t = lose(lose(clock(2000), 1000, 3), 1010, 1)
+    g = scan.part_gap_losses(t).gaps[0]
+    assert g.n_gaps == 2 and g.frames == 4 and g.certain
+
+
+def test_short_part_keeps_its_loss():
+    """The period is the mean of the non-gap intervals, so the gap does not inflate its own period: one 200 ms gap in
+    30 frames at 30 fps is 5 lost frames."""
+    t = np.arange(30) * (1000.0 / 30)
+    t[15:] += 200.0 - 1000.0 / 30
+    r = scan.part_gap_losses(t)
+    assert [(g.frames, g.certain) for g in r.gaps] == [(5, True)]
 
 
 def test_position_text():

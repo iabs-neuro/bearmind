@@ -294,6 +294,27 @@ def test_lost_frames_flag_lists_each_gap(make_series, tmp_path):
     assert second.startswith("1 frame lost (") and second.endswith("at 0:10.0, probable")
 
 
+def test_tiny_series_keeps_the_old_loss(make_series, tmp_path):
+    """One 200 ms interval at 50 ms per frame in a 30-frame session: 3 frames lost, as the first rule counted."""
+    root = make_series(tmp_path / "s", "bonsai")
+    t = np.arange(30) * 50.0
+    t[15:] += 150.0
+    _write_bonsai_ts(root, t)
+    a = codes(scan.scan_series(root)[0])["dropped_frames"]
+    assert a.data["n_dropped"] == 3 and a.message.splitlines()[0].startswith("3 frames lost (150 ms) in 1 gap")
+
+
+def test_close_gaps_are_one_line_with_their_count(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
+    t = np.arange(400) * 50.0
+    t[200:] += 52.5
+    t[210:] += 52.5
+    _write_bonsai_ts(root, t)
+    a = codes(scan.scan_series(root)[0])["dropped_frames"]
+    assert a.data["n_gaps"] == 2 and a.data["n_clusters"] == 1 and a.data["n_dropped"] == 2
+    assert a.message.splitlines()[1].startswith("2 gaps, 2 frames lost (")
+
+
 def test_gap_without_loss_is_one_info_line_and_no_dropped_frames(make_series, tmp_path):
     """Frame 200 is late by 1.05 periods and the next two catch up: the interval is above 2 m, the clock goes on."""
     root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
