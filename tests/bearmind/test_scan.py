@@ -315,6 +315,18 @@ def test_close_gaps_are_one_line_with_their_count(make_series, tmp_path):
     assert a.message.splitlines()[1].startswith("2 gaps, 2 frames lost (")
 
 
+def test_long_pause_in_a_short_session_is_reported_not_tested(make_series, tmp_path):
+    root = make_series(tmp_path / "s", "bonsai", n_chunks=2, chunk_frames=50)
+    t = np.arange(100) * 50.0
+    t[50:] += 10000.0
+    _write_bonsai_ts(root, t)
+    c = codes(scan.scan_series(root)[0])
+    a = c["dropped_frames"]
+    assert a.message.splitlines()[1].startswith("gap of 10 s, not tested (200 frames) at 0:02.4")
+    assert a.data["gaps"][0]["tested"] is False and a.data["n_dropped"] == 200
+    assert c["gap_test_skipped"].message == "gap test skipped: too few intervals outside the gaps"
+
+
 def test_gap_without_loss_is_one_info_line_and_no_dropped_frames(make_series, tmp_path):
     """Frame 200 is late by 1.05 periods and the next two catch up: the interval is above 2 m, the clock goes on."""
     root = make_series(tmp_path / "s", "bonsai", n_chunks=4, chunk_frames=100)
