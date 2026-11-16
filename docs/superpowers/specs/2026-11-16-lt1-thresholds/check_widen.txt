@@ -1,0 +1,3 @@
+[OK] LT1_J03_1D counts equal bm_qc on the wide grid; bm_qc pick 0.94/22.0, replica (0.94, 22.0)
+[OK] LT1_J24_1D counts equal bm_qc on the wide grid; bm_qc pick 0.94/38.5, replica (0.94, 38.5)
+[OK] LT1_J18_1D counts equal bm_qc on the wide grid; bm_qc pick 0.98/28.5, replica (0.98, 28.5)

@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Автопороги BEARMiND</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: #fcfcfb; --hair: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --neutral: #f0efec; --empty: #e9e8e3; --callout: #eef4fc; --warnbg: #fdf1ea;
+  --red: #e34948; --halo: rgba(42,120,214,0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: #1a1a19; --hair: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --neutral: #383835; --empty: #262624; --callout: #17222f; --warnbg: #2a1d16;
+    --red: #e66767; --halo: rgba(57,135,229,0.33);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: #1a1a19; --hair: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --neutral: #383835; --empty: #262624; --callout: #17222f; --warnbg: #2a1d16;
+  --red: #e66767; --halo: rgba(57,135,229,0.33);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1000px; margin: 0 auto; padding: 28px 16px 96px; }
+h1 { font-size: 28px; line-height: 1.25; margin: 0 0 6px; }
+h2 { font-size: 21px; margin: 44px 0 10px; padding-top: 8px; border-top: 1px solid var(--grid); }
+h3 { font-size: 17px; margin: 24px 0 6px; }
+p, li { max-width: 74ch; }
+.sub { color: var(--ink2); margin: 0 0 18px; }
+.card { background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+.summary { background: var(--callout); border: 1px solid var(--hair); border-radius: 10px; padding: 14px 20px; }
+.summary li { margin: 6px 0; }
+.warn { background: var(--warnbg); border-radius: 8px; padding: 10px 14px; }
+.muted { color: var(--muted); }
+.small { font-size: 13.5px; color: var(--ink2); }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; }
+.term { border-bottom: 1px dotted var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 4px 0 10px; }
+.controls label { font-size: 14px; color: var(--ink2); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 7px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13.5px; background: var(--surface); color: var(--ink); border: 0; padding: 4px 10px; cursor: pointer; border-right: 1px solid var(--axis); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+select, input[type=range] { font: inherit; font-size: 14px; }
+select { background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 6px; padding: 3px 6px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .row2 { grid-template-columns: 1fr; } }
+.cv { width: 100%; height: auto; image-rendering: pixelated; border-radius: 6px; display: block; background: var(--empty); }
+.cap { font-size: 14px; color: var(--ink2); margin: 4px 0 0; }
+.stat { font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 14px; }
+.kv b { font-weight: 600; }
+svg text { fill: var(--ink2); font-size: 12px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+svg .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13.5px; color: var(--ink2); margin: 6px 0; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--hair); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-width: 320px; display: none; }
+#tip b { font-weight: 600; }
+table { border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { color: var(--ink2); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+.chart { width: 100%; overflow-x: auto; }
+.chart svg { display: block; }
+details summary { cursor: pointer; color: var(--ink2); }
+.pill { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 10px; background: var(--neutral); color: var(--ink2); }
+</style>
+</head>
+<body>
+<main>
+<h1>Как BEARMiND подсказывает пороги затравок и почему подсказки выше ваших</h1>
+<p class="sub">LT1. Числа на странице берутся из <code>report_numbers.json</code> (его печатает <code>auto_vs_author.py report</code>). На графиках наведите мышь на точку или клетку: появится подсказка с числами.</p>
+
+<div class="summary">
+<p style="margin-top:4px"><b>Что решить</b></p>
+<p>Подсказка порогов — это автоматическое предложение двух порогов CNMF-E: порога корреляции (<code>min_corr</code>: насколько пиксель меняется вместе с соседями) и порога вспышки (<code>min_pnr</code>: насколько вспышка пикселя выше его шума). На многих сессиях она даёт значения выше ваших. Причина найдена. Это ошибка в одной маске, а не кальциевые волны.</p>
+<div class="chart" id="chain" aria-label="Цепочка причин"></div>
+<p>Подсказка проверяет пороги на зеркальном, или инвертированном, фильме (тот же фильм со знаком минус, клеток в нём нет). Кольцо вокруг каждой вспышки клетки выглядит там как ложная клетка. Такие кольца должна вычёркивать маска ореолов (зона вокруг ярких клеток, где ложные не считаются). Яркой маска считает клетку при двух условиях: корреляция выше «медиана + 3 SD» и PNR (вспышка относительно шума) выше «медиана + 5 SD»; SD — разброс значений. В <span data-num="n_halo_empty"></span> из <span data-num="n_sessions"></span> сессий порог корреляции выше 1. Корреляция не бывает больше 1, поэтому ни один пиксель не проходит, и маска пуста.</p>
+<p>Строгие пороги оставляют меньше затравок (кандидатов в клетки: пикселей, с которых CNMF-E начинает клетку). В <span data-num="seeds_sug_vs_author_halo_empty" data-path="3"></span> сессиях с пустой маской, где вы уже выбрали пороги, подсказка даёт медиану <span data-num="seeds_sug_vs_author_halo_empty" data-path="0" data-d="0"></span> затравок, ваши пороги — <span data-num="seeds_sug_vs_author_halo_empty" data-path="1" data-d="0"></span>. По всем <span data-num="seeds_sug_empty_all" data-path="1"></span> сессиям с пустой маской медиана при подсказке — <span data-num="seeds_sug_empty_all" data-path="0" data-d="0"></span>. Теряются ли при этом настоящие клетки, покажет эксперимент п. 29 списка правок (CNMF-E на ваших и на пониженных порогах). Здесь это не измерено.</p>
+<div class="tablewrap"><table>
+<tr><th>Вопрос</th><th>Варианты</th><th>Рекомендация</th><th>Без ответа</th></tr>
+<tr><td>1. Р2 (решение 13.11: расширить таблицу перебираемых порогов)</td><td>делать / не делать</td><td><b>Не делать.</b> На расширенной таблице подсказка <code>min_pnr</code> стала выше в <span data-num="r2_wide_direction_all" data-path="pnr.up"></span> сессиях из <span data-num="n_wide"></span>. Моя рекомендация «да» 13.11 была ошибкой.</td><td>не делаю</td></tr>
+<tr><td>2. Исправить порог маски: не выше 99-го процентиля карты корреляции</td><td>да / нет</td><td><b>Да.</b> Это ошибка: порог выше возможного максимума. Выбранные вами пороги не меняются, они записаны в конфиги сессий. Меняются будущие подсказки батча: их считает этап карт, когда строит карты сессии. По уже готовым картам будут считать только запланированные кнопки методов во вкладке Thresholds (п. 28).</td><td>не меняю</td></tr>
+<tr><td>3. Перенастроить само правило выбора</td><td>сейчас / после п. 29</td><td><b>После п. 29.</b> Я опробовал 64 варианта правила проверкой «без одной мыши» (leave-one-mouse-out: правило подбирается на остальных мышах и проверяется на отложенной). Подобранное правило угадывает ваши значения не точнее константы (медианы ваших значений по другим мышам): ошибка <span data-num="lomo_rule" data-path="mean_err_steps" data-d="1"></span> против <span data-num="lomo_constant" data-d="1"></span> шага таблицы. Текущее правило — <span data-num="lomo_current_rule" data-d="1"></span>. Данные пока не показывают, что умное правило лучше константы.</td><td>не меняю</td></tr>
+</table></div>
+<p>Ваша гипотеза о кальциевых волнах (вспышках на большой части кадра) проверена в разделе 5. Без самых ярких кадров картина та же.</p>
+</div>
+
+<h2 id="s1">1. Одна пара порогов: что считает подсказка</h2>
+<p><b>Затравка</b> (seed: пиксель, с которого CNMF-E начинает строить клетку) выбирается по двум картам.</p>
+<ul>
+<li><b>Карта корреляции</b> показывает, насколько пиксель колеблется вместе с восемью соседями.</li>
+<li><b>Карта PNR</b> (peak-to-noise ratio: самый сильный всплеск пикселя, делённый на его шум) показывает, насколько ярка его лучшая вспышка.</li>
+</ul>
+<p>У CNMF-E два порога. <code>min_corr</code> — нижний порог корреляции. <code>min_pnr</code> — нижний порог PNR. Пиксель проходит, если он выше обоих. Окно Thresholds красит такие пиксели красным.</p>
+<p>Затравка — локальный максимум среди красных пикселей. Подсказка берёт не больше одной затравки на круг радиусом 8 px (2·gSig; gSig — размер клетки в пикселях, у LT1 везде 4). Так число затравок близко к числу клеток, с которых начнёт CNMF-E.</p>
+<p><b>Одна точка сетки — это одна пара порогов.</b> Сетка — таблица всех пар (min_corr, min_pnr), которые перебирает подсказка: min_corr от 0,50 до 0,98 через 0,02, min_pnr от 2 до 20 через 0,5 (подробно в разделе 2). Для каждой точки подсказка считает затравки на картах настоящего фильма и ложные затравки на картах зеркального (тот же фильм со знаком минус, клеток в нём нет). Ложные считаются вне маски ореолов — зоны вокруг ярких клеток (о ней ниже). Отношение ложных к настоящим — FDR (доля ложных находок). Ниже обе карты одного окна 160×160 px. Ползунки шагают по точкам сетки. Справа внизу — счёт той же точки во всём поле.</p>
+<div class="card">
+  <div class="controls">
+    <span class="seg" id="pSess"></span>
+    <span class="seg" id="pHalo"><button data-v="cur" aria-pressed="true">маска ореолов как сейчас</button><button data-v="capped" aria-pressed="false">маска с исправлением</button></span>
+  </div>
+  <div class="controls">
+    <label>min_corr <b id="pCv" class="stat"></b></label><input type="range" id="pC" min="0" max="25" step="1" style="width:200px">
+    <label>min_pnr <b id="pPv" class="stat"></b></label><input type="range" id="pP" min="0" max="76" step="1" style="width:260px">
+    <span class="seg" id="pJump"><button data-v="author">как у автора</button><button data-v="sug">как в подсказке</button></span>
+  </div>
+  <div class="row2">
+    <div><canvas id="cvReal" class="cv"></canvas><p class="cap"><b>Настоящий фильм.</b> Красное: пиксели, прошедшие оба порога. Кружки: затравки.</p></div>
+    <div><canvas id="cvMirror" class="cv"></canvas><p class="cap"><b>Зеркальный фильм.</b> Те же пороги. Кружки: ложные затравки. Синяя заливка: ореол, там ложные не считаются.</p></div>
+  </div>
+  <div class="row2" style="margin-top:10px">
+    <div class="kv" id="pCrop"></div>
+    <div class="kv" id="pField"></div>
+  </div>
+</div>
+<h3>Зеркальный фильм: откуда берутся ложные затравки</h3>
+<p><b>Зеркальный фильм</b> (inverted movie: тот же фильм со знаком минус) — контроль. Вспышка кальция — только рост яркости. В перевёрнутом фильме вспышек клеток нет. Всё, что там проходит пороги, считается шумом. Это <b>ложные затравки</b> (null seeds).</p>
+<p><b>FDR</b> (false discovery rate: доля ложных находок) = ложные затравки / настоящие затравки при тех же порогах. Ложные затравки считаются вне маски ореолов (о ней ниже) и пересчитываются на всю рабочую область (часть кадра, где карты осмысленны).</p>
+<p>У контроля есть слабое место. Перед поиском CNMF-E фильтрует кадр ядром с нулевым средним (центр плюс, кольцо минус). Поэтому вспышка клетки даёт вокруг себя отрицательное кольцо. В зеркальном фильме это кольцо становится пиком рядом с клеткой (график ниже). Такой пик — след настоящей клетки, а не шум. Назовём его <b>ореолом</b> (halo).</p>
+<p>Поэтому подсказка не считает ложные затравки рядом с яркими клетками. Эта зона — <b>маска ореолов</b>. Яркие клетки для неё — пиксели, где PNR выше медианы на 5 SD и корреляция выше медианы на 3 SD (SD — стандартное отклонение, мера разброса). Маска — эти пиксели плюс 17 px вокруг. SD здесь робастное (оценено по медиане отклонений, выбросы на него почти не влияют). Медиана и SD считаются по всей рабочей области карты.</p>
+<div class="card"><div class="chart" id="profile"></div><p class="cap" id="profileCap"></p></div>
+
+<h2 id="s2">2. Сетка: все пары порогов сразу</h2>
+<p><b>Сетка</b> (grid) — таблица всех пар порогов. Сейчас <code>min_corr</code> от 0,50 до 0,98 с шагом 0,02 (25 строк), <code>min_pnr</code> от 2 до 20 с шагом 0,5 (37 столбцов). Это 925 точек. В каждой точке подсказка считает затравки и ложные затравки во всём поле. Каждая клетка тепловой карты ниже — одна такая точка.</p>
+<p>Правило <code>mirror_fdr</code> выбирает точку за четыре шага.</p>
+<ol>
+<li>Оставить точки, где FDR не больше 0,1.</li>
+<li>Оставить точки, где <b>предельный FDR</b> не больше 0,5. Предельный FDR (marginal FDR) — доля ложных среди затравок, которые добавил последний шаг ослабления одного порога.</li>
+<li>Оставить точку, только если <b>все точки строже неё</b> тоже прошли шаги 1 и 2. Строже — правее и выше на карте. Это правило «пути от строгого угла».</li>
+<li>Из оставшихся взять точку с наибольшим числом затравок.</li>
+</ol>
+<p>Если не осталось ни одной точки, батч берёт запасной метод <code>robust_bg</code>. Он ставит каждый порог на медиану карты + 3 SD. <code>min_corr</code> при этом не выше 0,99.</p>
+<p>Наведите мышь на клетку. Чёрная рамка покажет все точки строже неё. Чёрточки отметят те из них, что не прошли шаг 1 или 2. Одной такой точки достаточно, чтобы наведённая точка выпала.</p>
+<div class="card">
+  <div class="controls">
+    <span class="seg" id="gCase"></span>
+    <label>сессия <select id="gSel"></select></label>
+  </div>
+  <div class="controls">
+    <span class="seg" id="gMode"><button data-v="fdr" aria-pressed="true">FDR</button><button data-v="real" aria-pressed="false">затравки</button><button data-v="null" aria-pressed="false">ложные</button></span>
+    <span class="seg" id="gGrid"><button data-v="orig" aria-pressed="true">сетка сейчас</button><button data-v="wide" aria-pressed="false">сетка Р2 (шире)</button></span>
+    <span class="seg" id="gHalo"><button data-v="cur" aria-pressed="true">ореол как сейчас</button><button data-v="capped" aria-pressed="false">ореол с исправлением</button></span>
+    <label>цель FDR <b id="gTv" class="stat"></b></label><input type="range" id="gT" min="0" max="8" step="1" value="1" style="width:150px">
+  </div>
+  <div class="chart" id="heat"></div>
+  <div class="legend" id="heatLegend"></div>
+  <p class="cap" id="heatCap"></p>
+</div>
+<h3>Четыре случая (кнопки над картой)</h3>
+<ul>
+<li><b>Внутри сетки, J24_1D.</b> Подсказка <span data-num="ex_LT1_J24_1D" data-path="batch.0" data-d="2"></span> / <span data-num="ex_LT1_J24_1D" data-path="batch.1" data-d="1"></span>. Допустимая область большая. Вы выбрали <span data-num="ex_LT1_J24_1D" data-path="author.0" data-d="2"></span> / <span data-num="ex_LT1_J24_1D" data-path="author.1" data-d="1"></span>. FDR в вашей точке <span data-num="ex_LT1_J24_1D" data-path="author_fdr" data-d="2"></span>. Маска ореолов покрывает долю <span data-num="ex_LT1_J24_1D" data-path="halo" data-d="2"></span> рабочей области.</li>
+<li><b>Край min_pnr 20, J03_1D.</b> Подсказка <span data-num="ex_LT1_J03_1D" data-path="batch.0" data-d="2"></span> / <span data-num="ex_LT1_J03_1D" data-path="batch.1" data-d="1"></span>. Самая мягкая допустимая точка упирается в верх сетки по <code>min_pnr</code>. Ваш выбор <span data-num="ex_LT1_J03_1D" data-path="author.0" data-d="2"></span> / <span data-num="ex_LT1_J03_1D" data-path="author.1" data-d="1"></span> лежит левее, в недопустимой зоне: FDR там <span data-num="ex_LT1_J03_1D" data-path="author_fdr" data-d="2"></span>.</li>
+<li><b>Угол 0,98 / 20, J18_1D.</b> Допустима только строка min_corr 0,98. При такой корреляции порог PNR ничего не меняет: затравок одинаково при любом min_pnr от 2 до 20. При равном числе затравок правило берёт точку с меньшим FDR, а при равном FDR — более строгую. У J18_1D FDR вдоль этой строки к min_pnr 20 чуть падает, поэтому выигрывает 20. Затравок поровну по всей строке у <span data-num="corr_edge_flat" data-path="0"></span> из <span data-num="corr_edge_flat" data-path="1"></span> подсказок на краю 0,98. FDR к 20 там чуть ниже в <span data-num="corr_edge_flat_fdr" data-path="0"></span> строках и одинаков в <span data-num="corr_edge_flat_fdr" data-path="1"></span>. Порог PNR на число затравок в этих строках не влияет. Маска ореолов пуста. FDR в вашей точке <span data-num="ex_LT1_J18_1D" data-path="author.0" data-d="2"></span> / <span data-num="ex_LT1_J18_1D" data-path="author.1" data-d="1"></span> по этой оценке <span data-num="ex_LT1_J18_1D" data-path="author_fdr" data-d="2"></span>.</li>
+<li><b>Запасной robust_bg, J06_1D.</b> Допустимых точек нет вообще. Батч дал <span data-num="ex_LT1_J06_1D" data-path="batch.0" data-d="2"></span> / <span data-num="ex_LT1_J06_1D" data-path="batch.1" data-d="1"></span>. Маска ореолов пуста. FDR в вашей точке <span data-num="ex_LT1_J06_1D" data-path="author.0" data-d="2"></span> / <span data-num="ex_LT1_J06_1D" data-path="author.1" data-d="1"></span> по этой оценке <span data-num="ex_LT1_J06_1D" data-path="author_fdr" data-d="2"></span>.</li>
+</ul>
+<p>Переключите на J06_1D «ореол с исправлением» (раздел 3). Допустимые точки появятся, и подсказка уйдёт с запасного метода на <span data-num="ex_LT1_J06_1D" data-path="orig_cap.0.0" data-d="2"></span> / <span data-num="ex_LT1_J06_1D" data-path="orig_cap.0.1" data-d="1"></span>. Но FDR в вашей точке останется высоким: <span data-num="ex_LT1_J06_1D" data-path="author_fdr_capped" data-d="2"></span>. Исправленная маска закрывает ореолы только самых ярких клеток, а в плотном поле много клеток средней яркости.</p>
+
+<h2 id="s3">3. Почему подсказки высокие: пустая маска ореолов</h2>
+<p>Маска ореолов отбирает яркие клетки по двум условиям: PNR выше «медиана + 5 SD» и корреляция выше «медиана + 3 SD». Корреляция не бывает больше 1. Если разброс карты корреляции велик, второй порог выше 1. Тогда ни один пиксель его не проходит, и маска пуста.</p>
+<p><b>Так случилось в <span data-num="n_halo_empty"></span> из <span data-num="n_sessions"></span> сессий.</b> У всех них порог маски от <span data-num="cut_range_empty" data-path="0" data-d="3"></span> до <span data-num="cut_range_empty" data-path="1" data-d="3"></span>. У сессий с маской он от <span data-num="cut_range_nonempty" data-path="0" data-d="3"></span> до <span data-num="cut_range_nonempty" data-path="1" data-d="3"></span>. Мыши с пустой маской: <span data-num="halo_empty_mice" data-sep=", "></span>.</p>
+<p>Без маски ореолы всех клеток идут в счёт ложных. FDR растёт вместе с числом активных клеток. Правило не находит точку с FDR 0,1 и уходит к краю min_corr 0,98 или в запасной метод. Связь почти полная:</p>
+<ul>
+<li>подсказка внутри сетки: пустая маска в <span data-num="halo_x_interior" data-path="0"></span> сессиях, маска есть в <span data-num="halo_x_interior" data-path="1"></span>;</li>
+<li>край min_pnr 20: <span data-num="halo_x_pnr_edge" data-path="0"></span> и <span data-num="halo_x_pnr_edge" data-path="1"></span>;</li>
+<li>край min_corr 0,98: <span data-num="halo_x_corr_edge" data-path="0"></span> и <span data-num="halo_x_corr_edge" data-path="1"></span>;</li>
+<li>запасной robust_bg: <span data-num="halo_x_fallback" data-path="0"></span> и <span data-num="halo_x_fallback" data-path="1"></span>.</li>
+</ul>
+<p>Запасной метод тоже завышает. Он считает медиану карты фоном. В плотных активных полях это не так: активные пиксели — большая часть кадра. Медиана PNR рабочей области в сессиях с запасным методом от <span data-num="fallback_median_pnr" data-path="0" data-d="1"></span> до <span data-num="fallback_median_pnr" data-path="1" data-d="1"></span>, в сессиях с маской — от <span data-num="halo_present_median_pnr" data-path="0" data-d="1"></span> до <span data-num="halo_present_median_pnr" data-path="1" data-d="1"></span>. «Медиана + 3 SD» даёт min_pnr от <span data-num="fallback_pnr_range" data-path="0" data-d="1"></span> до <span data-num="fallback_pnr_range" data-path="1" data-d="1"></span>. J10_2D (полосы в кадре, разбирается отдельно) в эти диапазоны не входит: подсказка у неё 0,98 / 20, медиана PNR <span data-num="stripe_session_median_pnr" data-d="1"></span>.</p>
+<div class="card"><div class="legend" id="cutLegend"></div><div class="chart" id="cutChart"></div><p class="cap" id="cutCap"></p></div>
+<h3>Где лежат ложные затравки</h3>
+<p>Если ложные затравки — ореолы, они должны лежать рядом с настоящими. Проверка в ваших точках: расстояние от ложной затравки до ближайшей настоящей и от каждого пикселя той же зоны (вне маски) до ближайшей настоящей. Медианы по сессиям. Пустая маска: <span data-num="null_near_real_halo_empty" data-path="0" data-d="1"></span> px против <span data-num="null_near_real_halo_empty" data-path="1" data-d="1"></span> px у пикселей зоны. Не дальше 17 px лежат <span data-num="null_near_real_halo_empty" data-path="2" data-d="2"></span> ложных затравок и <span data-num="null_near_real_halo_empty" data-path="3" data-d="2"></span> пикселей зоны. Маска есть: <span data-num="null_near_real_halo_present" data-path="0" data-d="1"></span> px против <span data-num="null_near_real_halo_present" data-path="1" data-d="1"></span> px; <span data-num="null_near_real_halo_present" data-path="2" data-d="2"></span> против <span data-num="null_near_real_halo_present" data-path="3" data-d="2"></span>. Без ложных затравок в вашей точке (в счёт не входит): <span data-num="no_null_at_author"></span>.</p>
+<h3>Исправление маски: проверка</h3>
+<p>Я проверил одно изменение: порог корреляции маски не выше 99-го процентиля карты. Там, где маска была, она та же в <span data-num="n_capped_equals_cur"></span> сессиях из <span data-num="n_halo_present"></span>. В трёх (J01_1D, J30_2D, J30_3D) исправленная маска шире, и подсказка может измениться. J01_1D: <span data-num="capped_changes_with_halo" data-path="LT1_J01_1D.suggestion.0.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J01_1D.suggestion.0.1" data-d="1"></span> → <span data-num="capped_changes_with_halo" data-path="LT1_J01_1D.suggestion.1.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J01_1D.suggestion.1.1" data-d="1"></span> (вы приняли 0,92 / 19). J30_2D: <span data-num="capped_changes_with_halo" data-path="LT1_J30_2D.suggestion.0.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J30_2D.suggestion.0.1" data-d="1"></span> → <span data-num="capped_changes_with_halo" data-path="LT1_J30_2D.suggestion.1.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J30_2D.suggestion.1.1" data-d="1"></span>. J30_3D: <span data-num="capped_changes_with_halo" data-path="LT1_J30_3D.suggestion.0.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J30_3D.suggestion.0.1" data-d="1"></span> → <span data-num="capped_changes_with_halo" data-path="LT1_J30_3D.suggestion.1.0" data-d="2"></span> / <span data-num="capped_changes_with_halo" data-path="LT1_J30_3D.suggestion.1.1" data-d="1"></span>. В пустых сессиях маска покрывает долю <span data-num="halo_capped_frac_empty" data-path="1" data-d="2"></span> рабочей области (медиана). Это как у сессий с маской: медиана <span data-num="halo_frac_nonempty" data-path="1" data-d="2"></span>.</p>
+<p>FDR в ваших точках (график ниже). Сессии с пустой маской: медиана <span data-num="author_fdr_halo_empty" data-path="0" data-d="2"></span> сейчас и <span data-num="author_fdr_capped_halo_empty" data-path="0" data-d="2"></span> с исправлением. Сессии с маской: медиана <span data-num="author_fdr_halo_present" data-path="0" data-d="2"></span>.</p>
+<div class="card"><div class="legend" id="fdrLegend"></div><div class="chart" id="fdrChart"></div><p class="cap" id="fdrCap"></p></div>
+
+<h2 id="s4">4. Решение Р2: что даст более широкая сетка</h2>
+<p>Р2 предлагал расширить сетку. Я пересчитал подсказки на расширенной сетке своим скриптом по готовым картам. Новая сетка: <code>min_corr</code> до 0,99, <code>min_pnr</code> до 40 (шаги прежние). Это 2002 точки вместо 925. Пересчитано <span data-num="n_wide"></span> сессий. На старых точках счёт совпал со снимком во всех сессиях (расхождений: <span data-num="n_wide_subgrid_mismatch"></span>).</p>
+<p><b>Итог: на широкой сетке подсказка min_pnr выросла в <span data-num="r2_wide_direction_all" data-path="pnr.up"></span> сессиях, не изменилась в <span data-num="r2_wide_direction_all" data-path="pnr.same"></span> и снизилась в <span data-num="r2_wide_direction_all" data-path="pnr.down"></span>.</b> Среди сессий с вашим выбором min_pnr подсказки выше вашего в <span data-num="r2_wide_vs_author" data-path="pnr_above_author"></span> из <span data-num="r2_wide_vs_author" data-path="n"></span>. Медиана расхождения с вами по min_pnr: сейчас <span data-num="current_vs_author" data-path="median_abs_dpnr" data-d="1"></span>, на широкой сетке <span data-num="r2_wide_vs_author" data-path="median_abs_dpnr" data-d="1"></span>.</p>
+<p>Почему так. Шаг 3 правила требует, чтобы прошли все точки строже. Расширение добавляет только более строгие точки. Значит, у каждой старой точки строгих соседей становится больше, а не меньше. Старая точка, которая не проходила, не может начать проходить. Ваши точки почти всегда лежат в старой сетке (<span data-num="author_admissible" data-path="1"></span> из <span data-num="n_author"></span>). Допустимы по текущему правилу только <span data-num="author_admissible" data-path="0"></span> из них. Поэтому Р2 до них не дотянется.</p>
+<p>Хуже того, у строгого края мало затравок. Шаг ослабления там добавляет одну-две затравки. Если одна из них ложная (медиана — <span data-num="r2_marginal_null_added" data-path="0" data-d="0"></span> ложная затравка; в единицах подсказки, с пересчётом на площадь, <span data-num="r2_marginal_null_added" data-path="2" data-d="2"></span>), предельный FDR выше 0,5. Такая точка выбивает всё, что мягче неё. Разбор по сессиям: подсказка не изменилась в <span data-num="r2_why" data-path="same"></span>; старая точка выпала только из-за предельного FDR новых строгих точек в <span data-num="r2_why" data-path="old_out_marginal_only"></span>; запасной метод сменился точкой за старым краем в <span data-num="r2_why" data-path="fallback_now_found"></span>; новая точка с большим числом затравок — в <span data-num="r2_why" data-path="old_admissible_new_more_seeds"></span>.</p>
+<div class="card">
+  <div class="controls"><span class="seg" id="rAlt"><button data-v="wide" aria-pressed="true">Р2: сетка шире</button><button data-v="wide_cap" aria-pressed="false">исправленный ореол (+ сетка шире)</button></span>
+  <span class="seg" id="rAxis"><button data-v="1" aria-pressed="true">min_pnr</button><button data-v="0" aria-pressed="false">min_corr</button></span></div>
+  <div class="legend" id="rLegend"></div>
+  <div class="chart" id="rChart"></div>
+  <p class="cap" id="rCap"></p>
+</div>
+<p><b>Рекомендация по Р2: не делать.</b> Моя рекомендация «да» на прошлой странице была ошибкой. Я предполагал, что нужная точка лежит за краем сетки. Пересчёт показал обратное: нужная точка внутри сетки, но правило её не пропускает.</p>
+<details class="card"><summary>Таблица по сессиям (те же числа, что на трёх графиках выше)</summary><div class="tablewrap" id="sesTable"></div></details>
+
+<h2 id="s5">5. Гипотеза кальциевых волн</h2>
+<p>Ваша гипотеза: подсказки высокие из-за кальциевых волн (пересвеченных кадров). Я проверил её тремя способами.</p>
+<h3>Проверка 1. Средняя яркость кадра</h3>
+<p>Для каждого кадра MC-фильма я посчитал среднюю яркость рабочей области. Затем dF/F (относительное изменение) против бегущей медианы за 30 с. Ниже шесть сессий: три с высокой подсказкой (оранжевые) и три обычные (синие). Видны верхний и нижний край трейса за каждые 0,5 с.</p>
+<div class="card"><div class="chart" id="traces"></div><p class="cap" id="tracesCap"></p></div>
+<p>Сводка по мышам (все готовые трейсы этих мышей, медианы по сессиям). Разброс dF/F всего кадра (робастное SD): высокие <span data-num="trace_high" data-path="global_sd_median" data-d="3"></span>, обычные <span data-num="trace_clean" data-path="global_sd_median" data-d="3"></span>. Кадров с широкой вспышкой в минуту (четверть блоков 32×32 px одновременно выше 5 SD своего блока): высокие <span data-num="trace_high" data-path="wide_per_min_median" data-d="2"></span>, обычные <span data-num="trace_clean" data-path="wide_per_min_median" data-d="2"></span>. Сессий: <span data-num="trace_high" data-path="n"></span> и <span data-num="trace_clean" data-path="n"></span>.</p>
+<p>Кадров выше 5 SD своего трейса у высоких больше: <span data-num="trace_high" data-path="n_5sd_per_min_median" data-d="2"></span> против <span data-num="trace_clean" data-path="n_5sd_per_min_median" data-d="2"></span> в минуту. Но SD у них меньше, то есть сами колебания слабее. Широкие вспышки бывают и у обычных мышей: у J01_1D и J03_4D их больше, чем у любой сессии J06 (построчно — раздел 8 вывода <code>report</code>). У J06_1D широких вспышек нет совсем, а FDR там самый высокий. Средняя яркость кадра высокие и обычные сессии не разделяет.</p>
+<h3>Проверка 2. Карты без подозрительных кадров</h3>
+<p>Я пересчитал карты gSig 4 прямо из MC-фильма, как это делает батч. Затем пересчитал их ещё пять раз, каждый раз без одной группы кадров. Если виноваты пересветы, без них ложных затравок станет меньше. Контроль — столько же кадров, сколько ярких, сдвинутых во времени на полсессии или дальше (так, чтобы они не попали в первые 15 с). Пересчитанные карты отличаются от карт батча не больше чем на <span data-num="ft_vs_batch_max" data-path="2" data-d="4"></span> (округление). Из-за этого в вашей точке FDR отличается не больше чем на <span data-num="ft_vs_batch_max" data-path="0" data-d="3"></span>, число затравок — не больше чем на <span data-num="ft_vs_batch_max" data-path="1"></span>. Все числа этой проверки — по пересчитанным картам. В остальных разделах — по картам батча.</p>
+<div class="card tablewrap" id="framesTable"></div>
+<p><b>Результат проверки 2.</b> В J06_1D FDR в вашей точке (пересчитанные карты) без любой группы кадров остаётся около <span data-num="ft_LT1_J06_1D_all" data-path="author_fdr" data-d="2"></span>. Без 2 % самых ярких кадров — <span data-num="ft_LT1_J06_1D_no_bright" data-path="author_fdr" data-d="2"></span>. Подсказка остаётся у запасного метода. В сессиях с маской FDR в вашей точке почти не меняется, а сама подсказка может сильно сдвинуться. У J01_1D без 2 % ярких кадров она уходит с <span data-num="ft_LT1_J01_1D_all" data-path="batch.0" data-d="2"></span> / <span data-num="ft_LT1_J01_1D_all" data-path="batch.1" data-d="1"></span> на <span data-num="ft_LT1_J01_1D_no_bright" data-path="batch.0" data-d="2"></span> / <span data-num="ft_LT1_J01_1D_no_bright" data-path="batch.1" data-d="1"></span>, без контрольных кадров — на <span data-num="ft_LT1_J01_1D_no_ctrl" data-path="batch.0" data-d="2"></span> / <span data-num="ft_LT1_J01_1D_no_ctrl" data-path="batch.1" data-d="1"></span>. Сдвиг без ярких кадров больше, чем в контроле; одна сессия этого не доказывает. Маска ореолов J06_1D остаётся пустой во всех версиях карт (порог маски: <span data-num="ft_LT1_J06_1D_halo" data-path="all.0" data-d="3"></span> на всех кадрах, <span data-num="ft_LT1_J06_1D_halo" data-path="no_bright.0" data-d="3"></span> без ярких). Остальные сессии — в таблице.</p>
+<h3>Проверка 3. Когда пикуют ложные затравки</h3>
+<p>Для каждой ложной затравки я нашёл кадр её пика в зеркальном фильме. Затем проверил, есть ли в 17 px от неё настоящий красный пиксель с пиком в те же ±2 кадра. Если ложная затравка — ореол клетки, такой пиксель найдётся. Шанс случайного совпадения я оценил, сдвинув кадр на полсессии.</p>
+<p>J06_1D: совпадение у <span data-num="ft_LT1_J06_1D_halo_coincidence" data-path="0" data-d="2"></span> ложных затравок, случайно <span data-num="ft_LT1_J06_1D_halo_coincidence" data-path="1" data-d="2"></span>. J03_1D: <span data-num="ft_LT1_J03_1D_halo_coincidence" data-path="0" data-d="2"></span> против <span data-num="ft_LT1_J03_1D_halo_coincidence" data-path="1" data-d="2"></span>. В 2 % самых ярких кадров у J06_1D пикует доля <span data-num="ft_LT1_J06_1D_peak_sets" data-path="bright.1" data-d="3"></span> ложных затравок (доля этих кадров <span data-num="ft_LT1_J06_1D_peak_sets" data-path="bright.0" data-d="3"></span>).</p>
+<p>J08_1D: <span data-num="ft_LT1_J08_1D_halo_coincidence" data-path="0" data-d="2"></span> против <span data-num="ft_LT1_J08_1D_halo_coincidence" data-path="1" data-d="2"></span>. J18_2D: <span data-num="ft_LT1_J18_2D_halo_coincidence" data-path="0" data-d="2"></span> против <span data-num="ft_LT1_J18_2D_halo_coincidence" data-path="1" data-d="2"></span>. Ложные затравки J06_1D пикуют в <span data-num="ft_LT1_J06_1D_null_frames" data-path="1"></span> разных кадрах из <span data-num="ft_LT1_J06_1D_null_frames" data-path="0"></span>: общих для всего поля событий за ними нет.</p>
+<p>Грубая оценка: если убрать ложные затравки, объяснённые соседней вспышкой, FDR в вашей точке J06_1D (пересчитанные карты) падает с <span data-num="ft_LT1_J06_1D_all" data-path="author_fdr" data-d="2"></span> до <span data-num="ft_LT1_J06_1D_fdr_unexplained" data-d="2"></span>.</p>
+<p><b>Вывод по гипотезе волн.</b> Широкие вспышки в данных есть. Но ложные затравки рождаются не в них. Они пикуют вместе с соседними клетками — это ореолы. Высокая подсказка вызвана в первую очередь пустой маской ореолов в плотных активных полях.</p>
+
+<h2 id="s6">6. Что предлагаю</h2>
+<ol>
+<li><b>Отменить Р2 в нынешнем виде (расширить сетку).</b> Расширение поднимает подсказку, а не опускает.</li>
+<li><b>Исправить порог маски ореолов.</b> Порог корреляции маски — не выше 99-го процентиля карты корреляции рабочей области. Это ошибка в коде: порог выше возможного максимума. Правка — одна строка в <code>bm_qc.halo_mask</code>. Выбранные вами пороги не меняются: они записаны в конфиги сессий. Меняются будущие подсказки и запланированные кнопки методов во вкладке Thresholds (п. 28). Кнопки будут считать по готовым картам. Отдельного пересчёта подсказок по готовым картам в нынешнем коде нет: подсказку считает только этап карт.</li>
+<li><b>Пока не трогать правило пути и цель FDR.</b> Я опробовал 64 варианта правила (маска, сетка, цель FDR, предельный FDR, правило пути). Проверка «без одной мыши» (правило подбирается на остальных мышах, проверяется на отложенной), <span data-num="lomo_mice"></span> мышей. Подобранное правило ошибается на <span data-num="lomo_rule" data-path="mean_err_steps" data-d="1"></span> шага сетки, константа (медиана ваших значений по другим мышам) — на <span data-num="lomo_constant" data-d="1"></span>, текущее правило — на <span data-num="lomo_current_rule" data-d="1"></span>. В разных проверках подбираются разные правила. Шаг сетки — 0,02 по min_corr или 0,5 по min_pnr. Данные пока не показывают, что умное правило лучше константы. Решать после п. 29.</li>
+<li><b>Запасной метод robust_bg.</b> Он берёт медиану карты за фон, и в плотных полях это не так. После исправления маски он нужен в <span data-num="r2_orig_cap_methods" data-path="robust_bg"></span> сессиях вместо <span data-num="n_type_fallback"></span>. Что показывать вместо него, удобно решить вместе с кнопками методов (п. 28) и кнопкой порогов другой сессии мыши (п. 27).</li>
+<li><b>П. 29</b> — CNMF-E на ваших и на пониженных порогах. Он покажет, что добавляют более низкие пороги: клетки или шум.</li>
+</ol>
+
+<h2 id="s7">Словарь</h2>
+<dl class="small">
+<dt><b>gSig</b></dt><dd>Размер клетки в пикселях для CNMF-E; у LT1 везде 4.</dd>
+<dt><b>SD</b></dt><dd>Стандартное отклонение, мера разброса значений.</dd>
+<dt><b>Р2</b></dt><dd>Решение со страницы 13.11: расширить сетку подсказки.</dd>
+<dt><b>Проверка «без одной мыши»</b> (leave-one-mouse-out)</dt><dd>Правило подбирается на всех мышах, кроме одной, и проверяется на ней; так по очереди для каждой мыши.</dd>
+<dt><b>Кальциевая волна</b></dt><dd>Вспышка на большой части кадра сразу.</dd>
+<dt><b>Затравка</b> (seed)</dt><dd>Пиксель, с которого CNMF-E начинает строить клетку: локальный максимум среди пикселей выше обоих порогов.</dd>
+<dt><b>Ложная затравка</b> (null seed)</dt><dd>Затравка на картах зеркального фильма при тех же порогах.</dd>
+<dt><b>Зеркальный фильм</b> (inverted movie)</dt><dd>Тот же фильм со знаком минус. Вспышек клеток в нём нет.</dd>
+<dt><b>FDR</b> (false discovery rate)</dt><dd>Доля ложных находок: ложные затравки / настоящие затравки.</dd>
+<dt><b>Предельный FDR</b> (marginal FDR)</dt><dd>Доля ложных среди затравок, добавленных одним шагом ослабления порога.</dd>
+<dt><b>Сетка</b> (grid)</dt><dd>Таблица всех пар (min_corr, min_pnr), которые перебирает подсказка.</dd>
+<dt><b>Ореол</b> (halo)</dt><dd>Отрицательное кольцо вокруг вспышки после фильтра с нулевым средним. В зеркальном фильме оно выглядит как пик.</dd>
+<dt><b>Маска ореолов</b> (halo mask)</dt><dd>Зона вокруг ярких клеток, где ложные затравки не считаются.</dd>
+<dt><b>Робастное SD</b> (robust SD)</dt><dd>1,4826 × медиана абсолютных отклонений от медианы. Выбросы на него почти не влияют.</dd>
+<dt><b>robust_bg</b></dt><dd>Запасной метод: порог = медиана карты + 3 робастных SD.</dd>
+<dt><b>Рабочая область</b> (valid mask)</dt><dd>Часть кадра, где карты осмысленны: без 5 px у края и без тёмных зон вне поля линзы.</dd>
+</dl>
+</main>
+<div id="tip" role="status"></div>
+<script>
+"use strict";
+const DATA = /*__DATA__*/null;
+const NC = DATA.corr.length, NP = DATA.pnr.length, NC0 = DATA.n_orig_corr, NP0 = DATA.n_orig_pnr;
+const TARGETS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 0.9];
+const SES = {}; DATA.sessions.forEach(s => SES[s.sid] = s);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rnd = (x, d) => { const v = Number(x), s = Math.sign(v); return (s * Math.round(Number(Math.abs(v) + "e" + d)) / Math.pow(10, d)).toFixed(d); };
+const ru = (x, d) => (x === null || x === undefined || Number.isNaN(x)) ? "—" :
+  (d === undefined ? String(x) : rnd(x, d)).replace(".", ",").replace("-", "−");
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function h(tag, attrs, parent, text) {
+  const e = document.createElement(tag);
+  for (const k in (attrs || {})) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function b64(s, T) {
+  const bin = atob(s), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return T === Uint8Array ? u8 : new T(u8.buffer);
+}
+// numbers in the text: span elements with data-num (key), data-path (dot path) and data-d (decimals)
+function fillNums() {
+  document.querySelectorAll("[data-num]").forEach(e => {
+    let v = DATA.num[e.dataset.num];
+    if (e.dataset.path !== undefined) for (const p of e.dataset.path.split(".")) v = v === undefined || v === null ? v : v[p];
+    e.textContent = Array.isArray(v) ? v.map(x => typeof x === "string" ? x.replace("LT1_", "") : ru(x, e.dataset.d === undefined ? undefined : +e.dataset.d)).join(e.dataset.sep || " / ")
+      : ru(v, e.dataset.d === undefined ? undefined : +e.dataset.d);
+  });
+}
+// tooltip
+const tip = document.getElementById("tip");
+function showTip(ev, rows) {
+  tip.replaceChildren();
+  rows.forEach(([v, l], i) => { const d = h("div", {}, tip); if (v !== null) h("b", {}, d, v + " "); h("span", {}, d, l); });
+  tip.style.display = "block";
+  const w = tip.offsetWidth, hh = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + hh > innerHeight - 8) y = ev.clientY - hh - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function segInit(id, onChange) {
+  const g = document.getElementById(id);
+  g.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    onChange(b.dataset.v);
+  });
+}
+function segSet(id, v) {
+  document.getElementById(id).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x.dataset.v === v ? "true" : "false"));
+}
+
+// ---------------------------------------------------------------- the mirror_fdr rule (bm_qc.suggest_init_thresholds)
+function gridArrays(sid, halo, wide) {
+  const g = DATA.grids[sid];
+  const nr = b64(g.n_real, Uint16Array), raw = b64(halo === "cur" ? g.null_cur : g.null_capped, Uint16Array);
+  const area = halo === "cur" ? g.area_cur : g.area_capped;
+  const nc = wide ? NC : NC0, np_ = wide ? NP : NP0;
+  const R = new Float64Array(nc * np_), N = new Float64Array(nc * np_);
+  for (let i = 0; i < nc; i++) for (let j = 0; j < np_; j++) { R[i * np_ + j] = nr[i * NP + j]; N[i * np_ + j] = raw[i * NP + j] * area; }
+  return { R, N, nc, np: np_, robust: g.robust };
+}
+function selectMirror(R, N, nc, np_, target, marginal) {
+  marginal = marginal === undefined ? 0.5 : marginal;
+  const n = nc * np_, fdr = new Float64Array(n), mf = new Float64Array(n), base = new Uint8Array(n), path = new Uint8Array(n), ok = new Uint8Array(n);
+  for (let k = 0; k < n; k++) fdr[k] = N[k] / Math.max(R[k], 1);
+  for (let i = 0; i < nc; i++) for (let j = 0; j < np_; j++) {
+    const k = i * np_ + j; let m = 0;
+    if (i < nc - 1) { const dr = R[k] - R[k + np_], dn = N[k] - N[k + np_]; m = Math.max(m, dr > 0 ? dn / Math.max(dr, 1) : 0); }
+    if (j < np_ - 1) { const dr = R[k] - R[k + 1], dn = N[k] - N[k + 1]; m = Math.max(m, dr > 0 ? dn / Math.max(dr, 1) : 0); }
+    mf[k] = m;
+    base[k] = ((fdr[k] <= target) || R[k] === 0) && (mf[k] <= marginal) ? 1 : 0;
+    path[k] = base[k];
+  }
+  for (let i = nc - 2; i >= 0; i--) for (let j = 0; j < np_; j++) path[i * np_ + j] &= path[(i + 1) * np_ + j];
+  for (let j = np_ - 2; j >= 0; j--) for (let i = 0; i < nc; i++) path[i * np_ + j] &= path[i * np_ + j + 1];
+  let best = -Infinity, bi = -1;
+  for (let i = 0; i < nc; i++) for (let j = 0; j < np_; j++) {
+    const k = i * np_ + j;
+    ok[k] = path[k] && fdr[k] <= target && R[k] > 0 ? 1 : 0;
+    if (ok[k]) { const sc = R[k] - fdr[k] + 1e-6 * (i + j); if (sc > best) { best = sc; bi = k; } }
+  }
+  return { fdr, mf, base, path, ok, pick: bi < 0 ? null : [Math.floor(bi / np_), bi % np_] };
+}
+// expose for the node check (check_explainer_js.js)
+if (typeof window !== "undefined") window.__selectMirror = selectMirror;
+
+// ---------------------------------------------------------------- section 1: one grid point on real maps
+const P = { sid: Object.keys(DATA.panel)[1] || Object.keys(DATA.panel)[0], halo: "cur", i: 0, j: 0 };
+const PCACHE = {};
+function panelMaps(sid) {
+  if (PCACHE[sid]) return PCACHE[sid];
+  const d = DATA.panel[sid];
+  const o = { d, cn: b64(d.cn, Uint16Array), pnr: b64(d.pnr, Uint16Array), cnn: b64(d.cn_neg, Uint16Array),
+    pnrn: b64(d.pnr_neg, Uint16Array), valid: b64(d.valid, Uint8Array), hc: b64(d.halo_cur, Uint8Array), hk: b64(d.halo_capped, Uint8Array) };
+  const vals = []; for (let k = 0; k < o.pnr.length; k++) if (o.valid[k]) vals.push(o.pnr[k]);
+  vals.sort((a, b) => a - b); o.vmax = vals[Math.floor(0.995 * (vals.length - 1))] || 1;
+  return (PCACHE[sid] = o);
+}
+function seedList(o, key, k) { // seeds of grid point k: byte pairs (row, col) in the crop
+  if (!o.sd) o.sd = {};
+  if (!o.sd[key]) o.sd[key] = { xy: b64(o.d.seeds[key].xy, Uint8Array), off: b64(o.d.seeds[key].off, Uint32Array) };
+  const s = o.sd[key]; return s.xy.subarray(s.off[k], s.off[k + 1]);
+}
+function nearestIdx(arr, v) { let b = 0; for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - v) < Math.abs(arr[b] - v)) b = i; return b; }
+function drawPanel() {
+  const o = panelMaps(P.sid), d = o.d, S = 3, W = d.w, H = d.h;
+  const c = DATA.corr[P.i], p = DATA.pnr[P.j], cq = Math.round(c * 10000) - 0.5, pq = Math.round(p * 100) - 0.5;
+  const halo = P.halo === "cur" ? o.hc : o.hk;
+  const red = [227, 73, 72], blue = [42, 120, 214];
+  const counts = {};
+  for (const [id, CN, PN, mirror] of [["cvReal", o.cn, o.pnr, false], ["cvMirror", o.cnn, o.pnrn, true]]) {
+    const cv = document.getElementById(id); cv.width = W * S; cv.height = H * S;
+    const ctx = cv.getContext("2d"); const img = ctx.createImageData(W, H); let nred = 0;
+    for (let k = 0; k < W * H; k++) {
+      let g = Math.min(255, Math.round(255 * PN[k] / o.vmax)); let r = g, gg = g, b = g;
+      if (!o.valid[k]) { r = gg = b = Math.round(g * 0.35); }
+      if (mirror && halo[k] && o.valid[k]) { r = r * 0.6 + blue[0] * 0.4; gg = gg * 0.6 + blue[1] * 0.4; b = b * 0.6 + blue[2] * 0.4; }
+      if (o.valid[k] && CN[k] >= cq && PN[k] >= pq) { nred++; r = r * 0.25 + red[0] * 0.75; gg = gg * 0.25 + red[1] * 0.75; b = b * 0.25 + red[2] * 0.75; }
+      img.data[4 * k] = r; img.data[4 * k + 1] = gg; img.data[4 * k + 2] = b; img.data[4 * k + 3] = 255;
+    }
+    const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H; tmp.getContext("2d").putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(tmp, 0, 0, W * S, H * S);
+    const list = seedList(o, mirror ? P.halo : "real", P.i * NP + P.j);
+    ctx.lineWidth = 2;
+    for (let q = 0; q < list.length; q += 2) {
+      const y = (list[q] + 0.5) * S, x = (list[q + 1] + 0.5) * S;
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.strokeStyle = "#0b0b0b"; ctx.lineWidth = 1.6; ctx.stroke();
+    }
+    counts[id] = { red: nred, seeds: list.length / 2 };
+  }
+  document.getElementById("pCv").textContent = ru(c, 2);
+  document.getElementById("pPv").textContent = ru(p, 1);
+  const crop = document.getElementById("pCrop"); crop.replaceChildren();
+  const kv = (box, k, v) => { h("span", {}, box, k); h("b", { class: "stat" }, box, v); };
+  h("span", { style: "grid-column: 1 / 3; color: var(--muted)" }, crop, "в этом окне " + d.w + "×" + d.h + " px");
+  kv(crop, "красных пикселей, настоящий / зеркальный", counts.cvReal.red + " / " + counts.cvMirror.red);
+  kv(crop, "затравок / ложных затравок", counts.cvReal.seeds + " / " + counts.cvMirror.seeds);
+  const G = gridArrays(P.sid, P.halo, true), k = P.i * NP + P.j;
+  const fld = document.getElementById("pField"); fld.replaceChildren();
+  h("span", { style: "grid-column: 1 / 3; color: var(--muted)" }, fld, "во всём поле (эта клетка сетки)");
+  kv(fld, "затравок", String(G.R[k]));
+  kv(fld, "ложных, пересчёт на всё поле", ru(G.N[k], 1));
+  kv(fld, "FDR = ложные / затравки", ru(G.N[k] / Math.max(G.R[k], 1), 2));
+  if (P.note) h("span", { style: "grid-column: 1 / 3; color: var(--muted)" }, fld, P.note);
+}
+function initPanel() {
+  const seg = document.getElementById("pSess");
+  Object.keys(DATA.panel).forEach((sid, n) => {
+    const b = h("button", { "data-v": sid, "aria-pressed": sid === P.sid ? "true" : "false" }, seg, sid.replace("LT1_", ""));
+  });
+  const jump = v => {
+    const s = SES[P.sid], pt = v === "author" ? s.author : [s.batch[0], s.batch[1]];
+    P.i = nearestIdx(DATA.corr, pt[0]); P.j = nearestIdx(DATA.pnr, pt[1]);
+    P.note = (pt[1] > DATA.pnr[NP - 1] || pt[0] > DATA.corr[NC - 1]) ? ("Подсказка " + ru(pt[0], 2) + " / " + ru(pt[1], 1) + " за краем ползунков; показан ближайший край.") : "";
+    document.getElementById("pC").value = P.i; document.getElementById("pP").value = P.j; drawPanel();
+  };
+  segInit("pSess", v => { P.sid = v; jump("author"); });
+  segInit("pHalo", v => { P.halo = v; drawPanel(); });
+  document.getElementById("pC").addEventListener("input", () => { P.note = ""; });
+  document.getElementById("pP").addEventListener("input", () => { P.note = ""; });
+  document.getElementById("pJump").addEventListener("click", e => { const b = e.target.closest("button"); if (b) jump(b.dataset.v); });
+  document.getElementById("pC").addEventListener("input", e => { P.i = +e.target.value; drawPanel(); });
+  document.getElementById("pP").addEventListener("input", e => { P.j = +e.target.value; drawPanel(); });
+  jump("author");
+}
+
+// ---------------------------------------------------------------- the zero-mean kernel profile (why the mirror has peaks next to cells)
+function drawProfile() {
+  const box = document.getElementById("profile"); box.replaceChildren();
+  const W = 640, H = 210, m = { l: 40, r: 16, t: 14, b: 30 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Профиль клетки после фильтра" }, box);
+  // 1-D: cell = gaussian sigma 4 px at x=0; kernel = gaussian (sigma gSig=4) minus its mean over the support (|x|<=8)
+  const xs = []; for (let x = -24; x <= 24; x += 0.25) xs.push(x);
+  const g = (x, s) => Math.exp(-x * x / (2 * s * s));
+  const ker = []; for (let u = -8; u <= 8; u += 0.25) ker.push([u, g(u, 4)]);
+  const km = ker.reduce((a, b) => a + b[1], 0) / ker.length;
+  const filt = xs.map(x => ker.reduce((a, [u, k]) => a + (k - km) * g(x - u, 4), 0));
+  const mx = Math.max(...filt.map(Math.abs));
+  const X = x => m.l + (x + 24) / 48 * (W - m.l - m.r), Y = v => m.t + (1 - (v / mx + 1) / 2) * (H - m.t - m.b);
+  el("line", { x1: m.l, x2: W - m.r, y1: Y(0), y2: Y(0), stroke: css("--axis"), "stroke-width": 1 }, svg);
+  const path = (arr, sign) => arr.map((v, n) => (n ? "L" : "M") + X(xs[n]).toFixed(1) + " " + Y(sign * v).toFixed(1)).join(" ");
+  el("path", { d: path(filt, 1), fill: "none", stroke: css("--s1"), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  el("path", { d: path(filt, -1), fill: "none", stroke: css("--s2"), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  const neg = filt.map((v, n) => [v, n]).filter(([v]) => v < 0); const imin = neg.reduce((a, b) => b[0] < a[0] ? b : a)[1];
+  el("text", { x: X(0) + 48, y: Y(mx) + 14 }, svg, "клетка в настоящем фильме");
+  el("text", { x: X(xs[imin]) - 4, y: Y(-filt[imin]) - 8, "text-anchor": "end" }, svg, "пик в зеркальном фильме (ореол)");
+  el("text", { x: X(0) + 34, y: Y(-mx) - 2 }, svg, "та же клетка в зеркальном фильме");
+  for (const t of [-16, -8, 0, 8, 16]) el("text", { x: X(t), y: H - 10, class: "tick", "text-anchor": "middle" }, svg, (t > 0 ? "+" : "") + t + " px");
+  document.getElementById("profileCap").textContent = "Одномерная схема. Синяя линия: профиль одной клетки (gSig 4) после фильтра CNMF-E с нулевым средним. "
+    + "Оранжевая: та же линия в зеркальном фильме. Рядом с клеткой у зеркальной линии свои пики, на расстоянии около "
+    + ru(Math.abs(xs[imin]), 0) + " px от центра. Если клеток много и они плотные, такие пики попадают в счёт ложных затравок.";
+}
+
+// ---------------------------------------------------------------- section 2: the grid heatmap
+const GS = { sid: null, mode: "fdr", wide: false, halo: "cur", t: 1 };
+const BLUE = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+function hexMix(a, b, t) {
+  const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16));
+  return "rgb(" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",") + ")";
+}
+function ramp(stops, t) { t = Math.max(0, Math.min(1, t)); const x = t * (stops.length - 1), i = Math.min(stops.length - 2, Math.floor(x)); return hexMix(stops[i], stops[i + 1], x - i); }
+function fdrColor(f, target, dark) {
+  const mid = dark ? "#383835" : "#f0efec";
+  const blueArm = dark ? [mid, "#1c5cab", "#3987e5", "#86b6ef"] : [mid, "#9ec5f4", "#3987e5", "#184f95"];
+  const redArm = dark ? [mid, "#8f2f2c", "#d24a46", "#f09a92"] : [mid, "#f4b3a9", "#e34948", "#9e2a28"];
+  const z = Math.log10(Math.max(f, 1e-3) / target) / 1.3;
+  return z <= 0 ? ramp(blueArm, -z) : ramp(redArm, z);
+}
+function isDark() { return css("--surface").toLowerCase() === "#1a1a19"; }
+function corrPos(c, nc) { // fractional row index for a corr value (rows are not evenly spaced at 0.99)
+  const arr = DATA.corr.slice(0, nc);
+  if (c <= arr[0]) return 0; if (c >= arr[nc - 1]) return nc - 1;
+  for (let i = 0; i < nc - 1; i++) if (c <= arr[i + 1]) return i + (c - arr[i]) / (arr[i + 1] - arr[i]);
+  return nc - 1;
+}
+function drawHeat() {
+  const sid = GS.sid, s = SES[sid], target = TARGETS[GS.t];
+  document.getElementById("gTv").textContent = ru(target, 2);
+  const G = gridArrays(sid, GS.halo, GS.wide), nc = G.nc, np_ = G.np;
+  const sel = selectMirror(G.R, G.N, nc, np_, target);
+  const box = document.getElementById("heat"); box.replaceChildren();
+  const cw = GS.wide ? 10 : 19, ch = 13, m = { l: 52, r: 120, t: 28, b: 40 };
+  const W = m.l + np_ * cw + m.r, H = m.t + nc * ch + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, style: "max-width:100%;height:auto", role: "img",
+    "aria-label": "Сетка порогов " + sid }, box);
+  const X = j => m.l + j * cw, Y = i => m.t + (nc - 1 - i) * ch;
+  const dark = isDark();
+  const maxR = Math.max(1, ...G.R), maxN = Math.max(1, ...G.N);
+  const cells = el("g", {}, svg);
+  for (let i = 0; i < nc; i++) for (let j = 0; j < np_; j++) {
+    const k = i * np_ + j; let fill;
+    if (GS.mode === "fdr") fill = G.R[k] === 0 ? css("--empty") : fdrColor(sel.fdr[k], target, dark);
+    else { const v = GS.mode === "real" ? G.R[k] / maxR : G.N[k] / maxN; fill = v === 0 ? css("--empty") : ramp(dark ? BLUE.slice().reverse() : BLUE, Math.sqrt(v)); }
+    el("rect", { x: X(j), y: Y(i), width: cw - 1, height: ch - 1, fill, "data-k": k }, cells);
+  }
+  // admissible region outline
+  let d = "";
+  for (let i = 0; i < nc; i++) for (let j = 0; j < np_; j++) {
+    const k = i * np_ + j; if (!sel.ok[k]) continue;
+    const x0 = X(j) - 0.5, x1 = X(j) + cw - 0.5, y0 = Y(i) - 0.5, y1 = Y(i) + ch - 0.5;
+    if (i === nc - 1 || !sel.ok[k + np_]) d += `M${x0} ${y0}H${x1}`;
+    if (i === 0 || !sel.ok[k - np_]) d += `M${x0} ${y1}H${x1}`;
+    if (j === 0 || !sel.ok[k - 1]) d += `M${x0} ${y0}V${y1}`;
+    if (j === np_ - 1 || !sel.ok[k + 1]) d += `M${x1} ${y0}V${y1}`;
+  }
+  el("path", { d, fill: "none", stroke: css("--ink"), "stroke-width": 2, style: "pointer-events:none" }, svg);
+  // axes
+  for (let j = 0; j < np_; j++) { const p = DATA.pnr[j]; if (p % (GS.wide ? 5 : 2) === 0) el("text", { x: X(j) + cw / 2, y: m.t + nc * ch + 14, class: "tick", "text-anchor": "middle" }, svg, ru(p)); }
+  for (let i = 0; i < nc; i++) { const c = DATA.corr[i]; if (Math.round(c * 100) % 10 === 0 || i === nc - 1) el("text", { x: m.l - 6, y: Y(i) + ch - 3, class: "tick", "text-anchor": "end" }, svg, ru(c, 2)); }
+  el("text", { x: m.l + np_ * cw / 2, y: H - 6, "text-anchor": "middle" }, svg, "min_pnr → строже");
+  el("text", { x: 12, y: m.t + nc * ch / 2, transform: `rotate(-90 12 ${m.t + nc * ch / 2})`, "text-anchor": "middle" }, svg, "min_corr → строже");
+  // markers
+  const ptXY = (c, p) => {
+    const jx = (p - DATA.pnr[0]) / 0.5, iy = corrPos(c, nc);
+    const jc = Math.max(0, Math.min(np_ - 1, jx)), ic = Math.max(0, Math.min(nc - 1, iy));
+    return { x: X(jc) + cw / 2, y: Y(ic) + ch / 2, out: jx > np_ - 1 + 1e-9 || iy > nc - 1 + 1e-9 || c > DATA.corr[nc - 1] + 1e-9 };
+  };
+  const notes = [];
+  function marker(c, p, shape, label, dy) {
+    const q = ptXY(c, p), g = el("g", { style: "pointer-events:none" }, svg);
+    if (shape === "circle") { el("circle", { cx: q.x, cy: q.y, r: 6, fill: css("--ink"), stroke: css("--ring"), "stroke-width": 2.5 }, g); }
+    else { el("path", { d: `M${q.x} ${q.y - 8}L${q.x + 8} ${q.y}L${q.x} ${q.y + 8}L${q.x - 8} ${q.y}Z`, fill: "none", stroke: css("--ring"), "stroke-width": 5 }, g);
+      el("path", { d: `M${q.x} ${q.y - 8}L${q.x + 8} ${q.y}L${q.x} ${q.y + 8}L${q.x - 8} ${q.y}Z`, fill: "none", stroke: css("--ink"), "stroke-width": 2 }, g); }
+    const tx = Math.min(q.x + 12, W - 4);
+    el("text", { x: q.out ? X(np_ - 1) + cw + 6 : tx, y: q.y + 4 + (dy || 0), "text-anchor": "start", style: "fill:var(--ink);font-weight:600" }, g,
+      label + (q.out ? " " + ru(c, 2) + " / " + ru(p, 1) + " →" : ""));
+  }
+  let pickTxt;
+  if (sel.pick) {
+    const c = DATA.corr[sel.pick[0]], p = DATA.pnr[sel.pick[1]];
+    marker(c, p, "circle", "подсказка", -6); pickTxt = "mirror_fdr: " + ru(c, 2) + " / " + ru(p, 1);
+  } else {
+    marker(Math.min(G.robust[0], 0.99), G.robust[1], "circle", "robust_bg", -6);
+    pickTxt = "допустимых точек нет → запасной robust_bg: " + ru(G.robust[0], 2) + " / " + ru(G.robust[1], 2);
+  }
+  if (s.author) marker(s.author[0], s.author[1], "diamond", "автор", 12);
+  // hover: the stricter rectangle and its failing points
+  const hov = el("g", { style: "pointer-events:none" }, svg);
+  svg.addEventListener("pointermove", ev => {
+    const k = ev.target.dataset ? ev.target.dataset.k : undefined;
+    hov.replaceChildren();
+    if (k === undefined) { hideTip(); return; }
+    const i = Math.floor(+k / np_), j = +k % np_;
+    el("rect", { x: X(j) - 1, y: Y(nc - 1) - 1, width: (np_ - j) * cw + 1, height: (nc - i) * ch + 1, fill: "none", stroke: css("--ink"), "stroke-width": 1.5 }, hov);
+    let nfail = 0, fail = "";
+    for (let a = i; a < nc; a++) for (let b = j; b < np_; b++) if (!sel.base[a * np_ + b]) { nfail++; fail += `M${X(b) + cw / 2 - 1.5} ${Y(a) + ch / 2}h3`; }
+    if (fail) el("path", { d: fail, stroke: css("--ink"), "stroke-width": 3, "stroke-linecap": "round" }, hov);
+    el("rect", { x: X(j), y: Y(i), width: cw - 1, height: ch - 1, fill: "none", stroke: css("--ink"), "stroke-width": 2 }, hov);
+    const rows = [[ru(DATA.corr[i], 2) + " / " + ru(DATA.pnr[j], 1), "min_corr / min_pnr"],
+      [String(G.R[+k]), "затравок"], [ru(G.N[+k], 1), "ложных (зеркало, на всё поле)"],
+      [G.R[+k] ? ru(sel.fdr[+k], 3) : "—", "FDR"], [ru(sel.mf[+k], 2), "предельный FDR (при ослаблении на шаг)"],
+      [sel.ok[+k] ? "да" : "нет", "допустима"]];
+    if (!sel.ok[+k]) rows.push([String(nfail), nfail ? "точек строже этой не прошли (отмечены чёрточками)" : "точка сама не проходит FDR"]);
+    showTip(ev, rows);
+  });
+  svg.addEventListener("pointerleave", () => { hov.replaceChildren(); hideTip(); });
+  // legend + caption
+  const lg = document.getElementById("heatLegend"); lg.replaceChildren();
+  if (GS.mode === "fdr") {
+    for (const f of [0.01, 0.05, target, 0.3, 1]) { const sp = h("span", {}, lg); h("span", { style: `width:14px;height:12px;border-radius:2px;background:${fdrColor(f, target, dark)};display:inline-block` }, sp); h("span", {}, sp, "FDR " + ru(f, f < 0.1 ? 2 : 1)); }
+  } else { const sp = h("span", {}, lg); h("span", { style: `width:60px;height:12px;border-radius:2px;background:linear-gradient(90deg,${BLUE[0]},${BLUE[6]});display:inline-block` }, sp); h("span", {}, sp, "0 … " + (GS.mode === "real" ? maxR : ru(maxN, 0))); }
+  { const sp = h("span", {}, lg); h("span", { style: `width:14px;height:12px;border:2px solid var(--ink);display:inline-block` }, sp); h("span", {}, sp, "допустимая область"); }
+  { const sp = h("span", {}, lg); h("span", { style: `width:12px;height:12px;border-radius:50%;background:var(--ink);display:inline-block` }, sp); h("span", {}, sp, "подсказка"); }
+  { const sp = h("span", {}, lg); h("span", {}, sp, "◇"); h("span", {}, sp, "выбор автора"); }
+  document.getElementById("heatCap").textContent = sid + ". Подсказка: " + pickTxt + ". Автор: " +
+    (s.author ? ru(s.author[0], 2) + " / " + ru(s.author[1], 1) + " (" + (s.source === "own" ? "выбран на этой сессии" : "записан кнопкой «для всех сессий мыши»") + ")" : "ещё не выбрал") +
+    ". Маска ореолов: " + ru(100 * (GS.halo === "cur" ? s.halo : s.halo_capped), 0) + " % рабочей области.";
+}
+function initHeat() {
+  const cases = DATA.num.example_cases || {};
+  const seg = document.getElementById("gCase");
+  const CASE_RU = { interior: "внутри сетки", pnr_edge: "край min_pnr 20", corr_edge: "угол 0,98 / 20", fallback: "запасной robust_bg" };
+  for (const [key, sid] of Object.entries(cases)) h("button", { "data-v": sid, "aria-pressed": "false" }, seg, CASE_RU[key] || key);
+  const sel = document.getElementById("gSel");
+  DATA.sessions.forEach(s => { if (DATA.grids[s.sid]) { const o = h("option", { value: s.sid }, sel, s.sid + (s.author ? "" : " (нет выбора автора)")); } });
+  const go = sid => { GS.sid = sid; sel.value = sid; segSet("gCase", sid); drawHeat(); };
+  segInit("gCase", go);
+  sel.addEventListener("change", () => go(sel.value));
+  segInit("gMode", v => { GS.mode = v; drawHeat(); });
+  segInit("gGrid", v => { GS.wide = v === "wide"; drawHeat(); });
+  segInit("gHalo", v => { GS.halo = v; drawHeat(); });
+  document.getElementById("gT").addEventListener("input", e => { GS.t = +e.target.value; drawHeat(); });
+  go(DATA.grids["LT1_J06_1D"] ? "LT1_J06_1D" : (Object.values(cases)[0] || DATA.sessions[0].sid));
+}
+
+// ---------------------------------------------------------------- generic dot-row chart
+function dotRows(boxId, rows, opts) {
+  // rows: [{label, group, points: [{v, series, tip}], line: bool}], opts: {x0, x1, ticks, ref: [{v, label}], series: {name: {color, shape, label}}}
+  const box = document.getElementById(boxId); box.replaceChildren();
+  const rh = opts.rowH || 15, m = { l: opts.left || 96, r: 70, t: 22, b: 34 };
+  const W = 860, H = m.t + rows.length * rh + m.b;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": opts.aria || "" }, box);
+  const X = v => m.l + (Math.max(opts.x0, Math.min(opts.x1, v)) - opts.x0) / (opts.x1 - opts.x0) * (W - m.l - m.r);
+  for (const t of opts.ticks) { el("line", { x1: X(t), x2: X(t), y1: m.t - 6, y2: m.t + rows.length * rh, stroke: css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: X(t), y: H - 16, class: "tick", "text-anchor": "middle" }, svg, ru(t)); }
+  el("text", { x: m.l + (W - m.l - m.r) / 2, y: H - 2, "text-anchor": "middle" }, svg, opts.xlabel || "");
+  for (const r of (opts.ref || [])) { el("line", { x1: X(r.v), x2: X(r.v), y1: m.t - 10, y2: m.t + rows.length * rh, stroke: css("--ink2"), "stroke-width": 1.5 }, svg);
+    el("text", { x: X(r.v) + 4, y: m.t - 10, style: "fill:var(--ink)" }, svg, r.label); }
+  let prevGroup = null;
+  rows.forEach((r, n) => {
+    const y = m.t + n * rh + rh / 2;
+    if (r.group !== prevGroup && n > 0) el("line", { x1: 4, x2: W - 4, y1: y - rh / 2, y2: y - rh / 2, stroke: css("--grid"), "stroke-width": 1 }, svg);
+    prevGroup = r.group;
+    el("text", { x: m.l - 8, y: y + 4, "text-anchor": "end", class: "tick" }, svg, r.label);
+    const vs = r.points.filter(p => p.v !== null && p.v !== undefined);
+    if (r.line && vs.length > 1) { const lo = Math.min(...vs.map(p => p.v)), hi = Math.max(...vs.map(p => p.v)); el("line", { x1: X(lo), x2: X(hi), y1: y, y2: y, stroke: css("--axis"), "stroke-width": 2 }, svg); }
+    for (const p of vs) {
+      const S = opts.series[p.series], x = X(p.v), g = el("g", { style: "cursor:default" }, svg);
+      el("rect", { x: x - 10, y: y - rh / 2, width: 20, height: rh, fill: "transparent" }, g);
+      if (S.shape === "diamond") el("path", { d: `M${x} ${y - 6}L${x + 6} ${y}L${x} ${y + 6}L${x - 6} ${y}Z`, fill: S.color, stroke: css("--ring"), "stroke-width": 2 }, g);
+      else if (S.shape === "tri") el("path", { d: `M${x} ${y - 6}L${x + 6} ${y + 5}L${x - 6} ${y + 5}Z`, fill: S.color, stroke: css("--ring"), "stroke-width": 2 }, g);
+      else el("circle", { cx: x, cy: y, r: 5, fill: S.color, stroke: css("--ring"), "stroke-width": 2 }, g);
+      if (p.v > opts.x1) el("text", { x: X(opts.x1) + 8, y: y + 4, class: "tick" }, g, "→ " + ru(p.v, opts.d === undefined ? 1 : opts.d));
+      g.addEventListener("pointermove", ev => showTip(ev, p.tip));
+      g.addEventListener("pointerleave", hideTip);
+    }
+  });
+  const lg = document.getElementById(opts.legendId); lg.replaceChildren();
+  for (const k of Object.keys(opts.series)) {
+    const S = opts.series[k], sp = h("span", {}, lg);
+    const sv = el("svg", { width: 14, height: 14, viewBox: "0 0 14 14" }, sp);
+    if (S.shape === "diamond") el("path", { d: "M7 1L13 7L7 13L1 7Z", fill: S.color }, sv);
+    else if (S.shape === "tri") el("path", { d: "M7 1L13 12L1 12Z", fill: S.color }, sv);
+    else el("circle", { cx: 7, cy: 7, r: 5, fill: S.color }, sv);
+    h("span", {}, sp, S.label);
+  }
+}
+const TYPE_RU = { interior: "внутри сетки", pnr_edge: "на краю min_pnr 20", corr_edge: "на краю min_corr 0,98", fallback: "запасной robust_bg" };
+function cutChart() {
+  const mice = [...new Set(DATA.sessions.map(s => s.mouse))];
+  const rows = mice.map(mm => ({ label: mm.replace("LT1_", ""), group: mm, points: DATA.sessions.filter(s => s.mouse === mm).map(s => ({
+    v: s.cut, series: s.type, tip: [[ru(s.cut, 3), "порог корреляции для маски ореолов (медиана + 3 SD)"], [s.sid, ""],
+      [ru(100 * s.halo, 0) + " %", "площадь маски ореолов"], [ru(s.batch[0], 2) + " / " + ru(s.batch[1], 2), "подсказка (" + TYPE_RU[s.type] + ")"]] })) }));
+  const ser = {}; ["interior", "pnr_edge", "corr_edge", "fallback"].forEach((t, n) => ser[t] = { color: css(["--s1", "--s2", "--s3", "--s4"][n]), shape: ["circle", "tri", "diamond", "circle"][n], label: TYPE_RU[t] });
+  dotRows("cutChart", rows, { x0: 0.92, x1: 1.16, ticks: [0.92, 0.96, 1.0, 1.04, 1.08, 1.12, 1.16], ref: [{ v: 1.0, label: "1,0: корреляция больше не бывает" }],
+    series: ser, legendId: "cutLegend", xlabel: "порог корреляции маски ореолов: медиана + 3 SD карты корреляции", left: 60, rowH: 16, d: 3, aria: "Порог маски ореолов по сессиям" });
+}
+function fdrChart() {
+  const rows = DATA.sessions.filter(s => s.author).map(s => ({ label: s.sid.replace("LT1_", ""), group: s.mouse, line: true, points: [
+    { v: s.author_fdr, series: "cur", tip: [[ru(s.author_fdr, 2), "FDR в точке автора, маска как сейчас"], [s.sid, ""], [ru(s.author[0], 2) + " / " + ru(s.author[1], 1), "точка автора"]] },
+    { v: s.author_fdr_capped, series: "cap", tip: [[ru(s.author_fdr_capped, 2), "FDR в точке автора, маска с исправлением"], [s.sid, ""]] }] }));
+  dotRows("fdrChart", rows, { x0: 0, x1: 1, ticks: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1], ref: [{ v: 0.1, label: "цель 0,1" }],
+    series: { cur: { color: css("--s2"), shape: "circle", label: "маска ореолов как сейчас" }, cap: { color: css("--s1"), shape: "circle", label: "маска с исправлением" } },
+    legendId: "fdrLegend", xlabel: "оценка FDR в точке автора (ложные / затравки)", left: 70, rowH: 13, d: 2, aria: "FDR в точке автора" });
+}
+const R = { alt: "wide", ax: 1 };
+function rChart() {
+  const ax = R.ax, rows = DATA.sessions.filter(s => s.author && s[R.alt]).map(s => {
+    const alt = s[R.alt][0], fmt = v => ru(v, ax ? 1 : 2);
+    return { label: s.sid.replace("LT1_", ""), group: s.mouse, line: true, points: [
+      { v: s.batch[ax], series: "cur", tip: [[fmt(s.batch[ax]), "подсказка сейчас (" + s.batch[2] + ")"], [s.sid, ""]] },
+      { v: alt[ax], series: "alt", tip: [[fmt(alt[ax]), (R.alt === "wide" ? "Р2, сетка шире" : "исправленный ореол") + " (" + s[R.alt][1] + ")"], [s.sid, ""]] },
+      { v: s.author[ax], series: "au", tip: [[fmt(s.author[ax]), "выбор автора"], [s.sid, ""]] }] };
+  });
+  const opt = ax ? { x0: 10, x1: 50, ticks: [10, 15, 20, 25, 30, 40, 50], ref: [{ v: 20, label: "верх сетки сейчас" }], xlabel: "min_pnr", d: 1 }
+    : { x0: 0.80, x1: 1.0, ticks: [0.8, 0.85, 0.9, 0.95, 0.98, 1.0], ref: [{ v: 0.98, label: "верх сетки сейчас" }], xlabel: "min_corr", d: 2 };
+  dotRows("rChart", rows, Object.assign(opt, { series: { cur: { color: css("--s1"), shape: "circle", label: "подсказка сейчас" },
+    alt: { color: css("--s3"), shape: "tri", label: R.alt === "wide" ? "Р2: та же подсказка на сетке шире" : "исправленная маска ореолов, сетка шире" },
+    au: { color: css("--s2"), shape: "diamond", label: "выбор автора" } }, legendId: "rLegend", left: 70, rowH: 13, aria: "Подсказки и выбор автора" }));
+}
+
+// ---------------------------------------------------------------- section 5: whole-frame traces
+function drawTraces() {
+  const box = document.getElementById("traces"); box.replaceChildren();
+  const tr = DATA.traces; if (!tr.length) return;
+  const W = 860, ph = 92, gap = 26, m = { l: 190, r: 12, t: 8 };
+  const H = m.t + tr.length * (ph + gap);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Средняя яркость кадра" }, box);
+  const y0 = -0.2, y1 = 0.3;
+  tr.forEach((t, n) => {
+    const top = m.t + n * (ph + gap), Y = v => top + (1 - (Math.max(y0, Math.min(y1, v)) - y0) / (y1 - y0)) * ph;
+    const L = t.hi.length, X = q => m.l + q / (L - 1) * (W - m.l - m.r);
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(0), y2: Y(0), stroke: css("--axis"), "stroke-width": 1 }, svg);
+    for (const v of [0.2, -0.1]) { el("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 }, svg); }
+    let d = "M" + X(0) + " " + Y(t.hi[0]);
+    for (let q = 1; q < L; q++) d += "L" + X(q).toFixed(1) + " " + Y(t.hi[q]).toFixed(1);
+    for (let q = L - 1; q >= 0; q--) d += "L" + X(q).toFixed(1) + " " + Y(t.lo[q]).toFixed(1);
+    const s = SES[t.sid], high = ["LT1_J06", "LT1_J08", "LT1_J10", "LT1_J18"].includes(s.mouse);
+    el("path", { d: d + "Z", fill: css(high ? "--s2" : "--s1"), stroke: "none" }, svg);
+    el("text", { x: 0, y: top + 14, style: "fill:var(--ink);font-weight:600" }, svg, t.sid.replace("LT1_", ""));
+    el("text", { x: 0, y: top + 30 }, svg, high ? "подсказка высокая" : "подсказка обычная");
+    el("text", { x: 0, y: top + 46 }, svg, "маска ореолов " + ru(100 * s.halo, 0) + " %");
+    el("text", { x: m.l - 4, y: Y(0.2) + 4, class: "tick", "text-anchor": "end" }, svg, "+20 %");
+    el("text", { x: m.l - 4, y: Y(-0.1) + 4, class: "tick", "text-anchor": "end" }, svg, "−10 %");
+    el("text", { x: m.l - 4, y: Y(0) + 4, class: "tick", "text-anchor": "end" }, svg, "0");
+    const mins = L * t.step_s / 60;
+    for (let mn = 0; mn <= mins; mn += mins > 30 ? 10 : 2) el("text", { x: X(mn * 60 / t.step_s), y: top + ph + 14, class: "tick", "text-anchor": "middle" }, svg, mn + " мин");
+  });
+}
+function sesTable() {
+  const box = document.getElementById("sesTable"); box.replaceChildren();
+  const t = h("table", {}, box), hr = h("tr", {}, t);
+  ["сессия", "подсказка сейчас", "тип", "автор", "порог маски", "маска, доля", "FDR у автора", "FDR у автора, исправл. маска", "Р2 (сетка шире)", "исправл. маска, сетка сейчас"].forEach(x => h("th", {}, hr, x));
+  const pt = v => v ? ru(v[0][0], 2) + " / " + ru(v[0][1], 1) + (v[1] === "robust_bg" ? " (robust_bg)" : "") : "—";
+  DATA.sessions.forEach(s => {
+    const tr = h("tr", {}, t);
+    [s.sid.replace("LT1_", ""), ru(s.batch[0], 2) + " / " + ru(s.batch[1], 2), TYPE_RU[s.type], s.author ? ru(s.author[0], 2) + " / " + ru(s.author[1], 1) + (s.source === "own" ? "" : " (кнопкой для мыши)") : "—",
+     ru(s.cut, 3), ru(s.halo, 2), ru(s.author_fdr, 2), ru(s.author_fdr_capped, 2), pt(s.wide), pt(s.orig_cap)].forEach(x => h("td", {}, tr, x));
+  });
+}
+function chartCaptions() {
+  document.getElementById("cutCap").textContent = "Одна точка — одна сессия, строки — мыши. Правее линии 1,0 маска ореолов пуста. Цвет и форма — тип подсказки батча. Наведите мышь на точку: сессия, порог, подсказка.";
+  document.getElementById("fdrCap").textContent = "Сессии с выбором автора. Оценка FDR в точке автора при маске как сейчас (оранжевая) и с исправлением (синяя). Где маска уже работает, точки совпадают (видна одна синяя), кроме J01_1D, J30_2D и J30_3D: там исправленная маска шире. J10_2D (полосы в кадре) разбирается отдельно.";
+  document.getElementById("rCap").textContent = "Сессии с выбором автора. Синий кружок — подсказка батча сейчас, зелёный треугольник — та же подсказка при выбранном варианте, оранжевый ромб — ваш выбор. Значения за краем оси подписаны стрелкой.";
+}
+function tracesCaption() {
+  document.getElementById("tracesCap").textContent = "dF/F средней яркости рабочей области; чёрные кадры заменены медианой. "
+    + "Залито между минимумом и максимумом каждых 0,5 с. Оранжевые: мыши с высокой подсказкой, синие: обычные. Шкала по оси Y общая.";
+}
+function framesTable() {
+  const box = document.getElementById("framesTable"); box.replaceChildren();
+  const sids = Object.keys(DATA.frames); if (!sids.length) return;
+  const VN = { all: "все кадры", no_black: "без чёрных кадров", no_start: "без первых 15 с", no_bright: "без 2 % самых ярких кадров", no_dim: "без 2 % самых тёмных кадров", no_ctrl: "контроль: без стольких же кадров, сдвинутых во времени" };
+  const t = h("table", {}, box), hr = h("tr", {}, t); h("th", {}, hr, "пересчитанные карты");
+  sids.forEach(s => h("th", {}, hr, s.replace("LT1_", "") + (DATA.frames[s].author ? " (автор " + ru(DATA.frames[s].author[0], 2) + " / " + ru(DATA.frames[s].author[1], 1) + ")" : "")));
+  for (const v of Object.keys(VN)) {
+    const tr = h("tr", {}, t); h("td", {}, tr, VN[v]);
+    sids.forEach(s => { const x = DATA.frames[s].versions[v]; if (!x) { h("td", {}, tr, "—"); return; }
+      const td = h("td", {}, tr); h("div", {}, td, "подсказка " + ru(x.batch.min_corr, 2) + " / " + ru(x.batch.min_pnr, 2) + (x.batch.method === "robust_bg" ? " (robust_bg)" : ""));
+      if (x.at_author) h("div", { class: "muted" }, td, "у автора: FDR " + ru(x.at_author.fdr, 2) + ", затравок " + x.at_author.n_seeds); });
+  }
+  const tr = h("tr", {}, t); h("td", { class: "muted" }, tr, "сверка с картами батча, макс. |разница|");
+  sids.forEach(s => { const c = DATA.frames[s].check_max_abs_diff; h("td", { class: "muted" }, tr, "corr " + ru(c.cn, 4) + ", pnr " + ru(c.pnr, 4)); });
+}
+
+function drawChain() {
+  const box = document.getElementById("chain"); box.replaceChildren();
+  const steps = [
+    ["Маска пуста", "порог корреляции выше 1 в " + DATA.num.n_halo_empty + " из " + DATA.num.n_sessions + " сессий"],
+    ["Кольца вокруг клеток", "в зеркальном фильме считаются ложными клетками"],
+    ["Доля ложных высока", "в ваших точках медиана " + ru(DATA.num.author_fdr_halo_empty[0], 2) + " (правило требует 0,1)"],
+    ["Подсказка строгая", "край таблицы min_corr 0,98 или запасной метод"]];
+  const W = 900, bw = 194, gap = 37, H = 92;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": steps.map(x => x[0]).join(" -> ") }, box);
+  steps.forEach((st, n) => {
+    const x = 4 + n * (bw + gap);
+    el("rect", { x, y: 6, width: bw, height: H - 12, rx: 8, fill: css("--surface"), stroke: css("--axis"), "stroke-width": 1.5 }, svg);
+    el("text", { x: x + 12, y: 30, style: "fill:var(--ink);font-weight:600;font-size:14px" }, svg, st[0]);
+    const words = st[1].split(" "); let line = "", ly = 50;
+    for (const w of words) {
+      if ((line + " " + w).length > 27) { el("text", { x: x + 12, y: ly, style: "font-size:12.5px" }, svg, line.trim()); line = ""; ly += 16; }
+      line += " " + w;
+    }
+    el("text", { x: x + 12, y: ly, style: "font-size:12.5px" }, svg, line.trim());
+    if (n < steps.length - 1) {
+      const ax = x + bw + 6, ay = H / 2;
+      el("path", { d: `M${ax} ${ay}H${ax + gap - 14}`, stroke: css("--ink2"), "stroke-width": 2 }, svg);
+      el("path", { d: `M${ax + gap - 14} ${ay - 5}L${ax + gap - 6} ${ay}L${ax + gap - 14} ${ay + 5}Z`, fill: css("--ink2") }, svg);
+    }
+  });
+}
+function renderAll() { fillNums(); drawChain(); drawPanel(); drawProfile(); drawHeat(); cutChart(); fdrChart(); rChart(); drawTraces(); tracesCaption(); chartCaptions(); framesTable(); sesTable(); }
+initPanel(); initHeat();
+segInit("rAlt", v => { R.alt = v; rChart(); });
+segInit("rAxis", v => { R.ax = +v; rChart(); });
+renderAll();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+</script>
+</body>
+</html>
