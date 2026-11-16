@@ -7,9 +7,10 @@ copied 2026-11-17. The realdata test runs the same check on the live series (BEA
 import pytest
 
 from bearmind import config, registry, runner
+from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
 
-from tests.bearmind.lt1_snapshot import SNAPSHOT, SNAPSHOT_SIDS, copy_series, live_bearmind_dir, stale_finished
+from tests.bearmind.lt1_snapshot import SNAPSHOT, SNAPSHOT_SIDS, copy_series, live_series_root, stale_finished, write_machine
 
 
 def test_snapshot_finished_stages_stay_current(tmp_path):
@@ -25,12 +26,18 @@ def test_snapshot_finished_stages_stay_current(tmp_path):
 def test_snapshot_check_sees_a_changed_input(tmp_path):
     paths = copy_series(SNAPSHOT, tmp_path / "lt1")
     config.update_yaml(paths.mouse_config("LT1_J03"), {"mc": {"max_shifts": [30, 30]}})
-    assert ("LT1_J03_2D", "mc") in stale_finished(paths)
+    assert stale_finished(paths) == [("LT1_J03_2D", "cnmf"), ("LT1_J03_2D", "mc"), ("LT1_J03_2D", "thresholds")]
 
 
 @pytest.mark.realdata
-def test_live_series_finished_stages_stay_current(tmp_path):
-    src = live_bearmind_dir()
-    if src is None:
+def test_live_series_finished_stages_stay_current():
+    """Reads the live series in place (nothing is copied or written): the gate, autoinspect and export hashes take
+    stats of files that a copy of the service folder would not have."""
+    root = live_series_root()
+    if root is None:
         pytest.skip("BEARMIND_LT1_SERIES is not set")
-    assert stale_finished(copy_series(src, tmp_path / "lt1")) == []
+    paths = SeriesPaths(root)
+    write_machine()  # the test's own BEARMIND_HOME, not the real machine file
+    recs, broken = registry.read_all(paths)
+    assert recs and broken == [], f"no registry under {root}\_bearmind, or unreadable records: {broken}"
+    assert stale_finished(paths) == []

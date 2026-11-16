@@ -11,9 +11,15 @@ from bearmind.registry import STAGES, State
 SNAPSHOT = Path(__file__).resolve().parents[1] / "data" / "lt1_snapshot"
 SNAPSHOT_SIDS = ("LT1_J01_1D", "LT1_J03_2D", "LT1_J05_1D", "LT1_J06_1D", "LT1_J10_1D", "LT1_J10_2D", "LT1_J17_2D",
                  "LT1_J24_3D", "LT1_J52_1D")
-# The machine of the LT1 batch (~/.bearmind/machine.yaml, 2026-11-16). The RAM budget picks ssub_B, an input of
-# the CNMF-E hash, so another machine would show every finished CNMF-E stage as changed.
+# The machine of the LT1 batch (~/.bearmind/machine.yaml, 2026-11-16), except temp_dir (a test value, not a hash
+# input). The RAM budget picks ssub_B, an input of the CNMF-E hash, so another machine would show every finished
+# CNMF-E stage as changed.
 MACHINE = {"temp_dir": "C:/bearmind_test_temp", "n_cpus": 32, "ram_gb": 191.2, "cnmf_ram_budget_gb": 152.96}
+
+
+def write_machine() -> None:
+    """Write MACHINE to the test's machine file (BEARMIND_HOME is a temporary folder in every test)."""
+    config.update_yaml(config.machine_file(), MACHINE)
 
 
 def copy_series(bearmind_dir: Path, root: Path) -> SeriesPaths:
@@ -29,7 +35,7 @@ def copy_series(bearmind_dir: Path, root: Path) -> SeriesPaths:
         shutil.copyfile(f, dst / "registry" / f.name)
     if (bearmind_dir / "config").is_dir():
         shutil.copytree(bearmind_dir / "config", dst / "config", dirs_exist_ok=True)
-    config.update_yaml(config.machine_file(), MACHINE)
+    write_machine()
     recs, _ = registry.read_all(paths)
     for rec in recs:
         for stage in STAGES:
@@ -38,7 +44,10 @@ def copy_series(bearmind_dir: Path, root: Path) -> SeriesPaths:
                 continue
             for key in runner.REQUIRED[stage]:
                 if key in st.outputs:
-                    f = root / st.outputs[key]
+                    rel = Path(st.outputs[key])
+                    if rel.is_absolute() or ".." in rel.parts:  # the copy must never touch anything outside root
+                        raise ValueError(f"{rec.sid} {stage}: output path leaves the series: {rel}")
+                    f = root / rel
                     f.parent.mkdir(parents=True, exist_ok=True)
                     f.touch()
     return paths
@@ -47,7 +56,8 @@ def copy_series(bearmind_dir: Path, root: Path) -> SeriesPaths:
 def stale_finished(paths) -> list[tuple[str, str]]:
     """(sid, stage) of each main stage in state DONE or RUNNING whose stored params_hash differs from the hash of
     the current code and configs; ascending."""
-    recs, _ = registry.read_all(paths)
+    recs, broken = registry.read_all(paths)
+    assert broken == [], f"unreadable registry records: {broken}"
     view = runner.StageView(paths)
     out = []
     for rec in recs:
@@ -56,6 +66,12 @@ def stale_finished(paths) -> list[tuple[str, str]]:
             if st is not None and st.state in (State.DONE, State.RUNNING) and st.params_hash != view.hash(rec, stage):
                 out.append((rec.sid, stage))
     return sorted(out)
+
+
+def live_series_root() -> Path | None:
+    """The live series folder from BEARMIND_LT1_SERIES (the folder that holds _bearmind), or None."""
+    src = os.environ.get("BEARMIND_LT1_SERIES")
+    return Path(src) if src else None
 
 
 def live_bearmind_dir() -> Path | None:
