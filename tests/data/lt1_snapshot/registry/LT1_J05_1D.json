@@ -1,0 +1,528 @@
+{
+  "sid": "LT1_J05_1D",
+  "mouse": "LT1_J05",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J05_1D",
+      "chunks": [
+        "LT1_J05_1D_0.avi",
+        "LT1_J05_1D_1.avi",
+        "LT1_J05_1D_2.avi",
+        "LT1_J05_1D_3.avi",
+        "LT1_J05_1D_4.avi",
+        "LT1_J05_1D_5.avi",
+        "LT1_J05_1D_6.avi",
+        "LT1_J05_1D_7.avi",
+        "LT1_J05_1D_8.avi",
+        "LT1_J05_1D_9.avi",
+        "LT1_J05_1D_10.avi",
+        "LT1_J05_1D_11.avi",
+        "LT1_J05_1D_12.avi",
+        "LT1_J05_1D_13.avi",
+        "LT1_J05_1D_14.avi",
+        "LT1_J05_1D_15.avi",
+        "LT1_J05_1D_16.avi",
+        "LT1_J05_1D_17.avi",
+        "LT1_J05_1D_18.avi",
+        "LT1_J05_1D_19.avi",
+        "LT1_J05_1D_20.avi",
+        "LT1_J05_1D_21.avi",
+        "LT1_J05_1D_22.avi",
+        "LT1_J05_1D_23.avi",
+        "LT1_J05_1D_24.avi",
+        "LT1_J05_1D_25.avi",
+        "LT1_J05_1D_26.avi",
+        "LT1_J05_1D_27.avi",
+        "LT1_J05_1D_28.avi",
+        "LT1_J05_1D_29.avi",
+        "LT1_J05_1D_30.avi",
+        "LT1_J05_1D_31.avi",
+        "LT1_J05_1D_32.avi",
+        "LT1_J05_1D_33.avi",
+        "LT1_J05_1D_34.avi",
+        "LT1_J05_1D_35.avi",
+        "LT1_J05_1D_36.avi",
+        "LT1_J05_1D_37.avi",
+        "LT1_J05_1D_38.avi",
+        "LT1_J05_1D_39.avi",
+        "LT1_J05_1D_40.avi",
+        "LT1_J05_1D_41.avi",
+        "LT1_J05_1D_42.avi",
+        "LT1_J05_1D_43.avi",
+        "LT1_J05_1D_44.avi",
+        "LT1_J05_1D_45.avi",
+        "LT1_J05_1D_46.avi",
+        "LT1_J05_1D_47.avi"
+      ],
+      "n_frames": 47309,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J05_1D/LT1_J05_1D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        416
+      ]
+    }
+  ],
+  "n_frames": 47309,
+  "fps": 19.756285262572423,
+  "fps_info": {
+    "fps": 19.756285262572423,
+    "n_outliers": 24,
+    "n_gaps": 0,
+    "max_gap_ms": 78.5703125,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+  },
+  "anomalies": [
+    {
+      "code": "frames_ts_mismatch",
+      "level": "warning",
+      "message": "47416 frames in video, 47309 timestamp rows (diff 107, 0.2%)",
+      "auto_fixed": true,
+      "data": {
+        "diff": 107,
+        "where": "end"
+      }
+    },
+    {
+      "code": "gap_test_skipped",
+      "level": "info",
+      "message": "frame loss test skipped: the timestamps do not increase (a damaged row)",
+      "auto_fixed": false,
+      "data": {
+        "reason": "damaged",
+        "parts": [
+          0
+        ]
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.92 min_pnr=20.0",
+      "who": "User",
+      "when": "2026-11-13T17:30:11.665"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "d3dc39fe6c0b19c91d35191f91cdcaeb53e2ff4ffaa1c5d4dca793d2b5d158f4",
+      "started": "2026-11-11T17:51:03.507",
+      "finished": "2026-11-11T17:52:07.819",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J05_1D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          0,
+          39,
+          520,
+          493
+        ],
+        "fov_lit": [
+          0,
+          17,
+          550,
+          591
+        ],
+        "fov_activity": [
+          0,
+          39,
+          520,
+          493
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 107.64,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          0,
+          20,
+          540,
+          530
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J05_1D",
+            "chunks": [
+              "LT1_J05_1D_0.avi",
+              "LT1_J05_1D_1.avi",
+              "LT1_J05_1D_2.avi",
+              "LT1_J05_1D_3.avi",
+              "LT1_J05_1D_4.avi",
+              "LT1_J05_1D_5.avi",
+              "LT1_J05_1D_6.avi",
+              "LT1_J05_1D_7.avi",
+              "LT1_J05_1D_8.avi",
+              "LT1_J05_1D_9.avi",
+              "LT1_J05_1D_10.avi",
+              "LT1_J05_1D_11.avi",
+              "LT1_J05_1D_12.avi",
+              "LT1_J05_1D_13.avi",
+              "LT1_J05_1D_14.avi",
+              "LT1_J05_1D_15.avi",
+              "LT1_J05_1D_16.avi",
+              "LT1_J05_1D_17.avi",
+              "LT1_J05_1D_18.avi",
+              "LT1_J05_1D_19.avi",
+              "LT1_J05_1D_20.avi",
+              "LT1_J05_1D_21.avi",
+              "LT1_J05_1D_22.avi",
+              "LT1_J05_1D_23.avi",
+              "LT1_J05_1D_24.avi",
+              "LT1_J05_1D_25.avi",
+              "LT1_J05_1D_26.avi",
+              "LT1_J05_1D_27.avi",
+              "LT1_J05_1D_28.avi",
+              "LT1_J05_1D_29.avi",
+              "LT1_J05_1D_30.avi",
+              "LT1_J05_1D_31.avi",
+              "LT1_J05_1D_32.avi",
+              "LT1_J05_1D_33.avi",
+              "LT1_J05_1D_34.avi",
+              "LT1_J05_1D_35.avi",
+              "LT1_J05_1D_36.avi",
+              "LT1_J05_1D_37.avi",
+              "LT1_J05_1D_38.avi",
+              "LT1_J05_1D_39.avi",
+              "LT1_J05_1D_40.avi",
+              "LT1_J05_1D_41.avi",
+              "LT1_J05_1D_42.avi",
+              "LT1_J05_1D_43.avi",
+              "LT1_J05_1D_44.avi",
+              "LT1_J05_1D_45.avi",
+              "LT1_J05_1D_46.avi",
+              "LT1_J05_1D_47.avi"
+            ],
+            "n_frames": 47309
+          }
+        ],
+        "n_frames": 47309,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "5060c6d02742f04c7b8f63cf612f483217e1ea11a827d86fc590655751864074",
+      "started": "2026-11-11T20:29:13.152",
+      "finished": "2026-11-11T20:43:17.173",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J05_1D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J05_1D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 7.5,
+        "mean_template_corr": 0.8724935682742446,
+        "n_frames": 47309,
+        "crop": [
+          0,
+          20,
+          540,
+          530
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "ok",
+          "value": 7.5,
+          "message": "max shift 7.5 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "ok",
+          "value": 0.8724935682742446,
+          "message": "template corr 0.872494 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          540,
+          530
+        ],
+        "box_pos": [
+          0,
+          20
+        ],
+        "fps": 19.756285262572423
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "dfdd94c2efafc27875ad77b606a3a61b439057af8bb99bf938becda521cdd2ff",
+      "started": "2026-11-12T23:28:17.151",
+      "finished": "2026-11-13T00:29:04.653",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J05_1D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.94,
+          "min_pnr": 20.0,
+          "method": "mirror_fdr"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 47309,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "done",
+      "params_hash": "c88ad05e3278356f53c8070759749944a62c9734afb38634a1fa9861e1315e13",
+      "started": "2026-11-14T12:24:08.322",
+      "finished": "2026-11-14T14:06:02.361",
+      "outputs": {
+        "estimates": "4_Estimates/LT1_J05_1D_estimates.pickle",
+        "residual_png": "Preview/LT1_J05_1D_cnmf_residual.png"
+      },
+      "metrics": {
+        "n_components": 899,
+        "n_accepted": 878,
+        "missed_cells": 1.0,
+        "median_snr": 7.867649091682159,
+        "gSig": 4,
+        "min_corr": 0.92,
+        "min_pnr": 20.0,
+        "patch_workers": 13,
+        "ssub_B": 2,
+        "need_gib": 71.7
+      },
+      "checks": [
+        {
+          "stage": "cnmf",
+          "name": "cnmf_n_components_vs_median",
+          "level": "ok",
+          "value": 1.7238734419942474,
+          "message": "899 components, 1.7x series median (521.5) (warn > 2, error > 3)"
+        },
+        {
+          "stage": "cnmf",
+          "name": "cnmf_missed_cells",
+          "level": "ok",
+          "value": 1.0,
+          "message": "1 missed cells (warn > 20)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "decay_time": 1,
+        "method_init": "corr_pnr",
+        "K": null,
+        "merge_thr": 0.8,
+        "p": 1,
+        "tsub": 1,
+        "ssub": 1,
+        "rf": 40,
+        "stride": 25,
+        "only_init": true,
+        "nb": 0,
+        "nb_patch": 0,
+        "method_deconvolution": "oasis",
+        "low_rank_background": null,
+        "update_background_components": true,
+        "normalize_init": false,
+        "center_psf": true,
+        "ssub_B": 2,
+        "ring_size_factor": 1.5,
+        "del_duplicates": true,
+        "border_pix": 5,
+        "min_SNR": 2.5,
+        "rval_thr": 0.95,
+        "use_cnn": false,
+        "gSig": [
+          4,
+          4
+        ],
+        "min_corr": 0.92,
+        "min_pnr": 20.0,
+        "gSiz": [
+          17,
+          17
+        ],
+        "fr": 19.756285262572423
+      }
+    },
+    "gate": {
+      "state": "waiting",
+      "params_hash": "c5e5f1ad401a3d5867e45aa9f7965644b5652a153c337e0d7c39a247fbc479b3",
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": "waiting for manual_inspection",
+      "params": {
+        "enabled": true,
+        "decision": null,
+        "manual_result": null,
+        "cnmf_finished": "2026-11-14T14:06:02.361"
+      }
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "mc_preview": {
+      "state": "done",
+      "params_hash": "d606066ce7d5dafc799d86deccf18913b24294ec12b83c65b6c2c4f6eec37d49",
+      "started": "2026-11-12T10:31:46.951",
+      "finished": "2026-11-12T10:55:28.718",
+      "outputs": {
+        "preview_raw": "Preview/LT1_J05_1D_raw.mp4",
+        "preview_raw_dff": "Preview/LT1_J05_1D_raw_dff.mp4",
+        "preview_mc": "Preview/LT1_J05_1D_mc.mp4",
+        "preview_mc_dff": "Preview/LT1_J05_1D_mc_dff.mp4"
+      },
+      "metrics": {
+        "tbin": 2,
+        "ssub": 1,
+        "bytes": 1165628281
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "enabled": true,
+        "tbin": 2,
+        "ssub": 1,
+        "crf": 23,
+        "speed": 4
+      }
+    }
+  }
+}

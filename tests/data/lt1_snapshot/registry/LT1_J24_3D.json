@@ -1,0 +1,389 @@
+{
+  "sid": "LT1_J24_3D",
+  "mouse": "LT1_J24",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J24_3D",
+      "chunks": [
+        "LT1_J24_3D_0.avi",
+        "LT1_J24_3D_1.avi",
+        "LT1_J24_3D_2.avi",
+        "LT1_J24_3D_3.avi",
+        "LT1_J24_3D_4.avi",
+        "LT1_J24_3D_5.avi",
+        "LT1_J24_3D_6.avi",
+        "LT1_J24_3D_7.avi",
+        "LT1_J24_3D_8.avi",
+        "LT1_J24_3D_9.avi",
+        "LT1_J24_3D_10.avi",
+        "LT1_J24_3D_11.avi",
+        "LT1_J24_3D_12.avi",
+        "LT1_J24_3D_13.avi",
+        "LT1_J24_3D_14.avi",
+        "LT1_J24_3D_15.avi",
+        "LT1_J24_3D_16.avi",
+        "LT1_J24_3D_17.avi"
+      ],
+      "n_frames": 17856,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J24_3D/LT1_J24_3D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        856
+      ]
+    }
+  ],
+  "n_frames": 17856,
+  "fps": 29.786274982754378,
+  "fps_info": {
+    "fps": 29.786274982754378,
+    "n_outliers": 486,
+    "n_gaps": 4,
+    "max_gap_ms": 170.0,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+  },
+  "anomalies": [
+    {
+      "code": "dropped_frames",
+      "level": "warning",
+      "message": "5 frames lost (168 ms) in 3 gaps: certain 4 frames lost (134 ms), probable 1 frame lost (34 ms)\n1 frame lost (34 ms) at 3:09.9, probable\n1 frame lost (34 ms) at 5:54.2, certain\n3 frames lost (101 ms) at 6:03.6, certain",
+      "auto_fixed": false,
+      "data": {
+        "rule": "window",
+        "n_gaps": 3,
+        "n_clusters": 3,
+        "n_dropped": 5,
+        "lost_ms": 167.9,
+        "max_gap_ms": 170.0,
+        "gaps": [
+          {
+            "part": 0,
+            "index": 5655,
+            "at_ms": 189868.4,
+            "interval_ms": 77.5,
+            "excess": 0.94,
+            "frames": 1,
+            "lost_ms": 33.6,
+            "certain": false,
+            "n_gaps": 1,
+            "tested": true
+          },
+          {
+            "part": 0,
+            "index": 10548,
+            "at_ms": 354207.5,
+            "interval_ms": 89.2,
+            "excess": 0.97,
+            "frames": 1,
+            "lost_ms": 33.6,
+            "certain": true,
+            "n_gaps": 1,
+            "tested": true
+          },
+          {
+            "part": 0,
+            "index": 10828,
+            "at_ms": 363641.2,
+            "interval_ms": 170.0,
+            "excess": 2.98,
+            "frames": 3,
+            "lost_ms": 100.7,
+            "certain": true,
+            "n_gaps": 1,
+            "tested": true
+          }
+        ],
+        "n_certain": 2,
+        "frames_certain": 4,
+        "lost_ms_certain": 134.3,
+        "n_probable": 1,
+        "frames_probable": 1,
+        "lost_ms_probable": 33.6
+      }
+    },
+    {
+      "code": "timing_jitter",
+      "level": "info",
+      "message": "timing jitter: 1 gap, no frames lost",
+      "auto_fixed": false,
+      "data": {
+        "n_gaps": 1
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.92 min_pnr=15.0",
+      "who": "User",
+      "when": "2026-11-16T21:37:13.443"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "7d6f31725bc85cdaf45c730dd95a8351e2c148c36f0926657d608c85c4e7ae82",
+      "started": "2026-11-11T18:28:02.597",
+      "finished": "2026-11-11T18:29:06.857",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J24_3D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          96,
+          57,
+          435,
+          469
+        ],
+        "fov_lit": [
+          60,
+          23,
+          490,
+          525
+        ],
+        "fov_activity": [
+          96,
+          57,
+          435,
+          469
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 28.23,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          86,
+          34,
+          455,
+          514
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J24_3D",
+            "chunks": [
+              "LT1_J24_3D_0.avi",
+              "LT1_J24_3D_1.avi",
+              "LT1_J24_3D_2.avi",
+              "LT1_J24_3D_3.avi",
+              "LT1_J24_3D_4.avi",
+              "LT1_J24_3D_5.avi",
+              "LT1_J24_3D_6.avi",
+              "LT1_J24_3D_7.avi",
+              "LT1_J24_3D_8.avi",
+              "LT1_J24_3D_9.avi",
+              "LT1_J24_3D_10.avi",
+              "LT1_J24_3D_11.avi",
+              "LT1_J24_3D_12.avi",
+              "LT1_J24_3D_13.avi",
+              "LT1_J24_3D_14.avi",
+              "LT1_J24_3D_15.avi",
+              "LT1_J24_3D_16.avi",
+              "LT1_J24_3D_17.avi"
+            ],
+            "n_frames": 17856
+          }
+        ],
+        "n_frames": 17856,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "27b58af3a61e257dbd58c4c2daf420d617e424e9b12b9164e69f750f7e8ffa07",
+      "started": "2026-11-12T02:53:15.146",
+      "finished": "2026-11-12T02:57:52.054",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J24_3D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J24_3D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 24.600000381469727,
+        "mean_template_corr": 0.909398206977763,
+        "n_frames": 17856,
+        "crop": [
+          86,
+          34,
+          455,
+          514
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "warning",
+          "value": 24.600000381469727,
+          "message": "max shift 24.6 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "ok",
+          "value": 0.909398206977763,
+          "message": "template corr 0.909398 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          455,
+          514
+        ],
+        "box_pos": [
+          86,
+          34
+        ],
+        "fps": 29.786274982754378
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "248e379b2bb5db898e30631d51a4985b844f4af71c9edf38d198e40d81d6687e",
+      "started": "2026-11-13T19:31:12.146",
+      "finished": "2026-11-13T19:36:07.547",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J24_3D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.9,
+          "min_pnr": 18.0,
+          "method": "mirror_fdr"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 17856,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "waiting",
+      "params_hash": "5b69e407837f66c5d456151ba2fe2e70e374c1aa74eb9767e85abedcbe9e45e6",
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": "waiting for thresholds",
+      "params": {
+        "waiting_for": "thresholds"
+      }
+    },
+    "gate": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    }
+  }
+}

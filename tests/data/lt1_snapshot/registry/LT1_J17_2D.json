@@ -1,0 +1,493 @@
+{
+  "sid": "LT1_J17_2D",
+  "mouse": "LT1_J17",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J17_2D",
+      "chunks": [
+        "LT1_J17_2D_0.avi",
+        "LT1_J17_2D_1.avi",
+        "LT1_J17_2D_2.avi",
+        "LT1_J17_2D_3.avi",
+        "LT1_J17_2D_4.avi",
+        "LT1_J17_2D_5.avi",
+        "LT1_J17_2D_6.avi",
+        "LT1_J17_2D_7.avi",
+        "LT1_J17_2D_8.avi",
+        "LT1_J17_2D_9.avi",
+        "LT1_J17_2D_10.avi",
+        "LT1_J17_2D_11.avi",
+        "LT1_J17_2D_12.avi",
+        "LT1_J17_2D_13.avi",
+        "LT1_J17_2D_14.avi",
+        "LT1_J17_2D_15.avi",
+        "LT1_J17_2D_16.avi",
+        "LT1_J17_2D_17.avi",
+        "LT1_J17_2D_18.avi",
+        "LT1_J17_2D_19.avi",
+        "LT1_J17_2D_20.avi",
+        "LT1_J17_2D_21.avi",
+        "LT1_J17_2D_22.avi",
+        "LT1_J17_2D_23.avi",
+        "LT1_J17_2D_24.avi",
+        "LT1_J17_2D_25.avi",
+        "LT1_J17_2D_26.avi",
+        "LT1_J17_2D_27.avi",
+        "LT1_J17_2D_28.avi",
+        "LT1_J17_2D_29.avi",
+        "LT1_J17_2D_30.avi",
+        "LT1_J17_2D_31.avi",
+        "LT1_J17_2D_32.avi",
+        "LT1_J17_2D_33.avi",
+        "LT1_J17_2D_34.avi",
+        "LT1_J17_2D_35.avi",
+        "LT1_J17_2D_36.avi",
+        "LT1_J17_2D_37.avi",
+        "LT1_J17_2D_38.avi",
+        "LT1_J17_2D_39.avi",
+        "LT1_J17_2D_40.avi",
+        "LT1_J17_2D_41.avi",
+        "LT1_J17_2D_42.avi",
+        "LT1_J17_2D_43.avi",
+        "LT1_J17_2D_44.avi",
+        "LT1_J17_2D_45.avi",
+        "LT1_J17_2D_46.avi",
+        "LT1_J17_2D_47.avi",
+        "LT1_J17_2D_48.avi",
+        "LT1_J17_2D_49.avi",
+        "LT1_J17_2D_50.avi",
+        "LT1_J17_2D_51.avi",
+        "LT1_J17_2D_52.avi",
+        "LT1_J17_2D_53.avi",
+        "LT1_J17_2D_54.avi",
+        "LT1_J17_2D_55.avi",
+        "LT1_J17_2D_56.avi",
+        "LT1_J17_2D_57.avi",
+        "LT1_J17_2D_58.avi",
+        "LT1_J17_2D_59.avi",
+        "LT1_J17_2D_60.avi",
+        "LT1_J17_2D_61.avi",
+        "LT1_J17_2D_62.avi",
+        "LT1_J17_2D_63.avi",
+        "LT1_J17_2D_64.avi",
+        "LT1_J17_2D_65.avi",
+        "LT1_J17_2D_66.avi",
+        "LT1_J17_2D_67.avi",
+        "LT1_J17_2D_68.avi",
+        "LT1_J17_2D_69.avi",
+        "LT1_J17_2D_70.avi",
+        "LT1_J17_2D_71.avi"
+      ],
+      "n_frames": 71472,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J17_2D/LT1_J17_2D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        472
+      ]
+    }
+  ],
+  "n_frames": 71472,
+  "fps": 29.7835162278344,
+  "fps_info": {
+    "fps": 29.7835162278344,
+    "n_outliers": 3653,
+    "n_gaps": 8,
+    "max_gap_ms": 69.6953125,
+    "median_interval_ms": 33.5390625,
+    "source": "timestamps"
+  },
+  "anomalies": [
+    {
+      "code": "timing_jitter",
+      "level": "info",
+      "message": "timing jitter: 8 gaps, no frames lost",
+      "auto_fixed": false,
+      "data": {
+        "n_gaps": 8
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.94 min_pnr=20.0",
+      "who": "User",
+      "when": "2026-11-16T21:33:10.396"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "d6d93b7c334320449d1a2c35618058701853e8b97471cd57caf97a9c726b9871",
+      "started": "2026-11-11T18:18:12.620",
+      "finished": "2026-11-11T18:19:17.769",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J17_2D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          72,
+          115,
+          424,
+          431
+        ],
+        "fov_lit": [
+          27,
+          109,
+          499,
+          480
+        ],
+        "fov_activity": [
+          72,
+          115,
+          424,
+          431
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 149.09,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          62,
+          85,
+          444,
+          491
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J17_2D",
+            "chunks": [
+              "LT1_J17_2D_0.avi",
+              "LT1_J17_2D_1.avi",
+              "LT1_J17_2D_2.avi",
+              "LT1_J17_2D_3.avi",
+              "LT1_J17_2D_4.avi",
+              "LT1_J17_2D_5.avi",
+              "LT1_J17_2D_6.avi",
+              "LT1_J17_2D_7.avi",
+              "LT1_J17_2D_8.avi",
+              "LT1_J17_2D_9.avi",
+              "LT1_J17_2D_10.avi",
+              "LT1_J17_2D_11.avi",
+              "LT1_J17_2D_12.avi",
+              "LT1_J17_2D_13.avi",
+              "LT1_J17_2D_14.avi",
+              "LT1_J17_2D_15.avi",
+              "LT1_J17_2D_16.avi",
+              "LT1_J17_2D_17.avi",
+              "LT1_J17_2D_18.avi",
+              "LT1_J17_2D_19.avi",
+              "LT1_J17_2D_20.avi",
+              "LT1_J17_2D_21.avi",
+              "LT1_J17_2D_22.avi",
+              "LT1_J17_2D_23.avi",
+              "LT1_J17_2D_24.avi",
+              "LT1_J17_2D_25.avi",
+              "LT1_J17_2D_26.avi",
+              "LT1_J17_2D_27.avi",
+              "LT1_J17_2D_28.avi",
+              "LT1_J17_2D_29.avi",
+              "LT1_J17_2D_30.avi",
+              "LT1_J17_2D_31.avi",
+              "LT1_J17_2D_32.avi",
+              "LT1_J17_2D_33.avi",
+              "LT1_J17_2D_34.avi",
+              "LT1_J17_2D_35.avi",
+              "LT1_J17_2D_36.avi",
+              "LT1_J17_2D_37.avi",
+              "LT1_J17_2D_38.avi",
+              "LT1_J17_2D_39.avi",
+              "LT1_J17_2D_40.avi",
+              "LT1_J17_2D_41.avi",
+              "LT1_J17_2D_42.avi",
+              "LT1_J17_2D_43.avi",
+              "LT1_J17_2D_44.avi",
+              "LT1_J17_2D_45.avi",
+              "LT1_J17_2D_46.avi",
+              "LT1_J17_2D_47.avi",
+              "LT1_J17_2D_48.avi",
+              "LT1_J17_2D_49.avi",
+              "LT1_J17_2D_50.avi",
+              "LT1_J17_2D_51.avi",
+              "LT1_J17_2D_52.avi",
+              "LT1_J17_2D_53.avi",
+              "LT1_J17_2D_54.avi",
+              "LT1_J17_2D_55.avi",
+              "LT1_J17_2D_56.avi",
+              "LT1_J17_2D_57.avi",
+              "LT1_J17_2D_58.avi",
+              "LT1_J17_2D_59.avi",
+              "LT1_J17_2D_60.avi",
+              "LT1_J17_2D_61.avi",
+              "LT1_J17_2D_62.avi",
+              "LT1_J17_2D_63.avi",
+              "LT1_J17_2D_64.avi",
+              "LT1_J17_2D_65.avi",
+              "LT1_J17_2D_66.avi",
+              "LT1_J17_2D_67.avi",
+              "LT1_J17_2D_68.avi",
+              "LT1_J17_2D_69.avi",
+              "LT1_J17_2D_70.avi",
+              "LT1_J17_2D_71.avi"
+            ],
+            "n_frames": 71472
+          }
+        ],
+        "n_frames": 71472,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "632f88802b76a0fe2402af6622de68235d9e5c674be7b557a2e563059fe53d3c",
+      "started": "2026-11-12T00:51:44.440",
+      "finished": "2026-11-12T01:07:24.492",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J17_2D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J17_2D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 35.70000076293945,
+        "mean_template_corr": 0.7470467239003873,
+        "n_frames": 71472,
+        "crop": [
+          62,
+          85,
+          444,
+          491
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "error",
+          "value": 35.70000076293945,
+          "message": "max shift 35.7 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "ok",
+          "value": 0.7470467239003873,
+          "message": "template corr 0.747047 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          444,
+          491
+        ],
+        "box_pos": [
+          62,
+          85
+        ],
+        "fps": 29.7835162278344
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "bb1581e91edef9483688bcf1d9cee4637d44c547e713533d38aaaaed950f835a",
+      "started": "2026-11-13T15:57:54.727",
+      "finished": "2026-11-13T16:30:18.784",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J17_2D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.98,
+          "min_pnr": 20.0,
+          "method": "mirror_fdr"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 71472,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "waiting",
+      "params_hash": "e86fca71261de6dc385a27ecda1f7340c48724f9b2fc439c7127951ec76b7928",
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": "waiting for thresholds",
+      "params": {
+        "waiting_for": "thresholds"
+      }
+    },
+    "gate": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    }
+  }
+}

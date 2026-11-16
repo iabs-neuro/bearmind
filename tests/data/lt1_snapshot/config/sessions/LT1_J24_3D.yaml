@@ -1,0 +1,8 @@
+crop:
+  box_pos:
+  - 86
+  - 34
+cnmf:
+  gSig: 4
+  min_corr: 0.92
+  min_pnr: 15.0

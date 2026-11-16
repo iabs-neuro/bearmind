@@ -1,0 +1,410 @@
+{
+  "sid": "LT1_J06_1D",
+  "mouse": "LT1_J06",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J06_1D",
+      "chunks": [
+        "LT1_J06_1D_0.avi",
+        "LT1_J06_1D_1.avi",
+        "LT1_J06_1D_2.avi",
+        "LT1_J06_1D_3.avi",
+        "LT1_J06_1D_4.avi",
+        "LT1_J06_1D_5.avi",
+        "LT1_J06_1D_6.avi",
+        "LT1_J06_1D_7.avi",
+        "LT1_J06_1D_8.avi",
+        "LT1_J06_1D_9.avi",
+        "LT1_J06_1D_10.avi",
+        "LT1_J06_1D_11.avi",
+        "LT1_J06_1D_12.avi",
+        "LT1_J06_1D_13.avi",
+        "LT1_J06_1D_14.avi",
+        "LT1_J06_1D_15.avi",
+        "LT1_J06_1D_16.avi",
+        "LT1_J06_1D_17.avi"
+      ],
+      "n_frames": 17856,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J06_1D/LT1_J06_1D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        856
+      ]
+    }
+  ],
+  "n_frames": 17856,
+  "fps": 29.78018415569476,
+  "fps_info": {
+    "fps": 29.78018415569476,
+    "n_outliers": 487,
+    "n_gaps": 0,
+    "max_gap_ms": 67.0703125,
+    "median_interval_ms": 33.5625,
+    "source": "timestamps"
+  },
+  "anomalies": [],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.94 min_pnr=16.9",
+      "who": "User",
+      "when": "2026-11-16T16:52:03.918"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "227c0d0c1930ed6e0bd1741c9514e332cd47280ab4f149538d558f5df536ecf4",
+      "started": "2026-11-11T17:55:22.913",
+      "finished": "2026-11-11T17:56:27.686",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J06_1D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          0,
+          18,
+          479,
+          465
+        ],
+        "fov_lit": [
+          0,
+          18,
+          528,
+          526
+        ],
+        "fov_activity": [
+          0,
+          18,
+          479,
+          465
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 40.17,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          0,
+          0,
+          531,
+          527
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J06_1D",
+            "chunks": [
+              "LT1_J06_1D_0.avi",
+              "LT1_J06_1D_1.avi",
+              "LT1_J06_1D_2.avi",
+              "LT1_J06_1D_3.avi",
+              "LT1_J06_1D_4.avi",
+              "LT1_J06_1D_5.avi",
+              "LT1_J06_1D_6.avi",
+              "LT1_J06_1D_7.avi",
+              "LT1_J06_1D_8.avi",
+              "LT1_J06_1D_9.avi",
+              "LT1_J06_1D_10.avi",
+              "LT1_J06_1D_11.avi",
+              "LT1_J06_1D_12.avi",
+              "LT1_J06_1D_13.avi",
+              "LT1_J06_1D_14.avi",
+              "LT1_J06_1D_15.avi",
+              "LT1_J06_1D_16.avi",
+              "LT1_J06_1D_17.avi"
+            ],
+            "n_frames": 17856
+          }
+        ],
+        "n_frames": 17856,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "69154616ae89d89638fb6aeb7588d472487d19a77ce4ec8d3d76d3aa83fa0934",
+      "started": "2026-11-11T21:27:01.678",
+      "finished": "2026-11-11T21:33:41.298",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J06_1D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J06_1D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 4.800000190734863,
+        "mean_template_corr": 0.6895434076521877,
+        "n_frames": 17856,
+        "crop": [
+          0,
+          0,
+          531,
+          527
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "ok",
+          "value": 4.800000190734863,
+          "message": "max shift 4.8 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "warning",
+          "value": 0.6895434076521877,
+          "message": "template corr 0.689543 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          531,
+          527
+        ],
+        "box_pos": [
+          0,
+          0
+        ],
+        "fps": 29.78018415569476
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "7b4f97a55cb61cf663b782641915b6b9dc46a35afa54b0fe26ddc3418d12e2d7",
+      "started": "2026-11-13T03:24:05.474",
+      "finished": "2026-11-13T03:32:00.557",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J06_1D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.99,
+          "min_pnr": 47.7,
+          "method": "robust_bg"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 17856,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "done",
+      "params_hash": "1bfda4393a456536921408635324c1af719bf6fa434dec26e39199f6f9ceb590",
+      "started": "2026-11-16T22:08:12.604",
+      "finished": "2026-11-16T23:25:25.704",
+      "outputs": {
+        "estimates": "4_Estimates/LT1_J06_1D_estimates.pickle",
+        "residual_png": "Preview/LT1_J06_1D_cnmf_residual.png"
+      },
+      "metrics": {
+        "n_components": 1177,
+        "n_accepted": 1071,
+        "missed_cells": 0.0,
+        "median_snr": 8.339934610356014,
+        "gSig": 4,
+        "min_corr": 0.94,
+        "min_pnr": 16.9,
+        "patch_workers": 31,
+        "ssub_B": 2,
+        "need_gib": 31.5
+      },
+      "checks": [
+        {
+          "stage": "cnmf",
+          "name": "cnmf_n_components_vs_median",
+          "level": "ok",
+          "value": 1.9715242881072026,
+          "message": "1177 components, 2.0x series median (597) (warn > 2, error > 3)"
+        },
+        {
+          "stage": "cnmf",
+          "name": "cnmf_missed_cells",
+          "level": "ok",
+          "value": 0.0,
+          "message": "0 missed cells (warn > 20)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "decay_time": 1,
+        "method_init": "corr_pnr",
+        "K": null,
+        "merge_thr": 0.8,
+        "p": 1,
+        "tsub": 1,
+        "ssub": 1,
+        "rf": 40,
+        "stride": 25,
+        "only_init": true,
+        "nb": 0,
+        "nb_patch": 0,
+        "method_deconvolution": "oasis",
+        "low_rank_background": null,
+        "update_background_components": true,
+        "normalize_init": false,
+        "center_psf": true,
+        "ssub_B": 2,
+        "ring_size_factor": 1.5,
+        "del_duplicates": true,
+        "border_pix": 5,
+        "min_SNR": 2.5,
+        "rval_thr": 0.95,
+        "use_cnn": false,
+        "gSig": [
+          4,
+          4
+        ],
+        "min_corr": 0.94,
+        "min_pnr": 16.9,
+        "gSiz": [
+          17,
+          17
+        ],
+        "fr": 29.78018415569476
+      }
+    },
+    "gate": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "mc_preview": {
+      "state": "done",
+      "params_hash": "7e8f2dadfc96a6b2586c2128afd8d7c8f51d33d12a02571d3270b740a79d851c",
+      "started": "2026-11-12T12:06:53.191",
+      "finished": "2026-11-12T12:15:17.682",
+      "outputs": {
+        "preview_raw": "Preview/LT1_J06_1D_raw.mp4",
+        "preview_raw_dff": "Preview/LT1_J06_1D_raw_dff.mp4",
+        "preview_mc": "Preview/LT1_J06_1D_mc.mp4",
+        "preview_mc_dff": "Preview/LT1_J06_1D_mc_dff.mp4"
+      },
+      "metrics": {
+        "tbin": 2,
+        "ssub": 1,
+        "bytes": 259463533
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "enabled": true,
+        "tbin": 2,
+        "ssub": 1,
+        "crf": 23,
+        "speed": 4
+      }
+    }
+  }
+}

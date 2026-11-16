@@ -1,0 +1,432 @@
+{
+  "sid": "LT1_J03_2D",
+  "mouse": "LT1_J03",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J03_2D",
+      "chunks": [
+        "LT1_J03_2D_0.avi",
+        "LT1_J03_2D_1.avi",
+        "LT1_J03_2D_2.avi",
+        "LT1_J03_2D_3.avi",
+        "LT1_J03_2D_4.avi",
+        "LT1_J03_2D_5.avi",
+        "LT1_J03_2D_6.avi",
+        "LT1_J03_2D_7.avi",
+        "LT1_J03_2D_8.avi",
+        "LT1_J03_2D_9.avi",
+        "LT1_J03_2D_10.avi",
+        "LT1_J03_2D_11.avi"
+      ],
+      "n_frames": 11842,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J03_2D/LT1_J03_2D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        842
+      ]
+    }
+  ],
+  "n_frames": 11842,
+  "fps": 19.757135279002853,
+  "fps_info": {
+    "fps": 19.757135279002853,
+    "n_outliers": 7,
+    "n_gaps": 1,
+    "max_gap_ms": 219.15625,
+    "median_interval_ms": 50.6171875,
+    "source": "timestamps"
+  },
+  "anomalies": [
+    {
+      "code": "dropped_frames",
+      "level": "warning",
+      "message": "3 frames lost (152 ms) in 1 gap: certain 3 frames lost (152 ms)\n3 frames lost (152 ms) at 6:44.9, certain",
+      "auto_fixed": false,
+      "data": {
+        "rule": "window",
+        "n_gaps": 1,
+        "n_clusters": 1,
+        "n_dropped": 3,
+        "lost_ms": 151.8,
+        "max_gap_ms": 219.2,
+        "gaps": [
+          {
+            "part": 0,
+            "index": 7999,
+            "at_ms": 404875.0,
+            "interval_ms": 219.2,
+            "excess": 2.99,
+            "frames": 3,
+            "lost_ms": 151.8,
+            "certain": true,
+            "n_gaps": 1,
+            "tested": true
+          }
+        ],
+        "n_certain": 1,
+        "frames_certain": 3,
+        "lost_ms_certain": 151.8,
+        "n_probable": 0,
+        "frames_probable": 0,
+        "lost_ms_probable": 0
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.9 min_pnr=16.1",
+      "who": "User",
+      "when": "2026-11-13T17:28:43.892"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "49a69fbcba665482e587cd0267d6bda9a4b398b2b333369e6abe61b671188ca0",
+      "started": "2026-11-11T17:47:45.415",
+      "finished": "2026-11-11T17:48:49.748",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J03_2D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          21,
+          48,
+          388,
+          560
+        ],
+        "fov_lit": [
+          0,
+          30,
+          410,
+          578
+        ],
+        "fov_activity": [
+          21,
+          48,
+          388,
+          560
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 8.02,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          0,
+          11,
+          430,
+          597
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J03_2D",
+            "chunks": [
+              "LT1_J03_2D_0.avi",
+              "LT1_J03_2D_1.avi",
+              "LT1_J03_2D_2.avi",
+              "LT1_J03_2D_3.avi",
+              "LT1_J03_2D_4.avi",
+              "LT1_J03_2D_5.avi",
+              "LT1_J03_2D_6.avi",
+              "LT1_J03_2D_7.avi",
+              "LT1_J03_2D_8.avi",
+              "LT1_J03_2D_9.avi",
+              "LT1_J03_2D_10.avi",
+              "LT1_J03_2D_11.avi"
+            ],
+            "n_frames": 11842
+          }
+        ],
+        "n_frames": 11842,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "853f0579cba2d8ba831c5fcf61191bab612c2787c51c872bfe502c852d5ca1f0",
+      "started": "2026-11-11T20:18:40.570",
+      "finished": "2026-11-11T20:22:09.321",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J03_2D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J03_2D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 4.900000095367432,
+        "mean_template_corr": 0.981328784841192,
+        "n_frames": 11842,
+        "crop": [
+          0,
+          11,
+          430,
+          597
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "ok",
+          "value": 4.900000095367432,
+          "message": "max shift 4.9 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "ok",
+          "value": 0.981328784841192,
+          "message": "template corr 0.981329 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          430,
+          597
+        ],
+        "box_pos": [
+          0,
+          11
+        ],
+        "fps": 19.757135279002853
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "92a8256954151c189f6f7b8d7391b8f0c9fe3ca5b8378f4f0c4573a5ab148b72",
+      "started": "2026-11-12T23:12:49.632",
+      "finished": "2026-11-12T23:18:04.710",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J03_2D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.9,
+          "min_pnr": 18.0,
+          "method": "mirror_fdr"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 11842,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "done",
+      "params_hash": "b55a3c9d5f7afa757b8804352140a9b39bc3d25b0b65633064099e2f21c37efd",
+      "started": "2026-11-14T11:48:27.586",
+      "finished": "2026-11-14T12:05:45.198",
+      "outputs": {
+        "estimates": "4_Estimates/LT1_J03_2D_estimates.pickle",
+        "residual_png": "Preview/LT1_J03_2D_cnmf_residual.png"
+      },
+      "metrics": {
+        "n_components": 389,
+        "n_accepted": 178,
+        "missed_cells": 4.0,
+        "median_snr": 3.822842111433781,
+        "gSig": 4,
+        "min_corr": 0.9,
+        "min_pnr": 16.1,
+        "patch_workers": 31,
+        "ssub_B": 2,
+        "need_gib": 22.3
+      },
+      "checks": [
+        {
+          "stage": "cnmf",
+          "name": "cnmf_n_components_vs_median",
+          "level": "ok",
+          "value": 0.7459252157238735,
+          "message": "389 components, 0.7x series median (521.5) (warn > 2, error > 3)"
+        },
+        {
+          "stage": "cnmf",
+          "name": "cnmf_missed_cells",
+          "level": "ok",
+          "value": 4.0,
+          "message": "4 missed cells (warn > 20)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "decay_time": 1,
+        "method_init": "corr_pnr",
+        "K": null,
+        "merge_thr": 0.8,
+        "p": 1,
+        "tsub": 1,
+        "ssub": 1,
+        "rf": 40,
+        "stride": 25,
+        "only_init": true,
+        "nb": 0,
+        "nb_patch": 0,
+        "method_deconvolution": "oasis",
+        "low_rank_background": null,
+        "update_background_components": true,
+        "normalize_init": false,
+        "center_psf": true,
+        "ssub_B": 2,
+        "ring_size_factor": 1.5,
+        "del_duplicates": true,
+        "border_pix": 5,
+        "min_SNR": 2.5,
+        "rval_thr": 0.95,
+        "use_cnn": false,
+        "gSig": [
+          4,
+          4
+        ],
+        "min_corr": 0.9,
+        "min_pnr": 16.1,
+        "gSiz": [
+          17,
+          17
+        ],
+        "fr": 19.757135279002853
+      }
+    },
+    "gate": {
+      "state": "waiting",
+      "params_hash": "f34063c712c3b3de51a5a78f78c89739de8bd358539a2138f59431fc45bd48a3",
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": "waiting for manual_inspection",
+      "params": {
+        "enabled": true,
+        "decision": null,
+        "manual_result": null,
+        "cnmf_finished": "2026-11-14T12:05:45.198"
+      }
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "mc_preview": {
+      "state": "done",
+      "params_hash": "76ac79fd0b5a9dccea93e5f5b238cae69d083e79170cc141864f965d0b635fa4",
+      "started": "2026-11-12T10:17:30.555",
+      "finished": "2026-11-12T10:22:16.390",
+      "outputs": {
+        "preview_raw": "Preview/LT1_J03_2D_raw.mp4",
+        "preview_raw_dff": "Preview/LT1_J03_2D_raw_dff.mp4",
+        "preview_mc": "Preview/LT1_J03_2D_mc.mp4",
+        "preview_mc_dff": "Preview/LT1_J03_2D_mc_dff.mp4"
+      },
+      "metrics": {
+        "tbin": 2,
+        "ssub": 1,
+        "bytes": 239408868
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "enabled": true,
+        "tbin": 2,
+        "ssub": 1,
+        "crf": 23,
+        "speed": 4
+      }
+    }
+  }
+}

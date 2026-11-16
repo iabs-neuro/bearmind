@@ -1,0 +1,5 @@
+crop:
+  box:
+  - 485
+  - 438
+  box_source: auto

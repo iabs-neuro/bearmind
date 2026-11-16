@@ -1,0 +1,565 @@
+{
+  "sid": "LT1_J10_1D",
+  "mouse": "LT1_J10",
+  "mode": "bonsai",
+  "parts": [
+    {
+      "folder": "1_Raw/LT1_J10_1D",
+      "chunks": [
+        "LT1_J10_1D_0.avi",
+        "LT1_J10_1D_1.avi",
+        "LT1_J10_1D_2.avi",
+        "LT1_J10_1D_3.avi",
+        "LT1_J10_1D_4.avi",
+        "LT1_J10_1D_5.avi",
+        "LT1_J10_1D_6.avi",
+        "LT1_J10_1D_7.avi",
+        "LT1_J10_1D_8.avi",
+        "LT1_J10_1D_9.avi",
+        "LT1_J10_1D_10.avi",
+        "LT1_J10_1D_11.avi",
+        "LT1_J10_1D_12.avi",
+        "LT1_J10_1D_13.avi",
+        "LT1_J10_1D_14.avi",
+        "LT1_J10_1D_15.avi",
+        "LT1_J10_1D_16.avi",
+        "LT1_J10_1D_17.avi",
+        "LT1_J10_1D_18.avi",
+        "LT1_J10_1D_19.avi",
+        "LT1_J10_1D_20.avi",
+        "LT1_J10_1D_21.avi",
+        "LT1_J10_1D_22.avi",
+        "LT1_J10_1D_23.avi",
+        "LT1_J10_1D_24.avi",
+        "LT1_J10_1D_25.avi",
+        "LT1_J10_1D_26.avi",
+        "LT1_J10_1D_27.avi",
+        "LT1_J10_1D_28.avi",
+        "LT1_J10_1D_29.avi",
+        "LT1_J10_1D_30.avi",
+        "LT1_J10_1D_31.avi",
+        "LT1_J10_1D_32.avi",
+        "LT1_J10_1D_33.avi",
+        "LT1_J10_1D_34.avi",
+        "LT1_J10_1D_35.avi",
+        "LT1_J10_1D_36.avi",
+        "LT1_J10_1D_37.avi",
+        "LT1_J10_1D_38.avi",
+        "LT1_J10_1D_39.avi",
+        "LT1_J10_1D_40.avi",
+        "LT1_J10_1D_41.avi",
+        "LT1_J10_1D_42.avi",
+        "LT1_J10_1D_43.avi",
+        "LT1_J10_1D_44.avi",
+        "LT1_J10_1D_45.avi",
+        "LT1_J10_1D_46.avi",
+        "LT1_J10_1D_47.avi",
+        "LT1_J10_1D_48.avi",
+        "LT1_J10_1D_49.avi",
+        "LT1_J10_1D_50.avi",
+        "LT1_J10_1D_51.avi",
+        "LT1_J10_1D_52.avi",
+        "LT1_J10_1D_53.avi",
+        "LT1_J10_1D_54.avi",
+        "LT1_J10_1D_55.avi",
+        "LT1_J10_1D_56.avi",
+        "LT1_J10_1D_57.avi",
+        "LT1_J10_1D_58.avi",
+        "LT1_J10_1D_59.avi",
+        "LT1_J10_1D_60.avi",
+        "LT1_J10_1D_61.avi",
+        "LT1_J10_1D_62.avi",
+        "LT1_J10_1D_63.avi",
+        "LT1_J10_1D_64.avi",
+        "LT1_J10_1D_65.avi",
+        "LT1_J10_1D_66.avi",
+        "LT1_J10_1D_67.avi",
+        "LT1_J10_1D_68.avi",
+        "LT1_J10_1D_69.avi",
+        "LT1_J10_1D_70.avi",
+        "LT1_J10_1D_71.avi"
+      ],
+      "n_frames": 71466,
+      "shape": [
+        608,
+        608
+      ],
+      "timestamps_file": "1_Raw/LT1_J10_1D/LT1_J10_1D_Mini_TS.csv",
+      "ts_format": "bonsai_ticks",
+      "start_ms": null,
+      "metadata_file": null,
+      "drop_chunk_tail": false,
+      "drop_last_frame": false,
+      "chunk_frames": [
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        1000,
+        466
+      ]
+    }
+  ],
+  "n_frames": 71466,
+  "fps": 29.783861327205923,
+  "fps_info": {
+    "fps": 29.783861327205923,
+    "n_outliers": 4028,
+    "n_gaps": 9,
+    "max_gap_ms": 72.2421875,
+    "median_interval_ms": 33.5546875,
+    "source": "timestamps"
+  },
+  "anomalies": [
+    {
+      "code": "dropped_frames",
+      "level": "warning",
+      "message": "2 frames lost (67 ms) in 2 gaps: probable 2 frames lost (67 ms)\n1 frame lost (34 ms) at 4:32.2, probable\n1 frame lost (34 ms) at 19:14.5, probable",
+      "auto_fixed": false,
+      "data": {
+        "rule": "window",
+        "n_gaps": 2,
+        "n_clusters": 2,
+        "n_dropped": 2,
+        "lost_ms": 67.2,
+        "max_gap_ms": 69.2,
+        "gaps": [
+          {
+            "part": 0,
+            "index": 8106,
+            "at_ms": 272191.9,
+            "interval_ms": 67.9,
+            "excess": 0.81,
+            "frames": 1,
+            "lost_ms": 33.6,
+            "certain": false,
+            "n_gaps": 1,
+            "tested": true
+          },
+          {
+            "part": 0,
+            "index": 34380,
+            "at_ms": 1154465.3,
+            "interval_ms": 69.2,
+            "excess": 0.71,
+            "frames": 1,
+            "lost_ms": 33.6,
+            "certain": false,
+            "n_gaps": 1,
+            "tested": true
+          }
+        ],
+        "n_certain": 0,
+        "frames_certain": 0,
+        "lost_ms_certain": 0,
+        "n_probable": 2,
+        "frames_probable": 2,
+        "lost_ms_probable": 67.2
+      }
+    },
+    {
+      "code": "timing_jitter",
+      "level": "info",
+      "message": "timing jitter: 7 gaps, no frames lost",
+      "auto_fixed": false,
+      "data": {
+        "n_gaps": 7
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "what": "thresholds",
+      "value": "gSig=4 min_corr=0.95 min_pnr=34.6",
+      "who": "User",
+      "when": "2026-11-16T21:27:03.471"
+    }
+  ],
+  "excluded": false,
+  "stages": {
+    "crop": {
+      "state": "done",
+      "params_hash": "bade6a3bf059cd1e02bb31e9b9eb0bbc0cb177235f1a689c316e5ff1d94daf62",
+      "started": "2026-11-11T18:04:05.528",
+      "finished": "2026-11-11T18:05:10.129",
+      "outputs": {
+        "projection": "_bearmind/crop/LT1_J10_1D_projection.npz"
+      },
+      "metrics": {
+        "fov": [
+          71,
+          171,
+          465,
+          415
+        ],
+        "fov_lit": [
+          54,
+          171,
+          482,
+          415
+        ],
+        "fov_activity": [
+          71,
+          171,
+          465,
+          415
+        ],
+        "fov_method": "activity",
+        "activity_pos_neg": 794.49,
+        "frame_shape": [
+          608,
+          608
+        ],
+        "box": [
+          61,
+          160,
+          485,
+          438
+        ]
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "parts": [
+          {
+            "folder": "1_Raw/LT1_J10_1D",
+            "chunks": [
+              "LT1_J10_1D_0.avi",
+              "LT1_J10_1D_1.avi",
+              "LT1_J10_1D_2.avi",
+              "LT1_J10_1D_3.avi",
+              "LT1_J10_1D_4.avi",
+              "LT1_J10_1D_5.avi",
+              "LT1_J10_1D_6.avi",
+              "LT1_J10_1D_7.avi",
+              "LT1_J10_1D_8.avi",
+              "LT1_J10_1D_9.avi",
+              "LT1_J10_1D_10.avi",
+              "LT1_J10_1D_11.avi",
+              "LT1_J10_1D_12.avi",
+              "LT1_J10_1D_13.avi",
+              "LT1_J10_1D_14.avi",
+              "LT1_J10_1D_15.avi",
+              "LT1_J10_1D_16.avi",
+              "LT1_J10_1D_17.avi",
+              "LT1_J10_1D_18.avi",
+              "LT1_J10_1D_19.avi",
+              "LT1_J10_1D_20.avi",
+              "LT1_J10_1D_21.avi",
+              "LT1_J10_1D_22.avi",
+              "LT1_J10_1D_23.avi",
+              "LT1_J10_1D_24.avi",
+              "LT1_J10_1D_25.avi",
+              "LT1_J10_1D_26.avi",
+              "LT1_J10_1D_27.avi",
+              "LT1_J10_1D_28.avi",
+              "LT1_J10_1D_29.avi",
+              "LT1_J10_1D_30.avi",
+              "LT1_J10_1D_31.avi",
+              "LT1_J10_1D_32.avi",
+              "LT1_J10_1D_33.avi",
+              "LT1_J10_1D_34.avi",
+              "LT1_J10_1D_35.avi",
+              "LT1_J10_1D_36.avi",
+              "LT1_J10_1D_37.avi",
+              "LT1_J10_1D_38.avi",
+              "LT1_J10_1D_39.avi",
+              "LT1_J10_1D_40.avi",
+              "LT1_J10_1D_41.avi",
+              "LT1_J10_1D_42.avi",
+              "LT1_J10_1D_43.avi",
+              "LT1_J10_1D_44.avi",
+              "LT1_J10_1D_45.avi",
+              "LT1_J10_1D_46.avi",
+              "LT1_J10_1D_47.avi",
+              "LT1_J10_1D_48.avi",
+              "LT1_J10_1D_49.avi",
+              "LT1_J10_1D_50.avi",
+              "LT1_J10_1D_51.avi",
+              "LT1_J10_1D_52.avi",
+              "LT1_J10_1D_53.avi",
+              "LT1_J10_1D_54.avi",
+              "LT1_J10_1D_55.avi",
+              "LT1_J10_1D_56.avi",
+              "LT1_J10_1D_57.avi",
+              "LT1_J10_1D_58.avi",
+              "LT1_J10_1D_59.avi",
+              "LT1_J10_1D_60.avi",
+              "LT1_J10_1D_61.avi",
+              "LT1_J10_1D_62.avi",
+              "LT1_J10_1D_63.avi",
+              "LT1_J10_1D_64.avi",
+              "LT1_J10_1D_65.avi",
+              "LT1_J10_1D_66.avi",
+              "LT1_J10_1D_67.avi",
+              "LT1_J10_1D_68.avi",
+              "LT1_J10_1D_69.avi",
+              "LT1_J10_1D_70.avi",
+              "LT1_J10_1D_71.avi"
+            ],
+            "n_frames": 71466
+          }
+        ],
+        "n_frames": 71466,
+        "crop": {
+          "sample_frames": 3000,
+          "margin_px": 10,
+          "min_fov_frac": 0.05,
+          "fov_threshold_frac": 0.2,
+          "fov_method": "activity",
+          "activity_mass_cut": 0.005,
+          "activity_margin_px": 20
+        },
+        "fov_rule": "activity_v2"
+      }
+    },
+    "mc": {
+      "state": "done",
+      "params_hash": "af0c80d4e6813b5bfc3d72ce7639693a2be3ed2cb1eff584a8ef176c80662d83",
+      "started": "2026-11-11T22:22:48.247",
+      "finished": "2026-11-11T22:39:44.593",
+      "outputs": {
+        "mc_video": "3_MC/LT1_J10_1D_MC.avi",
+        "mc_shifts": "3_MC/LT1_J10_1D_MC_shifts.npy"
+      },
+      "metrics": {
+        "max_shift_px": 5.300000190734863,
+        "mean_template_corr": 0.6816429733630024,
+        "n_frames": 71466,
+        "crop": [
+          61,
+          160,
+          485,
+          438
+        ]
+      },
+      "checks": [
+        {
+          "stage": "mc",
+          "name": "mc_max_shift_px",
+          "level": "ok",
+          "value": 5.300000190734863,
+          "message": "max shift 5.3 px (warn > 10, error > 30)"
+        },
+        {
+          "stage": "mc",
+          "name": "mc_template_corr",
+          "level": "warning",
+          "value": 0.6816429733630024,
+          "message": "template corr 0.681643 (warn < 0.7)"
+        }
+      ],
+      "error": null,
+      "params": {
+        "mc": {
+          "pw_rigid": false,
+          "max_shifts": [
+            35,
+            35
+          ],
+          "gSig_filt": [
+            8,
+            8
+          ],
+          "strides": [
+            48,
+            48
+          ],
+          "overlaps": [
+            24,
+            24
+          ],
+          "max_deviation_rigid": 15,
+          "border_nan": "copy",
+          "niter_rig": 1,
+          "use_cuda": false
+        },
+        "box": [
+          485,
+          438
+        ],
+        "box_pos": [
+          61,
+          160
+        ],
+        "fps": 29.783861327205923
+      }
+    },
+    "thresholds": {
+      "state": "done",
+      "params_hash": "7dc518550dcb3b0dfcc0f74b43eb7e372e97b9b45fa576203b3d8406f36f5bb1",
+      "started": "2026-11-13T04:29:13.094",
+      "finished": "2026-11-13T05:35:36.130",
+      "outputs": {
+        "threshold_maps": "_bearmind/thresholds/LT1_J10_1D_maps.npz"
+      },
+      "metrics": {
+        "suggested": {
+          "gSig": 4,
+          "min_corr": 0.99,
+          "min_pnr": 108.6,
+          "method": "robust_bg"
+        },
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_frames": 71466,
+        "map_workers": 5
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "gsig_range": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "tsub": 1
+      }
+    },
+    "cnmf": {
+      "state": "waiting",
+      "params_hash": "9ed287ec3ef3b295a766f71dade1842eb5445ce8da78eeb49e0cdc13a7eff6ca",
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": "waiting for thresholds",
+      "params": {
+        "waiting_for": "thresholds"
+      }
+    },
+    "gate": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "autoinspect": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "export": {
+      "state": "pending",
+      "params_hash": null,
+      "started": null,
+      "finished": null,
+      "outputs": {},
+      "metrics": {},
+      "checks": [],
+      "error": null,
+      "params": {}
+    },
+    "mc_preview": {
+      "state": "done",
+      "params_hash": "6aa42faf86199a3957ca9c954226f61a3d46c1285ef119d0d62e42d2d2562e25",
+      "started": "2026-11-12T13:15:12.053",
+      "finished": "2026-11-12T13:38:08.657",
+      "outputs": {
+        "preview_raw": "Preview/LT1_J10_1D_raw.mp4",
+        "preview_raw_dff": "Preview/LT1_J10_1D_raw_dff.mp4",
+        "preview_mc": "Preview/LT1_J10_1D_mc.mp4",
+        "preview_mc_dff": "Preview/LT1_J10_1D_mc_dff.mp4"
+      },
+      "metrics": {
+        "tbin": 2,
+        "ssub": 1,
+        "bytes": 502721027
+      },
+      "checks": [],
+      "error": null,
+      "params": {
+        "enabled": true,
+        "tbin": 2,
+        "ssub": 1,
+        "crf": 23,
+        "speed": 4
+      }
+    }
+  }
+}
