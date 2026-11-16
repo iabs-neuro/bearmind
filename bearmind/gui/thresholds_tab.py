@@ -458,7 +458,18 @@ class ThresholdsTab(QWidget):
         if self._maps_sig(self._sid) != self._loaded_sig:
             self._load_maps(keep=True)
             self._set_video(self._video_for(self._sid), keep_position=True)
+        else:
+            self._refresh_batch_note()
         self._update_buttons()
+
+    def _refresh_batch_note(self) -> None:
+        """The sentence in place of the maps follows the batch (stage change, sessions ahead) without reloading
+        the maps or the MC video."""
+        item = self._by_sid[self._sid]
+        if self._maps is None and item.note and item.note != self._reason:
+            self._reason = item.note
+            for view in (self.corr_view, self.pnr_view):
+                view.set_reason(self._reason)
 
     def show_first_waiting(self) -> None:
         """Monitor's "Thresholds: N sessions": the first session in list order that waits (none: stay)."""
@@ -545,7 +556,8 @@ class ThresholdsTab(QWidget):
         return self._records.get(sid) if self.paths.registry_file(sid).exists() else None
 
     def _maps_sig(self, sid: str):
-        """What the shown maps depend on: the item's note (why no maps are shown, "" when they are) and the file.
+        """What the shown maps depend on: the item's maps_note (why no maps are shown, "" when they are; without
+        what the batch does now, which changes at every stage and must not reload anything) and the file.
         A move between waiting, chosen and CNMF-E done reloads nothing; going out of date or back does."""
         item = self._by_sid.get(sid)
         try:
@@ -553,7 +565,7 @@ class ThresholdsTab(QWidget):
             fsig = (st.st_mtime_ns, st.st_size)
         except OSError:
             fsig = None
-        return (item.note if item is not None else None), fsig
+        return (item.maps_note if item is not None else None), fsig
 
     def _session_cfg(self, item: tm.ThresholdItem) -> dict:
         try:

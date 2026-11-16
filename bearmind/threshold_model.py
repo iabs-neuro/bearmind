@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage
 
-from bearmind import actions, config, registry, runner, seed_mask
+from bearmind import actions, config, monitor, registry, runner, seed_mask
 from bearmind.registry import State
 
 STATE_TEXT = {"waiting": "waiting", "chosen": "chosen", "cnmf_done": "CNMF-E done", "no_maps": "no maps",
@@ -60,6 +60,9 @@ class ThresholdItem:
     # the sentence shown in place of the maps, which is also why Accept is refused; "" when the maps are shown
     note: str = ""
     text: str = ""  # what the session list says; "" for the plain STATE_TEXT (state_text)
+    # `note` without what the batch does now and how many sessions come first: those change at every stage change
+    # of the batch, and the tab must not reload the maps and the MC video for them (it keys the reload on this)
+    maps_note: str = ""
 
 
 def load_maps(path: Path) -> ThresholdMaps:
@@ -174,8 +177,41 @@ def _stale(th, first_stale) -> tuple[str, str, bool]:
             f"The maps are out of date: the batch redoes {first_stale} first.", True)
 
 
-def _item(paths, view, rec) -> ThresholdItem:
-    """The session's state by the runner's rule (view: runner.StageView), the same view for every session."""
+def sessions_ahead(view, records, rec) -> int:
+    """How many other sessions the batch serves before it makes the maps of `rec`: sessions that next_ready would
+    offer a crop or MC stage for (those stages come before every thresholds stage), and sessions with a lower
+    name that it would offer thresholds for. The count asks StageView.ready, the predicate next_ready uses, so
+    excluded, unschedulable and blocked (failed, skipped) sessions are left out as the batch leaves them out.
+    The preview stages are not counted (they are off in the series that need this)."""
+    n = 0
+    for r in records:
+        if r.sid == rec.sid:
+            continue
+        if view.ready(r, "crop") or view.ready(r, "mc") or (r.sid < rec.sid and view.ready(r, "thresholds")):
+            n += 1
+    return n
+
+
+def queue_text(ahead: int) -> str:
+    if ahead == 0:
+        return "The batch makes these maps next."
+    return "1 session comes first in the batch." if ahead == 1 else f"{ahead} sessions come first in the batch."
+
+
+def batch_activity(rs) -> str:
+    """What the batch does now (monitor.RunnerState), in one sentence."""
+    if not rs.alive:
+        return "The batch is not running: press Start on the Monitor tab."
+    if rs.current is None:
+        return "Now: the batch waits for a person."
+    sid, stage = rs.current
+    title = "maps" if stage == "thresholds" else monitor.STAGE_TITLE.get(stage, stage)
+    return f"Now: {title} of {sid}." + (" The batch stops after it." if rs.stopping else "")
+
+
+def _item(paths, view, rec, ahead_of=lambda: 0, rs=None) -> ThresholdItem:
+    """The session's state by the runner's rule (view: runner.StageView), the same view for every session.
+    `ahead_of()` (sessions_ahead, asked only where it is used) and `rs` (monitor.RunnerState) are used for the states in which the batch makes the maps itself."""
     th = rec.stages.get("thresholds")
     suggested = (th.metrics.get("suggested") if th is not None else None) or None
     cfg = view.cfg(rec)  # None: the config cannot be read (view.problem says why)
@@ -186,7 +222,7 @@ def _item(paths, view, rec) -> ThresholdItem:
     problem = view.problem(rec)
     has_file = paths.threshold_maps(rec.sid).is_file()
     maps_current = view.current_through(rec, "thresholds")
-    reason, note, text = "", "", ""
+    reason, note, text, maps_note = "", "", "", ""
     if rec.excluded:
         state = "excluded"
         # the batch skips an excluded session: nothing will recompute its maps, or make them
@@ -211,6 +247,10 @@ def _item(paths, view, rec) -> ThresholdItem:
         if cnmf is not None and cnmf.state is State.DONE:
             reason += " (CNMF-E done)"
         note = f"No maps: {reason}"
+        if reason.startswith("not computed yet"):
+            maps_note, ahead = "No maps yet.", ahead_of()
+            note = f"{maps_note} {queue_text(ahead)} {batch_activity(rs)}"
+            text = "no maps: next" if ahead == 0 else f"no maps: {ahead} ahead"
     elif view.current_through(rec, "cnmf"):
         state = "cnmf_done"
     elif not maps_current:
@@ -219,6 +259,10 @@ def _item(paths, view, rec) -> ThresholdItem:
         # relax this later).
         state = "out_of_date"
         reason, note, recomputed = _stale(th, first_stale)
+        maps_note = note
+        if recomputed:
+            ahead = ahead_of()
+            note = f"{note} {queue_text(ahead)} {batch_activity(rs)}"
         if chosen is not None:
             text = "chosen · maps will be recomputed" if recomputed else f"chosen · {reason}"
         else:
@@ -229,9 +273,10 @@ def _item(paths, view, rec) -> ThresholdItem:
         # waits_for_thresholds holds here (maps current, no thresholds, not excluded, config readable); the
         # fallback only guards a cnmf section that the hashes accept but the predicate cannot read
         state = "waiting" if waiting else "not_needed"
-    if state in ("no_maps", "config_error"):
+    if state == "config_error" or (state == "no_maps" and not text):
         text = f"{STATE_TEXT[state]}: {reason}"
-    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen, waiting, first_stale, note, text)
+    return ThresholdItem(rec.sid, rec.mouse, state, reason, suggested, chosen, waiting, first_stale, note, text,
+                         maps_note or note)
 
 
 def state_text(item: ThresholdItem) -> str:
@@ -239,13 +284,16 @@ def state_text(item: ThresholdItem) -> str:
     return item.text or STATE_TEXT.get(item.state, item.state)
 
 
-def threshold_items(paths, view=None, records=None) -> list[ThresholdItem]:
+def threshold_items(paths, view=None, records=None, runner_state=None) -> list[ThresholdItem]:
     """One item per session. `view` (runner.StageView) and `records` come from the caller when it has them (the
-    tab's, with cached configs and the last good records); else they are built here: one view for all."""
+    tab's, with cached configs and the last good records); else they are built here: one view for all.
+    `runner_state` (monitor.RunnerState) is read from the files when None."""
     if records is None:
         records, _broken = registry.read_all(paths)
     view = view if view is not None else runner.StageView(paths)
-    return [_item(paths, view, r) for r in sorted(records, key=lambda r: (r.mouse, r.sid))]
+    rs = runner_state if runner_state is not None else monitor.runner_state(paths)
+    return [_item(paths, view, r, lambda r=r: sessions_ahead(view, records, r), rs)
+            for r in sorted(records, key=lambda r: (r.mouse, r.sid))]
 
 
 def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str]:

@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-from bearmind import actions, config, registry, runner, threshold_model as tm
+from bearmind import actions, config, monitor, registry, runner, threshold_model as tm
 from bearmind.registry import State, update_record
 from tests.bearmind.test_cli import S1, S2, S3, _set, make_current, series  # noqa: F401  (the series fixture)
 
@@ -350,7 +350,8 @@ def test_out_of_date_maps_state(series):
     it = _items(series)[S1]
     assert (it.state, it.first_stale, it.waiting) == ("out_of_date", "crop", False)
     assert tm.state_text(it) == "maps out of date: the batch redoes crop first"
-    assert it.note == "The maps are out of date: the batch redoes crop first."
+    assert it.maps_note == "The maps are out of date: the batch redoes crop first."
+    assert it.note.startswith(it.maps_note + " ")  # then the queue and what the batch does
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     assert tm.state_text(_items(series)[S1]) == "chosen · maps will be recomputed"
     _set(p, S1, "thresholds", State.FAILED, error="MemoryError: x")
@@ -410,3 +411,97 @@ def test_choice_source_names_the_configs(series):
     assert tm.source_text("chosen", _item(sug), "session config") == "Your earlier choice (session config)"
     p.session_config(S1).write_text("cnmf: [unclosed\n", encoding="utf-8")
     assert tm.choice_source(p, S1, "NOF_H01") == ""  # cannot be read: nothing is claimed
+
+
+# --- item 4: what the batch does and how many sessions come first ---
+
+def _batch_state(alive=True, current=None, stopping=False):
+    return monitor.RunnerState(alive, "running" if alive else "stopped", 1 if alive else None, 1.0 if alive else None,
+                               current, 5.0 if current else None, stopping=stopping)
+
+
+def test_sessions_ahead_follows_the_batch_order(series):
+    p = series.paths
+    _set(p, S1, "thresholds", State.PENDING)
+    make_current(p, S1, "crop", "mc")          # S1: its maps next
+    make_current(p, S2, "crop")                # S2: MC first, then maps
+    make_current(p, S3, "crop", "mc", "thresholds")
+    recs = registry.read_all(p)[0]
+    by = {r.sid: r for r in recs}
+    assert tm.sessions_ahead(runner.StageView(p), recs, by[S1]) == 1
+    # the same number from the batch itself: the sessions next_ready serves before S1's maps
+    before = set()
+    while True:
+        recs = registry.read_all(p)[0]
+        job = runner.next_ready(recs, p, until="thresholds")
+        if job == (S1, "thresholds"):
+            break
+        before.add(job[0])
+        make_current(p, job[0], job[1])
+    assert len(before - {S1}) == 1
+
+
+def test_sessions_ahead_leaves_out_what_the_batch_never_offers(series):
+    """A session whose crop failed has MC SKIPPED with a hash that does not match: not blocked itself, but
+    next_ready never offers it, so it is not ahead of anybody."""
+    p = series.paths
+    _set(p, S1, "thresholds", State.PENDING)
+    make_current(p, S1, "crop", "mc")
+    view = runner.StageView(p)
+    rec2 = registry.load_record(p, S2)
+    _set(p, S2, "crop", State.FAILED, error="boom")
+    registry.update_record(p, S2, lambda r: setattr(r.stages["crop"], "params_hash", view.hash(rec2, "crop")))
+    _set(p, S2, "mc", State.SKIPPED, error="skipped: crop failed")
+    update_record(p, S3, lambda r: setattr(r, "excluded", True))
+    recs = registry.read_all(p)[0]
+    view = runner.StageView(p)
+    assert view.blocked(registry.load_record(p, S2), "crop")
+    assert not view.blocked(registry.load_record(p, S2), "mc")
+    assert tm.sessions_ahead(view, recs, {r.sid: r for r in recs}[S1]) == 0
+    assert runner.next_ready(recs, p, until="thresholds") == (S1, "thresholds")
+
+
+def test_queue_and_activity_texts():
+    assert tm.queue_text(0) == "The batch makes these maps next."
+    assert tm.queue_text(1) == "1 session comes first in the batch."
+    assert tm.queue_text(3) == "3 sessions come first in the batch."
+    assert tm.batch_activity(_batch_state(current=(S2, "mc"))) == f"Now: MC of {S2}."
+    assert tm.batch_activity(_batch_state(current=(S2, "thresholds"))) == f"Now: maps of {S2}."
+    assert tm.batch_activity(_batch_state(current=(S2, "mc"), stopping=True)) == (
+        f"Now: MC of {S2}. The batch stops after it.")
+    assert tm.batch_activity(_batch_state()) == "Now: the batch waits for a person."
+    assert tm.batch_activity(_batch_state(alive=False)) == "The batch is not running: press Start on the Monitor tab."
+
+
+def test_no_maps_note_says_what_the_batch_does(series):
+    p = series.paths
+    _set(p, S1, "thresholds", State.PENDING)
+    make_current(p, S1, "crop", "mc")
+    make_current(p, S2, "crop")
+    make_current(p, S3, "crop", "mc", "thresholds")
+    rs = _batch_state(current=(S2, "mc"))
+    it = {i.sid: i for i in tm.threshold_items(p, runner_state=rs)}[S1]
+    assert it.reason == "not computed yet"
+    assert it.note == f"No maps yet. 1 session comes first in the batch. Now: MC of {S2}."
+    assert it.text == "no maps: 1 ahead"
+    # the stable part (the tab reloads on it) does not follow the batch
+    other = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(current=(S3, "cnmf")))}[S1]
+    assert other.note != it.note and other.maps_note == it.maps_note == "No maps yet."
+
+
+def test_no_maps_note_when_the_batch_is_not_running(series):
+    p = series.paths
+    _set(p, S1, "thresholds", State.PENDING)
+    note = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(alive=False))}[S1].note
+    assert note.endswith("The batch is not running: press Start on the Monitor tab.")
+
+
+def test_out_of_date_maps_that_the_batch_redoes_say_the_queue(series):
+    p = series.paths
+    _save(p.threshold_maps(S1), _maps(), False)
+    make_current(p, S1, "crop", "mc", "thresholds")
+    config.update_yaml(p.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
+    it = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(alive=False))}[S1]
+    assert it.note.startswith("The maps are out of date: the batch redoes crop first. ")
+    assert it.note.endswith("The batch is not running: press Start on the Monitor tab.")
+    assert it.maps_note == "The maps are out of date: the batch redoes crop first."

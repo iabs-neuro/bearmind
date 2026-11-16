@@ -171,7 +171,7 @@ def test_session_list_states(qapp, series_maps, make_tab):
     tab = make_tab(p)
     rows, mice = tree_rows(tab)
     assert mice == ["NOF_H01", "NOF_H02"]
-    assert rows == {S1: "waiting", S2: "waiting", S3: "no maps: not computed yet"}
+    assert rows == {S1: "waiting", S2: "waiting", S3: "no maps: next"}
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     tab.refresh()
     assert tree_rows(tab)[0][S2] == "chosen"
@@ -183,7 +183,7 @@ def test_session_list_states(qapp, series_maps, make_tab):
     assert tree_rows(tab)[0][S2] == "CNMF-E done"
     update_record(p, S1, lambda r: setattr(r, "excluded", True))
     tab.refresh()
-    assert tree_rows(tab)[0] == {S1: "excluded", S2: "CNMF-E done", S3: "no maps: not computed yet"}
+    assert tree_rows(tab)[0] == {S1: "excluded", S2: "CNMF-E done", S3: "no maps: next"}
 
 
 def test_opens_on_first_waiting(qapp, series_maps, make_tab):
@@ -565,8 +565,14 @@ def test_out_of_date_maps_reason(qapp, series_maps, make_tab, state, error, text
     _set(p, S1, "thresholds", state, error=error)
     tab = make_tab(p)
     tab.show_session(S1)
-    assert tab.corr_view.text() == text and tab.pnr_view.text() == text
-    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == text
+    shown = tab.corr_view.text()
+    assert tab.pnr_view.text() == shown
+    if state in (State.RUNNING, State.PENDING):  # the batch does these itself: the queue and its activity follow
+        assert shown.startswith(text + " ")
+        assert shown.endswith("The batch is not running: press Start on the Monitor tab.")
+    else:  # a person must retry the stage: no queue
+        assert shown == text
+    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == shown
 
 
 def test_excluded_session_reason_says_the_batch_ignores_it(qapp, series_maps, make_tab):
@@ -625,7 +631,8 @@ def test_session_without_maps(qapp, series_maps, make_tab):
     tab = make_tab(p)
     tab.show_session(S3)
     assert tab.current()[0] == S3
-    assert "not computed yet" in tab.corr_view.text() and "not computed yet" in tab.pnr_view.text()
+    assert tab.corr_view.text().startswith("No maps yet. The batch makes these maps next.")
+    assert tab.pnr_view.text() == tab.corr_view.text()
     assert not tab.accept_button.isEnabled() and not tab.accept_mouse_button.isEnabled()
     assert not tab.min_corr_slider.isEnabled() and not tab.gsig_buttons
     tab.accept_and_next()
@@ -774,8 +781,9 @@ def test_probe_cases_agree_in_tab_monitor_and_actions(qapp, series_maps, make_ta
     assert [i.sid for i in tm.threshold_items(p) if i.waiting] == [S1, S2]
     tab.show_session(S3)
     note = "The maps are out of date: the batch redoes crop first."
-    assert tab.corr_view.text() == note and tab.pnr_view.text() == note
-    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == note
+    shown = tab.corr_view.text()
+    assert shown.startswith(note + " ") and tab.pnr_view.text() == shown
+    assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == shown
     assert not tab.accept_mouse_button.isEnabled()
     tab.accept_and_next()  # refused: nothing is written
     assert not p.session_config(S3).exists() and not _choices(p)
@@ -1134,3 +1142,25 @@ def test_registry_read_is_retried_before_the_last_good_record(qapp, series_maps,
 
     monkeypatch.setattr(registry, "load_record", once_busy)
     assert tab._record(S1).fps == 33.0 and len(calls) == 2
+
+
+def test_batch_stage_change_updates_the_note_without_reloading(qapp, series_maps, make_tab, monkeypatch):
+    """A batch stage change rewrites the sentence in place of the maps; it does not reload the maps or reopen
+    the MC video of the shown session."""
+    from bearmind import monitor
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.show_session(S3)
+    state = {"cur": (S1, "crop")}
+    monkeypatch.setattr(monitor, "runner_state", lambda paths, now=None: monitor.RunnerState(
+        True, "running", 1, 1.0, state["cur"], 5.0))
+    tab.refresh()
+    assert tab.corr_view.text().endswith(f"Now: Crop of {S1}.")
+    loads, videos = [], []
+    monkeypatch.setattr(tab, "_load_maps", lambda keep: loads.append(1))
+    monkeypatch.setattr(tab, "_set_video", lambda *a, **k: videos.append(1))
+    state["cur"] = (S1, "mc")
+    tab.refresh()
+    assert tab.corr_view.text().endswith(f"Now: MC of {S1}.") and tab.pnr_view.text() == tab.corr_view.text()
+    assert tab.accept_button.toolTip() == tab.corr_view.text()
+    assert not loads and not videos
