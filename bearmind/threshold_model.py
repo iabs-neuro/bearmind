@@ -177,19 +177,26 @@ def _stale(th, first_stale) -> tuple[str, str, bool]:
             f"The maps are out of date: the batch redoes {first_stale} first.", True)
 
 
+def _ready_sets(view, records) -> tuple[set, list]:
+    """(sids next_ready would offer a crop or MC stage for, sorted sids it would offer thresholds for): the
+    answers of StageView.ready, asked once per session for the whole list."""
+    early = {r.sid for r in records if view.ready(r, "crop") or view.ready(r, "mc")}
+    maps = sorted(r.sid for r in records if view.ready(r, "thresholds"))
+    return early, maps
+
+
+def _ahead(sets, sid: str) -> int:
+    early, maps = sets
+    return len(early - {sid}) + sum(1 for m in maps if m < sid and m not in early)
+
+
 def sessions_ahead(view, records, rec) -> int:
     """How many other sessions the batch serves before it makes the maps of `rec`: sessions that next_ready would
     offer a crop or MC stage for (those stages come before every thresholds stage), and sessions with a lower
     name that it would offer thresholds for. The count asks StageView.ready, the predicate next_ready uses, so
     excluded, unschedulable and blocked (failed, skipped) sessions are left out as the batch leaves them out.
     The preview stages are not counted (they are off in the series that need this)."""
-    n = 0
-    for r in records:
-        if r.sid == rec.sid:
-            continue
-        if view.ready(r, "crop") or view.ready(r, "mc") or (r.sid < rec.sid and view.ready(r, "thresholds")):
-            n += 1
-    return n
+    return _ahead(_ready_sets(view, records), rec.sid)
 
 
 def queue_text(ahead: int) -> str:
@@ -209,9 +216,9 @@ def batch_activity(rs) -> str:
     return f"Now: {title} of {sid}." + (" The batch stops after it." if rs.stopping else "")
 
 
-def _item(paths, view, rec, ahead_of=lambda: 0, rs=None) -> ThresholdItem:
+def _item(paths, view, rec, ahead_of, rs) -> ThresholdItem:
     """The session's state by the runner's rule (view: runner.StageView), the same view for every session.
-    `ahead_of()` (sessions_ahead, asked only where it is used) and `rs` (monitor.RunnerState) are used for the states in which the batch makes the maps itself."""
+    `ahead_of(sid)` (asked only where it is used) and `rs` (monitor.RunnerState) are used for the states in which the batch makes the maps itself."""
     th = rec.stages.get("thresholds")
     suggested = (th.metrics.get("suggested") if th is not None else None) or None
     cfg = view.cfg(rec)  # None: the config cannot be read (view.problem says why)
@@ -237,8 +244,12 @@ def _item(paths, view, rec, ahead_of=lambda: 0, rs=None) -> ThresholdItem:
         note = f"The session cannot be scheduled: {problem}"
     elif not has_file:
         state = "no_maps"
+        blocked_at = first_stale if first_stale is not None and view.blocked(rec, first_stale) else None
         if th is not None and th.state is State.FAILED:
             reason = last_line(th.error) or "failed"
+        elif blocked_at is not None:
+            # a failed stage of the session holds it back: the batch offers nothing until a person retries it
+            reason = (last_line(th.error) if th is not None and th.state is State.SKIPPED else "")                 or f"{blocked_at} failed"
         elif th is not None and th.state is State.DONE:
             reason = "maps file not found"
         else:
@@ -247,8 +258,10 @@ def _item(paths, view, rec, ahead_of=lambda: 0, rs=None) -> ThresholdItem:
         if cnmf is not None and cnmf.state is State.DONE:
             reason += " (CNMF-E done)"
         note = f"No maps: {reason}"
-        if reason.startswith("not computed yet"):
-            maps_note, ahead = "No maps yet.", ahead_of()
+        if blocked_at is not None and not (th is not None and th.state is State.FAILED):
+            note = f"No maps: {reason}. Retry the failed stage in Monitor."
+        elif reason.startswith("not computed yet"):
+            maps_note, ahead = "No maps yet.", ahead_of(rec.sid)
             note = f"{maps_note} {queue_text(ahead)} {batch_activity(rs)}"
             text = "no maps: next" if ahead == 0 else f"no maps: {ahead} ahead"
     elif view.current_through(rec, "cnmf"):
@@ -260,8 +273,8 @@ def _item(paths, view, rec, ahead_of=lambda: 0, rs=None) -> ThresholdItem:
         state = "out_of_date"
         reason, note, recomputed = _stale(th, first_stale)
         maps_note = note
-        if recomputed:
-            ahead = ahead_of()
+        if recomputed and not (first_stale is not None and view.blocked(rec, first_stale)):
+            ahead = ahead_of(rec.sid)
             note = f"{note} {queue_text(ahead)} {batch_activity(rs)}"
         if chosen is not None:
             text = "chosen · maps will be recomputed" if recomputed else f"chosen · {reason}"
@@ -292,7 +305,14 @@ def threshold_items(paths, view=None, records=None, runner_state=None) -> list[T
         records, _broken = registry.read_all(paths)
     view = view if view is not None else runner.StageView(paths)
     rs = runner_state if runner_state is not None else monitor.runner_state(paths)
-    return [_item(paths, view, r, lambda r=r: sessions_ahead(view, records, r), rs)
+    sets = []  # computed on the first item that needs the queue, once for all
+
+    def ahead_of(sid):
+        if not sets:
+            sets.append(_ready_sets(view, records))
+        return _ahead(sets[0], sid)
+
+    return [_item(paths, view, r, ahead_of, rs)
             for r in sorted(records, key=lambda r: (r.mouse, r.sid))]
 
 

@@ -505,3 +505,22 @@ def test_out_of_date_maps_that_the_batch_redoes_say_the_queue(series):
     assert it.note.startswith("The maps are out of date: the batch redoes crop first. ")
     assert it.note.endswith("The batch is not running: press Start on the Monitor tab.")
     assert it.maps_note == "The maps are out of date: the batch redoes crop first."
+
+
+def test_blocked_session_without_maps_does_not_claim_a_queue(series):
+    """Crop FAILED (hash matches, so blocked), MC and thresholds SKIPPED: next_ready offers nothing for S1."""
+    p = series.paths
+    rec1 = registry.load_record(p, S1)
+    h = runner.StageView(p).hash(rec1, "crop")
+    _set(p, S1, "crop", State.FAILED, error="boom")
+    registry.update_record(p, S1, lambda r: setattr(r.stages["crop"], "params_hash", h))
+    _set(p, S1, "mc", State.SKIPPED, error="skipped: crop failed")
+    _set(p, S1, "thresholds", State.SKIPPED, error="skipped: crop failed")
+    make_current(p, S2, "crop", "mc", "thresholds")
+    make_current(p, S3, "crop", "mc", "thresholds")
+    recs = registry.read_all(p)[0]
+    assert runner.next_ready(recs, p, until="thresholds") is None
+    it = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(current=(S2, "mc")))}[S1]
+    assert it.state == "no_maps" and it.reason == "skipped: crop failed"
+    assert it.note == "No maps: skipped: crop failed. Retry the failed stage in Monitor."
+    assert it.text == "no maps: skipped: crop failed" and "batch" not in it.note
