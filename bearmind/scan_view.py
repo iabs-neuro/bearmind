@@ -223,7 +223,7 @@ def _line(a, rec: SessionRecord, n_parts: int, split, gaps, confirmed: bool, rul
     reviewed = confirmed and (a is split or pause)
     info, note = False, ""
     if a.auto_fixed:
-        accepted = a.code == "frames_ts_mismatch" and scan.latest_decision(rec, "accept_mismatch") == "true"
+        accepted = a.code == "frames_ts_mismatch" and scan.mismatch_accepted(rec)
         note = "accepted by you" if accepted else "fixed automatically"
     elif reviewed:
         note = "checked by you"

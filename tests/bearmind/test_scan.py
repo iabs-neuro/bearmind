@@ -7,7 +7,7 @@ import pytest
 
 from bearmind import scan
 from bearmind.paths import SeriesPaths
-from bearmind.registry import (Anomaly, Decision, StageRecord, State, load_record, save_record,
+from bearmind.registry import (Anomaly, Decision, SessionRecord, StageRecord, State, load_record, save_record,
                                update_record)
 from bearmind.video import SessionReader
 
@@ -209,7 +209,7 @@ def test_accept_mismatch_keeps_large_mismatch_included(make_series, tmp_path):
     paths = SeriesPaths(root)
     r = scan.scan_series(root)[0]
     assert r.excluded
-    r.decisions.append(Decision("accept_mismatch", "true", "me", "2026-01-01"))
+    r.decisions.append(Decision("accept_mismatch", scan.mismatch_fingerprint(r), "me", "2026-01-01"))
     save_record(paths, r)
     r = scan.scan_series(root)[0]
     a = codes(r)["frames_ts_mismatch"]
@@ -685,3 +685,43 @@ def test_fps_outlier_with_min_sessions_one(make_series, tmp_path):
     config.update_yaml(SeriesPaths(root).series_config, {"checks": {"min_sessions_for_relative": 1}})
     recs = _series_at(make_series, root, {"NOF_H01_1D": 20})
     assert "fps_outlier" not in codes(recs["NOF_H01_1D"])
+
+
+def _mismatch_rec(diff, where="end"):
+    return SessionRecord(sid="NOF_H01_1D", mouse="NOF_H01", mode="bonsai", parts=[], n_frames=30, fps=20.0,
+                         fps_info={}, decisions=[], excluded=False, stages={},
+                         anomalies=[Anomaly("frames_ts_mismatch", "error", "x", data={"diff": diff, "where": where})])
+
+
+def test_accept_covers_only_the_mismatch_it_saw():
+    rec = _mismatch_rec(107)
+    assert scan.mismatch_fingerprint(rec) == "end:+107"
+    rec.decisions.append(Decision("accept_mismatch", "end:+107", "u", "t"))
+    assert scan.evaluate_excluded(rec) is False
+    assert scan.evaluate_excluded(rec) is False  # levels were lowered by the first call: still accepted
+    rec.anomalies = [Anomaly("frames_ts_mismatch", "error", "x", data={"diff": 200, "where": "end"})]
+    assert scan.evaluate_excluded(rec) is True  # files replaced, another mismatch: not covered
+
+
+def test_accept_written_as_true_does_not_count():
+    rec = _mismatch_rec(107)
+    rec.decisions.append(Decision("accept_mismatch", "true", "u", "t"))
+    assert scan.evaluate_excluded(rec) is True
+
+
+def test_mismatch_fingerprint_tolerates_missing_data():
+    rec = _mismatch_rec(5)
+    rec.anomalies = [Anomaly("frames_ts_mismatch", "error", "x")]
+    assert scan.mismatch_fingerprint(rec) == "end:?"
+
+
+def test_accept_survives_a_rescan_of_unchanged_files(make_series, tmp_path):
+    from bearmind import actions
+    root = make_series(tmp_path / "s", ts_rows=25)  # 30 frames, 25 rows: 5 / 25 = 20 %, an error
+    paths = SeriesPaths(root)
+    rec = scan.scan_series(root)[0]
+    assert rec.excluded
+    actions.accept_mismatch(paths, [rec.sid], "u")
+    assert load_record(paths, rec.sid).decisions[-1].value == "end:+5"
+    assert not load_record(paths, rec.sid).excluded
+    assert not scan.scan_series(root)[0].excluded

@@ -420,7 +420,14 @@ def accept_mismatch(paths, sids, who: str) -> ActionResult:
     for sid in sids:
         if not any(a.code == "frames_ts_mismatch" and a.level == "error" for a in recs[sid].anomalies):
             res.warnings.append((sid, "no_mismatch_error"))
-    _decide(paths, sids, "accept_mismatch", "true", who)
+    now = datetime.now().isoformat(timespec="milliseconds")  # same format as _decide
+
+    def change(rec):
+        rec.decisions.append(Decision("accept_mismatch", scan.mismatch_fingerprint(rec), who, now))
+        rec.excluded = scan.evaluate_excluded(rec)
+
+    for sid in sids:
+        registry.update_record(paths, sid, change)
     res.ok = sids
     return res
 

@@ -233,12 +233,13 @@ def test_decide(series):
 
 def test_decide_accept_mismatch(series):
     def add(rec):
-        rec.anomalies.append(Anomaly("frames_ts_mismatch", "error", "frames and timestamps differ"))
+        rec.anomalies.append(Anomaly("frames_ts_mismatch", "error", "frames and timestamps differ",
+                                     data={"diff": 9, "where": "end"}))
         rec.excluded = True
     update_record(series.paths, S2, add)
     assert _main("decide", series.root, S2, "accept-mismatch") == 0
     rec = load_record(series.paths, S2)
-    assert (rec.decisions[-1].what, rec.decisions[-1].value) == ("accept_mismatch", "true")
+    assert (rec.decisions[-1].what, rec.decisions[-1].value) == ("accept_mismatch", "end:+9")
     assert rec.excluded is False
     assert rec.anomalies[-1].level == "warning"
 

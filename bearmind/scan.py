@@ -531,6 +531,23 @@ def stitch_confirmed(rec: SessionRecord) -> bool:
     return any(d.what == "stitch_confirmed" and d.value == fingerprint for d in rec.decisions)
 
 
+def mismatch_fingerprint(rec: SessionRecord) -> str:
+    """What an Accept decision is about: every scan-level frames_ts_mismatch as "place:signed difference",
+    sorted and joined by "|"; "" when there is none. The level is not part of it: evaluate_excluded lowers an
+    accepted error to a warning in place, and the next call must see the same value."""
+    found = [f"{a.data.get('where', 'end')}:{a.data['diff']:+d}" if isinstance(a.data.get("diff"), int)
+             else f"{a.data.get('where', 'end')}:?"
+             for a in rec.anomalies if a.code == "frames_ts_mismatch" and not a.data.get("stage")]
+    return "|".join(sorted(found))
+
+
+def mismatch_accepted(rec: SessionRecord) -> bool:
+    """A person accepted exactly the current mismatch. A decision written as "true" (before the fingerprint)
+    does not say which mismatch it saw, so it does not count and the person accepts again."""
+    fingerprint = mismatch_fingerprint(rec)
+    return bool(fingerprint) and latest_decision(rec, "accept_mismatch") == fingerprint
+
+
 NO_FPS_MESSAGE = "no frame rate: the stages need it (MC video rate, CNMF-E fr); the session stays excluded"
 NOT_FOUND_MESSAGE = "session folder not found by the last scan"
 
@@ -550,10 +567,12 @@ def evaluate_excluded(rec: SessionRecord) -> bool:
     A session without a frame rate is always excluded (fps_unavailable): no stage can run without it, so an
     include decision cannot help; nor can it for a session whose folder the last scan did not find
     (not_found_in_scan): there are no files to process. An accepted mismatch stays in the record as a
-    warning; n_frames is already the common length. Anomalies tagged with a stage (data["stage"]) belong to
+    warning; n_frames is already the common length. The decision covers only the mismatch the person saw
+    (its place and size, scan.mismatch_fingerprint): another mismatch after the files were replaced excludes
+    the session again. Anomalies tagged with a stage (data["stage"]) belong to
     that stage and do not exclude the session.
     """
-    if latest_decision(rec, "accept_mismatch") == "true":
+    if mismatch_accepted(rec):
         for a in rec.anomalies:
             if a.code == "frames_ts_mismatch" and a.level == "error":
                 a.level, a.auto_fixed = "warning", True

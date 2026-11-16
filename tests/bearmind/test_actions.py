@@ -188,7 +188,14 @@ def test_accept_suggested_invalid(series):
 def test_accept_mismatch_warns_without_error(series):
     res = actions.accept_mismatch(series.paths, [S1], "ann")
     assert res.ok == [S1] and res.warnings == [(S1, "no_mismatch_error")]
-    assert ("accept_mismatch", "true", "ann") in _decisions(series.paths, S1)
+    assert ("accept_mismatch", "", "ann") in _decisions(series.paths, S1)  # nothing to accept: empty fingerprint
+
+
+def test_accept_mismatch_stores_the_fingerprint(series):
+    update_record(series.paths, S1, lambda r: r.anomalies.append(
+        Anomaly("frames_ts_mismatch", "error", "x", data={"diff": 7, "where": "end"})))
+    actions.accept_mismatch(series.paths, [S1], "ann")
+    assert ("accept_mismatch", "end:+7", "ann") in _decisions(series.paths, S1)
 
 
 def test_failure_text_english_ascii_free_of_cyrillic():

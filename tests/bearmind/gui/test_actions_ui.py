@@ -349,7 +349,7 @@ def test_confirmation_grammar(qapp, series4):
                            "them again.")
     ui.select(S1)
     ui.tab.run_action("accept_mismatch")
-    assert "the session is used as it is" in ui.asked[2]
+    assert "the extra frames or timestamp rows at the end are dropped" in ui.asked[2]
 
 
 def test_retry_button_unknown_session_does_not_crash(qapp, series4):

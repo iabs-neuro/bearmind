@@ -515,14 +515,13 @@ class MonitorTab(QWidget):
         if name == "retry_failed":
             return MonitorTab._retry_text(list(sids), plan or {})
         who = _named(sids)
-        one = len(list(sids)) == 1
-        it, they, is_are = ("it", "it", "is") if one else ("them", "they", "are")
+        it = "it" if len(list(sids)) == 1 else "them"
         title = monitor.STAGE_TITLE.get(stage, stage)
         return {
             "exclude": f"{who} will be excluded: the runner skips {it} until you include {it} again.",
             "include": f"{who} will be included in the batch again.",
-            "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: "
-                               f"{'the session is' if one else 'the sessions are'} used as {they} {is_are}.",
+            "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: the extra frames or "
+                               "timestamp rows at the end are dropped; the files stay unchanged.",
             "rerun_from": f"{who} will be recomputed from {title}. Old results stay until the new ones are ready.",
             "inspection_not_needed": f"Manual inspection will be marked as not needed for {who}.",
             "inspection_not_needed_all": f"Manual inspection will be marked as not needed for {who}.",
