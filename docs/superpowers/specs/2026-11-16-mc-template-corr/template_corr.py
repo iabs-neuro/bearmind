@@ -1,7 +1,6 @@
 """MC template correlation over the 84 LT1 sessions: how many sessions each candidate threshold flags.
 
-Run from the worktree root WITHOUT -I (the repo root is put on sys.path below; the package does not import under -I):
-  PYTHONDONTWRITEBYTECODE=1 conda run -n bearmind python docs/superpowers/specs/2026-11-16-mc-template-corr/template_corr.py
+Run from the worktree root: conda run -n bearmind python -I docs/superpowers/specs/2026-11-16-mc-template-corr/template_corr.py
 Reads H: only (registry, 3_MC shifts, threshold maps). Writes only into its own folder.
 """
 import json
@@ -9,7 +8,6 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[3]))  # worktree root, so the repo package is importable
 
 import matplotlib
 matplotlib.use('Agg')
@@ -80,12 +78,6 @@ for d in REL:
     flags[f'rel>{d:.2f}'] = m
     p(f'corr below mouse median by more than {d:.2f} (mice with >= {MIN_SESS} sessions): {int(m.sum())} flagged: '
       + (', '.join(f'{s} ({c:.3f})' for s, k, c in zip(sids, m, corr) if k) or '-'))
-m = flags['abs<0.55'] | flags['rel>0.05']
-p(f'combined: corr < 0.55 OR below mouse median by more than 0.05: {int(m.sum())} flagged: '
-  + (', '.join(s for s, k in zip(sids, m) if k) or '-'))
-m = flags['abs<0.60'] | flags['rel>0.05']
-p(f'combined: corr < 0.60 OR below mouse median by more than 0.05: {int(m.sum())} flagged: '
-  + (', '.join(s for s, k in zip(sids, m) if k) or '-'))
 fm = sorted({r['mouse'] for r, k in zip(rows, flags['abs<0.70']) if k})
 p(f'corr < 0.70 touches {len(fm)} of {len(mice)} mice: ' + ', '.join(fm))
 p('mice with every session below 0.70: ' + ', '.join(m_ for m_ in fm if all(r['corr'] < 0.70 for r in rows if r['mouse'] == m_)))
@@ -168,6 +160,9 @@ for lvl in sorted({r['mc_level'] for r in rows} - {'ok'}):
     for r in sorted(sel, key=lambda r: r['msp']):
         fr = r['big']
         p(f'  {r["sid"]}: max {r["msp"]:.1f} px, frames above 10 px: {len(fr)}, indices {fr[:6]}; only frame 0: {fr == [0]}')
+sf = [r for r in rows if r['msp'] > 10]
+p(f'of the {len(sf)} shift-flagged sessions, those with corr < 0.70: {sum(r["corr"] < 0.70 for r in sf)} ('
+  + ', '.join(f'{r["sid"]} {r["corr"]:.3f}' for r in sf if r['corr'] < 0.70) + ')')
 p(f'sessions with registry max_shift_px > 10: {sum(r["msp"] > 10 for r in rows)}; largest {max(r["msp"] for r in rows):.1f} px')
 
 p()
@@ -178,6 +173,7 @@ for k, (c0, v) in CAL.items():
       + f'; drop at 1 px {c0 - v[0]:.2f}, at 2 px {c0 - v[1]:.2f}')
 for t in ABS:
     p(f'floor {t:.2f}: catches a 2 px misalignment on ' + (', '.join(k for k, (c0, v) in CAL.items() if v[1] < t) or 'neither calibration session'))
+p('Calibration sessions: 6 real sessions, corr 0.815-0.939 (LT1_K02_1D 0.815, NOF_H01_1D 0.939, NOF_H03_3D 0.935, NOF_H03_4D 0.921, RFC_F01_1D 0.906, RFC_F20_1D 0.915); shifts were a constant offset of the whole movie.')
 p('Only LT1_K02_1D (corr 0.815) of the 6 calibration sessions is from LT1.')
 
 (HERE / 'template_corr_out.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
