@@ -1348,21 +1348,27 @@ def test_method_buttons_do_not_widen_the_tab(qapp, series_maps, make_tab):
     tab = make_tab(series_maps.paths)
     tab.show_session(S1)
     _wait(qapp, lambda: _settled(tab))
+    tab.show()  # a tab never shown keeps a stale cached layout size: hide/setText/show would change nothing
+    qapp.processEvents()
     for b in tab.method_buttons.values():
         b.hide()
+    qapp.processEvents()
     without = tab.minimumSizeHint().width()
     for b in tab.method_buttons.values():
         b.setText("mirror_fdr: 0.123456789 / 12.3456789")
         b.show()
+    qapp.processEvents()
     assert tab.minimumSizeHint().width() <= without + 5
 
 
 def test_non_finite_method_value_gives_a_disabled_button(qapp, series_maps, make_tab, monkeypatch):
+    from bearmind import seed_suggest
+
     nan = float("nan")
-    monkeypatch.setattr(tm, "method_values", lambda maps, g: {
-        m: {"min_corr": None, "min_pnr": None, "note": "no finite threshold pair"} for m in tm.METHODS})
+    monkeypatch.setattr(seed_suggest, "suggest_init_thresholds", lambda m, gSiz=None: (
+        {k: {"min_corr": nan, "min_pnr": nan} for k in tm.METHODS}, None))
     tab = make_tab(series_maps.paths)
     tab.show_session(S1)
     _wait(qapp, lambda: _settled(tab))
     b = tab.method_buttons["robust_bg"]
-    assert b.text() == "robust_bg: none" and not b.isEnabled()
+    assert b.text() == "robust_bg: none" and not b.isEnabled() and b.toolTip() == "no finite threshold pair"
