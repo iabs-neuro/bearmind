@@ -56,9 +56,9 @@ def read_timestamps(path: Path, start_epoch_ms: float | None = None) -> Timestam
     dropped = None
     # A Bonsai file can end in the middle of a row: the last buffer of the file was not written out when the
     # recording stopped (LT1_J05_1D: the file is exactly 231 x 4096 bytes). A cut number is always smaller than
-    # the previous full one, so "no line end and not increasing" finds it exactly; a whole row without a line
+    # the previous full one, so "no line end, not increasing and shorter" finds it exactly; a whole row without a line
     # end stays. The row is not restored: a guessed value would be invented data in the export.
-    if len(raw) >= 2 and not text.rstrip(" \t").endswith(("\n", "\r")) and raw[-1] <= raw[-2]:
+    if len(raw) >= 2 and not text.rstrip(" \t").endswith(("\n", "\r")) and raw[-1] <= raw[-2] and len(lines[-1]) < len(lines[-2]):
         dropped = lines[-1]
         raw = raw[:-1]
     return Timestamps(raw, raw / 1e4, BONSAI, dropped_row=dropped)

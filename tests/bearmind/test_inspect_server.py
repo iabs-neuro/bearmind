@@ -240,6 +240,8 @@ def test_cut_row_stays_out_of_inspection_and_export(make_series, tmp_path):
     a = {x.code: x for x in rec.anomalies}
     assert a["ts_last_row_incomplete"].level == "warning" and a["ts_last_row_incomplete"].auto_fixed
     assert a["ts_last_row_incomplete"].data["digits"] == 16
+    assert a["ts_last_row_incomplete"].data["digits_before"] == 18
+    assert "16 digits instead of 18" in a["ts_last_row_incomplete"].message
     assert a["frames_ts_mismatch"].level == "warning" and a["frames_ts_mismatch"].data["diff"] == 1
     assert not rec.excluded
 

@@ -232,3 +232,11 @@ def test_complete_files_read_as_before(tmp_path, end):
     (tmp_path / "S.csv").write_bytes("".join(f"{v}{end}" for v in t).encode("ascii"))
     ts = read_timestamps(tmp_path / "S.csv")
     assert ts.raw.tolist() == t.tolist() and ts.dropped_row is None
+
+
+def test_bonsai_complete_non_increasing_last_row_without_line_end_kept(tmp_path):
+    t = _ticks(50)
+    t[-1] = t[-2] - 5  # a clock glitch: whole row, same digit count
+    (tmp_path / "S.csv").write_bytes(("".join(f"{v}\r\n" for v in t[:-1]) + str(t[-1])).encode("ascii"))
+    ts = read_timestamps(tmp_path / "S.csv")
+    assert ts.raw.tolist() == t.tolist() and ts.dropped_row is None
