@@ -1,0 +1,82 @@
+sessions: 84; mice: 21
+corr: min 0.605, median 0.832, max 0.981
+p99 of per-frame max |shift| (px): min 1.40, median 2.55, max 5.00
+field brightness (median of mean image outside dark zone): min 20.6, median 45.0, max 100.8
+
+== Candidates ==
+corr < 0.50: 0 of 84 flagged: -
+corr < 0.55: 0 of 84 flagged: -
+corr < 0.60: 0 of 84 flagged: -
+corr < 0.65: 5 of 84 flagged: LT1_J06_2D, LT1_J26_1D, LT1_J52_1D, LT1_J52_2D, LT1_J53_4D
+corr < 0.70: 21 of 84 flagged: LT1_J06_1D, LT1_J06_2D, LT1_J10_1D, LT1_J10_3D, LT1_J26_1D, LT1_J26_2D, LT1_J26_3D, LT1_J26_4D, LT1_J52_1D, LT1_J52_2D, LT1_J52_3D, LT1_J52_4D, LT1_J53_1D, LT1_J53_2D, LT1_J53_3D, LT1_J53_4D, LT1_J54_1D, LT1_J54_3D, LT1_J54_4D, LT1_J58_1D, LT1_J58_4D
+corr below mouse median by more than 0.05 (mice with >= 3 sessions): 3 flagged: LT1_J06_2D (0.622), LT1_J18_1D (0.733), LT1_J57_1D (0.774)
+corr below mouse median by more than 0.10 (mice with >= 3 sessions): 0 flagged: -
+combined: corr < 0.55 OR below mouse median by more than 0.05: 3 flagged: LT1_J06_2D, LT1_J18_1D, LT1_J57_1D
+combined: corr < 0.60 OR below mouse median by more than 0.05: 3 flagged: LT1_J06_2D, LT1_J18_1D, LT1_J57_1D
+corr < 0.70 touches 7 of 21 mice: LT1_J06, LT1_J10, LT1_J26, LT1_J52, LT1_J53, LT1_J54, LT1_J58
+mice with every session below 0.70: LT1_J26, LT1_J52, LT1_J53
+
+== Overlap of flagged sets (n) ==
+rule x rule: abs<0.50 | abs<0.55 | abs<0.60 | abs<0.65 | abs<0.70 | rel>0.05 | rel>0.10
+abs<0.50: 0 0 0 0 0 0 0
+abs<0.55: 0 0 0 0 0 0 0
+abs<0.60: 0 0 0 0 0 0 0
+abs<0.65: 0 0 0 5 5 1 0
+abs<0.70: 0 0 0 5 21 1 0
+rel>0.05: 0 0 0 1 1 3 0
+rel>0.10: 0 0 0 0 0 0 0
+
+== Mouse medians of corr (n sessions, min corr, median corr, median p99 shift px, median brightness) ==
+LT1_J52: n=4, min 0.605, median 0.652, p99 3.25, brightness 51.9
+LT1_J53: n=4, min 0.638, median 0.673, p99 2.45, brightness 24.0
+LT1_J54: n=4, min 0.669, median 0.679, p99 1.70, brightness 45.8
+LT1_J26: n=4, min 0.641, median 0.685, p99 2.50, brightness 54.4
+LT1_J10: n=4, min 0.682, median 0.703, p99 2.55, brightness 59.1
+LT1_J58: n=4, min 0.668, median 0.704, p99 2.32, brightness 31.9
+LT1_J06: n=4, min 0.622, median 0.711, p99 3.30, brightness 39.2
+LT1_J17: n=4, min 0.747, median 0.753, p99 4.70, brightness 46.6
+LT1_J18: n=4, min 0.733, median 0.786, p99 2.32, brightness 53.5
+LT1_J08: n=4, min 0.778, median 0.816, p99 2.35, brightness 98.5
+LT1_J30: n=4, min 0.795, median 0.820, p99 1.95, brightness 50.8
+LT1_J57: n=4, min 0.774, median 0.834, p99 3.15, brightness 29.4
+LT1_J05: n=4, min 0.840, median 0.855, p99 3.10, brightness 44.3
+LT1_J55: n=4, min 0.843, median 0.857, p99 2.55, brightness 40.8
+LT1_J61: n=4, min 0.842, median 0.864, p99 3.75, brightness 42.2
+LT1_J27: n=4, min 0.862, median 0.877, p99 3.95, brightness 46.8
+LT1_J13: n=4, min 0.898, median 0.903, p99 2.60, brightness 60.2
+LT1_J01: n=4, min 0.902, median 0.907, p99 1.80, brightness 69.8
+LT1_J24: n=4, min 0.898, median 0.910, p99 1.50, brightness 37.6
+LT1_J14: n=4, min 0.930, median 0.944, p99 2.00, brightness 34.8
+LT1_J03: n=4, min 0.961, median 0.973, p99 2.30, brightness 29.0
+
+== Spearman rank correlation of corr ==
+with field brightness: rho = -0.043, p = 0.7
+with p99 shift: rho = -0.171, p = 0.12
+
+== Sessions below 0.70 (sid, corr, p99 shift px, brightness) ==
+LT1_J52_1D: 0.605, 4.00, 58.4
+LT1_J06_2D: 0.622, 4.15, 33.2
+LT1_J52_2D: 0.634, 3.30, 52.9
+LT1_J53_4D: 0.638, 3.30, 29.4
+LT1_J26_1D: 0.641, 2.50, 55.2
+LT1_J58_4D: 0.668, 2.24, 29.7
+LT1_J54_3D: 0.669, 1.70, 41.1
+LT1_J52_3D: 0.670, 3.20, 50.8
+LT1_J53_1D: 0.672, 2.20, 25.4
+LT1_J26_2D: 0.673, 2.60, 50.2
+LT1_J53_3D: 0.675, 2.70, 22.6
+LT1_J54_4D: 0.676, 1.60, 36.8
+LT1_J58_1D: 0.676, 2.60, 32.7
+LT1_J10_1D: 0.682, 2.00, 65.9
+LT1_J54_1D: 0.682, 1.70, 50.4
+LT1_J53_2D: 0.684, 2.10, 22.0
+LT1_J52_4D: 0.687, 2.65, 50.8
+LT1_J06_1D: 0.690, 3.10, 43.9
+LT1_J10_3D: 0.692, 2.60, 51.7
+LT1_J26_3D: 0.697, 2.30, 53.7
+LT1_J26_4D: 0.697, 2.50, 60.9
+median p99 shift: flagged 2.60 px vs others 2.50 px
+median brightness: flagged 50.2 vs others 44.8
+flagged sessions with p99 shift > 10 px (the existing shift check): 0
+all sessions with p99 shift > 10 px: 0
+Calibration reference (defaults.yaml): 6 bright sessions, corr 0.82-0.94; a 2 px misalignment gives 0.57-0.75
