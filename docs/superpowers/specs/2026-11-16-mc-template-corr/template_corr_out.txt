@@ -77,6 +77,51 @@ LT1_J26_3D: 0.697, 2.30, 53.7
 LT1_J26_4D: 0.697, 2.50, 60.9
 median p99 shift: flagged 2.60 px vs others 2.50 px
 median brightness: flagged 50.2 vs others 44.8
-flagged sessions with p99 shift > 10 px (the existing shift check): 0
+flagged sessions with p99 shift > 10 px (p99, NOT the quantity of the shift check): 0
 all sessions with p99 shift > 10 px: 0
-Calibration reference (defaults.yaml): 6 bright sessions, corr 0.82-0.94; a 2 px misalignment gives 0.57-0.75
+
+== Mouse reference median: two definitions ==
+A (above): median of all sessions of the mouse, the session itself included
+B: leave-one-out median (the session is left out of its own reference; mice with >= 4 sessions)
+B, below the reference by more than 0.05: 9 flagged: LT1_J06_2D (0.622, ref 0.733), LT1_J08_1D (0.778, ref 0.843), LT1_J08_2D (0.789, ref 0.843), LT1_J18_1D (0.733, ref 0.798), LT1_J26_1D (0.641, ref 0.697), LT1_J52_1D (0.605, ref 0.670), LT1_J57_1D (0.774, ref 0.835), LT1_J58_1D (0.676, ref 0.731), LT1_J58_4D (0.668, ref 0.731)
+B, below the reference by more than 0.10: 1 flagged: LT1_J06_2D (0.622, ref 0.733)
+B, rule 0.05 flags sessions with p99 shift (px): LT1_J06_2D 4.15, LT1_J08_1D 2.90, LT1_J08_2D 2.90, LT1_J18_1D 3.20, LT1_J26_1D 2.50, LT1_J52_1D 4.00, LT1_J57_1D 2.20, LT1_J58_1D 2.60, LT1_J58_4D 2.24
+LT1_J06_2D: corr 0.622, p99 shift 4.15 px; p99 of the 4 sessions of the mouse: 3.10, 4.15, 3.50, 2.45
+LT1_J18_1D: corr 0.733, p99 shift 3.20 px; p99 of the 4 sessions of the mouse: 3.20, 1.70, 1.93, 2.70
+LT1_J57_1D: corr 0.774, p99 shift 2.20 px; p99 of the 4 sessions of the mouse: 2.20, 3.30, 3.00, 3.70
+recommended rule (corr < 0.55 OR below the leave-one-out mouse median by more than 0.10): 1 flagged: LT1_J06_2D
+mice with fewer than 4 sessions (no leave-one-out reference): 0
+These flagged sessions were NOT checked by eye (no video frames read).
+
+== What tracks corr: maps (gSig 5, valid area) and texture proxy ==
+median PNR: sessions rho = -0.768 (p = 1.6e-17); mouse level (n=21) rho = -0.822 (p = 4.8e-06)
+median local correlation (cn): sessions rho = -0.785 (p = 1e-18); mouse level (n=21) rho = -0.821 (p = 5.2e-06)
+high-pass contrast of mean image / brightness: sessions rho = 0.152 (p = 0.17); mouse level (n=21) rho = 0.186 (p = 0.42)
+median PNR: sessions flagged at 0.70 18.34 vs others 12.27
+within a mouse (both centred on the mouse mean): corr vs p99 shift rho = -0.269, p = 0.013
+medians of p99 shift: flagged at 0.70 2.60 px, others 2.50 px
+
+== Shift check mc_max_shift_px (registry max_shift_px = maximum over ALL frames, not p99) ==
+level error: 5 sessions
+  LT1_J57_2D: max 33.8 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J53_2D: max 34.2 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J58_2D: max 35.5 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J18_2D: max 35.6 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J17_2D: max 35.7 px, frames above 10 px: 1, indices [0]; only frame 0: True
+level warning: 5 sessions
+  LT1_J24_2D: max 12.1 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J54_2D: max 18.7 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J24_3D: max 24.6 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J30_2D: max 25.2 px, frames above 10 px: 1, indices [0]; only frame 0: True
+  LT1_J10_2D: max 27.1 px, frames above 10 px: 2, indices [64646, 64649]; only frame 0: False
+sessions with registry max_shift_px > 10: 10; largest 35.7 px
+
+== Calibration (docs/superpowers/specs/2026-11-01-e2e-report.md, table of 6 real sessions; these numbers are copied from it) ==
+NOF_H01_1D: corr 0.94; whole movie shifted by 1/2/3/5 px -> 0.88/0.75/0.61/0.41; drop at 1 px 0.06, at 2 px 0.19
+LT1_K02_1D: corr 0.82; whole movie shifted by 1/2/3/5 px -> 0.73/0.57/0.43/0.25; drop at 1 px 0.09, at 2 px 0.25
+floor 0.50: catches a 2 px misalignment on neither calibration session
+floor 0.55: catches a 2 px misalignment on neither calibration session
+floor 0.60: catches a 2 px misalignment on LT1_K02_1D
+floor 0.65: catches a 2 px misalignment on LT1_K02_1D
+floor 0.70: catches a 2 px misalignment on LT1_K02_1D
+Only LT1_K02_1D (corr 0.815) of the 6 calibration sessions is from LT1.

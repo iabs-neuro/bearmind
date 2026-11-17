@@ -15,6 +15,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+from caiman.motion_correction import high_pass_filter_space
 from scipy.stats import spearmanr
 
 ROOT = Path('H:/Projects/LT1/CalciumData')
@@ -42,7 +43,17 @@ for f in sorted((ROOT / '_bearmind' / 'registry').glob('*.json')):
     mean = z['mean']
     med = np.median(mean)
     bright = float(np.median(mean[mean >= DARK_FRAC * med]))
-    rows.append(dict(sid=sid, mouse=reg.get('mouse') or sid.split('_')[1], corr=float(corr), p99=p99, bright=bright))
+    keep = mean >= DARK_FRAC * med
+    pnr = float(np.median(z['pnr_5'][keep]))
+    cn = float(np.median(z['cn_5'][keep]))
+    # texture proxy: contrast of the mean image after the high-pass filter that MC uses (gSig_filt 8)
+    hp = high_pass_filter_space(mean.astype(np.float32), (8, 8))
+    tex = float(np.std(hp[keep]) / bright)
+    fm = np.abs(sh).max(axis=1)
+    rows.append(dict(sid=sid, mouse=reg.get('mouse') or sid.split('_')[1], corr=float(corr), p99=p99, bright=bright,
+                     pnr=pnr, cn=cn, tex=tex, msp=float(reg['stages']['mc']['metrics']['max_shift_px']),
+                     mc_level=[c['level'] for c in reg['stages']['mc']['checks'] if c['name'] == 'mc_max_shift_px'][0],
+                     big=[int(i) for i in np.where(fm > 10)[0]]))
 
 sids = [r['sid'] for r in rows]
 corr = np.array([r['corr'] for r in rows])
@@ -105,13 +116,74 @@ for i in np.argsort(corr):
 if low.any():
     p(f'median p99 shift: flagged {np.median(p99[low]):.2f} px vs others {np.median(p99[~low]):.2f} px')
     p(f'median brightness: flagged {np.median(bright[low]):.1f} vs others {np.median(bright[~low]):.1f}')
-    p(f'flagged sessions with p99 shift > 10 px (the existing shift check): {int((p99[low] > 10).sum())}')
+    p(f'flagged sessions with p99 shift > 10 px (p99, NOT the quantity of the shift check): {int((p99[low] > 10).sum())}')
 p(f'all sessions with p99 shift > 10 px: {int((p99 > 10).sum())}')
-p('Calibration reference (defaults.yaml): 6 bright sessions, corr 0.82-0.94; a 2 px misalignment gives 0.57-0.75')
+
+
+p()
+p('== Mouse reference median: two definitions ==')
+p('A (above): median of all sessions of the mouse, the session itself included')
+p('B: leave-one-out median (the session is left out of its own reference; mice with >= 4 sessions)')
+loo = np.array([np.median([o['corr'] for o in rows if o['mouse'] == r['mouse'] and o is not r])
+                if mcount[r['mouse']] - 1 >= MIN_SESS else np.nan for r in rows])
+for d in REL:
+    m = corr < loo - d
+    p(f'B, below the reference by more than {d:.2f}: {int(m.sum())} flagged: '
+      + (', '.join(f'{sid_} ({c:.3f}, ref {l:.3f})' for sid_, k, c, l in zip(sids, m, corr, loo) if k) or '-'))
+mB = corr < loo - 0.05
+p(f'B, rule 0.05 flags sessions with p99 shift (px): ' + ', '.join(f'{sid_} {x:.2f}' for sid_, x, k in zip(sids, p99, mB) if k))
+for sid_ in ['LT1_J06_2D', 'LT1_J18_1D', 'LT1_J57_1D']:
+    i = sids.index(sid_)
+    mm = rows[i]['mouse']
+    p(f'{sid_}: corr {corr[i]:.3f}, p99 shift {p99[i]:.2f} px; p99 of the 4 sessions of the mouse: '
+      + ', '.join(f'{r["p99"]:.2f}' for r in rows if r['mouse'] == mm))
+mrec = flags['abs<0.55'] | (corr < loo - 0.10)
+p('recommended rule (corr < 0.55 OR below the leave-one-out mouse median by more than 0.10): '
+  f'{int(mrec.sum())} flagged: ' + (', '.join(sid_ for sid_, k in zip(sids, mrec) if k) or '-'))
+p(f'mice with fewer than {MIN_SESS + 1} sessions (no leave-one-out reference): {sum(mcount[m_] < MIN_SESS + 1 for m_ in mice)}')
+p('These flagged sessions were NOT checked by eye (no video frames read).')
+
+p()
+p('== What tracks corr: maps (gSig 5, valid area) and texture proxy ==')
+for key, name in [('pnr', 'median PNR'), ('cn', 'median local correlation (cn)'), ('tex', 'high-pass contrast of mean image / brightness')]:
+    v = np.array([r[key] for r in rows])
+    rs = spearmanr(corr, v)
+    mv = np.array([np.median([r[key] for r in rows if r['mouse'] == m_]) for m_ in mice])
+    rm = spearmanr(np.array([mmed[m_] for m_ in mice]), mv)
+    p(f'{name}: sessions rho = {rs.statistic:.3f} (p = {rs.pvalue:.2g}); mouse level (n={len(mice)}) rho = {rm.statistic:.3f} (p = {rm.pvalue:.2g})')
+pnr = np.array([r['pnr'] for r in rows])
+p(f'median PNR: sessions flagged at 0.70 {np.median(pnr[low]):.2f} vs others {np.median(pnr[~low]):.2f}')
+mid = np.array([mice.index(r['mouse']) for r in rows])
+dc = corr - np.array([corr[mid == k].mean() for k in mid])
+dp = p99 - np.array([p99[mid == k].mean() for k in mid])
+rw = spearmanr(dc, dp)
+p(f'within a mouse (both centred on the mouse mean): corr vs p99 shift rho = {rw.statistic:.3f}, p = {rw.pvalue:.2g}')
+p(f'medians of p99 shift: flagged at 0.70 {np.median(p99[low]):.2f} px, others {np.median(p99[~low]):.2f} px')
+
+p()
+p('== Shift check mc_max_shift_px (registry max_shift_px = maximum over ALL frames, not p99) ==')
+for lvl in sorted({r['mc_level'] for r in rows} - {'ok'}):
+    sel = [r for r in rows if r['mc_level'] == lvl]
+    p(f'level {lvl}: {len(sel)} sessions')
+    for r in sorted(sel, key=lambda r: r['msp']):
+        fr = r['big']
+        p(f'  {r["sid"]}: max {r["msp"]:.1f} px, frames above 10 px: {len(fr)}, indices {fr[:6]}; only frame 0: {fr == [0]}')
+p(f'sessions with registry max_shift_px > 10: {sum(r["msp"] > 10 for r in rows)}; largest {max(r["msp"] for r in rows):.1f} px')
+
+p()
+p('== Calibration (docs/superpowers/specs/2026-11-01-e2e-report.md, table of 6 real sessions; these numbers are copied from it) ==')
+CAL = {'NOF_H01_1D': (0.94, [0.88, 0.75, 0.61, 0.41]), 'LT1_K02_1D': (0.82, [0.73, 0.57, 0.43, 0.25])}
+for k, (c0, v) in CAL.items():
+    p(f'{k}: corr {c0:.2f}; whole movie shifted by 1/2/3/5 px -> ' + '/'.join(f'{x:.2f}' for x in v)
+      + f'; drop at 1 px {c0 - v[0]:.2f}, at 2 px {c0 - v[1]:.2f}')
+for t in ABS:
+    p(f'floor {t:.2f}: catches a 2 px misalignment on ' + (', '.join(k for k, (c0, v) in CAL.items() if v[1] < t) or 'neither calibration session'))
+p('Only LT1_K02_1D (corr 0.815) of the 6 calibration sessions is from LT1.')
 
 (HERE / 'template_corr_out.txt').write_text('\n'.join(out) + '\n', encoding='utf-8')
 
 # figure
+rec = flags['abs<0.55'] | (corr < loo - 0.10)  # recommended: floor 0.55 + leave-one-out median, 0.10
 fig, ax = plt.subplots(2, 2, figsize=(12, 9), constrained_layout=True)
 a = ax[0, 0]
 a.hist(corr, bins=24, color='0.6')
@@ -124,14 +196,16 @@ order = sorted(mice, key=lambda m: mmed[m])
 for i, m in enumerate(order):
     v = [r['corr'] for r in rows if r['mouse'] == m]
     a.scatter([i] * len(v), v, s=14, color='C0')
+    rv = [r['corr'] for r in rows if r['mouse'] == m and rec[sids.index(r['sid'])]]
+    a.scatter([i] * len(rv), rv, s=60, facecolors='none', edgecolors='C1', linewidths=1.8)
     a.hlines(mmed[m], i - 0.35, i + 0.35, color='k')
 a.axhline(0.70, color='C3', lw=1)
 a.set_xticks(range(len(order))); a.set_xticklabels(order, rotation=90, fontsize=8)
-a.set_ylabel('mean template corr'); a.set_title('By mouse (black = mouse median, red = 0.70)')
+a.set_ylabel('mean template corr'); a.set_title('By mouse (black = median, red = 0.70)\n' + 'ring = recommended rule', fontsize=10)
 a = ax[1, 0]
 a.scatter(bright, corr, s=14)
 a.axhline(0.70, color='C3', lw=1)
-a.set_xlabel('field brightness (median of mean image)'); a.set_ylabel('mean template corr')
+a.set_xlabel('field brightness (median of mean image outside dark zone)'); a.set_ylabel('mean template corr')
 a.set_title(f'Corr vs brightness (Spearman rho {r1.statistic:.2f})')
 a = ax[1, 1]
 a.scatter(p99, corr, s=14)
