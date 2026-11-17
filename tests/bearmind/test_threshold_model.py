@@ -524,3 +524,19 @@ def test_blocked_session_without_maps_does_not_claim_a_queue(series):
     assert it.state == "no_maps" and it.reason == "skipped: crop failed"
     assert it.note == "No maps: skipped: crop failed. Retry the failed stage in Monitor."
     assert it.text == "no maps: skipped: crop failed" and "batch" not in it.note
+
+
+def test_mouse_choices_lists_other_sessions_of_the_same_mouse():
+    ch = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
+    a = tm.ThresholdItem("A", "M1", "waiting", "", None, None)
+    b = tm.ThresholdItem("B", "M1", "chosen", "", None, ch)
+    c = tm.ThresholdItem("C", "M2", "chosen", "", None, ch)
+    assert tm.mouse_choices([a, b, c], "A") == [("B", ch)]
+    assert tm.mouse_choices([a, b, c], "B") == []
+
+
+def test_fit_gsig_falls_back_without_a_map():
+    maps = tm.ThresholdMaps([3, 4], None, None, {3: 1, 4: 1}, {3: 1, 4: 1}, {}, {})
+    assert tm.fit_gsig(maps, 3) == (3, "")
+    g, note = tm.fit_gsig(maps, 9)
+    assert note == f"gSig 9 has no map; showing {g}"

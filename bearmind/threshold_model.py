@@ -332,10 +332,23 @@ def initial_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple
 def missing_gsig_note(item: ThresholdItem, maps: ThresholdMaps, source: str) -> str:
     """Text for the window when the stored/suggested gSig has no map, else an empty string."""
     v = item.chosen if source == "chosen" else item.suggested if source == "suggested" else None
+    return fit_gsig(maps, int(v["gSig"]))[1] if v else ""
+
+
+def fit_gsig(maps: ThresholdMaps, g: int) -> tuple[int, str]:
+    """(gSig to show, note): g itself when it has maps, else the fallback among the usable gSigs and the note."""
     usable = maps.usable_gsigs
-    if v and int(v["gSig"]) not in usable:
-        return f"gSig {int(v['gSig'])} has no map; showing {config.fallback_gsig(usable)}"
-    return ""
+    if g in usable:
+        return g, ""
+    fb = config.fallback_gsig(usable)
+    return fb, f"gSig {g} has no map; showing {fb}"
+
+
+def mouse_choices(items: list[ThresholdItem], sid: str) -> list[tuple[str, dict]]:
+    """(other sid, chosen thresholds) of the other sessions of the session's mouse that have chosen ones."""
+    mouse = next((i.mouse for i in items if i.sid == sid), None)
+    return sorted(((i.sid, i.chosen) for i in items if i.mouse == mouse and i.sid != sid and i.chosen is not None),
+                  key=lambda t: t[0])
 
 
 def start_values(item: ThresholdItem, maps: ThresholdMaps, cfg: dict) -> tuple[int, float, float, str, str]:
@@ -379,8 +392,13 @@ def choice_source(paths, sid: str, mouse: str) -> str:
     return f"{', '.join(names[:-1])} and {names[-1]} config" if len(names) > 1 else f"{names[0]} config"
 
 
-def source_text(source: str, item: ThresholdItem, chosen_from: str = "") -> str:
-    """`chosen_from`: choice_source of the session, for an earlier choice."""
+def source_text(source: str, item: ThresholdItem, chosen_from: str = "", values: dict | None = None) -> str:
+    """`chosen_from`: choice_source of the session, for an earlier choice. `values`: the thresholds taken from
+    another session, for the source "session:<sid>"."""
+    if source.startswith("session:") and values:
+        return (f"Thresholds of {source[len('session:'):]}: gSig {int(values['gSig'])}, "
+                f"min_corr {value_text(values['min_corr'], CORR_DECIMALS)}, "
+                f"min_pnr {value_text(values['min_pnr'], PNR_DECIMALS)}")
     if source == "chosen":
         return f"Your earlier choice ({chosen_from})" if chosen_from else "Your earlier choice"
     if source == "suggested" and item.suggested:

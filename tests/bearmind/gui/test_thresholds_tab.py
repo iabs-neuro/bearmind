@@ -1164,3 +1164,48 @@ def test_batch_stage_change_updates_the_note_without_reloading(qapp, series_maps
     assert tab.corr_view.text().endswith(f"Now: MC of {S1}.") and tab.pnr_view.text() == tab.corr_view.text()
     assert tab.accept_button.toolTip() == tab.corr_view.text()
     assert not loads and not videos
+
+
+def test_from_session_takes_another_sessions_choice(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    before = p.session_config(S1).read_bytes() if p.session_config(S1).exists() else None
+    tab = make_tab(p)
+    tab.show_session(S1)
+    assert [a.text() for a in tab.from_session_button.menu().actions()] == \
+        ["NOF_H01_2D: gSig 5, min_corr 0.90, min_pnr 12.5"]
+    tab.apply_from_session(S2)
+    assert tab.current() == (S1, 5, 0.9, 12.5)
+    assert tab.source_label.text().startswith("Thresholds of NOF_H01_2D: gSig 5")
+    after = p.session_config(S1).read_bytes() if p.session_config(S1).exists() else None
+    assert after == before  # nothing written until Accept
+
+
+def test_from_session_lists_only_the_same_mouse(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S3), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    tab = make_tab(p)
+    tab.show_session(S1)
+    assert not tab.from_session_button.isEnabled()
+    assert tab.from_session_button.toolTip() == "No other session of NOF_H01 has thresholds"
+
+
+def test_from_session_tooltip_names_missing_maps(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = make_tab(p)
+    tab.show_session(S1)
+    tab._maps = None  # as when the session shows no maps
+    tab._update_buttons()
+    assert not tab.from_session_button.isEnabled()
+    assert tab.from_session_button.toolTip() == "No maps are shown for this session"
+
+
+def test_from_session_gsig_without_map_falls_back(qapp, series_maps, make_tab):
+    p = series_maps.paths  # maps of gSig 3, 4, 5
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 7, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = make_tab(p)
+    tab.show_session(S1)
+    tab.apply_from_session(S2)
+    assert tab.current() == (S1, 4, 0.9, 12.5)
+    assert "gSig 7 has no map; showing 4" in tab.source_label.text()

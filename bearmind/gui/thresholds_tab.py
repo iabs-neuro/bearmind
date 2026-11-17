@@ -14,7 +14,7 @@ import numpy as np
 from PySide6.QtCore import QLocale, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QDoubleSpinBox, QGridLayout, QHBoxLayout,
-                               QHeaderView, QLabel, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
+                               QHeaderView, QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
                                QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from bearmind import actions, config, monitor, registry
@@ -189,6 +189,7 @@ class ThresholdsTab(QWidget):
         self._reason = NO_SESSIONS  # why no maps are shown
         self._loaded_sig = None  # what the shown maps were read from; the maps reload when it changes
         self._source = ""
+        self._source_values: dict | None = None  # the thresholds taken from another session (source "session:...")
         self._note = ""
         self._g: int | None = None
         self._exact: dict[str, float] = {}  # "corr" / "pnr" -> start value kept exactly until that control moves
@@ -329,6 +330,10 @@ class ThresholdsTab(QWidget):
         self.prev_button = QPushButton("← Previous")
         self.next_button = QPushButton("Next →")
         self.reset_button = QPushButton("Reset to suggestion")
+        self.from_session_button = QToolButton()
+        self.from_session_button.setText("From session")
+        self.from_session_button.setPopupMode(QToolButton.InstantPopup)
+        self.from_session_button.setMenu(QMenu(self.from_session_button))
         self.accept_button = QPushButton("Accept → next")
         self.accept_button.setStyleSheet(ACCENT_BUTTON)
         self.accept_mouse_button = QPushButton("Accept for all sessions of this mouse")
@@ -338,7 +343,7 @@ class ThresholdsTab(QWidget):
         self.reset_button.clicked.connect(lambda: self._guarded(self._reset))
         self.accept_button.clicked.connect(lambda: self._guarded(self.accept_and_next))
         self.accept_mouse_button.clicked.connect(lambda: self._guarded(self.accept_for_mouse))
-        for b in (self.prev_button, self.next_button, self.reset_button):
+        for b in (self.prev_button, self.next_button, self.reset_button, self.from_session_button):
             row.addWidget(b)
         row.addStretch(1)
         row.addWidget(self.accept_button)
@@ -637,7 +642,7 @@ class ThresholdsTab(QWidget):
         if old is not None and old[0] in self._maps.usable_gsigs:
             g, c, p = old  # the person's values stay when the batch replaced the maps under them
         else:
-            self._source, self._note = source, note
+            self._source, self._note, self._source_values = source, note, None
         self._build_strip()
         self._apply(g, c, p)
         self._show_source()
@@ -659,7 +664,7 @@ class ThresholdsTab(QWidget):
         if item is None or self._maps is None:
             return
         chosen_from = tm.choice_source(self.paths, item.sid, item.mouse) if self._source == "chosen" else ""
-        text = tm.source_text(self._source, item, chosen_from)
+        text = tm.source_text(self._source, item, chosen_from, self._source_values)
         self.source_label.setText(f"{text} — {self._note}" if self._note else text)
 
     # --- part 3: the gSig strip ---
@@ -843,6 +848,37 @@ class ThresholdsTab(QWidget):
         self.reset_button.setEnabled(can_reset)
         no_suggestion = self._maps is not None and not can_reset
         self.reset_button.setToolTip("No autotune suggestion for this session" if no_suggestion else "")
+        self._update_from_session(item)
+
+    def _update_from_session(self, item) -> None:
+        menu = self.from_session_button.menu()
+        menu.clear()
+        choices = tm.mouse_choices(self._items, item.sid) if item is not None else []
+        for other, v in choices:
+            text = (f"{other}: gSig {int(v['gSig'])}, min_corr {tm.value_text(v['min_corr'], tm.CORR_DECIMALS)}, "
+                    f"min_pnr {tm.value_text(v['min_pnr'], tm.PNR_DECIMALS)}")
+            menu.addAction(text, lambda o=other: self._guarded(self.apply_from_session, o))
+        can = self._maps is not None and bool(choices)
+        self.from_session_button.setEnabled(can)
+        if can or item is None:
+            tip = ""
+        elif self._maps is None:
+            tip = "No maps are shown for this session"
+        else:
+            tip = f"No other session of {item.mouse} has thresholds"
+        self.from_session_button.setToolTip(tip)
+
+    def apply_from_session(self, other_sid: str) -> None:
+        """Set the controls to the thresholds chosen on another session of the mouse; nothing is written."""
+        item = self._by_sid.get(self._sid)
+        other = self._by_sid.get(other_sid)
+        if item is None or other is None or self._maps is None or other.chosen is None:
+            return
+        v = other.chosen
+        g, note = tm.fit_gsig(self._maps, int(v["gSig"]))
+        self._apply(g, float(v["min_corr"]), float(v["min_pnr"]))
+        self._source, self._note, self._source_values = f"session:{other_sid}", note, v
+        self._show_source()
 
     def _reset(self) -> None:
         item = self._by_sid.get(self._sid)
@@ -850,7 +886,7 @@ class ThresholdsTab(QWidget):
             return
         g, c, p, source, note = self._start_values(item, self._session_cfg(item), use_choice=False)
         self._apply(g, c, p)
-        self._source, self._note = source, note
+        self._source, self._note, self._source_values = source, note, None
         self._show_source()
 
     def _gone(self, names) -> None:
@@ -991,7 +1027,8 @@ class ThresholdsTab(QWidget):
                 self._say(f"{done} Next: {sid}.")
                 return
         if self._sid in self._by_sid and self._by_sid[self._sid].chosen is not None:
-            self._source, self._note = "chosen", ""  # the shown values are this session's choice now
+            # the shown values are this session's choice now
+            self._source, self._note, self._source_values = "chosen", "", None
             self._show_source()
         # "all have thresholds" only when it is true: sessions without maps or not reached yet have none
         without = [i.sid for i in self._items if i.state != "excluded" and i.chosen is None]
