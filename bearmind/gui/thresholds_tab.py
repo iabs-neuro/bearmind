@@ -189,6 +189,7 @@ class ThresholdsTab(QWidget):
         self._reason = NO_SESSIONS  # why no maps are shown
         self._loaded_sig = None  # what the shown maps were read from; the maps reload when it changes
         self._source = ""
+        self._from_session_texts: list[tuple[str, str]] = []  # what the From session menu was built from
         self._source_values: dict | None = None  # the thresholds taken from another session (source "session:...")
         self._note = ""
         self._g: int | None = None
@@ -852,12 +853,17 @@ class ThresholdsTab(QWidget):
 
     def _update_from_session(self, item) -> None:
         menu = self.from_session_button.menu()
-        menu.clear()
         choices = tm.mouse_choices(self._items, item.sid) if item is not None else []
-        for other, v in choices:
-            text = (f"{other}: gSig {int(v['gSig'])}, min_corr {tm.value_text(v['min_corr'], tm.CORR_DECIMALS)}, "
-                    f"min_pnr {tm.value_text(v['min_pnr'], tm.PNR_DECIMALS)}")
-            menu.addAction(text, lambda o=other: self._guarded(self.apply_from_session, o))
+        texts = [(other, f"{other}: gSig {int(v['gSig'])}, "
+                         f"min_corr {tm.value_text(v['min_corr'], tm.CORR_DECIMALS)}, "
+                         f"min_pnr {tm.value_text(v['min_pnr'], tm.PNR_DECIMALS)}") for other, v in choices]
+        # The timer calls this every tick; rebuilding an open menu loses the hover and drops a click, so the
+        # actions are replaced only when the list changed.
+        if texts != self._from_session_texts:
+            self._from_session_texts = texts
+            menu.clear()
+            for other, text in texts:
+                menu.addAction(text, lambda o=other: self._guarded(self.apply_from_session, o))
         can = self._maps is not None and bool(choices)
         self.from_session_button.setEnabled(can)
         if can or item is None:

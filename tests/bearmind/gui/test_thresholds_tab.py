@@ -1209,3 +1209,27 @@ def test_from_session_gsig_without_map_falls_back(qapp, series_maps, make_tab):
     tab.apply_from_session(S2)
     assert tab.current() == (S1, 4, 0.9, 12.5)
     assert "gSig 7 has no map; showing 4" in tab.source_label.text()
+
+
+def test_from_session_menu_is_not_rebuilt_while_nothing_changed(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = make_tab(p)
+    tab.show_session(S1)
+    first = tab.from_session_button.menu().actions()
+    tab._update_buttons()
+    tab._update_buttons()
+    assert tab.from_session_button.menu().actions() == first
+
+
+def test_from_session_menu_action_applies_without_writing(qapp, series_maps, make_tab):
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    before = p.session_config(S1).read_bytes() if p.session_config(S1).exists() else None
+    tab = make_tab(p)
+    tab.show_session(S1)
+    tab.from_session_button.menu().actions()[0].trigger()
+    assert tab.current() == (S1, 5, 0.9, 12.5)
+    assert tab.source_label.text().startswith("Thresholds of NOF_H01_2D: gSig 5")
+    after = p.session_config(S1).read_bytes() if p.session_config(S1).exists() else None
+    assert after == before
