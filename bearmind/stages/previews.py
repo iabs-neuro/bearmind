@@ -1,7 +1,7 @@
 """Preview stages: the MC videos and the CNMF-E QC video, made from the stored MC video and estimates.
 
-They run as side stages: when the checkbox is set, right after MC / CNMF-E, before the next main stage (that time is
-the price of the checkbox); no main stage uses their result, so a disabled or failed preview holds nothing. bm_qc
+They run as side stages: when the checkbox is set, and only when no main stage of any session is ready (the batch
+does its main stages first); no main stage uses their result, so a disabled or failed preview holds nothing. bm_qc
 (CaImAn, cv2, matplotlib: about 7 s) is imported inside the functions: the runner imports preview_params on every
 stage-parameter check.
 """

@@ -9,8 +9,8 @@ registry.update_record, so concurrent writers do not lose their changes. Each st
 process of its own (bearmind.isolate): a native crash or a dead CaImAn pool worker fails that stage and the
 batch goes on with the other sessions.
 
-Side stages (registry.SIDE_STAGES: the preview videos) run right after their parent main stage while their
-checkbox is set. Their hash is their settings plus the parent's hash; the main chain never depends on them,
+Side stages (registry.SIDE_STAGES: the preview videos) run while their checkbox is set, but only when no main
+stage of any session is ready (also when every main stage waits for a person). Their hash is their settings plus the parent's hash; the main chain never depends on them,
 so a disabled, failed or changed preview holds and re-runs nothing else.
 """
 from __future__ import annotations
@@ -123,6 +123,13 @@ def _offered(until) -> tuple:
     """Stages a run looks at, in ALL_STAGES order: the main stages up to `until` and their side stages."""
     main = _stages_until(until)
     return tuple(s for s in ALL_STAGES if s in main or SIDE_STAGES.get(s) in main)
+
+
+def _offer_order(until) -> tuple:
+    """Stages in the order next_ready offers them: the main stages up to `until` in STAGES order, then the side
+    stages in range in ALL_STAGES order. A side stage comes up only when no main stage of any session is ready."""
+    offered = _offered(until)
+    return tuple(s for s in STAGES if s in offered) + tuple(s for s in ALL_STAGES if s in offered and s in SIDE_STAGES)
 
 
 def _sides_of(stage) -> list:
@@ -451,9 +458,9 @@ class StageView:
         return next((s for s in STAGES if not self.current(rec, s)), None)
 
     def first_ready(self, rec) -> str | None:
-        """The first stage in ALL_STAGES order that the batch would run for this session now (ready): a preview
-        it redoes before the next main stage is named, as the batch runs it first. None when no stage is ready."""
-        return next((s for s in ALL_STAGES if self.ready(rec, s)), None)
+        """The first stage in the batch's offer order (main stages, then previews) that is ready for this session
+        now. None when no stage is ready."""
+        return next((s for s in _offer_order(None) if self.ready(rec, s)), None)
 
     def side_done_not_current(self, rec) -> list:
         """Side stages DONE in the registry, turned on, that the batch would redo (not current: their files are
@@ -495,7 +502,8 @@ class _Scope:
 
 
 def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
-    """(sid, stage) of the next stage to run, or None: lowest index in ALL_STAGES first, then sid order.
+    """(sid, stage) of the next stage to run, or None: lowest main stage first, then sid order; a side stage only
+    when no main stage of any session is ready (_offer_order).
 
     Ready: session not excluded, every earlier main stage up to date, the stage itself not up to date and
     not FAILED/SKIPPED with unchanged parameters. A side stage needs its checkbox set and every main stage up
@@ -506,7 +514,7 @@ def next_ready(records, paths, until=None, sids=None, skip=(), _view=None):
     view = _view or StageView(paths)
     scope = _Scope(records, sids)
     recs = sorted((r for r in records if not r.excluded), key=lambda r: r.sid)
-    for stage in _offered(until):
+    for stage in _offer_order(until):
         for r in recs:
             if (r.sid, stage) in skip or not scope.has(r, stage):
                 continue

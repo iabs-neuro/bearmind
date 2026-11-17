@@ -195,7 +195,7 @@ def sessions_ahead(view, records, rec) -> int:
     offer a crop or MC stage for (those stages come before every thresholds stage), and sessions with a lower
     name that it would offer thresholds for. The count asks StageView.ready, the predicate next_ready uses, so
     excluded, unschedulable and blocked (failed, skipped) sessions are left out as the batch leaves them out.
-    The preview stages are not counted (they are off in the series that need this)."""
+    The preview stages are not counted: the batch offers them only when no main stage is ready."""
     return _ahead(_ready_sets(view, records), rec.sid)
 
 

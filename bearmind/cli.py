@@ -361,7 +361,7 @@ def cmd_status(args) -> int:
         stale_sides = state.view.side_done_not_current(r)
         cells, reason = _row(r, on, stale)
         if (stale or stale_sides) and not reason and r.sid not in state.problems:
-            # the stage the batch runs first, in its own order: a preview before the next main stage
+            # the stage the batch runs first, in its own order: the main stages, then the previews
             first = state.view.first_ready(r) or state.view.first_not_current(r)
             if first:
                 reason = f"out of date: the batch redoes {first} first"

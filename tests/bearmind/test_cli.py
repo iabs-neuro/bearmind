@@ -714,7 +714,7 @@ def test_status_previews_column(series, capsys):
 def test_status_marks_out_of_date_previews(series, capsys):
     """K2: the phase 5 check's root: previews on, every stage done, but the preview files and the autoinspection
     output are gone (the copy left them out). The pv column reads D*D*, and the note names the stage the batch
-    runs first, the MC preview, not autoinspect."""
+    runs first, autoinspect (a preview comes after the main stages)."""
     _finished_setup(series)
     assert _main("previews", series.root, "on") == 0
     assert _main("run", series.root, "--once") == 0
@@ -728,8 +728,8 @@ def test_status_marks_out_of_date_previews(series, capsys):
     col = head.index("pv")
     assert rows[S1][col:col + 4] == "D*D*" and rows[S2][col:col + 4] == "DD  "
     assert rows[S1].split()[2:9] == ["D", "D", "D", "D", "D", "D*", "D*"]
-    assert rows[S1].endswith("out of date: the batch redoes mc_preview first")
-    assert runner.next_ready(runner.series_state(paths).records, paths) == (S1, "mc_preview")
+    assert rows[S1].endswith("out of date: the batch redoes autoinspect first")
+    assert runner.next_ready(runner.series_state(paths).records, paths) == (S1, "autoinspect")
     # previews off: the column says so, and the note goes back to the main stages
     assert _main("previews", series.root, "off") == 0
     head, rows = _status_rows(_status(series, capsys))

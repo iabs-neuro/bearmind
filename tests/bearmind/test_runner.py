@@ -1708,8 +1708,6 @@ def test_final_heartbeat_keeps_exit_when_the_last_refresh_fails(series, monkeypa
 
 # --- side stages: the preview videos after mc and cnmf (plan 2026-11-06, decision P1) ---
 
-ORDER = ("crop", "mc", "mc_preview", "thresholds", "cnmf", "cnmf_preview", "gate", "autoinspect", "export")
-
 
 def _on(s, **settings):
     actions.set_previews(s.paths, True, **settings)
@@ -1771,11 +1769,11 @@ def test_previews_turned_off_after_the_offer_are_not_started(series, monkeypatch
     assert not set(SIDE) & set(load_record(s.paths, S1).stages)
 
 
-def test_previews_on_run_right_after_parent(series):
+def test_previews_run_after_the_main_stages(series):
     s = series
     _on(s)
     res = _run(s)
-    assert s.stubs.calls == [(sid, st) for st in ORDER for sid in SIDS]
+    assert s.stubs.calls == [(sid, st) for st in STAGES for sid in SIDS] + _sides_only()
     assert res == {"done": 27, "failed": 0, "waiting": 0, "skipped": 0, "not_recorded": []}
     for sid in SIDS:
         rec = load_record(s.paths, sid)
@@ -1787,6 +1785,24 @@ def test_previews_on_run_right_after_parent(series):
     assert row["mc_preview"] == "done" and row["cnmf_preview"] == "done"
     s.stubs.calls.clear()
     assert _run(s) == ZERO and s.stubs.calls == []
+
+
+def test_previews_run_while_people_are_awaited(series):
+    """No session has thresholds: CNMF-E waits for a person, and the MC previews run meanwhile."""
+    s = series
+    _on(s)
+    for sid in SIDS:
+        s.paths.session_config(sid).write_text("")
+    res = _run(s, until="cnmf")
+    calls = s.stubs.calls
+    for sid in SIDS:
+        assert (sid, "mc_preview") in calls
+    last_main = max(i for i, c in enumerate(calls) if c[1] in ("thresholds", "cnmf"))
+    assert all(calls.index((sid, "mc_preview")) > last_main for sid in SIDS)
+    for sid in SIDS:
+        st = load_record(s.paths, sid).stages["cnmf"]
+        assert st.state is State.WAITING and runner.wait_reason(st) == "thresholds"
+    assert res["waiting"] == 3
 
 
 def test_previews_turned_on_later_rerun_nothing_else(series):
@@ -1889,14 +1905,14 @@ def test_mc_rerun_resets_mc_preview(series):
     s.stubs.calls.clear()
     config.update_yaml(s.paths.series_config, {"mc": {"max_deviation_rigid": 10}})
     _run(s)
-    assert s.stubs.calls == [(sid, st) for st in ORDER[1:] for sid in SIDS]
+    assert s.stubs.calls == [(sid, st) for st in STAGES[1:] for sid in SIDS] + _sides_only()
     # a main stage reset from cnmf on resets the CNMF-E preview, not the MC one
     s.stubs.calls.clear()
     runner.reset_from(s.paths, S2, "cnmf", "viktor")
     rec = load_record(s.paths, S2)
     assert rec.stages["mc_preview"].state is State.DONE and rec.stages["cnmf_preview"].state is State.PENDING
     _run(s)
-    assert s.stubs.calls == [(S2, st) for st in ("cnmf", "cnmf_preview", "gate", "autoinspect", "export")]
+    assert s.stubs.calls == [(S2, st) for st in ("cnmf", "gate", "autoinspect", "export", "cnmf_preview")]
 
 
 def test_running_main_stage_resets_the_previews_that_read_it(series):
@@ -1915,7 +1931,7 @@ def test_running_main_stage_resets_the_previews_that_read_it(series):
     s.paths.mc_video(S1).unlink()
     _run(s)
     assert seen == {"mc_preview": State.PENDING, "cnmf_preview": State.PENDING}
-    assert s.stubs.calls == [(S1, st) for st in ORDER[1:]]
+    assert s.stubs.calls == [(S1, st) for st in STAGES[1:]] + [(S1, "mc_preview"), (S1, "cnmf_preview")]
 
 
 def test_missing_preview_file_remakes_only_it(series):
@@ -1932,7 +1948,8 @@ def test_until_includes_side_stages_of_stages_in_range(series):
     s = series
     _on(s)
     _run(s, until="thresholds")
-    assert s.stubs.calls == [(sid, st) for st in ("crop", "mc", "mc_preview", "thresholds") for sid in SIDS]
+    assert s.stubs.calls == [(sid, st) for st in ("crop", "mc", "thresholds") for sid in SIDS] + [
+        (sid, "mc_preview") for sid in SIDS]
 
 
 def test_flag_off_keeps_files_and_runs_nothing(series):
@@ -2068,8 +2085,8 @@ def test_main_failure_takes_precedence_over_a_failed_preview(series):
     s.stubs.fail.clear()
     s.stubs.calls.clear()
     _run(s)
-    assert s.stubs.calls == [(S1, st) for st in ("mc_preview", "cnmf", "cnmf_preview", "gate", "autoinspect",
-                                                  "export")]
+    assert s.stubs.calls == [(S1, st) for st in ("cnmf", "gate", "autoinspect", "export", "mc_preview",
+                                                  "cnmf_preview")]
     assert runner.series_state(s.paths).failed == {}
 
 
