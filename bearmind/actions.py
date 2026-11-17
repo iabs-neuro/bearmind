@@ -19,6 +19,9 @@ import numpy as np
 
 from bearmind import checks, config, fileio, registry, runner, scan, scan_view
 from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
+# One rule for "who waits for thresholds": it lives in runner, which counts by it too (heartbeat, status,
+# summary.csv); actions re-exports it.
+from bearmind.runner import THRESHOLD_KEYS, waits_for_thresholds  # noqa: F401
 from bearmind.stages import WaitingForInput, gate
 from bearmind.video import VideoArray
 
@@ -109,25 +112,6 @@ def check_sids(recs: dict, sids) -> None:
     unknown = [s for s in sids if s not in recs]
     if unknown:
         raise UnknownSession(unknown, recs)
-
-
-THRESHOLD_KEYS = ("gSig", "min_corr", "min_pnr")
-
-
-def waits_for_thresholds(view, rec) -> bool:
-    """The batch waits for a person's thresholds for this session: not excluded, no thresholds in the resolved
-    config, and crop, MC and the maps up to date (view: runner.StageView). Then next_ready offers CNMF-E and its
-    check waits; with an earlier stage out of date the batch redoes that one first, so a choice now would apply
-    to maps nobody has seen. The one rule for the Thresholds tab, Monitor and the CLI: build one view per
-    refresh or command and ask it about every session.
-    With a suggestion or without one: the batch waits either way."""
-    if rec.excluded:
-        return False
-    cfg = view.cfg(rec)
-    cnmf = cfg.get("cnmf") if cfg is not None else None
-    if not isinstance(cnmf, dict):  # cannot be read: the session is "cannot be scheduled", not waiting
-        return False
-    return any(cnmf.get(k) is None for k in THRESHOLD_KEYS) and view.current_through(rec, "thresholds")
 
 
 def _first(text) -> str:

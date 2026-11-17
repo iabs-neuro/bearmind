@@ -99,3 +99,27 @@ def test_live_black_frames():
         assert m["black_frames_left_out"] == [0] and m["max_shift_px"] <= 10, sid
     m = mc.shift_metrics(np.load(paths.mc_shifts("LT1_J10_2D")), VideoArray(paths.mc_video("LT1_J10_2D")), 0.5)
     assert m["black_frames_left_out"] == [] and m["max_shift_px"] == pytest.approx(27.1, abs=0.05)
+
+
+def test_heartbeat_counts_by_the_rule(tmp_path):
+    paths = copy_series(SNAPSHOT, tmp_path / "lt1")
+    recs, _ = registry.read_all(paths)
+    view = runner.StageView(paths)
+    counts, _ = runner._counts(recs, runner._Scope(recs, None), STAGES, view)
+    rule = sorted(r.sid for r in recs if runner.waits_for_thresholds(view, r))
+    assert "LT1_J52_1D" in rule and "LT1_J10_2D" not in rule  # J10_2D: a stale wait, thresholds chosen
+    assert counts["waiting_thresholds"] == len(rule)
+
+
+@pytest.mark.realdata
+def test_live_counts_match_the_thresholds_tab(tmp_path):
+    from bearmind import threshold_model
+    src = live_bearmind_dir()
+    if src is None:
+        pytest.skip("BEARMIND_LT1_SERIES is not set")
+    paths = copy_series(src, tmp_path / "lt1")
+    recs, _ = registry.read_all(paths)
+    view = runner.StageView(paths)
+    counts, _ = runner._counts(recs, runner._Scope(recs, None), STAGES, view)
+    waiting = [i for i in threshold_model.threshold_items(paths, view, recs) if i.state == "waiting"]
+    assert counts["waiting_thresholds"] == len(waiting)

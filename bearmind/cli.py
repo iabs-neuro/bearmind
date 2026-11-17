@@ -18,7 +18,7 @@ from pathlib import Path
 
 from bearmind import actions, config, launcher, monitor, registry, runner, scan
 from bearmind.paths import SeriesPaths
-from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, State
+from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, State, StageRecord
 from bearmind.stages import gate
 
 OK, BAD_INPUT, BUSY, INTERRUPTED = 0, 2, 3, 130
@@ -281,8 +281,9 @@ def _pv(rec, on, stale=()) -> str:
                    else _LETTER[rec.stages[s].state] if s in rec.stages else "." for s in _SIDES)
 
 
-def _row(rec, on=None, stale=()) -> tuple:
-    """`stale`: the main stages DONE but out of date (runner.StageView.done_not_current)."""
+def _row(rec, on=None, stale=(), waits=False) -> tuple:
+    """`stale`: the main stages DONE but out of date (runner.StageView.done_not_current). `waits`: the session
+    waits for thresholds by runner.waits_for_thresholds; a stored threshold wait without it is not shown."""
     cells, reason = [], ""
     for s in STAGES + _SIDES:  # the main stages first: a main failure or wait is the note, not a preview's
         st = rec.stages.get(s)
@@ -290,6 +291,12 @@ def _row(rec, on=None, stale=()) -> tuple:
             if _side_off(on, s):
                 continue  # off: an old record holds nothing
         else:
+            if s == "cnmf" and waits:
+                cells.append(_LETTER[State.WAITING])
+                reason = reason or _REASON["thresholds"]
+                continue
+            if s == "cnmf" and st is not None and st.state is State.WAITING and runner._what(st) == "thresholds":
+                st = StageRecord()  # a stale wait: the rule does not hold, the session moves on
             cells.append(STALE_MARK if s in stale else _LETTER[st.state] if st else ".")
         if st is None:
             continue
@@ -359,7 +366,7 @@ def cmd_status(args) -> int:
         on = state.previews.get(r.sid)
         stale = state.view.done_not_current(r)
         stale_sides = state.view.side_done_not_current(r)
-        cells, reason = _row(r, on, stale)
+        cells, reason = _row(r, on, stale, runner.waits_for_thresholds(state.view, r))
         if (stale or stale_sides) and not reason and r.sid not in state.problems:
             # the stage the batch runs first, in its own order: the main stages, then the previews
             first = state.view.first_ready(r) or state.view.first_not_current(r)

@@ -600,7 +600,10 @@ def series_state(paths) -> SeriesState:
     records, broken = registry.read_all(paths)
     view = StageView(paths)
     problems = schedule_problems(paths, records, view, broken=broken)
-    person, blocked = _split_waits(_waiting(records, _Scope(records, None), STAGES), records, problems)
+    # a threshold wait is whatever waits_for_thresholds says, not the stored "waiting for thresholds"
+    waits = [w for w in _waiting(records, _Scope(records, None), STAGES) if w[2] != "thresholds"]
+    waits += [(r.sid, "cnmf", "thresholds") for r in records if waits_for_thresholds(view, r)]
+    person, blocked = _split_waits(waits, records, problems)
     failed = {}
     for r in records:
         first = first_failed(r, view.cfg(r))
@@ -932,16 +935,41 @@ RESULT_WRITE_TRIES = 7  # x LOCK_TIMEOUT_S: longer than LOCK_STALE_S, so a stuck
 RUNNING_WRITE_TRIES = 2  # nothing has run yet: a stage that cannot start is offered again later
 
 
-def _session_status(r, scope, stages) -> str | None:
+THRESHOLD_KEYS = ("gSig", "min_corr", "min_pnr")
+
+
+def waits_for_thresholds(view, rec) -> bool:
+    """The batch waits for a person's thresholds for this session: not excluded, no thresholds in the resolved
+    config, and crop, MC and the maps up to date (view: runner.StageView). Then next_ready offers CNMF-E and its
+    check waits; with an earlier stage out of date the batch redoes that one first, so a choice now would apply
+    to maps nobody has seen. The one rule for the Thresholds tab, Monitor and the CLI: build one view per
+    refresh or command and ask it about every session.
+    With a suggestion or without one: the batch waits either way."""
+    if rec.excluded:
+        return False
+    cfg = view.cfg(rec)
+    cnmf = cfg.get("cnmf") if cfg is not None else None
+    if not isinstance(cnmf, dict):  # cannot be read: the session is "cannot be scheduled", not waiting
+        return False
+    return any(cnmf.get(k) is None for k in THRESHOLD_KEYS) and view.current_through(rec, "thresholds")
+
+
+def _session_status(r, scope, stages, view) -> str | None:
+    """`view`: the StageView of the records. A threshold wait counts by waits_for_thresholds, not by the stored
+    "waiting for thresholds" (a stale record keeps it until the runner checks the session again)."""
     sts = [r.stages.get(s) or StageRecord() for s in stages if scope.has(r, s)]
     if not sts:
         return None
     states = [st.state for st in sts]
     if State.RUNNING in states:
         return "running"
-    waiting = [st for st in sts if st.state is State.WAITING]
+    if "cnmf" in stages and scope.has(r, "cnmf") and waits_for_thresholds(view, r):
+        return "waiting_thresholds"
+    waiting = [st for st in sts if st.state is State.WAITING and _what(st) != "thresholds"]
     if waiting:
         return _WAIT_KIND.get(_what(waiting[0]), "waiting_manual")
+    if State.WAITING in states:  # a recorded threshold wait the rule no longer holds: the session moves on
+        states = [State.PENDING if st.state is State.WAITING else st.state for st in sts]
     if State.FAILED in states:
         return "failed"
     if State.SKIPPED in states:
@@ -949,13 +977,13 @@ def _session_status(r, scope, stages) -> str | None:
     return "done" if all(x is State.DONE for x in states) else "pending"
 
 
-def _counts(records, scope, stages):
+def _counts(records, scope, stages, view):
     """Sessions by status (each non-excluded session once) and the number of DONE sessions per stage."""
     c, by_stage = dict.fromkeys(COUNT_KEYS, 0), dict.fromkeys(stages, 0)
     for r in records:
         if r.excluded:
             continue
-        status = _session_status(r, scope, stages)
+        status = _session_status(r, scope, stages, view)
         if status is not None:
             c[status] += 1
         for s in stages:
@@ -1013,7 +1041,7 @@ class _Run:
         if problems is None:
             problems = schedule_problems(self.paths, records, view, broken=broken or ())
         cur = None if self.current is None else {"sid": self.current[0], "stage": self.current[1]}
-        counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages)
+        counts, by_stage = _counts(records, _Scope(records, self.sids), self.stages, view)
         self.hb.update(counts=counts, by_stage=by_stage, status=status, current=cur, unschedulable=problems,
                        **extra)
         summary(self.paths, records, problems=problems, broken=broken, view=view)
@@ -1698,8 +1726,12 @@ def _summary_row(paths, rec, problem=None, view=None) -> dict:
             levels += [c.level for c in st.checks]
         elif st.state is State.FAILED:
             levels.append("error")
-        elif st.state is State.WAITING:
+        elif st.state is State.WAITING and _what(st) != "thresholds":
             waiting_for = waiting_for or _what(st)
+    if waits_for_thresholds(view, rec):
+        row["cnmf"], waiting_for = "waiting", "thresholds"
+    elif (rec.stages.get("cnmf") or StageRecord()).state is State.WAITING and _what(rec.stages["cnmf"]) == "thresholds":
+        row["cnmf"] = State.PENDING.value  # a stale threshold wait: the rule does not hold
     first = first_failed(rec, cfg)  # a main failure is named before a failed preview
     if first is not None:
         error = f"{first}: {rec.stages[first].error}"

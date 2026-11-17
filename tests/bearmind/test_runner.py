@@ -2281,3 +2281,67 @@ def test_done_not_current_names_every_stage_the_batch_redoes(series):
     assert view.first_not_current(by[S1]) == "mc"
     assert view.done_not_current(by[S1]) == list(STAGES[1:])
     assert view.done_not_current(by[S2]) == []
+
+
+# --- one rule for "who waits for thresholds" (heartbeat, status, summary.csv) ---
+
+def _no_thresholds(s, sid):
+    s.paths.session_config(sid).unlink()
+
+
+def _stale_wait(s, sid):
+    registry.update_record(s.paths, sid, lambda r: (setattr(r.stages["cnmf"], "state", State.WAITING),
+                                                    setattr(r.stages["cnmf"], "error", "waiting for thresholds")))
+
+
+def _view_status(s, sid):
+    from tests.bearmind.current_stages import make_current  # noqa: F401
+    records, _ = registry.read_all(s.paths)
+    view = runner.StageView(s.paths)
+    scope = runner._Scope(records, None)
+    rec = next(r for r in records if r.sid == sid)
+    return runner._session_status(rec, scope, STAGES, view)
+
+
+def test_actions_reexports_the_runner_rule():
+    assert actions.waits_for_thresholds is runner.waits_for_thresholds
+    assert actions.THRESHOLD_KEYS is runner.THRESHOLD_KEYS
+
+
+def test_stale_threshold_wait_counts_as_pending(series):
+    from tests.bearmind.current_stages import make_current
+    s = series
+    make_current(s.paths, S1, "crop", "mc", "thresholds")
+    _stale_wait(s, S1)  # thresholds are in the session config
+    assert _view_status(s, S1) == "pending"
+    row = runner.summary(s.paths).set_index("sid").loc[S1]
+    assert row["cnmf"] == "pending" and pd.isna(row["waiting_for"])
+    state = runner.series_state(s.paths)
+    assert not [w for w in state.waiting if w[0] == S1]
+
+
+def test_unrecorded_threshold_wait_counts(series):
+    from tests.bearmind.current_stages import make_current
+    s = series
+    make_current(s.paths, S1, "crop", "mc", "thresholds")
+    _no_thresholds(s, S1)  # cnmf stays PENDING: the batch has not tried it yet
+    assert _view_status(s, S1) == "waiting_thresholds"
+    row = runner.summary(s.paths).set_index("sid").loc[S1]
+    assert row["cnmf"] == "waiting" and row["waiting_for"] == "thresholds"
+    assert (S1, "cnmf", "thresholds") in runner.series_state(s.paths).waiting
+
+
+def test_mouse_config_thresholds_are_no_wait(series):
+    from tests.bearmind.current_stages import make_current
+    s = series
+    _no_thresholds(s, S1)
+    config.update_yaml(s.paths.mouse_config("NOF_H01"), THRESH)
+    make_current(s.paths, S1, "crop", "mc", "thresholds")
+    _stale_wait(s, S1)
+    assert _view_status(s, S1) == "pending"
+    row = runner.summary(s.paths).set_index("sid").loc[S1]
+    assert row["cnmf"] == "pending" and pd.isna(row["waiting_for"])
+    assert not [w for w in runner.series_state(s.paths).waiting if w[0] == S1]
+    recs, _ = registry.read_all(s.paths)
+    counts, _ = runner._counts(recs, runner._Scope(recs, None), STAGES, runner.StageView(s.paths))
+    assert counts["waiting_thresholds"] == 0

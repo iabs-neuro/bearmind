@@ -297,8 +297,11 @@ def test_status(series, capsys):
     out = _status(series, capsys)
     assert "runner: not running" in out
     assert series.paths.summary_csv.is_file()
-    assert "thresholds" in out and "disk full" in out
-    assert all(s in out for s in SIDS)
+    assert "disk full" in out and all(s in out for s in SIDS)
+    # S2's record says "waiting for thresholds", but its maps are not current: by the rule it does not wait
+    assert "waiting: nobody" in out
+    make_current(series.paths, S2, "crop", "mc", "thresholds")  # now the batch truly waits for S2's thresholds
+    assert "waiting: thresholds 1" in _status(series, capsys)
 
     _heartbeat(series.paths, 5, current={"sid": S1, "stage": "mc"})
     assert f"runner: running PID 4321, current {S1}/mc" in _status(series, capsys)
@@ -814,3 +817,33 @@ def test_accept_suggested_warns_for_out_of_date_maps(series, capsys):
     out = capsys.readouterr().out
     assert f"[WARN] {S1}: maps out of date; the batch recomputes them first" in out and "[FAILED]" not in out
     assert f"[OK] {S3}: gSig=4" in out and not series.paths.session_config(S1).exists()
+
+
+def test_status_threshold_wait_follows_the_rule(series, capsys):
+    from tests.bearmind.current_stages import make_current
+    for sid in (S1, S2):
+        make_current(series.paths, sid, "crop", "mc", "thresholds")
+    # S1: no thresholds in any config, the batch has not tried CNMF-E yet
+    config.update_yaml(series.paths.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    _set(series.paths, S2, "cnmf", State.WAITING, error="waiting for thresholds")  # stale: thresholds are set
+    out = _status(series, capsys)
+    assert "waiting: thresholds 1" in out
+    assert cli._row(load_record(series.paths, S2), waits=False)[0][3] == "."
+    assert cli._row(load_record(series.paths, S2), waits=False)[1] == ""
+    assert cli._row(load_record(series.paths, S1), waits=True)[0][3] == "W"
+    assert cli._row(load_record(series.paths, S1), waits=True)[1] == "thresholds"
+    line = next(x for x in out.splitlines() if x.startswith(S2))
+    assert " W " not in line and "thresholds" not in line
+    df = runner.summary(series.paths).set_index("sid")
+    assert df.loc[S1, "cnmf"] == "waiting" and df.loc[S1, "waiting_for"] == "thresholds"
+    assert df.loc[S2, "cnmf"] == "pending"
+
+
+def test_status_mouse_config_thresholds_are_no_wait(series, capsys):
+    from tests.bearmind.current_stages import make_current
+    make_current(series.paths, S1, "crop", "mc", "thresholds")
+    config.update_yaml(series.paths.mouse_config("NOF_H01"), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
+    _set(series.paths, S1, "cnmf", State.WAITING, error="waiting for thresholds")
+    out = _status(series, capsys)
+    assert "waiting: nobody" in out
+    assert runner.summary(series.paths).set_index("sid").loc[S1, "cnmf"] == "pending"
