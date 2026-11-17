@@ -497,6 +497,52 @@ def test_legacy_mc_record_keeps_hash_but_a_rerun_writes_no_fps(series):
     assert rec.stages["mc"].params == new_params and rec.stages["mc"].params_hash == new_hash
 
 
+def _make_mc_legacy(s, sid):
+    """Rewrite the finished MC record as an old one: params with its own fps, hash built with it."""
+    rec = load_record(s.paths, sid)
+    cfg = config.resolve(s.paths, sid=sid, mouse=rec.mouse)
+    chain_params, chain_hashes = runner._chain(rec, cfg, s.paths, "mc")
+    legacy = {**chain_params["mc"], "fps": rec.fps}
+    legacy_hash = config.params_hash({"params": legacy, "upstream": [chain_hashes["crop"]]})
+
+    def make(d):
+        d.stages["mc"].params, d.stages["mc"].params_hash = legacy, legacy_hash
+
+    registry.update_record(s.paths, sid, make)
+    return cfg, chain_params["mc"], chain_hashes["mc"], legacy_hash
+
+
+def test_legacy_mc_with_lost_output_reruns_without_fps(series):
+    s = series
+    _run(s)
+    cfg, new_params, new_hash, legacy_hash = _make_mc_legacy(s, S1)
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc"].state is State.DONE and runner.StageView(s.paths).current(rec, "mc")
+    s.paths.mc_video(S1).unlink()  # a required MC output is gone: the DONE record stays, MC is rerun
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == _tail(S1, "mc")
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc"].params == new_params and rec.stages["mc"].params_hash == new_hash
+    assert new_hash != legacy_hash
+
+
+def test_stage_after_legacy_mc_is_current_after_its_run(series):
+    s = series
+    _run(s)
+    _make_mc_legacy(s, S1)
+    runner.reset_from(s.paths, S1, "thresholds", "viktor")
+    s.stubs.calls.clear()
+    _run(s)
+    assert s.stubs.calls == _tail(S1, "thresholds")
+    rec = load_record(s.paths, S1)
+    assert "fps" in rec.stages["mc"].params  # MC itself was not rerun
+    view = runner.StageView(s.paths)
+    assert all(view.current(rec, st) for st in STAGES)
+    s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []  # no rerun loop
+
+
 def test_stage_hash_inputs(series):
     s = series
     rec = load_record(s.paths, S1)
