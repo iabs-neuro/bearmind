@@ -465,6 +465,38 @@ def test_corrupt_registry_file_skipped(series):
 
 # --- further behaviour ---
 
+def test_mc_params_have_no_fps(series):
+    _run(series)
+    rec = load_record(series.paths, S1)
+    assert set(rec.stages["mc"].params) == {"mc", "box", "box_pos"}
+
+
+def test_legacy_mc_record_keeps_hash_but_a_rerun_writes_no_fps(series):
+    s = series
+    _run(s)
+    rec = load_record(s.paths, S1)
+    cfg = config.resolve(s.paths, sid=S1, mouse=rec.mouse)
+    chain_params, chain_hashes = runner._chain(rec, cfg, s.paths, "mc")
+    new_params, new_hash = chain_params["mc"], chain_hashes["mc"]
+    legacy = {**new_params, "fps": rec.fps}
+    legacy_hash = config.params_hash({"params": legacy, "upstream": [chain_hashes["crop"]]})
+
+    def make_legacy(d):
+        d.stages["mc"].params, d.stages["mc"].params_hash = legacy, legacy_hash
+
+    registry.update_record(s.paths, S1, make_legacy)
+    rec = load_record(s.paths, S1)
+    assert runner.stage_hash(rec, "mc", cfg, s.paths) == legacy_hash  # finished MC stays current
+    assert runner.StageView(s.paths).current(rec, "mc")
+    # re-analysis: the rerun writes the current rule, not the legacy one
+    runner.reset_from(s.paths, S1, "mc", "viktor")
+    rec = load_record(s.paths, S1)
+    assert runner._chain(rec, cfg, s.paths, "mc", new_run="mc")[0]["mc"] == new_params
+    _run(s)
+    rec = load_record(s.paths, S1)
+    assert rec.stages["mc"].params == new_params and rec.stages["mc"].params_hash == new_hash
+
+
 def test_stage_hash_inputs(series):
     s = series
     rec = load_record(s.paths, S1)
@@ -506,7 +538,8 @@ def test_stage_hash_inputs(series):
     rec2 = copy.deepcopy(rec)
     rec2.fps = 30.0
     assert runner.stage_hash(rec2, "crop", cfg, s.paths) == base["crop"]
-    assert runner.stage_hash(rec2, "mc", cfg, s.paths) != base["mc"]
+    assert runner.stage_hash(rec2, "mc", cfg, s.paths) == base["mc"]  # MC takes fps for the AVI header only
+    assert runner.stage_hash(rec2, "cnmf", cfg, s.paths) != base["cnmf"]  # fr is an input of CNMF-E
     # gate: decision and the manual result file
     rec2 = copy.deepcopy(rec)
     rec2.decisions.append(Decision("manual_inspection", "cleaned", "v", "t"))

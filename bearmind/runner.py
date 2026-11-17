@@ -256,7 +256,7 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
                 "fov_rule": bearmind.crop.FOV_RULE}
     if stage == "mc":
         c = cfg.get("crop") or {}
-        return {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET), "fps": rec.fps}
+        return {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET)}
     if stage == "thresholds":
         return {"gsig_range": cfg["thresholds"]["gsig_range"], "tsub": cfg["cnmf"]["tsub"]}
     if stage == "cnmf":
@@ -299,13 +299,30 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
     raise ValueError(f"unknown stage {stage!r}")
 
 
-def _chain(rec, cfg, paths, upto=None):
+def _mc_legacy(rec, params: dict, upstream: list, h: str) -> tuple:
+    """MC takes fps only for the AVI header, so it is not an input of MC. A finished (or running) MC record
+    whose hash was built with its own stored fps keeps that hash while it still matches, so the finished MC
+    and everything after it stay current. The match is the only condition: any other difference breaks it.
+    Never used to write the params of a new run (see _chain, new_run)."""
+    old = rec.stages.get("mc")
+    if old is None or old.state not in (State.DONE, State.RUNNING) or "fps" not in (old.params or {}):
+        return params, h
+    legacy = {**params, "fps": old.params["fps"]}
+    lh = config.params_hash({"params": legacy, "upstream": upstream})
+    return (legacy, lh) if lh == old.params_hash else (params, h)
+
+
+def _chain(rec, cfg, paths, upto=None, new_run=None):
     """params and hashes of every main stage up to `upto`; each hash covers the hashes of all earlier main
-    stages (never of a side stage)."""
+    stages (never of a side stage). `new_run` names the stage about to be started: its params and hash are
+    the current rule's, never a legacy record's."""
     params, hashes = {}, {}
     for s in STAGES[:STAGES.index(upto) + 1] if upto else STAGES:
         params[s] = stage_params(s, rec, cfg, paths)
-        hashes[s] = config.params_hash({"params": params[s], "upstream": list(hashes.values())})
+        upstream = list(hashes.values())
+        hashes[s] = config.params_hash({"params": params[s], "upstream": upstream})
+        if s == "mc" and new_run != "mc":
+            params[s], hashes[s] = _mc_legacy(rec, params[s], upstream, hashes[s])
     return params, hashes
 
 
@@ -1295,7 +1312,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
             params = {stage: stage_params(stage, rec, cfg, paths)}
             h = _side_hash(params[stage], _chain(rec, cfg, paths, parent)[1][parent])
         else:
-            params, hashes = _chain(rec, cfg, paths, stage)
+            params, hashes = _chain(rec, cfg, paths, stage, new_run=stage)
             h = hashes[stage]
     except Exception as e:  # changed since next_ready looked: not started, retried later
         log.error("%s %s: not started: %s", sid, stage, _last_line(e), extra={"sid": sid})

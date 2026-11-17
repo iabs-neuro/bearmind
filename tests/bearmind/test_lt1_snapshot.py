@@ -30,6 +30,25 @@ def test_snapshot_check_sees_a_changed_input(tmp_path):
     assert stale_finished(paths) == [("LT1_J03_2D", "cnmf"), ("LT1_J03_2D", "mc"), ("LT1_J03_2D", "thresholds")]
 
 
+def test_fps_change_keeps_mc_and_maps_current(tmp_path):
+    paths = copy_series(SNAPSHOT, tmp_path / "lt1")
+    registry.update_record(paths, "LT1_J03_2D", lambda r: setattr(r, "fps", r.fps + 0.01))
+    rec = registry.load_record(paths, "LT1_J03_2D")
+    view = runner.StageView(paths)
+    assert view.current(rec, "mc") and view.current(rec, "thresholds")
+    assert not view.current(rec, "cnmf")  # fr is an input of CNMF-E
+
+
+def test_legacy_mc_hash_needs_its_own_fps(tmp_path):
+    paths = copy_series(SNAPSHOT, tmp_path / "lt1")
+
+    def other_fps(r):
+        r.stages["mc"].params["fps"] = 12.5
+
+    registry.update_record(paths, "LT1_J03_2D", other_fps)
+    assert ("LT1_J03_2D", "mc") in stale_finished(paths)
+
+
 @pytest.mark.realdata
 def test_live_series_finished_stages_stay_current():
     """Reads the live series in place (nothing is copied or written): the gate, autoinspect and export hashes take
