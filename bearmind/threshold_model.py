@@ -399,6 +399,11 @@ def source_text(source: str, item: ThresholdItem, chosen_from: str = "", values:
         return (f"Thresholds of {source[len('session:'):]}: gSig {int(values['gSig'])}, "
                 f"min_corr {value_text(values['min_corr'], CORR_DECIMALS)}, "
                 f"min_pnr {value_text(values['min_pnr'], PNR_DECIMALS)}")
+    if source.startswith("method:") and values:
+        name = source[len("method:"):]
+        return (f"Automatic thresholds ({name}) for gSig {int(values['gSig'])}: "
+                f"min_corr {value_text(values['min_corr'], CORR_DECIMALS)}, "
+                f"min_pnr {value_text(values['min_pnr'], PNR_DECIMALS)}")
     if source == "chosen":
         return f"Your earlier choice ({chosen_from})" if chosen_from else "Your earlier choice"
     if source == "suggested" and item.suggested:
@@ -407,6 +412,36 @@ def source_text(source: str, item: ThresholdItem, chosen_from: str = "", values:
                 f"min_corr {value_text(s['min_corr'], CORR_DECIMALS)}, "
                 f"min_pnr {value_text(s['min_pnr'], PNR_DECIMALS)}")
     return "No suggestion — start values from the config"
+
+
+METHODS = ("mirror_fdr", "robust_bg", "pct_margin")  # the methods of seed_suggest.suggest_init_thresholds
+
+
+def suggestion_maps(maps: ThresholdMaps, g: int) -> dict:
+    """The maps of gSig g in the form seed_suggest wants (the reports' checks built them the same way)."""
+    out = {"cn": maps.cn[g], "pnr": maps.pnr[g], "mean": maps.mean, "gSig": g}
+    if g in maps.cn_mirror and g in maps.pnr_mirror:
+        out["cn_neg"], out["pnr_neg"] = maps.cn_mirror[g], maps.pnr_mirror[g]
+    return out
+
+
+def method_values(maps: ThresholdMaps, g: int) -> dict[str, dict]:
+    """{method: {"min_corr", "min_pnr", "note"}} of every automatic method for gSig g; None values (with the
+    reason in note) where a method has no pair. Takes seconds on large maps: the window runs it in the background."""
+    from bearmind import seed_suggest  # numpy and cv2 only, never CaImAn
+
+    found, _grid = seed_suggest.suggest_init_thresholds(suggestion_maps(maps, g), gSiz=4 * g + 1)
+    out = {}
+    for m in METHODS:
+        r = found.get(m)
+        if r is None:
+            out[m] = {"min_corr": None, "min_pnr": None,
+                      "note": "no mirrored maps" if m == "mirror_fdr" else "no value"}
+            continue
+        c, p = r.get("min_corr"), r.get("min_pnr")
+        out[m] = {"min_corr": None if c is None else float(c), "min_pnr": None if p is None else float(p),
+                  "note": str(r.get("note", ""))}
+    return out
 
 
 def slider_range_pnr(maps: ThresholdMaps, g: int) -> float:

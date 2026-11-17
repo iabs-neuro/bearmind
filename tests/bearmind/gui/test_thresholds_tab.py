@@ -1233,3 +1233,97 @@ def test_from_session_menu_action_applies_without_writing(qapp, series_maps, mak
     assert tab.source_label.text().startswith("Thresholds of NOF_H01_2D: gSig 5")
     after = p.session_config(S1).read_bytes() if p.session_config(S1).exists() else None
     assert after == before
+
+
+# --- the automatic method buttons ---
+
+
+def _settled(tab):
+    return all("…" not in b.text() for b in tab.method_buttons.values())
+
+
+def test_method_buttons_show_each_method(qapp, series_maps, make_tab):
+    from bearmind import seed_suggest
+
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.show_session(S1)
+    _wait(qapp, lambda: _settled(tab))
+    g = tab.current()[1]
+    maps = tm.load_maps(p.threshold_maps(S1))
+    want, _ = seed_suggest.suggest_init_thresholds(tm.suggestion_maps(maps, g), gSiz=4 * g + 1)
+    c, q = want["robust_bg"]["min_corr"], want["robust_bg"]["min_pnr"]
+    assert tab.method_buttons["robust_bg"].text() == f"robust_bg: {tm.value_text(c, 2)} / {tm.value_text(q, 1)}"
+    tab.apply_method("robust_bg")
+    assert tab.current() == (S1, g, c, q)
+    assert tab.source_label.text().startswith(f"Automatic thresholds (robust_bg) for gSig {g}")
+    assert not p.session_config(S1).exists() or "min_corr" not in p.session_config(S1).read_text()  # nothing written
+
+
+def test_mirror_method_needs_mirrored_maps(qapp, series_maps, make_tab):
+    tab = make_tab(series_maps.paths)
+    tab.show_session(S2)  # maps without mirrors
+    _wait(qapp, lambda: "…" not in tab.method_buttons["mirror_fdr"].text())
+    b = tab.method_buttons["mirror_fdr"]
+    assert b.text() == "mirror_fdr: none" and not b.isEnabled() and b.toolTip() == "no mirrored maps"
+
+
+def _slow_methods(monkeypatch, calls, delay=0.4):
+    real = tm.method_values
+
+    def slow(maps, g):
+        calls.append((float(maps.mean.sum()), g))
+        time.sleep(delay)
+        return real(maps, g)
+
+    monkeypatch.setattr(tm, "method_values", slow)
+
+
+def test_method_values_follow_the_shown_session(qapp, series_maps, make_tab, monkeypatch):
+    """S1's computation still runs when S2 is shown; its result never reaches S2's buttons, and S1's values come
+    from the cache when it is shown again."""
+    calls = []
+    _slow_methods(monkeypatch, calls)
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.show_session(S1)
+    tab.set_gsig(4)
+    tab.show_session(S2)  # S1 is still being computed
+    tab.set_gsig(4)
+    assert not _settled(tab)
+    _wait(qapp, lambda: _settled(tab))
+    maps2 = tm.load_maps(p.threshold_maps(S2))
+    want = tm.method_values(maps2, tab.current()[1])["robust_bg"]
+    assert tab.method_buttons["robust_bg"].text() == (
+        f"robust_bg: {tm.value_text(want['min_corr'], 2)} / {tm.value_text(want['min_pnr'], 1)}")
+    assert tab.method_buttons["mirror_fdr"].toolTip() == "no mirrored maps"  # S2 has no mirrors, S1 has
+    n = len(calls)
+    tab.show_session(S1)
+    _wait(qapp, lambda: _settled(tab))
+    qapp.processEvents()
+    assert tab.method_buttons["mirror_fdr"].toolTip() != "no mirrored maps"
+    assert len(calls) == n  # S1 at this gSig was computed before: from the cache
+
+
+def test_method_values_recomputed_for_new_maps(qapp, series_maps, make_tab, monkeypatch):
+    """The batch replaced S1's maps file (new mtime and content): the buttons show the new file's values."""
+    import sys
+
+    calls = []
+    _slow_methods(monkeypatch, calls, delay=0.05)
+    p = series_maps.paths
+    tab = make_tab(p)
+    tab.show_session(S1)
+    _wait(qapp, lambda: _settled(tab))
+    n = len(calls)
+    mod = sys.modules[save_maps.__module__]
+    monkeypatch.setattr(mod, "BLOBS", ((10, 12, 10.0), (20, 30, 12.0)))
+    save_maps(p.threshold_maps(S1), mirror=False)
+    tab.refresh()
+    _wait(qapp, lambda: len(calls) > n and _settled(tab))
+    g = tab.current()[1]
+    want = tm.method_values(tm.load_maps(p.threshold_maps(S1)), g)
+    assert tab.method_buttons["mirror_fdr"].text() == "mirror_fdr: none"
+    v = want["robust_bg"]
+    assert tab.method_buttons["robust_bg"].text() == (
+        f"robust_bg: {tm.value_text(v['min_corr'], 2)} / {tm.value_text(v['min_pnr'], 1)}")

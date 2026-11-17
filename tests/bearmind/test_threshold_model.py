@@ -540,3 +540,34 @@ def test_fit_gsig_falls_back_without_a_map():
     assert tm.fit_gsig(maps, 3) == (3, "")
     g, note = tm.fit_gsig(maps, 9)
     assert note == f"gSig 9 has no map; showing {g}"
+
+
+def _mirrored_maps(mirror=True):
+    shape = (40, 60)
+    rng = np.random.default_rng(1)
+    cn, pnr = 0.02 * rng.random(shape) + 0.9 * _blob(shape, 10, 12, 3), rng.random(shape) + 12 * _blob(shape, 10, 12, 3)
+    mc = {4: 0.02 * rng.random(shape) + 0.9 * _blob(shape, 20, 30, 3)} if mirror else {}
+    mp = {4: rng.random(shape) + 9 * _blob(shape, 20, 30, 3)} if mirror else {}
+    return tm.ThresholdMaps([4], np.full(shape, 80.0), np.full(shape, 120.0), {4: cn}, {4: pnr}, mc, mp)
+
+
+def test_suggestion_maps_and_method_values():
+    maps = _mirrored_maps()
+    sm = tm.suggestion_maps(maps, 4)
+    assert sm["gSig"] == 4 and sm["cn"] is maps.cn[4] and sm["cn_neg"] is maps.cn_mirror[4]
+    assert "cn_neg" not in tm.suggestion_maps(_mirrored_maps(mirror=False), 4)
+    vals = tm.method_values(maps, 4)
+    assert tuple(vals) == tm.METHODS
+    assert all(set(v) == {"min_corr", "min_pnr", "note"} for v in vals.values())
+    assert vals["robust_bg"]["min_corr"] is not None
+
+
+def test_method_values_without_mirrored_maps():
+    v = tm.method_values(_mirrored_maps(mirror=False), 4)["mirror_fdr"]
+    assert v == {"min_corr": None, "min_pnr": None, "note": "no mirrored maps"}
+
+
+def test_source_text_for_a_method():
+    item = tm.ThresholdItem.__new__(tm.ThresholdItem)
+    text = tm.source_text("method:robust_bg", item, values={"gSig": 4, "min_corr": 0.83, "min_pnr": 7.25})
+    assert text == "Automatic thresholds (robust_bg) for gSig 4: min_corr 0.83, min_pnr 7.25"

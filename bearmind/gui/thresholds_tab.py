@@ -6,6 +6,7 @@ injectable for the tests.
 """
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -203,8 +204,17 @@ class ThresholdsTab(QWidget):
         self._video_args = None
         self._video_index = 0
         self._video_open = False
+        # automatic methods: computed one at a time in the background for the shown (session, gSig, maps file);
+        # only the main thread touches Qt and these dicts
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._method_cache: dict[tuple, dict] = {}
+        self._method_futures: dict[tuple, object] = {}
         self._build()
         self.refresh()
+        self.method_timer = QTimer(self)
+        self.method_timer.setInterval(100)
+        self.method_timer.timeout.connect(lambda: self._guarded(self._poll_methods))
+        self.method_timer.start()
         # like Monitor: the batch and Monitor's menu change the registry; refreshed only while shown
         self.timer = QTimer(self)
         self.timer.setInterval(int(config.load_defaults().get("monitor", {}).get("refresh_ms", 2000)))
@@ -335,6 +345,12 @@ class ThresholdsTab(QWidget):
         self.from_session_button.setText("From session")
         self.from_session_button.setPopupMode(QToolButton.InstantPopup)
         self.from_session_button.setMenu(QMenu(self.from_session_button))
+        self.method_buttons: dict[str, QPushButton] = {}
+        for m in tm.METHODS:
+            b = QPushButton(f"{m}: …")
+            b.setEnabled(False)
+            b.clicked.connect(lambda _=False, m=m: self._guarded(self.apply_method, m))
+            self.method_buttons[m] = b
         self.accept_button = QPushButton("Accept → next")
         self.accept_button.setStyleSheet(ACCENT_BUTTON)
         self.accept_mouse_button = QPushButton("Accept for all sessions of this mouse")
@@ -344,7 +360,8 @@ class ThresholdsTab(QWidget):
         self.reset_button.clicked.connect(lambda: self._guarded(self._reset))
         self.accept_button.clicked.connect(lambda: self._guarded(self.accept_and_next))
         self.accept_mouse_button.clicked.connect(lambda: self._guarded(self.accept_for_mouse))
-        for b in (self.prev_button, self.next_button, self.reset_button, self.from_session_button):
+        for b in (self.prev_button, self.next_button, self.reset_button, self.from_session_button,
+                  *self.method_buttons.values()):
             row.addWidget(b)
         row.addStretch(1)
         row.addWidget(self.accept_button)
@@ -389,6 +406,8 @@ class ThresholdsTab(QWidget):
     def shutdown(self) -> None:
         """Before the tab is deleted: stop the timer and release the MC video (the batch may need the file)."""
         self.timer.stop()
+        self.method_timer.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
         self._close_video()
         self._video_args = None
 
@@ -638,6 +657,7 @@ class ThresholdsTab(QWidget):
         if self._maps is None:
             self._show_no_maps()
             self._update_buttons()
+            self._ensure_methods()
             return
         g, c, p, source, note = self._start_values(item, cfg)
         if old is not None and old[0] in self._maps.usable_gsigs:
@@ -648,6 +668,7 @@ class ThresholdsTab(QWidget):
         self._apply(g, c, p)
         self._show_source()
         self._update_buttons()
+        self._ensure_methods()
 
     def _show_no_maps(self) -> None:
         self._g, self._base, self._images = None, {}, {}
@@ -757,6 +778,7 @@ class ThresholdsTab(QWidget):
         self._sync_spin(self.min_pnr_spin, self.current()[3])
         self._update_overlay()
         self._update_numbers()
+        self._ensure_methods()
 
     def set_thresholds(self, min_corr: float, min_pnr: float) -> None:
         if self._maps is None:
@@ -893,6 +915,75 @@ class ThresholdsTab(QWidget):
         g, c, p, source, note = self._start_values(item, self._session_cfg(item), use_choice=False)
         self._apply(g, c, p)
         self._source, self._note, self._source_values = source, note, None
+        self._show_source()
+
+    # --- the automatic methods ---
+
+    def _methods_key(self):
+        """What the method buttons stand for: (session, gSig, maps file); None while no maps are shown."""
+        if self._maps is None or self._sid is None or self._g is None:
+            return None
+        return (self._sid, self._g, self._loaded_sig)
+
+    def _ensure_methods(self) -> None:
+        """Queue the computation for the shown key unless it is cached or running, then show what is known."""
+        key = self._methods_key()
+        if key is not None and key not in self._method_cache and key not in self._method_futures:
+            # the maps object is the one of this key: _loaded_sig and _maps change together
+            self._method_futures[key] = self._executor.submit(lambda m=self._maps, g=key[1]: tm.method_values(m, g))
+        self._show_methods()
+
+    def _poll_methods(self) -> None:
+        for key, fut in list(self._method_futures.items()):
+            if not fut.done():
+                continue
+            del self._method_futures[key]
+            if fut.cancelled():
+                continue
+            try:
+                res = fut.result()
+            except Exception as e:
+                log.warning("automatic thresholds failed for %s: %s", key[:2], e)
+                res = {m: {"min_corr": None, "min_pnr": None, "note": f"failed: {type(e).__name__}"}
+                       for m in tm.METHODS}
+            # an older maps file of the same session and gSig is out of date for good
+            for old in [k for k in self._method_cache if k[:2] == key[:2]]:
+                del self._method_cache[old]
+            self._method_cache[key] = res
+        self._ensure_methods()
+
+    def _show_methods(self) -> None:
+        key = self._methods_key()
+        values = self._method_cache.get(key) if key is not None else None
+        for m, b in self.method_buttons.items():
+            if key is None:
+                text, tip, on = f"{m}: none", "No maps are shown for this session", False
+            elif values is None:
+                text, tip, on = f"{m}: …", "Being computed", False
+            else:
+                v = values[m]
+                if v["min_corr"] is None or v["min_pnr"] is None:
+                    text, tip, on = f"{m}: none", v["note"], False
+                else:
+                    text = f"{m}: {tm.value_text(v['min_corr'], 2)} / {tm.value_text(v['min_pnr'], 1)}"
+                    tip, on = v["note"] or f"Set the controls to the {m} thresholds for gSig {key[1]}", True
+            if b.text() != text:
+                b.setText(text)
+            if b.toolTip() != tip:
+                b.setToolTip(tip)
+            if b.isEnabled() != on:
+                b.setEnabled(on)
+
+    def apply_method(self, method: str) -> None:
+        """Set the controls to the thresholds of an automatic method for the shown gSig; nothing is written."""
+        key = self._methods_key()
+        v = (self._method_cache.get(key) or {}).get(method) if key is not None else None
+        if v is None or v["min_corr"] is None or v["min_pnr"] is None:
+            return
+        g = key[1]
+        self._apply(g, v["min_corr"], v["min_pnr"])
+        self._source, self._note = f"method:{method}", ""
+        self._source_values = {"gSig": g, "min_corr": v["min_corr"], "min_pnr": v["min_pnr"]}
         self._show_source()
 
     def _gone(self, names) -> None:
