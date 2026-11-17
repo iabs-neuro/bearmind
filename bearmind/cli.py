@@ -556,6 +556,20 @@ def cmd_retry(args) -> int:
     return OK if res.ok else 1
 
 
+def cmd_recheck(args) -> int:
+    paths = _series(args.series)
+    _check_sids(_records(paths), args.sessions or [])
+    rows = actions.recheck_mc(paths, args.sessions)
+    done = [r for r in rows if not r.note]
+    for r in rows:
+        if r.note:
+            _say(f"[WARN] {r.sid}: {r.note}")
+        elif r.before != r.after:
+            _say(f"[OK] {r.sid}: {r.before} -> {r.after}")
+    _say(f"[OK] MC checks re-evaluated for {len(done)} session(s)")
+    return OK
+
+
 def cmd_inspect(args) -> int:
     paths = _series(args.series)
     recs = _records(paths)
@@ -713,6 +727,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("retry", cmd_retry, "recompute sessions from their failed stage (after disk full, locked file)")
     sp.add_argument("sids", nargs="*", metavar="SID")
     sp.add_argument("--all-failed", action="store_true", help="all sessions that have a failed stage")
+
+    sp = add("recheck", cmd_recheck, "re-evaluate the checks of finished MC stages from their outputs "
+             "(MC does not run again)", who=False)
+    sp.add_argument("--sessions", nargs="+", metavar="SID", help="only these sessions")
 
     sp = add("previews", cmd_previews, "turn the preview videos (MC and CNMF-E QC) on or off for the series",
              who=False)

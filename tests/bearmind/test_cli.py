@@ -549,6 +549,18 @@ def test_waiting_runner_prints_what_it_waits_for(series, capsys):
     assert not t.is_alive()
 
 
+def test_recheck_prints_changed_levels(series, make_avi, capsys):
+    from tests.bearmind.test_mc_black_frames import _mc_session
+    _mc_session(series, make_avi)
+    assert _main("recheck", series.root) == 0
+    out = capsys.readouterr().out
+    assert f"[OK] {S1}: error -> ok" in out and "[OK] MC checks re-evaluated for 1 session(s)" in out
+    assert _main("recheck", series.root, "--sessions", S1) == 0  # nothing changes the second time
+    out = capsys.readouterr().out
+    assert "->" not in out and "re-evaluated for 1 session(s)" in out
+    assert _main("recheck", series.root, "--sessions", "NOPE") == 2
+
+
 def test_status_marks_the_worst_check(series, capsys):
     """10f: an error-level check of a done stage is not a clean 'D' row."""
     from bearmind.registry import Check

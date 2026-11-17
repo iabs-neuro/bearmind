@@ -25,6 +25,32 @@ N_CORR_FRAMES = 200
 TEMP_BYTES_PER_PX_FRAME = 1
 
 
+def max_shift_without_black(shifts, frame_at, black_mean: float):
+    """(largest max |shift| over the frames that are not black, the black frames left out, ascending).
+
+    A black frame (mean below `black_mean`) has nothing to align, so its shift is noise (frame 0 of 10 LT1
+    sessions gave up to 35.7 px). Frames are read in order of falling shift and only down to the first one
+    that is not black. All frames black: (None, all of them).
+    """
+    mag = np.abs(np.asarray(shifts)).max(axis=1)
+    left = []
+    for i in np.argsort(-mag, kind="stable"):
+        if float(np.mean(frame_at(int(i)))) < black_mean:
+            left.append(int(i))
+            continue
+        return float(mag[i]), sorted(left)
+    return None, sorted(left)
+
+
+def shift_metrics(shifts, video, black_mean: float) -> dict:
+    """The MC shift metrics. The frame is judged in the MC video: a shift with border_nan copy keeps a zero
+    frame zero."""
+    shifts = np.asarray(shifts)
+    v, left = max_shift_without_black(shifts, lambda i: video[i], black_mean)
+    return {"max_shift_px": v, "max_shift_all_px": float(np.max(np.abs(shifts))),
+            "black_frames_left_out": left}
+
+
 def _crop(cfg, frame_shape=None) -> CropBox | None:
     """Crop box of the session; None (explicit box_pos: null) means no FOV was found: uncropped.
 
@@ -173,7 +199,7 @@ def run(paths, rec, cfg) -> StageResult:
         mc_vid = VideoArray(paths.mc_video(sid))
 
         metrics = {
-            "max_shift_px": float(np.max(np.abs(shifts))),
+            **shift_metrics(shifts, mc_vid, cfg["checks"]["mc_black_frame_mean"]),
             "mean_template_corr": _mean_template_corr(mc_vid, template, mcfg.get("gSig_filt")),
             "n_frames": int(n),
             "crop": None if crop is None else [crop.top, crop.left, crop.height, crop.width],

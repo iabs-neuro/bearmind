@@ -122,6 +122,10 @@ inspection:
 checks:
   mc_max_shift_px: {warn: 10, error: 30}
   mc_template_corr: {warn: 0.7}
+  # A frame whose mean in the MC video is below this is black and does not count for the max shift check.
+  # The 10 black LT1 frames (frame 0, shifts up to 35.7 px) have a mean of at most 0.0002; the darkest frames
+  # with an image have 1.42-1.46 and MC aligns them (shift up to 4.1 px).
+  mc_black_frame_mean: 0.5
   cnmf_n_components_vs_median: {warn: 2.0, error: 3.0}
   cnmf_missed_cells: {warn: 20}
   auto_deleted_frac: {warn: 0.8, error: 0.95}

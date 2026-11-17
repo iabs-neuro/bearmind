@@ -58,6 +58,8 @@ def test_mc_stage(tmp_path, make_avi, monkeypatch):
     assert res.metrics["crop"] == [4, 4, BOX, BOX]
     assert res.metrics["max_shift_px"] == pytest.approx(3, abs=0.5)
     assert res.metrics["mean_template_corr"] > 0.5
+    assert res.metrics["black_frames_left_out"] == []
+    assert res.metrics["max_shift_all_px"] == res.metrics["max_shift_px"]
 
     # rebuild the cropped input and apply the saved shifts with CaImAn's own function
     import caiman.motion_correction as cmc

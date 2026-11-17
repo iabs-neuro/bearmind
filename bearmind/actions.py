@@ -15,9 +15,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bearmind import config, fileio, registry, runner, scan, scan_view
+import numpy as np
+
+from bearmind import checks, config, fileio, registry, runner, scan, scan_view
 from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
 from bearmind.stages import WaitingForInput, gate
+from bearmind.video import VideoArray
 
 if TYPE_CHECKING:  # threshold_model imports this module
     from bearmind.threshold_model import Counters
@@ -530,6 +533,68 @@ def retry_failed(paths, sids, who: str) -> ActionResult:
             runner.reset_from(paths, sid, stage, who)
         res.ok.append(sid)
     return res
+
+
+@dataclass
+class RecheckRow:
+    sid: str
+    before: str  # worst level of the MC checks as stored ("none" without checks)
+    after: str
+    note: str = ""  # why the session was skipped; empty when it was rechecked
+
+
+def _worst(found) -> str:
+    levels = {c.level for c in found}
+    return "error" if "error" in levels else "warning" if "warning" in levels else "ok" if levels else "none"
+
+
+def recheck_mc(paths, sids=None) -> list[RecheckRow]:
+    """Re-evaluate the checks of the finished MC stages from the shifts file and a few frames of the MC video.
+
+    MC does not run again. Only the max shift keys of the stored metrics and the checks are rewritten: crop,
+    n_frames and the rest stay, because the CNMF-E hash reads them. The record is left alone when its MC stage
+    changed while the files were read.
+    """
+    from bearmind.stages import mc  # imports CaImAn code: not at the start of every command
+    recs = _records(paths)
+    sids = sorted(recs) if sids is None else list(sids)
+    check_sids(recs, sids)
+    rows = []
+    for sid in sids:
+        rec = recs[sid]
+        st = rec.stages.get("mc")
+        if st is None or st.state is not State.DONE:
+            continue
+        before = _worst(st.checks)
+        if not (paths.mc_shifts(sid).is_file() and paths.mc_video(sid).is_file()):
+            rows.append(RecheckRow(sid, before, before, "MC outputs missing"))
+            continue
+        try:
+            cfg = config.resolve(paths, sid=sid, mouse=rec.mouse)
+            shifts = np.load(paths.mc_shifts(sid))
+            new = mc.shift_metrics(shifts, VideoArray(paths.mc_video(sid)), cfg["checks"]["mc_black_frame_mean"])
+            metrics = {**st.metrics, **new}
+            found = checks.evaluate("mc", metrics, [], cfg)
+        except Exception as e:  # one broken session must not stop the others
+            rows.append(RecheckRow(sid, before, before, f"cannot recheck: {_first(e)}"))
+            continue
+        read = (st.params_hash, st.finished)
+        changed = []
+
+        def change(r):
+            cur = r.stages.get("mc")
+            if cur is None or (cur.params_hash, cur.finished) != read or cur.state is not State.DONE:
+                changed.append(True)
+                return
+            cur.metrics = {**cur.metrics, **new}
+            cur.checks = found
+
+        registry.update_record(paths, sid, change)
+        if changed:
+            rows.append(RecheckRow(sid, before, before, "MC stage changed meanwhile"))
+        else:
+            rows.append(RecheckRow(sid, before, _worst(found)))
+    return rows
 
 
 def set_previews(paths, enabled: bool, tbin: int | None = None, ssub: int | None = None) -> None:

@@ -4,14 +4,17 @@ the LT1 fixes plan: no finished stage of the running batch goes out of date).
 Source of the snapshot: H:\Projects\LT1\CalciumData\_bearmind (9 sessions: registry records and configs),
 copied 2026-11-17. The realdata test runs the same check on the live series (BEARMIND_LT1_SERIES), read-only.
 """
+import numpy as np
 import pytest
 
 from bearmind import config, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
+from bearmind.stages import mc
 from bearmind.timestamps import read_timestamps
+from bearmind.video import VideoArray
 
-from tests.bearmind.lt1_snapshot import SNAPSHOT, SNAPSHOT_SIDS, copy_series, live_series_root, stale_finished, write_machine
+from tests.bearmind.lt1_snapshot import SNAPSHOT, SNAPSHOT_SIDS, copy_series, live_bearmind_dir, live_series_root, stale_finished, write_machine
 
 
 def test_snapshot_finished_stages_stay_current(tmp_path):
@@ -80,3 +83,19 @@ def test_live_timestamp_files_lose_a_row_only_in_j05_1d():
             if ts.dropped_row is not None:
                 dropped.append(r.sid)
     assert len(recs) == 84 and dropped == ["LT1_J05_1D"]
+
+
+@pytest.mark.realdata
+def test_live_black_frames():
+    """The nine LT1 sessions whose MC error or warning came from a black frame 0 drop to at most 10 px;
+    LT1_J10_2D keeps its 27.1 px (frame 64646 is a striped frame, not a black one). Reads only."""
+    src = live_bearmind_dir()
+    if src is None:
+        pytest.skip("BEARMIND_LT1_SERIES is not set")
+    paths = SeriesPaths(src.parent)
+    for sid in ("LT1_J17_2D", "LT1_J18_2D", "LT1_J58_2D", "LT1_J53_2D", "LT1_J57_2D", "LT1_J30_2D",
+                "LT1_J24_3D", "LT1_J54_2D", "LT1_J24_2D"):
+        m = mc.shift_metrics(np.load(paths.mc_shifts(sid)), VideoArray(paths.mc_video(sid)), 0.5)
+        assert m["black_frames_left_out"] == [0] and m["max_shift_px"] <= 10, sid
+    m = mc.shift_metrics(np.load(paths.mc_shifts("LT1_J10_2D")), VideoArray(paths.mc_video("LT1_J10_2D")), 0.5)
+    assert m["black_frames_left_out"] == [] and m["max_shift_px"] == pytest.approx(27.1, abs=0.05)

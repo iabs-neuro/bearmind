@@ -26,6 +26,13 @@ def test_shift_warning_and_error():
     assert c.level == "error"
 
 
+def test_max_shift_message_names_left_out_frames():
+    c = by_name(evaluate("mc", {"max_shift_px": 6.7, "black_frames_left_out": [0]}, [], CFG))["mc_max_shift_px"]
+    assert c.level == "ok" and c.message.startswith("max shift 6.7 px, 1 black frame left out (")
+    c = by_name(evaluate("mc", {"max_shift_px": 6.7, "black_frames_left_out": [0, 3]}, [], CFG))["mc_max_shift_px"]
+    assert c.message.startswith("max shift 6.7 px, 2 black frames left out (")
+
+
 def test_shift_ok_and_low_corr_warning():
     res = by_name(evaluate("mc", {"max_shift_px": 3.0, "mean_template_corr": 0.5}, [], CFG))
     assert res["mc_max_shift_px"].level == "ok"

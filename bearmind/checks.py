@@ -24,7 +24,7 @@ def _thresholds_text(th: dict, higher_is_worse: bool) -> str:
     return ", ".join(parts)
 
 
-def _absolute(stage, name, metrics, key, cfg, higher_is_worse, template):
+def _absolute(stage, name, metrics, key, cfg, higher_is_worse, template, note=""):
     th = cfg.get("checks", {}).get(name)
     value = metrics.get(key)
     if th is None or value is None:
@@ -33,7 +33,7 @@ def _absolute(stage, name, metrics, key, cfg, higher_is_worse, template):
         return Check(stage, name, "warning", None, f"{key} is not a number")
     level = _level(value, th.get("warn"), th.get("error"), higher_is_worse)
     message = template.format(v=_fmt(value) if not isinstance(value, float) or key != "max_shift_px"
-                              else f"{value:.1f}") + f" ({_thresholds_text(th, higher_is_worse)})"
+                              else f"{value:.1f}") + note + f" ({_thresholds_text(th, higher_is_worse)})"
     return Check(stage, name, level, float(value), message)
 
 
@@ -59,8 +59,10 @@ def _components_vs_median(metrics, series_metrics, cfg):
 def evaluate(stage: str, metrics: dict, series_metrics: list[dict], cfg: dict) -> list[Check]:
     out = []
     if stage == "mc":
+        left = metrics.get("black_frames_left_out") or []
+        note = f", {len(left)} black frame{'' if len(left) == 1 else 's'} left out" if left else ""
         out.append(_absolute(stage, "mc_max_shift_px", metrics, "max_shift_px", cfg, True,
-                             "max shift {v} px"))
+                             "max shift {v} px", note))
         out.append(_absolute(stage, "mc_template_corr", metrics, "mean_template_corr", cfg, False,
                              "template corr {v}"))
     elif stage == "cnmf":
