@@ -564,6 +564,17 @@ def test_recheck_prints_changed_levels(series, make_avi, capsys):
     assert _main("recheck", series.root, "--sessions", "NOPE") == 2
 
 
+def test_recheck_names_a_session_it_could_not_recheck(series, make_avi, capsys):
+    from tests.bearmind.test_mc_black_frames import _mc_session
+    _mc_session(series, make_avi)  # S1 has a finished MC, S2 has not
+    capsys.readouterr()
+    assert _main("recheck", series.root, "--sessions", S1, S2) == 1
+    out = capsys.readouterr().out
+    assert f"[WARN] {S2}: MC not done, skipped" in out and f"[WARN] {S1}" not in out
+    assert _main("recheck", series.root, "--sessions", S1) == 0
+    assert _main("recheck", series.root) == 0  # nothing named: nothing to fail
+
+
 def test_status_marks_the_worst_check(series, capsys):
     """10f: an error-level check of a done stage is not a clean 'D' row."""
     from bearmind.registry import Check
@@ -834,6 +845,8 @@ def test_status_threshold_wait_follows_the_rule(series, capsys):
     assert cli._row(load_record(series.paths, S1), waits=True)[1] == "thresholds"
     line = next(x for x in out.splitlines() if x.startswith(S2))
     assert " W " not in line and "thresholds" not in line
+    line1 = next(x for x in out.splitlines() if x.startswith(S1))  # the waiting session, through cmd_status
+    assert " W " in line1 and "thresholds" in line1
     df = runner.summary(series.paths).set_index("sid")
     assert df.loc[S1, "cnmf"] == "waiting" and df.loc[S1, "waiting_for"] == "thresholds"
     assert df.loc[S2, "cnmf"] == "pending"

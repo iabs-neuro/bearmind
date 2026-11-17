@@ -10,8 +10,9 @@ process of its own (bearmind.isolate): a native crash or a dead CaImAn pool work
 batch goes on with the other sessions.
 
 Side stages (registry.SIDE_STAGES: the preview videos) run while their checkbox is set, but only when no main
-stage of any session is ready (also when every main stage waits for a person). Their hash is their settings plus the parent's hash; the main chain never depends on them,
-so a disabled, failed or changed preview holds and re-runs nothing else.
+stage of any session is ready (also when every main stage waits for a person). Their hash is their settings
+plus the parent's hash; the main chain never depends on them, so a disabled, failed or changed preview holds
+and re-runs nothing else.
 """
 from __future__ import annotations
 
@@ -129,7 +130,7 @@ def _offer_order(until) -> tuple:
     """Stages in the order next_ready offers them: the main stages up to `until` in STAGES order, then the side
     stages in range in ALL_STAGES order. A side stage comes up only when no main stage of any session is ready."""
     offered = _offered(until)
-    return tuple(s for s in STAGES if s in offered) + tuple(s for s in ALL_STAGES if s in offered and s in SIDE_STAGES)
+    return tuple(s for s in STAGES if s in offered) + tuple(s for s in _SIDE_ORDER if s in offered)
 
 
 def _sides_of(stage) -> list:

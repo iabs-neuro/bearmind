@@ -62,7 +62,7 @@ def test_live_series_finished_stages_stay_current():
     paths = SeriesPaths(root)
     write_machine()  # the test's own BEARMIND_HOME, not the real machine file
     recs, broken = registry.read_all(paths)
-    assert recs and broken == [], f"no registry under {root}\_bearmind, or unreadable records: {broken}"
+    assert recs and broken == [], f"no registry under {root}\\_bearmind, or unreadable records: {broken}"
     assert stale_finished(paths) == []
 
 

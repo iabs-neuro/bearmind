@@ -573,8 +573,14 @@ def cmd_recheck(args) -> int:
             _say(f"[WARN] {r.sid}: {r.note}")
         elif r.before != r.after:
             _say(f"[OK] {r.sid}: {r.before} -> {r.after}")
+    # a named session with no finished MC has no row: say so, the summary line does not name it
+    rows_by_sid = {r.sid for r in rows}
+    for sid in args.sessions or []:
+        if sid not in rows_by_sid:
+            _say(f"[WARN] {sid}: MC not done, skipped")
     _say(f"[OK] MC checks re-evaluated for {len(done)} session(s)")
-    return OK
+    rechecked = {r.sid for r in done}
+    return OK if all(sid in rechecked for sid in args.sessions or []) else 1
 
 
 def cmd_inspect(args) -> int:

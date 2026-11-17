@@ -30,9 +30,12 @@ def max_shift_without_black(shifts, frame_at, black_mean: float):
 
     A black frame (mean below `black_mean`) has nothing to align, so its shift is noise (frame 0 of 10 LT1
     sessions gave up to 35.7 px). Frames are read in order of falling shift and only down to the first one
-    that is not black. All frames black: (None, all of them).
+    that is not black. All frames black: (None, all of them). A shift that is not finite gives NaN: the check
+    reports it (argsort would put it last and hide it).
     """
     mag = np.abs(np.asarray(shifts)).max(axis=1)
+    if not np.isfinite(mag).all():
+        return float("nan"), []
     left = []
     for i in np.argsort(-mag, kind="stable"):
         if float(np.mean(frame_at(int(i)))) < black_mean:

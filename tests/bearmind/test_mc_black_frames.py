@@ -41,6 +41,16 @@ def test_only_frames_down_to_the_answer_are_read():
     assert read == [0, 1]
 
 
+def test_a_shift_that_is_not_finite_is_reported_not_hidden():
+    from bearmind import checks
+    shifts = np.array([[1.0, 0], [np.nan, 0], [2.0, 0]], np.float32)
+    v, left = mc.max_shift_without_black(shifts, _frames([40, 40, 40]).__getitem__, 0.5)
+    assert np.isnan(v) and left == []
+    cfg = {"checks": {"mc_max_shift_px": {"warn": 10, "error": 30}}}
+    got = checks.evaluate("mc", {"max_shift_px": v}, [], cfg)
+    assert any("max_shift_px is not a number" in c.message for c in got)
+
+
 def test_shift_metrics_keys():
     shifts = np.array([[35.7, 0], [2.0, 6.7]], np.float32)
     m = mc.shift_metrics(shifts, _frames([0, 40]), 0.5)

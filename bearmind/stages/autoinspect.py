@@ -1,6 +1,7 @@
 """Autoinspection stage: the unchanged ae_launch.run_auto_inspection with production parameters from config."""
 import os
 import pickle
+import re
 from pathlib import Path
 
 import ae_launch
@@ -40,6 +41,9 @@ def check_aligned(path: Path) -> None:
                          f"refused: {'; '.join(problems)}")
 
 
+_SHORT_TIMESTAMPS = re.compile(r"\d+ timestamps for \d+ frames$")
+
+
 def _count(df, column, value) -> int:
     if df is None or column not in df.columns:
         return 0
@@ -55,14 +59,22 @@ def run(paths, rec, cfg) -> StageResult:
     fps = round(rec.fps)
     processed = out_dir / f"{sid}_processed.pickle"
     source = gate.input_estimates(paths, rec)
+    # the real axis, as the inspection page uses it; read first so that bad timestamps fail early and keep the
+    # processed file of an earlier run
+    time_s = session_time_s(paths, rec)
+    if len(time_s) < rec.n_frames:
+        raise ValueError(f"{sid}: {len(time_s)} timestamps for {rec.n_frames} frames; rescan the series")
     check_aligned(source)  # its copy of the estimates is freed on return, before the file is loaded again
     # a pickle from an earlier run would hide that this run saved nothing
     processed.unlink(missing_ok=True)
-    # the real axis, as the inspection page uses it; read before the heavy run so that bad timestamps fail early
-    time_s = session_time_s(paths, rec)
-    result = ae_launch.run_auto_inspection(
-        str(source), fps=fps, session_name=sid,
-        artifacts_dir=str(out_dir), ml_model_path=str(model), time_s=time_s, **params)
+    try:
+        result = ae_launch.run_auto_inspection(
+            str(source), fps=fps, session_name=sid,
+            artifacts_dir=str(out_dir), ml_model_path=str(model), time_s=time_s, **params)
+    except ValueError as e:
+        if _SHORT_TIMESTAMPS.search(str(e)) and "rescan" not in str(e):
+            raise ValueError(f"{sid}: {e}; rescan the series") from e
+        raise
     anomalies = []
     if not processed.exists():
         # run_auto_inspection returns early without saving when there are no components

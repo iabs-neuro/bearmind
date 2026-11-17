@@ -6,8 +6,8 @@ injectable for the tests.
 """
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 

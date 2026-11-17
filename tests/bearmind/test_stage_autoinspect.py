@@ -288,6 +288,29 @@ def test_processed_time_axis_comes_from_the_timestamps(tmp_path, monkeypatch):
     assert np.allclose(seen["time_s"], np.arange(10) * 0.0506)
 
 
+def test_short_timestamps_fail_early_and_keep_the_old_processed_file(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    paths.root.joinpath(rec.parts[0].timestamps_file).write_text("".join(f"{i * 506000}\n" for i in range(9)))
+    _write_processed(paths)
+    old = _processed(paths).read_bytes()
+    monkeypatch.setattr(ae_launch, "run_auto_inspection",
+                        lambda *a, **k: pytest.fail("the heavy run must not start"))
+    monkeypatch.setattr(autoinspect, "check_aligned", lambda p: pytest.fail("the estimates are read first"))
+    with pytest.raises(ValueError, match=r"9 timestamps for 10 frames; rescan the series"):
+        autoinspect.run(paths, rec, cfg)
+    assert _processed(paths).read_bytes() == old
+
+
+def test_a_short_axis_found_by_the_loader_gets_the_rescan_hint(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+
+    def fake(*a, **k):
+        raise ValueError("47308 timestamps for 47309 frames")
+    monkeypatch.setattr(ae_launch, "run_auto_inspection", fake)
+    with pytest.raises(ValueError, match=r"47308 timestamps for 47309 frames; rescan the series"):
+        autoinspect.run(paths, rec, cfg)
+
+
 def test_run_auto_inspection_gives_the_axis_to_load_estimates(tmp_path, monkeypatch):
     got = {}
     est = SimpleNamespace(idx_components=np.array([], int), C=np.zeros((1, 5)))

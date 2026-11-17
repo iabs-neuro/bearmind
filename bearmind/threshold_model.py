@@ -249,7 +249,8 @@ def _item(paths, view, rec, ahead_of, rs) -> ThresholdItem:
             reason = last_line(th.error) or "failed"
         elif blocked_at is not None:
             # a failed stage of the session holds it back: the batch offers nothing until a person retries it
-            reason = (last_line(th.error) if th is not None and th.state is State.SKIPPED else "")                 or f"{blocked_at} failed"
+            reason = ((last_line(th.error) if th is not None and th.state is State.SKIPPED else "")
+                      or f"{blocked_at} failed")
         elif th is not None and th.state is State.DONE:
             reason = "maps file not found"
         else:
