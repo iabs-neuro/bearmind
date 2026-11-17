@@ -178,3 +178,10 @@ def fps_from_table(name: str, table: dict[str, float] | None = None) -> float | 
         if key and key in table:
             return table[key]
     return None
+
+
+def session_time_s(paths, rec) -> np.ndarray:
+    """The session's frame times in seconds from its first frame: the stitched timestamps of the registry
+    (timestamps.session_timestamps), one per frame; rec.n_frames of them when the timestamps cover every frame."""
+    t = np.asarray(session_timestamps(paths, rec).t_ms, dtype=np.float64)
+    return (t - t[0]) / 1000.0 if len(t) else t

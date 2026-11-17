@@ -7,6 +7,7 @@ import ae_launch
 import bearmind
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, gate
+from bearmind.timestamps import session_time_s
 
 # model_path in config is relative to the repo root, where production_models/ lives.
 _REPO_ROOT = Path(bearmind.__file__).resolve().parent.parent
@@ -57,9 +58,11 @@ def run(paths, rec, cfg) -> StageResult:
     check_aligned(source)  # its copy of the estimates is freed on return, before the file is loaded again
     # a pickle from an earlier run would hide that this run saved nothing
     processed.unlink(missing_ok=True)
+    # the real axis, as the inspection page uses it; read before the heavy run so that bad timestamps fail early
+    time_s = session_time_s(paths, rec)
     result = ae_launch.run_auto_inspection(
         str(source), fps=fps, session_name=sid,
-        artifacts_dir=str(out_dir), ml_model_path=str(model), **params)
+        artifacts_dir=str(out_dir), ml_model_path=str(model), time_s=time_s, **params)
     anomalies = []
     if not processed.exists():
         # run_auto_inspection returns early without saving when there are no components

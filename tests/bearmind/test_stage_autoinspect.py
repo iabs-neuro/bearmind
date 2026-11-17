@@ -12,7 +12,7 @@ import ae_launch
 import estimates_compression
 from bearmind import config
 from bearmind.paths import SeriesPaths
-from bearmind.registry import SessionRecord, save_record
+from bearmind.registry import RawPart, SessionRecord, save_record
 from bearmind.stages import autoinspect
 
 SID = "NOF_H01_1D"
@@ -37,7 +37,13 @@ def _write_input(path, est):
 
 def _setup(tmp_path, fps=19.76):
     paths = SeriesPaths(tmp_path / "series")
-    rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[], n_frames=10, fps=fps,
+    part = RawPart(folder="1_Raw/NOF_H01_1D", chunks=[], n_frames=10, shape=(4, 4),
+                   timestamps_file="0_TimeStamps/NOF_H01_1D_Mini_TS.csv", ts_format="bonsai_ticks",
+                   start_ms=None, metadata_file=None)
+    ts = paths.root / part.timestamps_file
+    ts.parent.mkdir(parents=True, exist_ok=True)
+    ts.write_text("".join(f"{i * 506000}\n" for i in range(10)))  # 0.0506 s per frame
+    rec = SessionRecord(sid=SID, mouse="NOF_H01", mode="bonsai", parts=[part], n_frames=10, fps=fps,
                         fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
     save_record(paths, rec)
     _write_input(paths.estimates(SID), _input_est())
@@ -267,3 +273,28 @@ def test_run_auto_inspection_writes_the_grouping_marker(tmp_path, monkeypatch, n
                                         verbose=False)
     cfg = res["estimates"].autoinspection_config
     assert cfg["merge_grouping"] == export_estimates_data.MERGE_GROUPING == "fbd_complete"
+
+
+def test_processed_time_axis_comes_from_the_timestamps(tmp_path, monkeypatch):
+    paths, rec, cfg = _setup(tmp_path)
+    seen = {}
+
+    def fake(estimates_path, fps=None, **kw):
+        seen.update(kw)
+        _write_processed(paths)
+        return _result(3, 0, 3, _processed_df(3, 0, 0))
+    monkeypatch.setattr(ae_launch, "run_auto_inspection", fake)
+    autoinspect.run(paths, rec, cfg)
+    assert np.allclose(seen["time_s"], np.arange(10) * 0.0506)
+
+
+def test_run_auto_inspection_gives_the_axis_to_load_estimates(tmp_path, monkeypatch):
+    got = {}
+    est = SimpleNamespace(idx_components=np.array([], int), C=np.zeros((1, 5)))
+    monkeypatch.setattr(ae_launch, "LoadEstimates",
+                        lambda name, default_fps=20, time=None: got.update(time=time) or est)
+    t = np.arange(5) * 0.05
+    path = tmp_path / "x_estimates.pickle"
+    path.write_bytes(b"")
+    ae_launch.run_auto_inspection(str(path), fps=20, time_s=t, save_artifacts=False)
+    assert got["time"] is t

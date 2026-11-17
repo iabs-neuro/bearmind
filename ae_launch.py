@@ -175,6 +175,7 @@ def run_auto_inspection(
     hybrid_kinetics: bool = _AUTOINSPECT['hybrid_kinetics'],
     wavelet_backend: str = 'auto',
     seed: int | None = _AUTOINSPECT['seed'],
+    time_s: np.ndarray | None = None,  # frame times in seconds for est.time; None: bm_examinator's own axis
 
     # --- Decision parameters ---
     deletion_rules: list = None,  # Use DEFAULT_DELETION_RULES if None
@@ -230,6 +231,8 @@ def run_auto_inspection(
         event_method: Event detection method ('threshold' or 'wavelet')
         seed: Seed of driada's tie-breaking noise (1e-8 per frame); the same seed gives the same
             decisions on the same data (None: unseeded, results vary from run to run)
+        time_s: Frame times in seconds, saved as est.time (the series' timestamps); None: the axis of
+            bm_examinator.get_timestamps
 
         circ_thr: Maximum circularity (elongation) threshold
         maxedge_thr: Maximum edge length threshold
@@ -340,7 +343,7 @@ def run_auto_inspection(
         print(f"[run_auto_inspection] Loading estimates from: {estimates_path}")
 
     # --- Step 1: Load estimates ---
-    est = LoadEstimates(str(estimates_path), default_fps=fps)
+    est = LoadEstimates(str(estimates_path), default_fps=fps, time=time_s)
 
     if verbose:
         print(f"[run_auto_inspection] Loaded {len(est.idx_components)} components")

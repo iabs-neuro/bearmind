@@ -42,6 +42,7 @@ from bearmind import actions, cli, config, inspect_server, monitor, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
+from bearmind import timestamps
 from bearmind.timestamps import session_timestamps
 from tests.bearmind.test_timestamps import _write_cut
 from tests.bearmind.current_stages import make_current, mark_current
@@ -1514,7 +1515,7 @@ def test_part_timestamps_named_on_the_page(series_est, monkeypatch):
     def short(paths, rec):
         raise ValueError("1_Raw/папка: 150 frames but 100 timestamp rows; rescan the series")
 
-    monkeypatch.setattr(inspect_server, "session_timestamps", short)
+    monkeypatch.setattr(timestamps, "session_timestamps", short)  # read by session_time_s
     with running(series_est) as srv, tab(srv, S1) as s:
         texts = _divs(srv, srv.page_of(s.id))
     assert texts == [inspect_server.PART_TIMESTAMPS.format(sid=S1, n_frames=150, n_rows=100)]

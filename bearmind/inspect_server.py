@@ -55,7 +55,7 @@ from bearmind.inspect_lock import (UNREADABLE_LOCK_STALE_S, ServerState, _lock_i
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State
 from bearmind.stages import gate
-from bearmind.timestamps import session_timestamps
+from bearmind.timestamps import session_time_s
 
 log = logging.getLogger("bearmind.inspect")
 
@@ -198,13 +198,6 @@ def wave_hint(frac: float | None, wave_cfg: dict) -> str | None:
         log.warning("inspection.wave has a value that is not a number: %r; no calcium-wave hint", wave_cfg)
         return None
     return wave.wave_text(frac, active_frac) if frac > warn else None
-
-
-def session_time_s(paths, rec) -> np.ndarray:
-    """The session's frame times in seconds from its first frame: the stitched timestamps of the registry
-    (timestamps.session_timestamps), one per frame; rec.n_frames of them when the timestamps cover every frame."""
-    t = np.asarray(session_timestamps(paths, rec).t_ms, dtype=np.float64)
-    return (t - t[0]) / 1000.0 if len(t) else t
 
 
 # --- waiting for the series' server (its lock is read by bearmind.inspect_lock) ---
