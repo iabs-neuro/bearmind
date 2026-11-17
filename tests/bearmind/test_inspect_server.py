@@ -42,6 +42,8 @@ from bearmind import actions, cli, config, inspect_server, monitor, runner, scan
 from bearmind.paths import SeriesPaths
 from bearmind.registry import State, load_record, update_record
 from bearmind.stages import gate
+from bearmind.timestamps import session_timestamps
+from tests.bearmind.test_timestamps import _write_cut
 from tests.bearmind.current_stages import make_current, mark_current
 from tests.examinator_helpers import make_estimates
 
@@ -220,6 +222,26 @@ def test_session_time_s(make_series, tmp_path):
     t = inspect_server.session_time_s(SeriesPaths(root), rec)
     assert len(t) == rec.n_frames == 30 and t[0] == 0.0
     assert np.allclose(t, np.arange(30) * 0.05)
+
+
+def test_cut_row_stays_out_of_inspection_and_export(make_series, tmp_path):
+    """The scan, the inspection time axis and the rows the export writes (session_timestamps) all leave the
+    incomplete row out."""
+    # 60 frames: one row short is 1.7 %, below max_mismatch_frac 0.02, so the session stays included
+    root = make_series(tmp_path / "s", chunk_frames=20)  # bonsai: 3 chunks of 20 frames
+    _write_cut(root / "0_TimeStamps" / "NOF_H01_1D_Mini_TS.csv", 60)
+    rec = scan.scan_series(root)[0]
+    paths = SeriesPaths(root)
+    assert rec.n_frames == 59  # frame 60 has no valid timestamp
+    t = inspect_server.session_time_s(paths, rec)
+    assert len(t) == 59 and np.all(np.diff(t) > 0) and t[-1] < 3.0  # 58 intervals of 50.6 ms
+    raw = session_timestamps(paths, rec).raw
+    assert len(raw) == 59 and np.all(np.diff(raw) > 0)
+    a = {x.code: x for x in rec.anomalies}
+    assert a["ts_last_row_incomplete"].level == "warning" and a["ts_last_row_incomplete"].auto_fixed
+    assert a["ts_last_row_incomplete"].data["digits"] == 16
+    assert a["frames_ts_mismatch"].level == "warning" and a["frames_ts_mismatch"].data["diff"] == 1
+    assert not rec.excluded
 
 
 def test_session_url():

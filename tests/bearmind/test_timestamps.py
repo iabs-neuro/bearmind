@@ -187,3 +187,48 @@ def test_stitch_bonsai_single():
     t = Timestamps(raw, raw / 1e4, "bonsai_ticks")
     s = stitch([t])
     assert np.array_equal(s.raw, raw) and s.raw is not raw
+
+
+BASE = 639281122689862784  # LT1_J05_1D's first tick (18 digits, 100 ns since year 1)
+STEP = 506172  # 50.6 ms, the session's median interval
+
+
+def _ticks(n):
+    return BASE + np.arange(n, dtype=np.int64) * STEP
+
+
+def _write_cut(path, n):
+    """n rows as Bonsai writes them (CRLF), the last cut to its first 16 digits and without a line end, as in
+    LT1_J05_1D_Mini_TS.csv."""
+    t = _ticks(n)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(("".join(f"{v}\r\n" for v in t[:-1]) + str(t[-1])[:16]).encode("ascii"))
+    return t
+
+
+def test_bonsai_incomplete_last_row_left_out(tmp_path):
+    t = _write_cut(tmp_path / "S_Mini_TS.csv", 50)
+    ts = read_timestamps(tmp_path / "S_Mini_TS.csv")
+    assert ts.raw.tolist() == t[:49].tolist() and np.all(np.diff(ts.t_ms) > 0)
+    assert ts.dropped_row == str(t[-1])[:16]
+
+
+def test_bonsai_complete_last_row_without_line_end_kept(tmp_path):
+    t = _ticks(50)
+    (tmp_path / "S.csv").write_bytes(("".join(f"{v}\r\n" for v in t[:-1]) + str(t[-1])).encode("ascii"))
+    ts = read_timestamps(tmp_path / "S.csv")
+    assert ts.raw.tolist() == t.tolist() and ts.dropped_row is None
+
+
+def test_bonsai_last_row_with_lone_cr_kept(tmp_path):
+    t = _ticks(50)
+    (tmp_path / "S.csv").write_bytes(("".join(f"{v}\r\n" for v in t[:-1]) + f"{t[-1]}\r").encode("ascii"))
+    assert read_timestamps(tmp_path / "S.csv").raw.tolist() == t.tolist()
+
+
+@pytest.mark.parametrize("end", ["\n", "\r\n"])
+def test_complete_files_read_as_before(tmp_path, end):
+    t = _ticks(50)
+    (tmp_path / "S.csv").write_bytes("".join(f"{v}{end}" for v in t).encode("ascii"))
+    ts = read_timestamps(tmp_path / "S.csv")
+    assert ts.raw.tolist() == t.tolist() and ts.dropped_row is None

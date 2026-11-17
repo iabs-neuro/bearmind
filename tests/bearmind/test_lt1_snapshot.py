@@ -9,6 +9,7 @@ import pytest
 from bearmind import config, registry, runner
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES, State
+from bearmind.timestamps import read_timestamps
 
 from tests.bearmind.lt1_snapshot import SNAPSHOT, SNAPSHOT_SIDS, copy_series, live_series_root, stale_finished, write_machine
 
@@ -41,3 +42,22 @@ def test_live_series_finished_stages_stay_current():
     recs, broken = registry.read_all(paths)
     assert recs and broken == [], f"no registry under {root}\_bearmind, or unreadable records: {broken}"
     assert stale_finished(paths) == []
+
+
+@pytest.mark.realdata
+def test_live_timestamp_files_lose_a_row_only_in_j05_1d():
+    root = live_series_root()
+    if root is None:
+        pytest.skip("BEARMIND_LT1_SERIES is not set")
+    paths = SeriesPaths(root)
+    recs, _ = registry.read_all(paths)
+    dropped = []
+    for r in recs:
+        for p in r.parts:
+            f = paths.root / p.timestamps_file
+            ts = read_timestamps(f)
+            rows = [ln for ln in f.read_text(encoding="utf-8-sig").splitlines() if ln.strip()]
+            assert len(ts.raw) + (ts.dropped_row is not None) == len(rows), r.sid
+            if ts.dropped_row is not None:
+                dropped.append(r.sid)
+    assert len(recs) == 84 and dropped == ["LT1_J05_1D"]

@@ -179,6 +179,15 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
     else:
         ts_error = f"no timestamps file for {where}"
 
+    if ts is not None and ts.dropped_row is not None:
+        row = ts.dropped_row
+        k = len(str(ts.raw[-1]))
+        anomalies.append(Anomaly(
+            "ts_last_row_incomplete", "warning",
+            f"last timestamp row of {ts_file} is incomplete ({len(row)} digits instead of {k}, no line end); left out",
+            auto_fixed=True,
+            data={"file": ts_file, "row": row, "digits": len(row), "digits_before": k}))
+
     kept = total
     drop_last = drop_tail = False
     try:

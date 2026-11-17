@@ -17,6 +17,7 @@ ANOMALY_TITLE = {
     "timing_jitter": "timing jitter",
     "gap_test_skipped": "frame loss test skipped",
     "broken_last_frame": "broken last frame",
+    "ts_last_row_incomplete": "last timestamp row incomplete",
     "chunk_tail_frames": "extra chunk frames",
     "no_metadata": "no recording start time",
     "unreadable_video": "unreadable video",
