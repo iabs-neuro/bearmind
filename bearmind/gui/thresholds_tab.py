@@ -349,6 +349,7 @@ class ThresholdsTab(QWidget):
         for m in tm.METHODS:
             b = QPushButton(f"{m}: …")
             b.setEnabled(False)
+            b.setMinimumWidth(90)  # the text may clip on a narrow window; the minimum width must not follow it
             b.clicked.connect(lambda _=False, m=m: self._guarded(self.apply_method, m))
             self.method_buttons[m] = b
         self.accept_button = QPushButton("Accept → next")
@@ -360,13 +361,19 @@ class ThresholdsTab(QWidget):
         self.reset_button.clicked.connect(lambda: self._guarded(self._reset))
         self.accept_button.clicked.connect(lambda: self._guarded(self.accept_and_next))
         self.accept_mouse_button.clicked.connect(lambda: self._guarded(self.accept_for_mouse))
-        for b in (self.prev_button, self.next_button, self.reset_button, self.from_session_button,
-                  *self.method_buttons.values()):
+        for b in (self.prev_button, self.next_button, self.reset_button, self.from_session_button):
             row.addWidget(b)
         row.addStretch(1)
         row.addWidget(self.accept_button)
         row.addWidget(self.accept_mouse_button)
         lay.addLayout(row)
+        # own row: three value buttons in the main row would push the window's minimum width past a small screen
+        methods = QHBoxLayout()
+        methods.addWidget(QLabel("Automatic thresholds:"))
+        for b in self.method_buttons.values():
+            methods.addWidget(b)
+        methods.addStretch(1)
+        lay.addLayout(methods)
         return box
 
     @staticmethod
@@ -929,6 +936,11 @@ class ThresholdsTab(QWidget):
         """Queue the computation for the shown key unless it is cached or running, then show what is known."""
         key = self._methods_key()
         if key is not None and key not in self._method_cache and key not in self._method_futures:
+            # jobs of other keys that have not started are of no use any more (the person moved on); a running
+            # job cannot be cancelled and finishes into the cache
+            for k, f in list(self._method_futures.items()):
+                if k != key and f.cancel():
+                    del self._method_futures[k]
             # the maps object is the one of this key: _loaded_sig and _maps change together
             self._method_futures[key] = self._executor.submit(lambda m=self._maps, g=key[1]: tm.method_values(m, g))
         self._show_methods()

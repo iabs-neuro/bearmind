@@ -439,8 +439,13 @@ def method_values(maps: ThresholdMaps, g: int) -> dict[str, dict]:
                       "note": "no mirrored maps" if m == "mirror_fdr" else "no value"}
             continue
         c, p = r.get("min_corr"), r.get("min_pnr")
-        out[m] = {"min_corr": None if c is None else float(c), "min_pnr": None if p is None else float(p),
-                  "note": str(r.get("note", ""))}
+        c = None if c is None else float(c)
+        p = None if p is None else float(p)
+        note = str(r.get("note", ""))
+        if (c is not None and not np.isfinite(c)) or (p is not None and not np.isfinite(p)):
+            c = p = None  # e.g. an empty valid area: no usable pair
+            note = note or "no finite threshold pair"
+        out[m] = {"min_corr": c, "min_pnr": p, "note": note}
     return out
 
 

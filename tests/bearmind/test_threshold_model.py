@@ -571,3 +571,13 @@ def test_source_text_for_a_method():
     item = tm.ThresholdItem.__new__(tm.ThresholdItem)
     text = tm.source_text("method:robust_bg", item, values={"gSig": 4, "min_corr": 0.83, "min_pnr": 7.25})
     assert text == "Automatic thresholds (robust_bg) for gSig 4: min_corr 0.83, min_pnr 7.25"
+
+
+def test_method_values_non_finite_become_none(monkeypatch):
+    from bearmind import seed_suggest
+
+    nan = float("nan")
+    monkeypatch.setattr(seed_suggest, "suggest_init_thresholds",
+                        lambda m, gSiz=None: ({"robust_bg": {"min_corr": nan, "min_pnr": 3.0}}, None))
+    v = tm.method_values(_mirrored_maps(), 4)["robust_bg"]
+    assert v["min_corr"] is None and v["min_pnr"] is None and v["note"]

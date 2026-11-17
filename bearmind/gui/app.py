@@ -177,6 +177,9 @@ class MainWindow(QMainWindow):
             self._refuse("A scan is running. Wait for it to finish, then close the window.")
             event.ignore()
             return
+        tab = getattr(self, "thresholds", None)  # none before a series is open
+        if tab is not None:
+            tab.shutdown()  # cancels the queued method computations, so the process can end
         super().closeEvent(event)
 
     def show_tab(self, name: str) -> None:
