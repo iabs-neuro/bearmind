@@ -145,7 +145,7 @@ def _numbers(v: dict | None) -> tuple[int, float, float] | None:
         return None
     try:
         g, c, p = int(v["gSig"]), float(v["min_corr"]), float(v["min_pnr"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):  # OverflowError: int(.inf)
         return None
     return (g, c, p) if np.isfinite(c) and np.isfinite(p) else None
 
@@ -168,12 +168,14 @@ class _HoverMenuButton(QToolButton):
 
     Closed with the pointer on the button (Escape, a click), the list opens again only after the pointer left
     the button: Qt sends the button a Leave while the list is open, so a small move afterwards brings an Enter.
-    A click on the button while the list is open keeps it open: one that closed it would look dead to a person
-    who clicks out of habit after the list opened by itself."""
+    A click on the button while a list opened by hover is open keeps it open: one that closed it would look dead
+    to a person who clicks out of habit after the list opened by itself. A list opened by a click closes on a
+    second click, as usual."""
 
     def __init__(self):
         super().__init__()
         self._armed = True  # an Enter may open the list
+        self._by_hover = False  # the open list was opened by hover
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.setInterval(HOVER_OPEN_MS)
@@ -190,8 +192,8 @@ class _HoverMenuButton(QToolButton):
     def eventFilter(self, obj, event) -> bool:
         # the open list takes every press (a popup grabs the mouse); one on the button is swallowed, not a close.
         # A list that covers the button (a small screen) keeps its own clicks.
-        if obj is self.menu() and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
-                                                   QEvent.Type.MouseButtonDblClick):
+        if self._by_hover and obj is self.menu() and event.type() in (
+                QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick):
             gp = event.globalPosition().toPoint()
             if self._pointer_on_button(gp) and not obj.rect().contains(obj.mapFromGlobal(gp)):
                 return True
@@ -199,6 +201,7 @@ class _HoverMenuButton(QToolButton):
 
     def _menu_closed(self) -> None:
         self._hover_timer.stop()
+        self._by_hover = False
         self._armed = not self._pointer_on_button(QCursor.pos())
 
     def enterEvent(self, event) -> None:
@@ -214,7 +217,8 @@ class _HoverMenuButton(QToolButton):
     def _open(self) -> None:
         menu = self.menu()
         if self.isEnabled() and self.underMouse() and menu is not None and menu.actions() and not menu.isVisible():
-            self.showMenu()
+            self._by_hover = True
+            self.showMenu()  # runs the list's own loop; aboutToHide clears the flag
 
 
 class _FitLabel(QLabel):

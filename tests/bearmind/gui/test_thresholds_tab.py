@@ -115,6 +115,9 @@ def make_tab(qapp):
         return tab
 
     yield _make
+    # a list a failed test left open would take every pointer event of the next tests (a popup grabs the mouse)
+    while qapp.activePopupWidget() is not None:
+        qapp.activePopupWidget().close()
     for tab in made:  # the video worker is joined before the next test
         tab.shutdown()
         tab.deleteLater()
@@ -228,13 +231,16 @@ def test_session_list_thresholds_are_rounded_for_the_column(qapp, series_maps, m
     assert "min_corr 0.917, min_pnr 16.43" in node.toolTip(COL_THRESHOLDS)
 
 
-def test_session_list_survives_a_threshold_that_is_not_a_number(qapp, series_maps, make_tab):
-    """A hand-edited config with a comma decimal ("0,8"): the list still lists every session and answers clicks,
-    the cell stays empty, and From session of the same mouse does not offer the text."""
+@pytest.mark.parametrize("key, bad", [("min_corr", "0,8"), ("gSig", float("inf"))])
+def test_session_list_survives_a_threshold_that_is_not_a_number(qapp, series_maps, make_tab, key, bad):
+    """A hand-edited config with a comma decimal ("0,8") or an infinite gSig: the list still lists every session
+    and answers clicks, the cell stays empty, and From session of the same mouse does not offer it."""
     from bearmind.gui.thresholds_tab import COL_THRESHOLDS
 
     p = series_maps.paths
-    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": "0,8", "min_pnr": 8.0}})
+    cfg = {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}
+    cfg[key] = bad
+    config.update_yaml(p.session_config(S2), {"cnmf": cfg})
     tab = make_tab(p)
     nodes = tree_nodes(tab)
     assert set(nodes) == {S1, S2, S3}
@@ -1327,6 +1333,12 @@ def _leave(qapp, tab):
 
 
 def _shown(make_tab, paths, sid):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QCursor
+
+    # Offscreen, a window shown under the pointer gives the widget there an Enter that no later move takes back:
+    # the pointer a test left on a button would keep that button "under the mouse" in the next test's window.
+    QCursor.setPos(QPoint(0, 0))
     tab = make_tab(paths)
     tab.resize(1300, 800)
     tab.show()
@@ -1460,7 +1472,19 @@ def _press_on_menu(qapp, menu, global_pos):
     _idle(qapp, 0.05)
 
 
-def test_from_session_click_on_the_button_keeps_the_open_list(qapp, series_maps, make_tab):
+def _open_by_hover(qapp, tab, button, monkeypatch):
+    """The list opens as on hover, without showMenu's modal loop."""
+    from PySide6.QtCore import QPoint
+
+    menu = button.menu()
+    monkeypatch.setattr(button, "showMenu", lambda: menu.popup(button.mapToGlobal(QPoint(0, button.height()))))
+    _leave(qapp, tab)
+    _hover(qapp, button, 0.0)
+    _wait(qapp, menu.isVisible)
+    return menu
+
+
+def test_from_session_click_on_the_button_keeps_a_list_opened_by_hover(qapp, series_maps, make_tab, monkeypatch):
     """The list opened on hover, then the person clicks the button out of habit: the list stays open (a click that
     closed it would look dead). A click elsewhere still closes it."""
     from PySide6.QtCore import QPoint
@@ -1468,33 +1492,56 @@ def test_from_session_click_on_the_button_keeps_the_open_list(qapp, series_maps,
     p = series_maps.paths
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
     tab = _shown(make_tab, p, S1)
-    button, menu = tab.from_session_button, tab.from_session_button.menu()
-    menu.popup(button.mapToGlobal(QPoint(0, button.height())))  # as showMenu opens it, without its modal loop
-    _idle(qapp, 0.05)
-    assert menu.isVisible()
+    button = tab.from_session_button
+    menu = _open_by_hover(qapp, tab, button, monkeypatch)
     _press_on_menu(qapp, menu, button.mapToGlobal(button.rect().center()))
     assert menu.isVisible()
     _press_on_menu(qapp, menu, tab.session_list.mapToGlobal(QPoint(5, 5)))
     assert not menu.isVisible()
 
 
-def test_from_session_list_over_the_button_keeps_its_own_clicks(qapp, series_maps, make_tab):
-    """On a small screen the list may open over the button: a press there is the list's (an entry), not one to
-    swallow."""
+def test_from_session_list_opened_by_a_click_closes_on_a_second_click(qapp, series_maps, make_tab):
+    from PySide6.QtCore import QPoint
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button, menu = tab.from_session_button, tab.from_session_button.menu()
+    menu.popup(button.mapToGlobal(QPoint(0, button.height())))  # as a click opens it, without the modal loop
+    _idle(qapp, 0.05)
+    assert menu.isVisible()
+    _press_on_menu(qapp, menu, button.mapToGlobal(button.rect().center()))
+    assert not menu.isVisible()
+
+
+def test_from_session_list_over_the_button_keeps_its_own_clicks(qapp, series_maps, make_tab, monkeypatch):
+    """On a small screen the list may open over the button: a press where it covers the button is the list's (an
+    entry), not one to swallow; on the uncovered part of the button it is swallowed as usual."""
     from PySide6.QtCore import QPoint, QPointF
     from PySide6.QtGui import QMouseEvent
 
     p = series_maps.paths
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
     tab = _shown(make_tab, p, S1)
-    button, menu = tab.from_session_button, tab.from_session_button.menu()
-    menu.popup(button.mapToGlobal(QPoint(0, 0)))  # over the button
-    _idle(qapp, 0.05)
-    gp = button.mapToGlobal(QPoint(4, 4))
-    assert menu.rect().contains(menu.mapFromGlobal(gp))
-    press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(menu.mapFromGlobal(gp)), QPointF(gp),
-                        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-    assert button.eventFilter(menu, press) is False
+    button = tab.from_session_button
+    menu = button.menu()
+    half = button.width() // 2
+    monkeypatch.setattr(button, "showMenu", lambda: menu.popup(button.mapToGlobal(QPoint(half, 0))))
+    _leave(qapp, tab)
+    _hover(qapp, button, 0.0)
+    _wait(qapp, menu.isVisible)
+    menu.move(button.mapToGlobal(QPoint(half, 0)))  # popup() shifts a list to fit the small offscreen screen
+    qapp.processEvents()
+    covered, uncovered = button.mapToGlobal(QPoint(button.width() - 4, 4)), button.mapToGlobal(QPoint(4, 4))
+    assert menu.rect().contains(menu.mapFromGlobal(covered))
+    assert not menu.rect().contains(menu.mapFromGlobal(uncovered))
+
+    def press(gp):
+        return QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(menu.mapFromGlobal(gp)), QPointF(gp),
+                           Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+
+    assert button.eventFilter(menu, press(covered)) is False
+    assert button.eventFilter(menu, press(uncovered)) is True
     menu.hide()
 
 
