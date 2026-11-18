@@ -228,6 +228,24 @@ def test_session_list_thresholds_are_rounded_for_the_column(qapp, series_maps, m
     assert "min_corr 0.917, min_pnr 16.43" in node.toolTip(COL_THRESHOLDS)
 
 
+def test_session_list_survives_a_threshold_that_is_not_a_number(qapp, series_maps, make_tab):
+    """A hand-edited config with a comma decimal ("0,8"): the list still lists every session and answers clicks,
+    the cell stays empty, and From session of the same mouse does not offer the text."""
+    from bearmind.gui.thresholds_tab import COL_THRESHOLDS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": "0,8", "min_pnr": 8.0}})
+    tab = make_tab(p)
+    nodes = tree_nodes(tab)
+    assert set(nodes) == {S1, S2, S3}
+    assert nodes[S2].text(COL_THRESHOLDS) == ""
+    assert not tab.session_list.signalsBlocked()
+    tab.session_list.setCurrentItem(nodes[S3])
+    assert tab.current()[0] == S3
+    tab.show_session(S1)
+    assert tab.from_session_button.menu().actions() == [] and not tab.from_session_button.isEnabled()
+
+
 def test_opens_on_first_waiting(qapp, series_maps, make_tab):
     p = series_maps.paths
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
@@ -1317,9 +1335,7 @@ def _shown(make_tab, paths, sid):
 
 
 def test_from_session_menu_opens_on_hover(qapp, series_maps, make_tab, monkeypatch):
-    """The author: resting the pointer on From session opens its list without a click."""
-    from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
-
+    """The author: resting the pointer on From session opens its list without a click, after a short rest."""
     p = series_maps.paths
     config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
     tab = _shown(make_tab, p, S1)
@@ -1327,7 +1343,9 @@ def test_from_session_menu_opens_on_hover(qapp, series_maps, make_tab, monkeypat
     opened = []
     monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
     _leave(qapp, tab)
-    _hover(qapp, button, HOVER_OPEN_MS / 1000 + 0.3)
+    _hover(qapp, button, 0.0)
+    assert opened == []  # not at once: a pointer passing by must not open it
+    _wait(qapp, lambda: opened)  # by condition: a loaded machine fires the timer late
     assert opened == [1]
     _leave(qapp, tab)
 
@@ -1351,11 +1369,16 @@ def test_from_session_hover_passing_by_opens_nothing(qapp, series_maps, make_tab
 
 
 def test_from_session_hover_on_a_disabled_button_opens_nothing(qapp, series_maps, make_tab, monkeypatch):
+    """Disabled although its list has entries (the session shows no maps): resting on it opens nothing."""
     from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
 
-    tab = _shown(make_tab, series_maps.paths, S1)  # no other session of the mouse has thresholds
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    tab._maps = None  # as when the session shows no maps
+    tab._update_buttons()
     button = tab.from_session_button
-    assert not button.isEnabled()
+    assert not button.isEnabled() and button.menu().actions()
     opened = []
     monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
     _leave(qapp, tab)
@@ -1364,10 +1387,28 @@ def test_from_session_hover_on_a_disabled_button_opens_nothing(qapp, series_maps
     _leave(qapp, tab)
 
 
-def test_from_session_menu_closed_on_the_button_does_not_reopen_at_once(qapp, series_maps, make_tab,
-                                                                         monkeypatch):
-    """A click on the button closes an open list; the pointer is still on the button, and Qt sends it an Enter
-    again: the list must not jump open at once."""
+def _enter(qapp, button):
+    """An Enter as Qt delivers it, without moving the pointer."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QEnterEvent
+
+    button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, True)
+    c = QPointF(button.rect().center())
+    qapp.sendEvent(button, QEnterEvent(c, c, QPointF(button.mapToGlobal(button.rect().center()))))
+
+
+def _list_closed_with_pointer_at(qapp, button, global_pos):
+    from PySide6.QtGui import QCursor
+
+    QCursor.setPos(global_pos)
+    qapp.processEvents()
+    button.menu().aboutToHide.emit()
+
+
+def test_from_session_list_closed_on_the_button_reopens_only_after_the_pointer_left(qapp, series_maps, make_tab,
+                                                                                  monkeypatch):
+    """Escape or a click closes the list while the pointer is on the button: it must not jump open again (at once
+    or after a small move); leaving the button and coming back opens it."""
     from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
 
     p = series_maps.paths
@@ -1376,11 +1417,85 @@ def test_from_session_menu_closed_on_the_button_does_not_reopen_at_once(qapp, se
     button = tab.from_session_button
     opened = []
     monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
-    _leave(qapp, tab)
-    button.menu().aboutToHide.emit()  # the list just closed
-    _hover(qapp, button, HOVER_OPEN_MS / 1000 + 0.1)
+    _leave(qapp, tab)  # Qt sends the button a Leave while its list is open
+    _list_closed_with_pointer_at(qapp, button, button.mapToGlobal(button.rect().center()))
+    _idle(qapp, 0.6)  # longer than any guard by time
+    _enter(qapp, button)  # the Enter that a small move on the button brings
+    _idle(qapp, HOVER_OPEN_MS / 1000 + 0.3)
     assert opened == []
     _leave(qapp, tab)
+    _hover(qapp, button, 0.0)
+    _wait(qapp, lambda: opened)
+    assert opened == [1]
+    _leave(qapp, tab)
+
+
+def test_from_session_list_closed_elsewhere_opens_on_the_next_hover(qapp, series_maps, make_tab, monkeypatch):
+    """An entry chosen or a click elsewhere closes the list away from the button: the next rest on it opens it."""
+    from PySide6.QtCore import QPoint
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button = tab.from_session_button
+    opened = []
+    monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
+    _leave(qapp, tab)
+    _list_closed_with_pointer_at(qapp, button, tab.session_list.mapToGlobal(QPoint(5, 5)))
+    _hover(qapp, button, 0.0)
+    _wait(qapp, lambda: opened)
+    assert opened == [1]
+    _leave(qapp, tab)
+
+
+def _press_on_menu(qapp, menu, global_pos):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    for kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+        qapp.sendEvent(menu, QMouseEvent(kind, QPointF(menu.mapFromGlobal(global_pos)), QPointF(global_pos),
+                                         Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton
+                                         if kind == QEvent.Type.MouseButtonPress else Qt.MouseButton.NoButton,
+                                         Qt.KeyboardModifier.NoModifier))
+    _idle(qapp, 0.05)
+
+
+def test_from_session_click_on_the_button_keeps_the_open_list(qapp, series_maps, make_tab):
+    """The list opened on hover, then the person clicks the button out of habit: the list stays open (a click that
+    closed it would look dead). A click elsewhere still closes it."""
+    from PySide6.QtCore import QPoint
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button, menu = tab.from_session_button, tab.from_session_button.menu()
+    menu.popup(button.mapToGlobal(QPoint(0, button.height())))  # as showMenu opens it, without its modal loop
+    _idle(qapp, 0.05)
+    assert menu.isVisible()
+    _press_on_menu(qapp, menu, button.mapToGlobal(button.rect().center()))
+    assert menu.isVisible()
+    _press_on_menu(qapp, menu, tab.session_list.mapToGlobal(QPoint(5, 5)))
+    assert not menu.isVisible()
+
+
+def test_from_session_list_over_the_button_keeps_its_own_clicks(qapp, series_maps, make_tab):
+    """On a small screen the list may open over the button: a press there is the list's (an entry), not one to
+    swallow."""
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button, menu = tab.from_session_button, tab.from_session_button.menu()
+    menu.popup(button.mapToGlobal(QPoint(0, 0)))  # over the button
+    _idle(qapp, 0.05)
+    gp = button.mapToGlobal(QPoint(4, 4))
+    assert menu.rect().contains(menu.mapFromGlobal(gp))
+    press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(menu.mapFromGlobal(gp)), QPointF(gp),
+                        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    assert button.eventFilter(menu, press) is False
+    menu.hide()
 
 
 def _fill_rgb(qapp, tab, button):

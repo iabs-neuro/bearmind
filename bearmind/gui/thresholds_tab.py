@@ -12,8 +12,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QLocale, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QImage, QPixmap
+from PySide6.QtCore import QEvent, QLocale, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QDoubleSpinBox, QGridLayout, QHBoxLayout,
                                QHeaderView, QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
                                QSplitter, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -54,7 +54,6 @@ PNR_STEPS = 10  # min_pnr moves in steps of 0.1
 PNR_ARROW_STEP = 1.0
 COL_SESSION, COL_THRESHOLDS, COL_STATE = 0, 1, 2  # the session list's columns: the state text is the long one
 HOVER_OPEN_MS = 250  # From session opens its list when the pointer rests this long on it
-HOVER_REOPEN_GUARD_S = 0.5  # a list closed by a click on the button: the Enter that follows does not reopen it
 MAX_UPSCALE = 4.0  # a small map is enlarged at most this much: more only blurs it
 THUMB_PX = 96
 VIDEO_MIN_W = 320  # px: below this the movie is too small to judge the cells by
@@ -139,6 +138,18 @@ def _values_text(c: float, p: float) -> str:
     return f"min_corr {tm.value_text(c, tm.CORR_DECIMALS)}, min_pnr {tm.value_text(p, tm.PNR_DECIMALS)}"
 
 
+def _numbers(v: dict | None) -> tuple[int, float, float] | None:
+    """(gSig, min_corr, min_pnr) of a choice or a suggestion; None when one is missing or not a number (a
+    hand-edited config may hold "0,8": the session is a config error, its text is shown nowhere as thresholds)."""
+    if not v:
+        return None
+    try:
+        g, c, p = int(v["gSig"]), float(v["min_corr"]), float(v["min_pnr"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (g, c, p) if np.isfinite(c) and np.isfinite(p) else None
+
+
 def _gate_on(cfg: dict) -> bool:
     """The rule of runner.stage_params for the gate: enabled unless the config says otherwise."""
     return bool((cfg.get("gate") or {}).get("enabled", True))
@@ -153,11 +164,16 @@ def _window_text(error: str) -> str:
 
 class _HoverMenuButton(QToolButton):
     """A tool button whose menu opens when the pointer rests on it for HOVER_OPEN_MS (a click opens it too). A
-    pointer that only crosses the button opens nothing."""
+    pointer that only crosses the button opens nothing.
+
+    Closed with the pointer on the button (Escape, a click), the list opens again only after the pointer left
+    the button: Qt sends the button a Leave while the list is open, so a small move afterwards brings an Enter.
+    A click on the button while the list is open keeps it open: one that closed it would look dead to a person
+    who clicks out of habit after the list opened by itself."""
 
     def __init__(self):
         super().__init__()
-        self._closed_at = float("-inf")
+        self._armed = True  # an Enter may open the list
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.setInterval(HOVER_OPEN_MS)
@@ -166,19 +182,34 @@ class _HoverMenuButton(QToolButton):
     def setMenu(self, menu: QMenu) -> None:
         super().setMenu(menu)
         menu.aboutToHide.connect(self._menu_closed)
+        menu.installEventFilter(self)
+
+    def _pointer_on_button(self, global_pos) -> bool:
+        return self.rect().contains(self.mapFromGlobal(global_pos))
+
+    def eventFilter(self, obj, event) -> bool:
+        # the open list takes every press (a popup grabs the mouse); one on the button is swallowed, not a close.
+        # A list that covers the button (a small screen) keeps its own clicks.
+        if obj is self.menu() and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                                                   QEvent.Type.MouseButtonDblClick):
+            gp = event.globalPosition().toPoint()
+            if self._pointer_on_button(gp) and not obj.rect().contains(obj.mapFromGlobal(gp)):
+                return True
+        return super().eventFilter(obj, event)
 
     def _menu_closed(self) -> None:
-        self._closed_at = time.monotonic()
         self._hover_timer.stop()
+        self._armed = not self._pointer_on_button(QCursor.pos())
 
     def enterEvent(self, event) -> None:
         super().enterEvent(event)
-        if time.monotonic() - self._closed_at >= HOVER_REOPEN_GUARD_S:
+        if self._armed:
             self._hover_timer.start()
 
     def leaveEvent(self, event) -> None:
         super().leaveEvent(event)
         self._hover_timer.stop()
+        self._armed = True
 
     def _open(self) -> None:
         menu = self.menu()
@@ -599,6 +630,16 @@ class ThresholdsTab(QWidget):
         tree = self.session_list
         scroll = tree.verticalScrollBar().value()
         tree.blockSignals(True)
+        try:
+            self._fill_rows(tree)
+        except Exception:
+            self._items = []  # the next refresh builds the list again instead of keeping a part of it
+            raise
+        finally:  # a row that failed must not leave the list deaf to clicks
+            tree.blockSignals(False)
+        tree.verticalScrollBar().setValue(scroll)
+
+    def _fill_rows(self, tree: QTreeWidget) -> None:
         tree.clear()
         self._tree_items = {}
         mice: dict[str, QTreeWidgetItem] = {}
@@ -631,8 +672,6 @@ class ThresholdsTab(QWidget):
         tree.expandAll()
         if self._sid in self._tree_items:
             tree.setCurrentItem(self._tree_items[self._sid])
-        tree.blockSignals(False)
-        tree.verticalScrollBar().setValue(scroll)
 
     @staticmethod
     def _fill_thresholds(node: QTreeWidgetItem, it: tm.ThresholdItem, greyed: bool) -> None:
@@ -641,11 +680,12 @@ class ThresholdsTab(QWidget):
         v, suggestion = it.chosen, False
         if v is None and it.suggested:
             v, suggestion = it.suggested, True
-        if v is None or any(v.get(k) is None for k in ("gSig", "min_corr", "min_pnr")):
+        nums = _numbers(v)
+        if nums is None:
             return
-        c, p = float(v["min_corr"]), float(v["min_pnr"])
+        g, c, p = nums
         node.setText(COL_THRESHOLDS, f"{c:.{tm.CORR_DECIMALS}f} / {p:.{tm.PNR_DECIMALS}f}")
-        values = f"gSig {int(v['gSig'])}, {_values_text(c, p)}"
+        values = f"gSig {g}, {_values_text(c, p)}"
         if suggestion:
             node.setToolTip(COL_THRESHOLDS, f"Batch suggestion ({v.get('method', '?')}), not chosen yet: {values}")
             f = node.font(COL_THRESHOLDS)
@@ -977,10 +1017,11 @@ class ThresholdsTab(QWidget):
 
     def _update_from_session(self, item) -> None:
         menu = self.from_session_button.menu()
-        choices = tm.mouse_choices(self._items, item.sid) if item is not None else []
-        texts = [(other, f"{other}: gSig {int(v['gSig'])}, "
-                         f"min_corr {tm.value_text(v['min_corr'], tm.CORR_DECIMALS)}, "
-                         f"min_pnr {tm.value_text(v['min_pnr'], tm.PNR_DECIMALS)}") for other, v in choices]
+        choices = [(other, _numbers(v)) for other, v in
+                   (tm.mouse_choices(self._items, item.sid) if item is not None else [])]
+        choices = [(other, nums) for other, nums in choices if nums is not None]  # text in a config: not offered
+        texts = [(other, f"{other}: gSig {g}, min_corr {tm.value_text(c, tm.CORR_DECIMALS)}, "
+                         f"min_pnr {tm.value_text(p, tm.PNR_DECIMALS)}") for other, (g, c, p) in choices]
         # The timer calls this every tick; rebuilding an open menu loses the hover and drops a click, so the
         # actions are replaced only when the list changed.
         if texts != self._from_session_texts:
@@ -1002,12 +1043,13 @@ class ThresholdsTab(QWidget):
         """Set the controls to the thresholds chosen on another session of the mouse; nothing is written."""
         item = self._by_sid.get(self._sid)
         other = self._by_sid.get(other_sid)
-        if item is None or other is None or self._maps is None or other.chosen is None:
+        nums = _numbers(other.chosen) if other is not None else None
+        if item is None or self._maps is None or nums is None:
             return
-        v = other.chosen
-        g, note = tm.fit_gsig(self._maps, int(v["gSig"]))
-        self._apply(g, float(v["min_corr"]), float(v["min_pnr"]))
-        self._source, self._note, self._source_values = f"session:{other_sid}", note, v
+        g, note = tm.fit_gsig(self._maps, nums[0])
+        self._apply(g, nums[1], nums[2])
+        self._source, self._note = f"session:{other_sid}", note
+        self._source_values = {"gSig": nums[0], "min_corr": nums[1], "min_pnr": nums[2]}
         self._show_source()
 
     def _reset(self) -> None:
