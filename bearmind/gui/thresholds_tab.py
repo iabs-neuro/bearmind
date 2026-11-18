@@ -50,6 +50,11 @@ ALL_HAVE = "All sessions have thresholds."
 NO_SESSIONS = "No sessions in this series yet. Scan the series in the Scan tab."
 CORR_STEPS = 100  # slider units per 1.0: min_corr moves in steps of 0.01
 PNR_STEPS = 10  # min_pnr moves in steps of 0.1
+# the author: the min_pnr arrows move a whole unit (0.1 a click was too slow); the slider and typing keep 0.1
+PNR_ARROW_STEP = 1.0
+COL_SESSION, COL_THRESHOLDS, COL_STATE = 0, 1, 2  # the session list's columns: the state text is the long one
+HOVER_OPEN_MS = 250  # From session opens its list when the pointer rests this long on it
+HOVER_REOPEN_GUARD_S = 0.5  # a list closed by a click on the button: the Enter that follows does not reopen it
 MAX_UPSCALE = 4.0  # a small map is enlarged at most this much: more only blurs it
 THUMB_PX = 96
 VIDEO_MIN_W = 320  # px: below this the movie is too small to judge the cells by
@@ -57,11 +62,31 @@ RECORD_RETRY_S = 0.1  # a second read of a busy registry file, after fileio's ow
 RED = (255, 0, 0)
 STATE_BG = {"waiting": CELL_BG["waiting"], "chosen": CELL_BG["ok"], "cnmf_done": CELL_BG["ok"],
             "config_error": CELL_BG["error"]}
+# Under the pointer every button of the panel changes its fill clearly (the system style only tints it faintly);
+# :enabled keeps a disabled button as it is. A style sheet replaces the system look, so each style sets it whole.
+ACCEPT_STYLE = (ACCENT_BUTTON + "QPushButton:enabled:hover { background: #1d3f9e; border-color: #1d3f9e; }"
+                "QPushButton:enabled:pressed { background: #163078; border-color: #163078; }")
 WARN_BUTTON = ("QPushButton { background: #fff3b0; color: #6d5300; border: 1px solid #e0c35c; border-radius: 6px; "
                "padding: 4px 10px; }"
+               "QPushButton:enabled:hover { background: #f5d75e; border-color: #c9a227; }"
+               "QPushButton:enabled:pressed { background: #e8c53c; }"
                "QPushButton:disabled { background: #f6f0d6; border-color: #eee3b8; color: #b8ab7d; }")
+PLAIN_BUTTON = ("QPushButton, QToolButton { background: #f3f4f6; color: #1d2330; border: 1px solid #b9c0cc; "
+                "border-radius: 6px; padding: 4px 10px; }"
+                "QPushButton:enabled:hover, QToolButton:enabled:hover { background: #cfdcf9; "
+                f"border-color: {ACCENT}; }}"
+                "QPushButton:enabled:pressed, QToolButton:enabled:pressed { background: #b3c7f2; }"
+                "QPushButton:disabled, QToolButton:disabled { background: #f3f4f6; color: #a3a9b4; "
+                "border-color: #dadee5; }")
+# room for the menu arrow, which the style sheet would otherwise put on the bottom border
+MENU_BUTTON = PLAIN_BUTTON + ("QToolButton { padding-right: 20px; }"
+                              "QToolButton::menu-indicator { subcontrol-origin: padding; "
+                              "subcontrol-position: center right; right: 6px; }")
+# hover before checked: the chosen gSig keeps its accent border under the pointer
 THUMB_STYLE = (f"QToolButton {{ border: 2px solid transparent; border-radius: 6px; padding: 2px; }}"
+               f"QToolButton:enabled:hover {{ border-color: #9fb3e6; background: #eef2fb; }}"
                f"QToolButton:checked {{ border-color: {ACCENT}; background: #dde5f8; }}")
+SUGGESTION_INK = "#7b8494"  # a batch suggestion in the list: grey italics, not a choice
 ACCEPT_TIP = "Write these thresholds to the session and show the next session that waits"
 ACCEPT_MOUSE_TIP = ("Write these thresholds to every session of this mouse that has no thresholds yet and is not "
                     "excluded")
@@ -124,6 +149,41 @@ def _window_text(error: str) -> str:
     for flag, name in (("--gsig", "gSig"), ("--min-corr", "min_corr"), ("--min-pnr", "min_pnr")):
         error = error.replace(flag, name)
     return error
+
+
+class _HoverMenuButton(QToolButton):
+    """A tool button whose menu opens when the pointer rests on it for HOVER_OPEN_MS (a click opens it too). A
+    pointer that only crosses the button opens nothing."""
+
+    def __init__(self):
+        super().__init__()
+        self._closed_at = float("-inf")
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(HOVER_OPEN_MS)
+        self._hover_timer.timeout.connect(self._open)
+
+    def setMenu(self, menu: QMenu) -> None:
+        super().setMenu(menu)
+        menu.aboutToHide.connect(self._menu_closed)
+
+    def _menu_closed(self) -> None:
+        self._closed_at = time.monotonic()
+        self._hover_timer.stop()
+
+    def enterEvent(self, event) -> None:
+        super().enterEvent(event)
+        if time.monotonic() - self._closed_at >= HOVER_REOPEN_GUARD_S:
+            self._hover_timer.start()
+
+    def leaveEvent(self, event) -> None:
+        super().leaveEvent(event)
+        self._hover_timer.stop()
+
+    def _open(self) -> None:
+        menu = self.menu()
+        if self.isEnabled() and self.underMouse() and menu is not None and menu.actions() and not menu.isVisible():
+            self.showMenu()
 
 
 class _FitLabel(QLabel):
@@ -232,7 +292,7 @@ class ThresholdsTab(QWidget):
         split.addWidget(self._build_work())
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
-        split.setSizes([230, 870])
+        split.setSizes([320, 980])  # in proportion: the list's three columns without a horizontal scroll bar
         lay.addWidget(split)
         self._show_no_maps()
 
@@ -242,12 +302,16 @@ class ThresholdsTab(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(_section("Sessions"))
         self.session_list = QTreeWidget()
-        self.session_list.setColumnCount(2)
-        self.session_list.setHeaderLabels(["Session", "State"])
+        heads = {COL_SESSION: "Session", COL_THRESHOLDS: "Thresholds", COL_STATE: "State"}
+        self.session_list.setColumnCount(len(heads))
+        self.session_list.setHeaderLabels([heads[c] for c in sorted(heads)])
+        self.session_list.headerItem().setToolTip(COL_THRESHOLDS, "min_corr / min_pnr; grey italics: the batch's "
+                                                                  "suggestion, not chosen yet")
         self.session_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.session_list.setUniformRowHeights(True)
         head = self.session_list.header()
-        head.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for c in (COL_SESSION, COL_THRESHOLDS):
+            head.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         head.setStretchLastSection(True)
         self.session_list.currentItemChanged.connect(lambda cur, _prev: self._guarded(self._on_tree, cur))
         lay.addWidget(self.session_list, 1)
@@ -281,7 +345,7 @@ class ThresholdsTab(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         self.corr_view, self.pnr_view = _FitLabel(), _FitLabel()
         self.min_corr_slider, self.min_corr_spin = self._slider(CORR_STEPS, 2, 1.0)
-        self.min_pnr_slider, self.min_pnr_spin = self._slider(PNR_STEPS, 1, 30.0)
+        self.min_pnr_slider, self.min_pnr_spin = self._slider(PNR_STEPS, 1, 30.0, arrow_step=PNR_ARROW_STEP)
         for col, (title, view, name, slider, spin) in enumerate((
                 ("Correlation", self.corr_view, "min_corr", self.min_corr_slider, self.min_corr_spin),
                 ("PNR", self.pnr_view, "min_pnr", self.min_pnr_slider, self.min_pnr_spin))):
@@ -341,7 +405,7 @@ class ThresholdsTab(QWidget):
         self.prev_button = QPushButton("← Previous")
         self.next_button = QPushButton("Next →")
         self.reset_button = QPushButton("Reset to suggestion")
-        self.from_session_button = QToolButton()
+        self.from_session_button = _HoverMenuButton()
         self.from_session_button.setText("From session")
         self.from_session_button.setPopupMode(QToolButton.InstantPopup)
         self.from_session_button.setMenu(QMenu(self.from_session_button))
@@ -353,9 +417,12 @@ class ThresholdsTab(QWidget):
             b.clicked.connect(lambda _=False, m=m: self._guarded(self.apply_method, m))
             self.method_buttons[m] = b
         self.accept_button = QPushButton("Accept → next")
-        self.accept_button.setStyleSheet(ACCENT_BUTTON)
+        self.accept_button.setStyleSheet(ACCEPT_STYLE)
         self.accept_mouse_button = QPushButton("Accept for all sessions of this mouse")
         self.accept_mouse_button.setStyleSheet(WARN_BUTTON)
+        for b in (self.prev_button, self.next_button, self.reset_button, *self.method_buttons.values()):
+            b.setStyleSheet(PLAIN_BUTTON)
+        self.from_session_button.setStyleSheet(MENU_BUTTON)
         self.prev_button.clicked.connect(lambda: self._guarded(self._step, -1))
         self.next_button.clicked.connect(lambda: self._guarded(self._step, 1))
         self.reset_button.clicked.connect(lambda: self._guarded(self._reset))
@@ -377,12 +444,13 @@ class ThresholdsTab(QWidget):
         return box
 
     @staticmethod
-    def _slider(steps: int, decimals: int, top: float) -> tuple[QSlider, QDoubleSpinBox]:
+    def _slider(steps: int, decimals: int, top: float, arrow_step: float | None = None) -> tuple[QSlider, QDoubleSpinBox]:
+        """`arrow_step`: what one click of the spin box arrows adds (default: one slider step)."""
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(0, round(top * steps))
         slider.setPageStep(5 if steps == CORR_STEPS else 10)
         spin = _NumberBox(decimals)
-        spin.setSingleStep(1 / steps)
+        spin.setSingleStep(arrow_step if arrow_step is not None else 1 / steps)
         spin.setRange(0.0, top)
         spin.setKeyboardTracking(False)  # typing "0.85" must not jump the slider to 0, then 0.8
         return slider, spin
@@ -544,16 +612,20 @@ class ThresholdsTab(QWidget):
                 parent.setFont(0, f)
             day = it.sid[len(it.mouse) + 1:] if it.sid.startswith(it.mouse + "_") else it.sid
             state = tm.state_text(it)
-            node = QTreeWidgetItem(parent, [day, state])
-            node.setData(0, Qt.ItemDataRole.UserRole, it.sid)
-            node.setToolTip(0, it.sid)
-            node.setToolTip(1, state)
+            node = QTreeWidgetItem(parent)
+            node.setText(COL_SESSION, day)
+            node.setText(COL_STATE, state)
+            node.setData(COL_SESSION, Qt.ItemDataRole.UserRole, it.sid)
+            node.setToolTip(COL_SESSION, it.sid)
+            node.setToolTip(COL_STATE, state)
+            greyed = it.state in ("excluded", "no_maps", "out_of_date")
+            self._fill_thresholds(node, it, greyed)
             bg = STATE_BG.get(it.state)
             if bg:
-                node.setBackground(1, QBrush(QColor(bg)))
-                node.setForeground(1, QBrush(QColor(CELL_INK)))
-            elif it.state in ("excluded", "no_maps", "out_of_date"):
-                for c in (0, 1):
+                node.setBackground(COL_STATE, QBrush(QColor(bg)))
+                node.setForeground(COL_STATE, QBrush(QColor(CELL_INK)))
+            elif greyed:
+                for c in (COL_SESSION, COL_STATE):
                     node.setForeground(c, QBrush(QColor(EXCLUDED_INK)))
             self._tree_items[it.sid] = node
         tree.expandAll()
@@ -562,8 +634,31 @@ class ThresholdsTab(QWidget):
         tree.blockSignals(False)
         tree.verticalScrollBar().setValue(scroll)
 
+    @staticmethod
+    def _fill_thresholds(node: QTreeWidgetItem, it: tm.ThresholdItem, greyed: bool) -> None:
+        """The thresholds column: the choice, else the batch's suggestion in grey italics. Rounded to the slider
+        steps to keep the column narrow; the tooltip has the exact values."""
+        v, suggestion = it.chosen, False
+        if v is None and it.suggested:
+            v, suggestion = it.suggested, True
+        if v is None or any(v.get(k) is None for k in ("gSig", "min_corr", "min_pnr")):
+            return
+        c, p = float(v["min_corr"]), float(v["min_pnr"])
+        node.setText(COL_THRESHOLDS, f"{c:.{tm.CORR_DECIMALS}f} / {p:.{tm.PNR_DECIMALS}f}")
+        values = f"gSig {int(v['gSig'])}, {_values_text(c, p)}"
+        if suggestion:
+            node.setToolTip(COL_THRESHOLDS, f"Batch suggestion ({v.get('method', '?')}), not chosen yet: {values}")
+            f = node.font(COL_THRESHOLDS)
+            f.setItalic(True)
+            node.setFont(COL_THRESHOLDS, f)
+            node.setForeground(COL_THRESHOLDS, QBrush(QColor(SUGGESTION_INK)))
+        else:
+            node.setToolTip(COL_THRESHOLDS, values)
+            if greyed:
+                node.setForeground(COL_THRESHOLDS, QBrush(QColor(EXCLUDED_INK)))
+
     def _on_tree(self, node) -> None:
-        sid = node.data(0, Qt.ItemDataRole.UserRole) if node is not None else None
+        sid = node.data(COL_SESSION, Qt.ItemDataRole.UserRole) if node is not None else None
         if sid and sid != self._sid:
             self.show_session(sid)
 

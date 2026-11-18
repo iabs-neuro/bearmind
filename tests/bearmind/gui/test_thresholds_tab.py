@@ -130,17 +130,23 @@ def _wait(qapp, cond, timeout=10.0):
         time.sleep(0.005)
 
 
-def tree_rows(tab):
-    """sid -> state text, and the mouse rows in order."""
-    rows, mice = {}, []
-    tree = tab.session_list
+def tree_nodes(tab):
+    """sid -> the session's row of the list."""
+    tree, out = tab.session_list, {}
     for i in range(tree.topLevelItemCount()):
         m = tree.topLevelItem(i)
-        mice.append(m.text(0))
         for j in range(m.childCount()):
-            c = m.child(j)
-            rows[c.data(0, Qt.ItemDataRole.UserRole)] = c.text(1)
-    return rows, mice
+            out[m.child(j).data(0, Qt.ItemDataRole.UserRole)] = m.child(j)
+    return out
+
+
+def tree_rows(tab):
+    """sid -> state text, and the mouse rows in order."""
+    from bearmind.gui.thresholds_tab import COL_STATE
+
+    tree = tab.session_list
+    mice = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
+    return {sid: node.text(COL_STATE) for sid, node in tree_nodes(tab).items()}, mice
 
 
 def red_pixels(img):
@@ -186,6 +192,42 @@ def test_session_list_states(qapp, series_maps, make_tab):
     assert tree_rows(tab)[0] == {S1: "excluded", S2: "CNMF-E done", S3: "no maps: next"}
 
 
+def test_session_list_shows_both_thresholds(qapp, series_maps, make_tab):
+    """A column between the session and its state: the chosen min_corr / min_pnr; without a choice the batch's
+    suggestion, in grey italics so it is not taken for a choice; nothing without either."""
+    from bearmind.gui.thresholds_tab import COL_STATE, COL_THRESHOLDS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = make_tab(p)
+    tree = tab.session_list
+    heads = [tree.headerItem().text(c) for c in range(tree.columnCount())]
+    assert heads[COL_THRESHOLDS] == "Thresholds" and heads[COL_STATE] == "State" and COL_THRESHOLDS < COL_STATE
+    nodes = tree_nodes(tab)
+    chosen, suggested, none = nodes[S2], nodes[S1], nodes[S3]
+    assert chosen.text(COL_THRESHOLDS) == "0.90 / 12.5"
+    assert not chosen.font(COL_THRESHOLDS).italic()
+    assert "gSig 5" in chosen.toolTip(COL_THRESHOLDS) and "min_pnr 12.5" in chosen.toolTip(COL_THRESHOLDS)
+    assert suggested.text(COL_THRESHOLDS) == "0.85 / 8.0"
+    assert suggested.font(COL_THRESHOLDS).italic()
+    assert suggested.toolTip(COL_THRESHOLDS).startswith("Batch suggestion (robust_bg), not chosen")
+    assert suggested.foreground(COL_THRESHOLDS).color() != chosen.foreground(COL_THRESHOLDS).color()
+    assert none.text(COL_THRESHOLDS) == "" and none.toolTip(COL_THRESHOLDS) == ""
+
+
+def test_session_list_thresholds_are_rounded_for_the_column(qapp, series_maps, make_tab):
+    """An untouched suggestion is written exactly (0.917, 16.43): the column rounds it to the slider steps, its
+    tooltip keeps the exact value."""
+    from bearmind.gui.thresholds_tab import COL_THRESHOLDS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 4, "min_corr": 0.917, "min_pnr": 16.43}})
+    tab = make_tab(p)
+    node = tree_nodes(tab)[S2]
+    assert node.text(COL_THRESHOLDS) == "0.92 / 16.4"
+    assert "min_corr 0.917, min_pnr 16.43" in node.toolTip(COL_THRESHOLDS)
+
+
 def test_opens_on_first_waiting(qapp, series_maps, make_tab):
     p = series_maps.paths
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
@@ -227,6 +269,23 @@ def test_video_open_only_while_visible(qapp, series_maps, make_tab):
 
 
 # --- parts 3-6: strip, maps, sliders, counters, start values ---
+
+def test_pnr_spin_arrows_step_by_one(qapp, series_maps, make_tab):
+    """The author: the min_pnr arrows move a whole unit; the slider and a typed value keep 0.1, min_corr keeps
+    its 0.01 arrows."""
+    tab = make_tab(series_maps.paths)
+    assert tab.current()[3] == 8.0
+    tab.min_pnr_spin.stepBy(1)
+    assert tab.current()[3] == 9.0 and tab.min_pnr_slider.value() == 90
+    tab.min_pnr_spin.stepBy(-3)
+    assert tab.current()[3] == 6.0
+    tab.min_pnr_spin.setValue(6.3)  # typed
+    assert tab.current()[3] == 6.3
+    tab.min_pnr_slider.setValue(64)
+    assert tab.current()[3] == 6.4
+    tab.min_corr_spin.stepBy(1)
+    assert tab.current()[2] == 0.86
+
 
 def test_initial_sliders_from_suggestion(qapp, series_maps, make_tab):
     tab = make_tab(series_maps.paths)
@@ -698,8 +757,8 @@ def test_thresholds_tab_texts_are_english(qapp, series_maps, make_tab):
     texts += [tree.headerItem().text(c) for c in range(tree.columnCount())]
     for i in range(tree.topLevelItemCount()):
         m = tree.topLevelItem(i)
-        texts += [m.text(0)] + [m.child(j).text(c) for j in range(m.childCount()) for c in range(2)]
-        texts += [m.child(j).toolTip(0) for j in range(m.childCount())]
+        texts += [m.text(0)] + [m.child(j).text(c) for j in range(m.childCount()) for c in range(tree.columnCount())]
+        texts += [m.child(j).toolTip(c) for j in range(m.childCount()) for c in range(tree.columnCount())]
     tab.accept_for_mouse()
     tab.show_session(S2)
     tab.set_thresholds(0.9, 9.0)
@@ -1220,6 +1279,148 @@ def test_from_session_menu_is_not_rebuilt_while_nothing_changed(qapp, series_map
     tab._update_buttons()
     tab._update_buttons()
     assert tab.from_session_button.menu().actions() == first
+
+
+def _idle(qapp, wait_s):
+    t0 = time.monotonic()
+    while True:
+        qapp.processEvents()
+        if time.monotonic() - t0 >= wait_s:
+            return
+        time.sleep(0.01)
+
+
+def _hover(qapp, button, wait_s):
+    """The pointer moves onto the shown button (Qt sends Enter and marks it under the mouse, as on a screen) and
+    rests there for wait_s."""
+    from PySide6.QtTest import QTest
+
+    QTest.mouseMove(button, button.rect().center())
+    _idle(qapp, wait_s)
+
+
+def _leave(qapp, tab):
+    """The pointer moves away, onto the session list."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    QTest.mouseMove(tab.session_list, QPoint(5, 5))
+    qapp.processEvents()
+
+
+def _shown(make_tab, paths, sid):
+    tab = make_tab(paths)
+    tab.resize(1300, 800)
+    tab.show()
+    tab.show_session(sid)
+    return tab
+
+
+def test_from_session_menu_opens_on_hover(qapp, series_maps, make_tab, monkeypatch):
+    """The author: resting the pointer on From session opens its list without a click."""
+    from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button = tab.from_session_button
+    opened = []
+    monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
+    _leave(qapp, tab)
+    _hover(qapp, button, HOVER_OPEN_MS / 1000 + 0.3)
+    assert opened == [1]
+    _leave(qapp, tab)
+
+
+def test_from_session_hover_passing_by_opens_nothing(qapp, series_maps, make_tab, monkeypatch):
+    """A pointer that crosses the button on its way elsewhere does not open the list."""
+    from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button = tab.from_session_button
+    opened = []
+    monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
+    _leave(qapp, tab)
+    for _ in range(2):
+        _hover(qapp, button, 0.0)
+        _leave(qapp, tab)
+    _idle(qapp, HOVER_OPEN_MS / 1000 + 0.3)
+    assert opened == []
+
+
+def test_from_session_hover_on_a_disabled_button_opens_nothing(qapp, series_maps, make_tab, monkeypatch):
+    from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
+
+    tab = _shown(make_tab, series_maps.paths, S1)  # no other session of the mouse has thresholds
+    button = tab.from_session_button
+    assert not button.isEnabled()
+    opened = []
+    monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
+    _leave(qapp, tab)
+    _hover(qapp, button, HOVER_OPEN_MS / 1000 + 0.3)
+    assert opened == []
+    _leave(qapp, tab)
+
+
+def test_from_session_menu_closed_on_the_button_does_not_reopen_at_once(qapp, series_maps, make_tab,
+                                                                         monkeypatch):
+    """A click on the button closes an open list; the pointer is still on the button, and Qt sends it an Enter
+    again: the list must not jump open at once."""
+    from bearmind.gui.thresholds_tab import HOVER_OPEN_MS
+
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    button = tab.from_session_button
+    opened = []
+    monkeypatch.setattr(button, "showMenu", lambda: opened.append(1))
+    _leave(qapp, tab)
+    button.menu().aboutToHide.emit()  # the list just closed
+    _hover(qapp, button, HOVER_OPEN_MS / 1000 + 0.1)
+    assert opened == []
+    _leave(qapp, tab)
+
+
+def _fill_rgb(qapp, tab, button):
+    """(away, under the pointer): the button's fill as drawn, a pixel inside the border, left of the text."""
+    def px():
+        img = button.grab().toImage()
+        return img.pixelColor(4, img.height() // 2).getRgb()[:3]
+
+    _leave(qapp, tab)
+    away = px()
+    _hover(qapp, button, 0.0)
+    under = px()
+    _leave(qapp, tab)
+    return away, under
+
+
+def test_panel_buttons_change_their_fill_under_the_pointer(qapp, series_maps, make_tab, monkeypatch):
+    """The author: Accept and Accept for all change their background under the pointer, and the other buttons of
+    the panel show it more than the system style's faint tint. Drawn as on a screen: a rule that never draws
+    fails."""
+    p = series_maps.paths
+    config.update_yaml(p.session_config(S2), {"cnmf": {"gSig": 5, "min_corr": 0.9, "min_pnr": 12.5}})
+    tab = _shown(make_tab, p, S1)
+    monkeypatch.setattr(tab.from_session_button, "showMenu", lambda: None)  # a modal list would stop the test
+    _wait(qapp, lambda: _settled(tab))
+    buttons = {"accept": tab.accept_button, "accept for mouse": tab.accept_mouse_button,
+               "next": tab.next_button, "reset": tab.reset_button, "from session": tab.from_session_button}
+    buttons.update({m: b for m, b in tab.method_buttons.items() if b.isEnabled()})
+    assert len(buttons) >= 6 and all(b.isEnabled() for b in buttons.values())
+    for name, b in buttons.items():
+        away, under = _fill_rgb(qapp, tab, b)
+        assert sum(abs(x - y) for x, y in zip(away, under)) >= 40, (name, away, under)
+
+
+def test_disabled_buttons_do_not_change_under_the_pointer(qapp, series_maps, make_tab):
+    tab = _shown(make_tab, series_maps.paths, S1)  # the first session; no other session has thresholds
+    for b in (tab.prev_button, tab.from_session_button):
+        assert not b.isEnabled()
+        away, under = _fill_rgb(qapp, tab, b)
+        assert away == under
 
 
 def test_from_session_menu_action_applies_without_writing(qapp, series_maps, make_tab):
