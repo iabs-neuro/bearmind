@@ -143,7 +143,7 @@ def test_columns_and_excluded_text(qapp, make_series, tmp_path):
     assert tab.model.item(good, 10).text() == ""
     select(tab, "NOF_H01_1D")
     tab.exclude_button.click()
-    assert tab.model.item(good, 10).text() == "by you"
+    assert tab.model.item(good, 10).text() == "by the expert"
     assert tab.model.item(good, 0).foreground().color().name() == EXCLUDED_INK
     assert tab.model.item(good, 4).foreground().color().name() == EXCLUDED_INK
 
@@ -228,7 +228,7 @@ def test_confirm_stitch_marks_reviewed(qapp, make_series, tmp_path):
     assert tab.stitch_button.isEnabled()
     assert "with problems 1" in tab.summary_label.text()
     tab.stitch_button.click()
-    assert "(checked by you)" in tab.details.toPlainText()
+    assert "(checked by the expert)" in tab.details.toPlainText()
     assert "with problems 0" in tab.summary_label.text()
     assert not tab.stitch_button.isEnabled()  # nothing left to confirm
 
@@ -306,7 +306,7 @@ def test_info_and_accepted_lines_in_details(qapp, make_series, tmp_path):
     info = next(line for line in text.splitlines() if "1 gap in timestamps" in line)
     assert info.startswith("INFO ") and "(information: no gap longer than 1 s" in info
     accepted = next(line for line in text.splitlines() if "timestamp rows" in line)
-    assert accepted.startswith("FIXED") and accepted.endswith("(accepted by you)")
+    assert accepted.startswith("FIXED") and accepted.endswith("(accepted by the expert)")
     assert tab.model.item(0, 0).background().color().name() == CELL_BG["ok"]  # no warning colour
     assert "with problems 0" in tab.summary_label.text()
 
@@ -394,7 +394,7 @@ def test_manual_exclude_survives_rescan(qapp, make_series, tmp_path):
     select(tab, SIDS[0])
     tab.exclude_button.click()
     assert wait_scan(tab)
-    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by the expert"
 
 
 def _widget_texts(tab):
@@ -542,7 +542,7 @@ def test_tab_refreshes_when_shown(qapp, make_series, tmp_path):
     actions.set_excluded(tab.paths, [SIDS[0]], True, "monitor")  # what Monitor's menu does
     assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == ""
     tab.show()
-    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[0]), 10).text() == "by the expert"
     tab.close()
 
 
@@ -631,7 +631,7 @@ def test_included_by_you_over_an_error(qapp, make_series, tmp_path):
     tab = _excluded_three(make_series, tmp_path)
     actions.set_excluded(tab.paths, ["NOF_H01_2D"], False, "me")
     tab.refresh()
-    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 10).text() == "included by you"
+    assert tab.model.item(row_of(tab, "NOF_H01_2D"), 10).text() == "included by the expert"
 
 
 def test_failure_after_the_writes_refreshes_the_table(qapp, make_series, tmp_path, monkeypatch):
@@ -796,7 +796,7 @@ def test_timer_refreshes_only_while_visible(qapp, make_series, tmp_path):
     actions.set_excluded(tab.paths, [SIDS[1]], True, "monitor")
     select(tab, SIDS[2])
     tab.timer.timeout.emit()
-    assert tab.model.item(row_of(tab, SIDS[1]), 10).text() == "by you"
+    assert tab.model.item(row_of(tab, SIDS[1]), 10).text() == "by the expert"
     assert tab.selected_sids() == [SIDS[2]]
     tab.shutdown()
     assert not tab.timer.isActive()

@@ -118,7 +118,7 @@ def _check_sids(recs: dict, sids) -> None:
 
 def _warn_excluded(rec) -> None:
     if rec.excluded:
-        _say(f"[WARN] {rec.sid} is excluded; the runner ignores it until you run: decide SERIES {rec.sid} include")
+        _say(f"[WARN] {rec.sid} is excluded; the runner ignores it until the expert runs: decide SERIES {rec.sid} include")
 
 
 def _who(args) -> str:
@@ -697,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp = sub.add_parser(name, help=help_, description=help_)
         sp.add_argument("series", metavar="SERIES", help="series folder")
         if who:
-            sp.add_argument("--who", help="your name in the decision log (default: Windows user name)")
+            sp.add_argument("--who", help="the expert's name in the decision log (default: Windows user name)")
         sp.set_defaults(func=func)
         return sp
 

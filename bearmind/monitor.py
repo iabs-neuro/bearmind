@@ -456,7 +456,7 @@ def _cell(rec, stage, settings, human, alive, stale=(), first_stale=None) -> Cel
         level, text = "none", "–"
     if stage == "thresholds" and human[0]:
         level, text = "waiting", "waits"
-        lines.append("waiting for your thresholds")
+        lines.append("waiting for the expert's thresholds")
     if stage == "gate" and human[1] and st.state is not State.WAITING:  # e.g. behind a CNMF-E just done
         level, text = "waiting", "waits"
         lines.append("waiting for manual inspection")

@@ -1,4 +1,4 @@
-"""Monitor tab: batch header, stage progress, "Waiting for you" buttons, session table, warnings, log tail.
+"""Monitor tab: batch header, stage progress, "Waiting for the expert" buttons, session table, warnings, log tail.
 
 All numbers come from bearmind.monitor.series_view; this module only draws them. Every change of the series
 goes through bearmind.actions; the dialogs (confirm, stage, file, message) are injectable for the tests.
@@ -53,7 +53,7 @@ SELECTION_BG = "#b3d1f2"
 SELECTION_INK = "#000000"
 SELECTION_STYLE = f"QAbstractItemView::item:selected {{ background: {SELECTION_BG}; color: {SELECTION_INK}; }}"
 SEGMENTS = (("done", "#43a047"), ("running", "#1e88e5"), ("waiting", "#8e24aa"), ("failed", "#e53935"))
-LEGEND = (("done", "#43a047"), ("running", "#1e88e5"), ("waits for you", "#8e24aa"), ("failed", "#e53935"))
+LEGEND = (("done", "#43a047"), ("running", "#1e88e5"), ("waits for the expert", "#8e24aa"), ("failed", "#e53935"))
 BAR_BG = "#eef0f3"
 _STYLE_ROLE = Qt.ItemDataRole.UserRole + 1
 LEVEL_STYLE = {"error": ("ERROR", "#ffcdd2", "#8e0000"), "warning": ("WARN", "#fff3b0", "#6d5300")}
@@ -109,7 +109,7 @@ def _eta_text(eta_s, running: bool = True) -> str:
         left = "nothing left"
     else:
         m = round(eta_s / 60)
-        left = ("less than 1 min" if m < 1 else f"~{_eta_duration(m * 60)}") + " (time waiting for you not counted)"
+        left = ("less than 1 min" if m < 1 else f"~{_eta_duration(m * 60)}")
     text = f"Estimated time left: {left}"
     return text if running else text + " (batch not running)"
 
@@ -339,7 +339,7 @@ class MonitorTab(QWidget):
 
     def _build_waiting(self) -> None:
         row = QHBoxLayout()
-        row.addWidget(_SectionLabel("Waiting for you"))
+        row.addWidget(_SectionLabel("Waiting for the expert"))
         row.addSpacing(8)
         self.thresholds_button = QPushButton()
         self.inspection_button = QPushButton()
@@ -518,7 +518,7 @@ class MonitorTab(QWidget):
         it = "it" if len(list(sids)) == 1 else "them"
         title = monitor.STAGE_TITLE.get(stage, stage)
         return {
-            "exclude": f"{who} will be excluded: the runner skips {it} until you include {it} again.",
+            "exclude": f"{who} will be excluded: the runner skips {it} until the expert includes {it} again.",
             "include": f"{who} will be included in the batch again.",
             "accept_mismatch": f"The frame/timestamp mismatch of {who} will be accepted: the extra frames or "
                                "timestamp rows at the end are dropped; the files stay unchanged.",
@@ -770,7 +770,7 @@ class MonitorTab(QWidget):
             elif r.status == "waiting":
                 # the runner also polls for the core's own waits (crop finalize): "you" only for a person's
                 person = view.waiting.get("thresholds", 0) + view.waiting.get("manual_inspection", 0)
-                detail = "waiting for you" if person else "waiting"
+                detail = "waiting for the expert" if person else "waiting"
             if r.age_s is not None:
                 detail += f"   heartbeat {_age(max(0.0, r.age_s))} ago"
         elif r.status == "dead":

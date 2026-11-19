@@ -1322,7 +1322,7 @@ def test_saved_text_names_next_only_while_next_is_offered(series_est):
         assert label == inspect_server.NEXT_LABEL.format(sid=S2)
         assert text == inspect_server.SAVED_NEXT.format(sid=S1)
         assert text.endswith(". Press Next for the next session, or close this tab.")
-        assert inspect_server.SAVED.format(sid=S1).endswith(". You can close this tab.")
+        assert inspect_server.SAVED.format(sid=S1).endswith(". This tab can be closed.")
 
         # a text written after the save stays when the offer arrives
         locked(srv, page, lambda: (click(page.doc, "Save results"), click(page.doc, "Save progress")))

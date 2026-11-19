@@ -42,7 +42,7 @@ class AnomalyLine:
     auto_fixed: bool
     reviewed: bool      # split_recording (and its pause) whose current stitch a person confirmed
     info: bool = False  # dropped_frames below scan.dropped_frames_warn: shown, not a problem
-    note: str = ""      # said after the text in the details: "fixed automatically", "checked by you", ...
+    note: str = ""      # said after the text in the details: "fixed automatically", "checked by the expert", ...
     data: dict = field(default_factory=dict)  # Anomaly.data (the sign of a mismatch for its confirmation)
 
     @property
@@ -225,9 +225,9 @@ def _line(a, rec: SessionRecord, n_parts: int, split, gaps, confirmed: bool, rul
     info, note = False, ""
     if a.auto_fixed:
         accepted = a.code == "frames_ts_mismatch" and scan.mismatch_accepted(rec)
-        note = "accepted by you" if accepted else "fixed automatically"
+        note = "accepted by the expert" if accepted else "fixed automatically"
     elif reviewed:
-        note = "checked by you"
+        note = "checked by the expert"
     elif a.code in _INFO_CODES:
         info = True
     elif a.code == "dropped_frames" and not pause:
@@ -245,7 +245,7 @@ def _summary_parts(lines: list[AnomalyLine]) -> list[tuple[str, bool]]:
     order = [x for x in order if x.code not in _NOT_IN_CELL]
     for x in order[:_SUMMARY_LINES]:
         if x.auto_fixed:
-            parts.append((f"{x.short} ({'accepted' if x.note == 'accepted by you' else 'fixed'})", True))
+            parts.append((f"{x.short} ({'accepted' if x.note == 'accepted by the expert' else 'fixed'})", True))
         elif x.reviewed:
             parts.append((f"{x.short} (checked)", True))
         else:

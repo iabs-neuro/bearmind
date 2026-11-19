@@ -406,7 +406,7 @@ def source_text(source: str, item: ThresholdItem, chosen_from: str = "", values:
                 f"min_corr {value_text(values['min_corr'], CORR_DECIMALS)}, "
                 f"min_pnr {value_text(values['min_pnr'], PNR_DECIMALS)}")
     if source == "chosen":
-        return f"Your earlier choice ({chosen_from})" if chosen_from else "Your earlier choice"
+        return f"The expert's earlier choice ({chosen_from})" if chosen_from else "The expert's earlier choice"
     if source == "suggested" and item.suggested:
         s = item.suggested
         return (f"Autotune suggestion ({s.get('method', '?')}): gSig {int(s['gSig'])}, "

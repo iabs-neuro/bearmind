@@ -32,7 +32,7 @@ log = logging.getLogger("bearmind")
 
 STAGES = ("cnmf", "gate", "autoinspect", "export")  # the columns after Session
 SECTION = "Sessions — select one, then press the button"
-HINT = "Opens in your browser. This window stays free."
+HINT = "Opens in the browser. This window stays free."
 INSPECT_LOG = "inspect_console.log"
 # the server writes its address into its lock about 10 s after its start (imports); the time an older server
 # spends stopping is not counted
@@ -46,9 +46,9 @@ SERVER_RUNNING = SERVER.format("running at {url}")
 NEXT_PREPARED = " · next prepared: {sid}"
 STARTING = "Starting the inspection server (about 10 s)…"
 DID_NOT_START = f"The inspection server did not start; see _bearmind/logs/{INSPECT_LOG}"
-STILL_STARTING = "The inspection server is still starting; it opens your session when it is ready."
+STILL_STARTING = "The inspection server is still starting; it opens the session when it is ready."
 SPAWN_FAILED = "The inspection server did not start: {what}; details in gui.log"
-NO_BROWSER = "The browser did not open; open {url} yourself."
+NO_BROWSER = "The browser did not open; open {url} by hand."
 ALREADY_PASSED_ASK = ("Manual inspection of {sid} already passed. Saving a new result makes autoinspection and "
                       "export run again, and the exported neurons can change.{saved} Open anyway?")
 ALREADY_DECIDED_ASK = ("Manual inspection of {sid} is already decided ({value}); the batch takes that decision. "
@@ -61,9 +61,9 @@ UNSCHEDULABLE_TIP = "{sid} cannot be scheduled: {problem}"
 NOT_DONE_TIP = "CNMF-E of {sid} is not done."
 SELECT_ONE = "Select one session in the table."
 ONLY_ONE = "Select only one session to inspect."
-INSPECT_TIP = "Open {sid} for manual inspection in your browser"
+INSPECT_TIP = "Open {sid} for manual inspection in the browser"
 NOT_NEEDED_TIP = "Record that the selected sessions need no manual inspection"
-OPENED = "Opened in your browser: {sids}"
+OPENED = "Opened in the browser: {sids}"
 _STYLE_ROLE = Qt.ItemDataRole.UserRole + 1  # the colours a cell was painted with, as in Monitor
 
 

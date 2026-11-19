@@ -214,10 +214,11 @@ def test_progress_bars_counts_text(qapp, series4, live):
     assert t.progress_title.text() == "Progress — 4 sessions"  # drawn in capitals by the section font
 
 
-def test_eta_label_mentions_waiting_not_counted(qapp, series4):
+def test_eta_label_has_no_waiting_mark(qapp, series4):
     t = tab_for(series4)
     assert t.eta_label.text().startswith("Estimated time left: ~")
-    assert "time waiting for you not counted" in t.eta_label.text()
+    assert "not counted" not in t.eta_label.text()
+    assert "not counted" not in monitor_tab._eta_text(3600)
     assert monitor_tab._eta_text(None) == "Estimated time left: unknown"
     assert "~3 h 10 min" in monitor_tab._eta_text(3 * 3600 + 10 * 60)
 
@@ -361,11 +362,11 @@ def test_header_waiting_for_you_only_when_a_person_can_act(qapp, tmp_path):
     try:
         t.refresh()
         assert t.header_text().startswith("Running") and "waiting" in t.header_text()
-        assert "waiting for you" not in t.header_text()
+        assert "waiting for the expert" not in t.header_text()
         put(paths, "LT1_J01_2D", {"cnmf": done(), "gate": StageRecord(State.WAITING,
                                                                       error="waiting for manual_inspection")})
         t.refresh()
-        assert "waiting for you" in t.header_text()
+        assert "waiting for the expert" in t.header_text()
     finally:
         stop(p)
 
@@ -415,7 +416,7 @@ def test_eta_text_wording():
     assert monitor_tab._eta_text(0.0) == "Estimated time left: nothing left"
     assert monitor_tab._eta_text(None) == "Estimated time left: unknown"
     assert monitor_tab._eta_text(3600, running=False) == (
-        "Estimated time left: ~1 h 0 min (time waiting for you not counted) (batch not running)")
+        "Estimated time left: ~1 h 0 min (batch not running)")
     assert "~47 h 59 min" in monitor_tab._eta_text(47 * 3600 + 59 * 60)
     assert "~3 d 4 h" in monitor_tab._eta_text((3 * 24 + 4) * 3600 + 120)
 
@@ -566,3 +567,29 @@ def test_scan_found_no_sessions_text(qapp, tmp_path):
     assert t.not_scanned_label.text() == "No sessions recognized in this series. See the Scan tab."
     assert not t.scan_tab_button.isHidden()
     t.timer.stop()
+
+
+def test_monitor_tab_texts_never_address_the_person_as_you(qapp, series4):
+    import re
+    from PySide6.QtWidgets import QAbstractButton, QTableView, QTreeView
+
+    t = tab_for(series4)
+    t.refresh()
+    texts = [w.text() for w in t.findChildren(QLabel)] + [w.toolTip() for w in t.findChildren(QLabel)]
+    texts += [b.text() for b in t.findChildren(QAbstractButton)] + [b.toolTip() for b in t.findChildren(QAbstractButton)]
+    texts += [t.header_text(), t.eta_label.text(), monitor_tab._eta_text(3600), monitor_tab._eta_text(None)]
+    texts += [name for name, _ in monitor_tab.LEGEND]
+    for view in t.findChildren(QTableView) + t.findChildren(QTreeView):
+        model = view.model()
+        if model is None:
+            continue
+        for c in range(model.columnCount()):
+            texts.append(str(model.headerData(c, Qt.Horizontal) or ""))
+            texts.append(str(model.headerData(c, Qt.Horizontal, Qt.ToolTipRole) or ""))
+        for r in range(model.rowCount()):
+            for c in range(model.columnCount()):
+                ix = model.index(r, c)
+                texts += [str(model.data(ix) or ""), str(model.data(ix, Qt.ToolTipRole) or "")]
+    assert len(texts) > 20
+    for text in texts:
+        assert not re.search(r"you(r|rs|rself)?", text, re.I), text

@@ -39,16 +39,16 @@ COLUMN_TIPS = {
                     "The cell's tooltip: the median of the raw timestamp intervals",
     "Min": "Duration of the frames to process, in minutes: frames / FPS / 60",
     "Anomalies": "Problems the scan found. The cell's tooltip lists every line; select the row for the details",
-    "Excluded": "Who excluded the session: the scan (by anomaly) or a person (by you)",
+    "Excluded": "Who excluded the session: the scan (by anomaly) or a person (by the expert)",
 }
 ANOMALIES_COLUMN = COLUMNS.index("Anomalies")
 INTERVAL_COLUMN = COLUMNS.index("Interval, ms")
 NOT_SCANNED = "Not scanned yet. Press Scan."
 ASK_RESCAN = "Batch is running. If session files changed, their stages will be recomputed. Rescan?"
-EXCLUDED_TEXT = {"anomaly": "by anomaly", "you": "by you", "included": "included by you", "": ""}
+EXCLUDED_TEXT = {"anomaly": "by anomaly", "you": "by the expert", "included": "included by the expert", "": ""}
 LEVEL_INK = {"error": ("ERROR", "#8e0000"), "warning": ("WARN", "#6d5300")}
 FIXED_INK = "#2e7d32"
-INCLUDE_TIP = ("Include works for sessions excluded by you. A session excluded by an anomaly: fix its files and "
+INCLUDE_TIP = ("Include works for sessions excluded by the expert. A session excluded by an anomaly: fix its files and "
                "press Rescan, or use Accept for a frame mismatch.")
 NOT_FOUND_INCLUDE_TIP = "The session folder was not found by the last scan: restore it and Rescan"
 SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 2  # [(text, greyed)] of the Anomalies cell, drawn by _SummaryDelegate

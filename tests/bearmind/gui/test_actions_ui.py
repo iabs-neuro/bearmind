@@ -344,8 +344,8 @@ def test_confirmation_grammar(qapp, series4):
     ui.tab.run_action("exclude")
     ui.select(S1, S3)
     ui.tab.run_action("exclude")
-    assert ui.asked[0] == f"Session {S1} will be excluded: the runner skips it until you include it again."
-    assert ui.asked[1] == (f"Sessions {S1}, {S3} will be excluded: the runner skips them until you include "
+    assert ui.asked[0] == f"Session {S1} will be excluded: the runner skips it until the expert includes it again."
+    assert ui.asked[1] == (f"Sessions {S1}, {S3} will be excluded: the runner skips them until the expert includes "
                            "them again.")
     ui.select(S1)
     ui.tab.run_action("accept_mismatch")

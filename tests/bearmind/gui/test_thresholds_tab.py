@@ -486,7 +486,7 @@ def test_reset_to_suggestion(qapp, series_maps, make_tab):
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}})
     tab = make_tab(p)
     tab.show_session(S1)
-    assert tab.current() == (S1, 3, 0.7, 6.0) and tab.source_label.text() == "Your earlier choice (session config)"
+    assert tab.current() == (S1, 3, 0.7, 6.0) and tab.source_label.text() == "The expert's earlier choice (session config)"
     tab.reset_button.click()
     assert tab.current() == (S1, 4, 0.85, 8.0)
     assert tab.source_label.text().startswith("Autotune suggestion (robust_bg)")
@@ -793,6 +793,7 @@ def test_thresholds_tab_texts_are_english(qapp, series_maps, make_tab):
     assert len(tab.dlg.asked) == 2
     for t in texts:
         assert not CYRILLIC.search(t), t
+        assert not re.search(r"you(r|rs|rself)?", t, re.I), t  # the window calls the person "the expert"
 
 
 # --- the main window ---
@@ -1051,7 +1052,7 @@ def test_untouched_suggestion_is_written_exactly(qapp, series_maps, make_tab):
     assert _cfg(p, S1) == {"gSig": 4, "min_corr": 0.853, "min_pnr": 8.27}
     # moving a control takes its step value; the other control stays exact
     tab.show_session(S1)
-    assert tab.current() == (S1, 4, 0.853, 8.27) and tab.source_label.text().startswith("Your earlier choice")
+    assert tab.current() == (S1, 4, 0.853, 8.27) and tab.source_label.text().startswith("The expert's earlier choice")
     tab.min_corr_slider.setValue(86)
     assert tab.current()[2:] == (0.86, 8.27) and tab.min_corr_spin.text() == "0.86"
     tab.min_pnr_spin.setValue(8.3)  # the same slider position, typed: the typed value counts
@@ -1107,17 +1108,17 @@ def test_maps_reload_sets_the_video_again(qapp, series_maps, make_tab):
 
 
 def test_earlier_choice_names_its_config(qapp, series_maps, make_tab):
-    """D5: "Your earlier choice" says which config the values come from."""
+    """D5: "The expert's earlier choice" says which config the values come from."""
     p = series_maps.paths
     config.update_yaml(p.mouse_config("NOF_H01"), {"cnmf": {"gSig": 3, "min_corr": 0.7, "min_pnr": 6.0}})
     tab = make_tab(p)
     tab.show_session(S1)
-    assert tab.source_label.text() == "Your earlier choice (mouse config)"
+    assert tab.source_label.text() == "The expert's earlier choice (mouse config)"
     config.update_yaml(p.session_config(S1), {"cnmf": {"min_pnr": 7.0}})
     tab.refresh()
     tab.show_session(S2)
     tab.show_session(S1)
-    assert tab.source_label.text() == "Your earlier choice (session and mouse config)"
+    assert tab.source_label.text() == "The expert's earlier choice (session and mouse config)"
 
 
 def test_mouse_write_logs_the_counters_of_the_shown_session(qapp, series_maps, make_tab):

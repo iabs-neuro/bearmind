@@ -310,7 +310,7 @@ def test_accepted_mismatch_says_accepted_by_you(make_series, tmp_path):
     actions.accept_mismatch(paths, [sid], "me")
     row = scan_view.scan_view(paths).rows[0]
     line = next(x for x in row.anomalies if x.code == "frames_ts_mismatch")
-    assert line.auto_fixed and line.note == "accepted by you"
+    assert line.auto_fixed and line.note == "accepted by the expert"
     assert row.summary_parts == [("frames ≠ timestamps: +5 at the end (accepted)", True)]
 
 

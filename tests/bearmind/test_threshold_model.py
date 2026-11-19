@@ -166,7 +166,7 @@ def test_initial_values_without_suggestion():
 
 def test_source_texts_english():
     sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
-    assert tm.source_text("chosen", _item()) == "Your earlier choice"
+    assert tm.source_text("chosen", _item()) == "The expert's earlier choice"
     assert tm.source_text("suggested", _item(sug)) == \
         "Autotune suggestion (robust_bg): gSig 4, min_corr 0.85, min_pnr 8.0"
     assert tm.source_text("fallback", _item()) == "No suggestion — start values from the config"
@@ -408,7 +408,7 @@ def test_choice_source_names_the_configs(series):
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 5, "min_corr": 0.6, "min_pnr": 7.0}})
     assert tm.choice_source(p, S1, "NOF_H01") == "session config"
     sug = {"gSig": 4, "min_corr": 0.85, "min_pnr": 8.0, "method": "robust_bg"}
-    assert tm.source_text("chosen", _item(sug), "session config") == "Your earlier choice (session config)"
+    assert tm.source_text("chosen", _item(sug), "session config") == "The expert's earlier choice (session config)"
     p.session_config(S1).write_text("cnmf: [unclosed\n", encoding="utf-8")
     assert tm.choice_source(p, S1, "NOF_H01") == ""  # cannot be read: nothing is claimed
 

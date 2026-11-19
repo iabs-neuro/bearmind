@@ -32,7 +32,7 @@ ASK_PASSED = ("Manual inspection of {} already passed. Saving a new result makes
               "again, and the exported neurons can change. Open anyway?")
 DID_NOT_START = "The inspection server did not start; see _bearmind/logs/inspect_console.log"
 STARTING = "Starting the inspection server (about 10 s)…"
-STILL_STARTING = "The inspection server is still starting; it opens your session when it is ready."
+STILL_STARTING = "The inspection server is still starting; it opens the session when it is ready."
 NO_SUCH_PID = 999_999_999
 REPO = Path(__file__).resolve().parents[3]
 
@@ -332,8 +332,8 @@ def test_browser_that_does_not_open_is_named(qapp, series4, make_ui, monkeypatch
     ui.tab.open_inspection(S1)
     url = inspect_server.session_url(URL, S1)
     assert ui.opened == [url]
-    assert ui.shown == [f"The browser did not open; open {url} yourself."]
-    assert not [s for s in ui.status if s.startswith("Opened in your browser")]
+    assert ui.shown == [f"The browser did not open; open {url} by hand."]
+    assert not [s for s in ui.status if s.startswith("Opened in the browser")]
 
 
 def test_unschedulable_session_cannot_be_opened(qapp, series4, make_ui):
@@ -441,7 +441,7 @@ def test_inspection_tab_texts_are_english(qapp, series4, make_ui):
     ui = make_ui(series4)
     t = ui.tab
     texts = [lab.text() for lab in t.findChildren(QLabel)] + [b.text() for b in t.findChildren(QPushButton)]
-    assert t.hint_label.text() == "Opens in your browser. This window stays free."
+    assert t.hint_label.text() == "Opens in the browser. This window stays free."
     m = t.table.model()
     texts += [m.headerData(c, Qt.Orientation.Horizontal) for c in range(m.columnCount())]
     texts += [m.index(r, c).data(role) or "" for r in range(m.rowCount()) for c in range(m.columnCount())
