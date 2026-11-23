@@ -793,7 +793,7 @@ def test_thresholds_tab_texts_are_english(qapp, series_maps, make_tab):
     assert len(tab.dlg.asked) == 2
     for t in texts:
         assert not CYRILLIC.search(t), t
-        assert not re.search(r"you(r|rs|rself)?", t, re.I), t  # the window calls the person "the expert"
+        assert not re.search(r"\byou(r|rs|rself)?\b", t, re.I), t  # the window calls the person "the expert"
 
 
 # --- the main window ---
@@ -877,7 +877,7 @@ def test_probe_cases_agree_in_tab_monitor_and_actions(qapp, series_maps, make_ta
 
 
 def test_window_count_drops_at_once_after_accept_while_the_registry_still_waits(qapp, series_maps):
-    """A4: Monitor's "Thresholds: N" and its "waiting for you" follow the config at once after Accept; the
+    """A4: Monitor's "Thresholds: N" and its "waiting for the expert" follow the config at once after Accept; the
     registry says WAITING until the batch checks again (up to poll_s later)."""
     from bearmind.gui.app import MainWindow
 

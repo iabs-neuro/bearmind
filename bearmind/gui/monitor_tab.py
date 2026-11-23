@@ -109,7 +109,7 @@ def _eta_text(eta_s, running: bool = True) -> str:
         left = "nothing left"
     else:
         m = round(eta_s / 60)
-        left = ("less than 1 min" if m < 1 else f"~{_eta_duration(m * 60)}")
+        left = "less than 1 min" if m < 1 else f"~{_eta_duration(m * 60)}"
     text = f"Estimated time left: {left}"
     return text if running else text + " (batch not running)"
 
@@ -314,7 +314,7 @@ class MonitorTab(QWidget):
         self.root_layout.addLayout(row)
 
     def _build_progress(self) -> None:
-        # the legend and the time left share the header line, and the "Waiting for you" label sits left of its
+        # the legend and the time left share the header line, and the "Waiting for the expert" label sits left of its
         # buttons: at the default 1100x700 (125 % screen scaling) the lines saved are table rows
         self.progress_title = _SectionLabel("Progress")
         legend = " &nbsp; ".join(f'<span style="color:{c}">&#9632;</span> {t}' for t, c in LEGEND)
@@ -768,7 +768,7 @@ class MonitorTab(QWidget):
                 if r.stage_elapsed_s is not None:
                     detail += f" · {_duration(r.stage_elapsed_s)}"
             elif r.status == "waiting":
-                # the runner also polls for the core's own waits (crop finalize): "you" only for a person's
+                # the runner also polls for the core's own waits (crop finalize): "expert" only for a person's
                 person = view.waiting.get("thresholds", 0) + view.waiting.get("manual_inspection", 0)
                 detail = "waiting for the expert" if person else "waiting"
             if r.age_s is not None:

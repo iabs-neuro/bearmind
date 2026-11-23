@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHeaderView, QLabel, QPushButton
 from bearmind import actions, fileio, monitor, registry, scan, scan_view
 from bearmind.gui.app import MainWindow
 from bearmind.gui.monitor_tab import CELL_BG, EXCLUDED_INK, SELECTION_STYLE, MonitorTab
+from bearmind.gui import scan_tab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.paths import SeriesPaths
 from bearmind.registry import Anomaly
@@ -414,7 +415,12 @@ def test_scan_tab_texts_are_english(qapp, make_series, tmp_path):
     texts += [tab.model.headerData(c, Qt.Orientation.Horizontal) for c in range(10)]
     texts += [tab.details.toPlainText()]
     texts += [tab.unrecognized_list.item(i).text() for i in range(tab.unrecognized_list.count())]
+    # cells and tips that need a person's decision to appear
+    texts += list(scan_tab.EXCLUDED_TEXT.values()) + list(scan_tab.COLUMN_TIPS.values())
+    texts += [scan_tab.INCLUDE_TIP, scan_tab.NOT_FOUND_INCLUDE_TIP]
     assert not re.search(CYRILLIC, "\n".join(texts))
+    for x in texts:
+        assert not re.search(r"\byou(r|rs|rself)?\b", x, re.I), x
 
 
 def test_window_scan_tab_replaces_placeholder(qapp, tmp_series):

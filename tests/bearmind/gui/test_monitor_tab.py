@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 import os
 import subprocess
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QAbstractButton, QLabel, QTableView, QTreeView
 
 from bearmind import monitor, registry
 from bearmind.gui import monitor_tab
@@ -353,7 +354,7 @@ def test_header_stopping_after_current_stage(qapp, series4):
 
 
 def test_header_waiting_for_you_only_when_a_person_can_act(qapp, tmp_path):
-    """M11: a runner that polls only for the crop box is not waiting for you."""
+    """M11: a runner that polls only for the crop box is not waiting for the expert."""
     paths = SeriesPaths(tmp_path / "series")
     paths.registry_file("x").parent.mkdir(parents=True)
     put(paths, "LT1_J01_1D", {"crop": done(), "mc": StageRecord(State.WAITING, error="waiting for crop_finalize")})
@@ -460,7 +461,7 @@ def test_section_headers_share_one_style(qapp, series4):
 
 
 def test_running_chip_and_accent_buttons(qapp, series4):
-    """R5: the status is a coloured chip as in the mockup; the two "Waiting for you" buttons are accent."""
+    """R5: the status is a coloured chip as in the mockup; the two "Waiting for the expert" buttons are accent."""
     t = tab_for(series4)
     assert f"background: {monitor_tab.CHIP['Stopped'][0]}" in t.batch_label.styleSheet()
     p = spawn(series4, "LT1_J02_1D", "mc", "running")
@@ -570,9 +571,6 @@ def test_scan_found_no_sessions_text(qapp, tmp_path):
 
 
 def test_monitor_tab_texts_never_address_the_person_as_you(qapp, series4):
-    import re
-    from PySide6.QtWidgets import QAbstractButton, QTableView, QTreeView
-
     t = tab_for(series4)
     t.refresh()
     texts = [w.text() for w in t.findChildren(QLabel)] + [w.toolTip() for w in t.findChildren(QLabel)]
@@ -584,12 +582,12 @@ def test_monitor_tab_texts_never_address_the_person_as_you(qapp, series4):
         if model is None:
             continue
         for c in range(model.columnCount()):
-            texts.append(str(model.headerData(c, Qt.Horizontal) or ""))
-            texts.append(str(model.headerData(c, Qt.Horizontal, Qt.ToolTipRole) or ""))
+            texts.append(str(model.headerData(c, Qt.Orientation.Horizontal) or ""))
+            texts.append(str(model.headerData(c, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) or ""))
         for r in range(model.rowCount()):
             for c in range(model.columnCount()):
                 ix = model.index(r, c)
-                texts += [str(model.data(ix) or ""), str(model.data(ix, Qt.ToolTipRole) or "")]
+                texts += [str(model.data(ix) or ""), str(model.data(ix, Qt.ItemDataRole.ToolTipRole) or "")]
     assert len(texts) > 20
     for text in texts:
-        assert not re.search(r"you(r|rs|rself)?", text, re.I), text
+        assert not re.search(r"\byou(r|rs|rself)?\b", text, re.I), text

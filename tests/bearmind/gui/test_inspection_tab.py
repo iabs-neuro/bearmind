@@ -468,6 +468,7 @@ def test_inspection_tab_texts_are_english(qapp, series4, make_ui):
     texts += [v for k, v in vars(inspection_tab).items() if k.isupper() and isinstance(v, str)]  # every text
     for x in texts:
         assert not CYRILLIC.search(x), x
+        assert not re.search(r"\byou(r|rs|rself)?\b", x, re.I), x
 
 
 def test_refresh_only_while_visible(qapp, series4, make_ui, monkeypatch):

@@ -1313,7 +1313,7 @@ def _next_and_status(srv, page):
 
 def test_saved_text_names_next_only_while_next_is_offered(series_est):
     """W5: after Save results the status line says "Press Next for the next session, or close this tab." while Next
-    is offered, and "You can close this tab." when no session waits; a later text (Save progress) is kept."""
+    is offered, and "This tab can be closed." when no session waits; a later text (Save progress) is kept."""
     paths = series_est
     with running(paths) as srv, tab(srv, S1) as s:
         page = srv.page_of(s.id)
