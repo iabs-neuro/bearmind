@@ -55,6 +55,7 @@ class Decision:
     value: str
     who: str
     when: str  # ISO string supplied by the caller
+    comment: str | None = None
 
 
 @dataclass
@@ -108,6 +109,9 @@ def _build(cls, d: dict):
 
 def _to_json(rec: SessionRecord) -> dict:
     d = asdict(rec)  # tuples stay tuples, json writes them as lists
+    for decision in d["decisions"]:
+        if decision["comment"] is None:
+            del decision["comment"]
     for st in d["stages"].values():
         st["state"] = State(st["state"]).value
     return d

@@ -102,7 +102,7 @@ def test_batch_header_states(qapp, series4):
     p.wait(timeout=20)
     t.refresh()
     assert t.batch_label.text() == "Not responding"
-    assert "last heartbeat" in t.batch_detail.text()
+    assert "last heartbeat" in t.heartbeat_label.text()
 
 
 def test_header_heartbeat_age(qapp, series4):
@@ -111,7 +111,7 @@ def test_header_heartbeat_age(qapp, series4):
     try:
         hb = datetime.fromisoformat(json.loads(series4.heartbeat.read_text())["time"])
         t.refresh(now=hb + timedelta(seconds=4))
-        assert "heartbeat 4 s ago" in t.batch_detail.text()
+        assert "heartbeat 4 s ago" in t.heartbeat_label.text()
     finally:
         stop(p)
 
@@ -241,15 +241,17 @@ def test_table_flat_sorted(qapp, series4):
     assert t.model.rowCount() == 4
     assert [t.model.item(i, 0).text() for i in range(4)] == ["LT1_J01_1D", "LT1_J01_2D", "LT1_J02_1D", "LT1_J02_2D"]
     heads = [t.model.headerData(c, Qt.Orientation.Horizontal) for c in range(t.model.columnCount())]
-    assert heads == ["Session", "Crop", "MC", "Thresholds", "CNMF-E", "Inspection", "Autoinspect", "Export"]
+    assert heads == ["Session", "Crop", "MC", "gSig", "min_corr", "min_pnr",
+                     "CNMF-E", "Inspection", "Autoinspect", "Export"]
 
 
 def test_cell_color_text_tooltip(qapp, series4, live):
     t = tab_for(series4)
     view = monitor.series_view(series4)
     for i, row in enumerate(view.rows):
-        for c, stage in enumerate(STAGES, start=1):
-            cell, item = row.cells[stage], t.model.item(i, c)
+        for c, stage in enumerate(monitor_tab.TABLE_COLUMNS, start=1):
+            cell = row.threshold_cells[stage] if stage in monitor.THRESHOLD_COLUMNS else row.cells[stage]
+            item = t.model.item(i, c)
             assert item.text() == cell.text and item.toolTip() == cell.tooltip
             want = monitor_tab.CELL_BG.get(cell.level)
             if want is None:
@@ -274,7 +276,7 @@ def test_refresh_keeps_selection(qapp, series4):
     put(series4, "LT1_J01_1D", {"crop": done(box="512x480@0,0")})
     t.refresh()
     assert t.selected_sids() == ["LT1_J01_2D"]
-    assert t.model.item(0, 2).text() == "–"  # the changed record is shown
+    assert t.model.item(0, 2).text() == "queued"  # the changed record is shown
 
 
 def test_refresh_keeps_selection_when_rows_change(qapp, series4):

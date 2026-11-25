@@ -184,9 +184,14 @@ def delete_row(doc, row):
     click(doc, "Delete sel.")
 
 
-def save(srv, page):
+def save(srv, page, *, exports=False):
     """Save results as the browser clicks it; returns the status text."""
-    return locked(srv, page, lambda: (click(page.doc, "Save results"), _div(page.doc, "status").text)[1])
+    def perform():
+        page.exports.active = [0] if exports else []
+        click(page.doc, "Save results")
+        return _div(page.doc, "status").text
+
+    return locked(srv, page, perform)
 
 
 def _decisions(paths, sid):
@@ -280,7 +285,7 @@ def test_final_save_records_cleaned(series_est):
         page = srv.page_of(s.id)
         assert _opened(page, S1) and page.doc.title == inspect_server.TITLE.format(sid=S1)
         locked(srv, page, lambda: delete_row(page.doc, 2))
-        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
         result = paths.manual_result(S1)
         saved = _load(result)
         assert not hasattr(saved, "idx_components_bad_original") and saved.C.dtype == np.float64
@@ -298,6 +303,16 @@ def test_final_save_records_cleaned(series_est):
     # side files of the save, written before the server stopped
     assert sorted(os.listdir(paths.inspection_dir(S1))) == sorted(
         [result.name, f"{S1}_filters", f"{S1}_filters_session.mat", f"{S1}_traces.csv", f"{S1}_inspect_cache.npz"])
+
+
+def test_manual_save_skips_side_files_by_default(series_est):
+    with running(series_est) as srv, tab(srv, S1) as session:
+        page = srv.page_of(session.id)
+        assert not page.exports.active
+        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert series_est.manual_result(S1).is_file()
+        assert not srv._side_futures
+    assert not (series_est.inspection_dir(S1) / f"{S1}_traces.csv").exists()
 
 
 def test_second_final_save_overwrites(series_est):
@@ -779,7 +794,7 @@ def test_side_files_failure_on_page(series_est, monkeypatch):
     monkeypatch.setattr(bm_examinator, "_side_files_child", failing)
     with running(paths) as srv, tab(srv, S1) as s:
         page = srv.page_of(s.id)
-        assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+        assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
         note = until(lambda: locked(srv, page, lambda: page.notes_div.visible and page.notes_div.text))
         assert note == inspect_server.SIDE_FILES_FAILED.format(sid=S1, what=f"PermissionError on {target.name}")
         assert paths.manual_result(S1).is_file() and _decisions(paths, S1) == ["cleaned"]
@@ -829,11 +844,11 @@ def test_newer_save_skips_queued_side_files(series_est, monkeypatch):
     try:
         with running(paths) as srv, tab(srv, S1) as s:
             page = srv.page_of(s.id)
-            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
             assert started.wait(60)  # the first save's files are being written
             for row in (0, 0):
                 locked(srv, page, lambda: delete_row(page.doc, row))
-                assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+                assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
             assert len(srv._side_futures) == 2  # the running one and the last one; the middle one dropped
             release.set()
     finally:
@@ -855,22 +870,22 @@ def test_queued_side_files_kept_when_the_new_job_cannot_start(series_est, monkey
     try:
         with running(paths) as srv, tab(srv, S1) as s:
             page = srv.page_of(s.id)
-            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
             assert started.wait(60)
             locked(srv, page, lambda: delete_row(page.doc, 0))
-            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)  # queued behind the first
+            assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)  # queued behind the first
             real_queue = bm_examinator.write_side_files_in_background
             monkeypatch.setattr(bm_examinator, "write_side_files_in_background", cannot_queue)
             locked(srv, page, lambda: delete_row(page.doc, 0))
-            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
             monkeypatch.setattr(bm_examinator, "write_side_files_in_background", real_queue)
             note = until(lambda: locked(srv, page, lambda: page.notes_div.visible and page.notes_div.text))
             assert note == inspect_server.SIDE_FILES_FAILED.format(sid=S1, what="RuntimeError")
             release.set()
     finally:
         release.set()
-    # the second save's job was still run; it reads the result on disk when it runs, which is the third save's
-    assert written == [list(range(8)), list(range(2, 8))]
+    # The second save's queued export uses its own snapshot.
+    assert written == [list(range(8)), list(range(1, 8))]
 
 
 def test_closed_tab_is_freed(series_est, monkeypatch):
@@ -881,7 +896,7 @@ def test_closed_tab_is_freed(series_est, monkeypatch):
     with running(series_est) as srv:
         with tab(srv, S1) as s:
             key, page = s.id, srv.page_of(s.id)
-            assert save(srv, page) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, page, exports=True) == inspect_server.SAVED.format(sid=S1)
             until(lambda: not srv._side_futures, timeout=60)  # written, and forgotten
             refs = [weakref.ref(page), weakref.ref(page.prepared), weakref.ref(page.doc)]
             del page
@@ -910,7 +925,7 @@ def test_stopping_server_is_waited_for(series_est, monkeypatch, capsys):
     try:
         assert srv.started.wait(120)
         with tab(srv, S1) as s:
-            assert save(srv, srv.page_of(s.id)) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, srv.page_of(s.id), exports=True) == inspect_server.SAVED.format(sid=S1)
         srv.request_stop()
         st = until(lambda: (lambda x: x.stopping and x)(inspect_server.server_state(paths)), timeout=30)
         assert st.alive and st.url is None and not st.available
@@ -951,7 +966,7 @@ def test_stopping_server_waits_for_side_files_with_a_cap(series_est, monkeypatch
     monkeypatch.setattr(bm_examinator, "stop_side_files", stop_side_files)
     try:
         with running(paths) as srv, tab(srv, S1) as s:
-            assert save(srv, srv.page_of(s.id)) == inspect_server.SAVED.format(sid=S1)
+            assert save(srv, srv.page_of(s.id), exports=True) == inspect_server.SAVED.format(sid=S1)
             t0 = time.monotonic()
     finally:
         release.set()
@@ -1825,6 +1840,7 @@ def test_speed_hour_session(tmp_path, monkeypatch):
             return page, time.perf_counter() - t0
 
         def timed_save(page):
+            locked(srv, page, lambda: setattr(page.exports, "active", [0]))
             def run():
                 t0 = time.perf_counter()
                 click(page.doc, "Save results")

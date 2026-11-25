@@ -1,14 +1,17 @@
 """Autoinspection stage: the unchanged ae_launch.run_auto_inspection with production parameters from config."""
+from contextlib import contextmanager
 import os
 import pickle
 import re
 from pathlib import Path
 
+from joblib import cpu_count
+
 import ae_launch
 import bearmind
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, gate
-from bearmind.timestamps import session_time_s
+from bearmind.timestamps import analysis_frame_count, session_time_s
 
 # model_path in config is relative to the repo root, where production_models/ lives.
 _REPO_ROOT = Path(bearmind.__file__).resolve().parent.parent
@@ -50,6 +53,21 @@ def _count(df, column, value) -> int:
     return int((df[column] == value).sum())
 
 
+@contextmanager
+def _leave_cpu_headroom():
+    # Joblib uses its effective CPU count when n_jobs=-1. This process runs one batch stage.
+    name = "LOKY_MAX_CPU_COUNT"
+    previous = os.environ.get(name)
+    os.environ[name] = str(max(1, cpu_count() - 2))
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
+
 def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
     params = dict(cfg["autoinspect"])
@@ -62,15 +80,17 @@ def run(paths, rec, cfg) -> StageResult:
     # the real axis, as the inspection page uses it; read first so that bad timestamps fail early and keep the
     # processed file of an earlier run
     time_s = session_time_s(paths, rec)
-    if len(time_s) < rec.n_frames:
-        raise ValueError(f"{sid}: {len(time_s)} timestamps for {rec.n_frames} frames; rescan the series")
+    n_frames = analysis_frame_count(rec)
+    if len(time_s) < n_frames:
+        raise ValueError(f"{sid}: {len(time_s)} timestamps for {n_frames} frames; rescan the series")
     check_aligned(source)  # its copy of the estimates is freed on return, before the file is loaded again
     # a pickle from an earlier run would hide that this run saved nothing
     processed.unlink(missing_ok=True)
     try:
-        result = ae_launch.run_auto_inspection(
-            str(source), fps=fps, session_name=sid,
-            artifacts_dir=str(out_dir), ml_model_path=str(model), time_s=time_s, **params)
+        with _leave_cpu_headroom():
+            result = ae_launch.run_auto_inspection(
+                str(source), fps=fps, session_name=sid,
+                artifacts_dir=str(out_dir), ml_model_path=str(model), time_s=time_s, **params)
     except ValueError as e:
         if _SHORT_TIMESTAMPS.search(str(e)) and "rescan" not in str(e):
             raise ValueError(f"{sid}: {e}; rescan the series") from e

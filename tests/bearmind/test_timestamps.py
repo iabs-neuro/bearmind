@@ -167,13 +167,16 @@ def test_session_timestamps_matches_export(make_series, tmp_path):
     from bearmind.stages import export
     from bearmind.timestamps import session_timestamps
 
-    assert export.session_timestamps is session_timestamps  # the export stage calls this function
     root = make_series(tmp_path / "split", "legacy_split")  # two parts of 30 frames, 1 h apart
     rec = scan.scan_series(root)[0]
-    ts = session_timestamps(SeriesPaths(root), rec)
+    paths = SeriesPaths(root)
+    ts = session_timestamps(paths, rec)
     assert ts.fmt == "ucla_ms" and len(ts.raw) == rec.n_frames == 60
     assert ts.raw.tolist() == [i * 50 for i in range(30)] + [3600_000 + i * 50 for i in range(30)]
     assert np.array_equal(ts.t_ms, rec.parts[0].start_ms + ts.raw)
+    assert np.array_equal(export.analysis_timestamps(paths, rec).raw, ts.raw)
+    rec.stages["mc"].metrics["dropped_ranges"] = [[27, 29], [30, 30]]
+    assert np.array_equal(export.analysis_timestamps(paths, rec).raw, np.r_[ts.raw[:27], ts.raw[31:]])
 
     root = make_series(tmp_path / "bonsai", "bonsai", ts_rows=33)  # 30 frames, 33 timestamp rows
     rec = scan.scan_series(root)[0]

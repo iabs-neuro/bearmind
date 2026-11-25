@@ -263,8 +263,18 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
                 "crop": {k: v for k, v in (cfg.get("crop") or {}).items() if k not in _CROP_WRITTEN},
                 "fov_rule": bearmind.crop.FOV_RULE}
     if stage == "mc":
+        from bearmind import bad_frames
+
         c = cfg.get("crop") or {}
-        return {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET)}
+        params = {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET)}
+        action, limit, auto, manual = bad_frames.settings(cfg, rec.n_frames)
+        if manual or any(k in cfg for k in ("bad_frames_action", "bad_frames_auto", "bad_frames_max_interpolate_s")):
+            params["bad_frames"] = [list(span) for span in manual]
+            params["bad_frames_action"] = action
+            if action == "auto":
+                params["bad_frames_max_interpolate_s"] = limit
+            params["bad_frames_auto"] = auto
+        return params
     if stage == "thresholds":
         return {"gsig_range": cfg["thresholds"]["gsig_range"], "tsub": cfg["cnmf"]["tsub"]}
     if stage == "cnmf":

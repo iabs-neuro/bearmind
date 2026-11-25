@@ -632,6 +632,65 @@ def cmd_inspect(args) -> int:
     raise not_ready(state)
 
 
+def cmd_view_estimates(args) -> int:
+    from bearmind.estimates_viewer import run
+
+    try:
+        return run(_series(args.series).root, args.sid, extra_file=args.file,
+                   port=args.port, open_browser=not args.no_browser)
+    except (ValueError, OSError) as exc:
+        raise CliError(_ascii(exc)) from exc
+
+
+def cmd_light_estimates(args) -> int:
+    from bearmind import light_estimates
+
+    paths = _series(args.series)
+    records = _records(paths)
+    selected = args.sids or sorted(records)
+    _check_sids(records, selected)
+    failed = 0
+    for sid in selected:
+        rec = records[sid]
+        stage = rec.stages.get("cnmf")
+        if stage is None or stage.state is not State.DONE:
+            _say(f"[WARN] {sid}: no finished CNMF-E")
+            continue
+        try:
+            output, made = light_estimates.make(gate._estimates_file(paths, rec))
+            _say(f"[OK] {sid}: {'wrote' if made else 'current'} {output.name}")
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            _say(f"[FAILED] {sid}: {_ascii(exc)}")
+            failed += 1
+    return int(failed > 0)
+
+
+def cmd_bad_frames(args) -> int:
+    from bearmind import bad_frames
+
+    paths = _series(args.series)
+    _check_sids(_records(paths), [args.sid])
+    if args.clear and (args.ranges or args.action) or not (args.clear or args.ranges or args.action):
+        raise CliError("Give frame ranges or a handling action, or use --clear on its own.")
+    try:
+        ranges = actions.set_bad_frames(paths, args.sid, bad_frames.parse(args.ranges),
+                                        args.action, _who(args), clear=args.clear)
+    except (ValueError, OSError) as exc:
+        raise CliError(_ascii(exc)) from exc
+    _say(f"[OK] {args.sid}: {bad_frames.label(ranges) or 'no explicit frame ranges'}; "
+         "review the next MC run in Monitor")
+    return OK
+
+
+def cmd_review_artifacts(args) -> int:
+    from bearmind.artifact_review import make_gallery
+
+    try:
+        return make_gallery(_series(args.series).root, args.output, sids=args.sessions, candidates=args.candidates)
+    except (OSError, ValueError) as exc:
+        raise CliError(_ascii(exc)) from exc
+
+
 def _port(value: str) -> int:
     try:
         x = int(value)
@@ -756,6 +815,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("sid", metavar="SID", nargs="?", help="session to open (default: the list of waiting sessions)")
     sp.add_argument("--port", type=_port, help="port of a new server (default: inspection.port; 0 takes a free one)")
     sp.add_argument("--no-browser", action="store_true", help="do not open the browser")
+    sp = add("view-estimates", cmd_view_estimates, "browse saved estimates in read-only mode", who=False)
+    sp.add_argument("sid", metavar="SID", nargs="?", help="session to open first")
+    sp.add_argument("--file", type=Path, help="open a trusted local estimates pickle file first")
+    sp.add_argument("--port", type=_port, default=0, help="port (default: choose a free port)")
+    sp.add_argument("--no-browser", action="store_true", help="print the local address without opening the browser")
+    sp = add("light-estimates", cmd_light_estimates, "create light files beside finished CNMF-E estimates", who=False)
+    sp.add_argument("sids", nargs="*", metavar="SID", help="sessions (default: all)")
+    sp = add("bad-frames", cmd_bad_frames, "set frame ranges and handling before motion correction")
+    sp.add_argument("sid", metavar="SID")
+    sp.add_argument("ranges", nargs="*", metavar="FIRST-LAST")
+    sp.add_argument("--action", choices=("auto", "interpolate", "drop", "report"))
+    sp.add_argument("--clear", action="store_true", help="remove this session's overrides")
+    sp = add("review-artifacts", cmd_review_artifacts, "draw manual inspection overlays for wave and edge review",
+             who=False)
+    sp.add_argument("--output", required=True, type=Path, metavar="FOLDER", help="explicit destination")
+    sp.add_argument("--sessions", nargs="+", metavar="SID", default=())
+    sp.add_argument("--candidates", action="store_true", help="also measure provisional candidates before inspection")
     return p
 
 

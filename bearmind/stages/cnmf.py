@@ -301,6 +301,14 @@ def run(paths, rec, cfg) -> StageResult:
             "residual_png": paths.rel(paths.residual_png(sid)),
         }
         result = StageResult(outputs=outputs, metrics=metrics)
+        if (cfg.get("estimates") or {}).get("light", False):
+            from bearmind import light_estimates
+
+            try:
+                light_estimates.make(out, est)
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                result.anomalies.append(Anomaly("light_estimates_failed", "warning",
+                                                f"Light estimates not written: {exc}"))
     except BaseException as e:
         # frames of fit / cnmf_qc in the traceback still reference the memmap and would block its deletion
         traceback.clear_frames(e.__traceback__)

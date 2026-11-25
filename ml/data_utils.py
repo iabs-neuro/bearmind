@@ -32,6 +32,9 @@ NON_FEATURE_COLS = {
     'failed_corner_artifact',  # Decision metadata
     'failed_area',        # Decision metadata
     'failed_circularity', # Decision metadata
+    'duplicate_of_input', # Decision metadata
+    'duplicate_distance_px',
+    'duplicate_snr_difference',
     'corr_groups',        # Merge group ID (not quality metric)
 
     # Derived/predicted (data leakage risk)

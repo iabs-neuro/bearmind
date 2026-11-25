@@ -10,6 +10,7 @@ from driada.experiment.neuron import Neuron, DEFAULT_T_RISE, DEFAULT_T_OFF, DEFA
 from utils import *
 from wavelet_backend import set_wavelet_backend
 from config import get_parallelization_backend
+from bearmind.decision_rules import DEFAULT_DELETION_RULES
 import numpy as np
 import pandas as pd
 import warnings
@@ -1326,14 +1327,6 @@ def t_off_check(series, t_off_min):
 
 # Default deletion rules (BREAKING CHANGE: inverted area/circularity logic)
 # Rules express DELETION conditions (e.g., "area<1" means "DELETE if area < 1")
-DEFAULT_DELETION_RULES = [
-    'area<1',          # DELETE if area < 1 pixel (reject tiny footprints)
-    'circularity>4',   # DELETE if circularity > 4 (reject non-circular)
-    'events_per_min<=0',  # DELETE if no events detected (neurons without events are garbage)
-    'event_r2_score<0.0',   # DELETE if event reconstruction R² < 0 (negative event fit, catches 7% of artifacts with 0.12% FN rate)
-]
-
-
 def parse_rule(rule_str):
     """
     Parse a threshold rule string into components.
@@ -1891,6 +1884,9 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
     corr = metrics_df['corr_groups'].to_numpy()
 
     pairs = []  # (position 1, position 2) of merge pairs
+    duplicate_of = np.full(len(metrics_df), np.nan)
+    duplicate_distance = np.full(len(metrics_df), np.nan)
+    duplicate_snr_difference = np.full(len(metrics_df), np.nan)
     for cluster_id in unique_clusters:
         members = np.nonzero(corr == cluster_id)[0]
         for p1 in members:
@@ -1903,7 +1899,13 @@ def assign_merge_groups(metrics_df, FBD, pxlthr_distance_boundary=15, d_snr_thr=
                             pairs.append((p1, p2))
                         elif snr[0] != max(snr):
                             dele[p1] = 1
+                            duplicate_of[p1] = ids[p2]
+                            duplicate_distance[p1] = FBD[labels[p1]][labels[p2]]
+                            duplicate_snr_difference[p1] = d_snr
     metrics_df['delete'] = dele
+    metrics_df['duplicate_of_input'] = duplicate_of
+    metrics_df['duplicate_distance_px'] = duplicate_distance
+    metrics_df['duplicate_snr_difference'] = duplicate_snr_difference
 
     # A member deleted after its pair was recorded leaves the group.
     pairs = [(a, b) for a, b in pairs if dele[a] == 0 and dele[b] == 0]

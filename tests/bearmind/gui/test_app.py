@@ -7,7 +7,7 @@ import yaml
 from PySide6.QtWidgets import QLabel
 
 from bearmind import config
-from bearmind.gui.app import MainWindow
+from bearmind.gui.app import MainWindow, TAB_NAMES
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[3]
 def test_window_opens_with_series(qapp, tmp_series):
     w = MainWindow(tmp_series)
     assert str(tmp_series.resolve()) in w.windowTitle()
-    assert [w.tabs.tabText(i) for i in range(w.tabs.count())] == ["Monitor", "Scan", "Thresholds", "Inspection"]
+    assert [w.tabs.tabText(i) for i in range(w.tabs.count())] == list(TAB_NAMES)
 
 
 def test_no_placeholder_tabs_left(qapp, tmp_series):
@@ -80,7 +80,7 @@ def test_excepthook_logs_and_keeps_window(qapp, tmp_series):
     log = (config.machine_file().parent / "gui.log").read_text(encoding="utf-8")
     assert "Traceback" in log and "boom" in log
     assert seen == ["ValueError: boom"]
-    assert w.tabs.count() == 4
+    assert w.tabs.count() == len(TAB_NAMES)
 
 
 def test_cli_gui_help():
@@ -99,7 +99,7 @@ def test_open_series_builds_monitor_tab_and_routes_signals(qapp, tmp_series):
     tab.status_message.emit("hello")
     assert w.statusBar().currentMessage() == "hello"
     w.open_series(tmp_series)  # a second open replaces the tab and stops the old timer
-    assert w.tabs.widget(0) is not tab and w.tabs.count() == 4 and not tab.timer.isActive()
+    assert w.tabs.widget(0) is not tab and w.tabs.count() == len(TAB_NAMES) and not tab.timer.isActive()
 
 
 def test_main_reports_constructor_failure(qapp, monkeypatch):

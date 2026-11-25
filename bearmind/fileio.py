@@ -172,14 +172,15 @@ def replace(src, dst, tries: int | None = None) -> None:
             time.sleep(REPLACE_STEP_S)
 
 
-def write_atomic(path, write, newline=None, replace_tries: int | None = None) -> None:
-    """Call write(text_handle) on a unique temp file next to `path`, fsync, then replace `path`."""
+def write_atomic(path, write, newline=None, replace_tries: int | None = None, *, binary=False) -> None:
+    """Call write on a unique temp file next to `path`, fsync, then replace `path`."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # suffix .tmp: readers glob '*.json' / '*.yaml' and never see a half-written file
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline=newline) as fh:
+        options = {} if binary else {"encoding": "utf-8", "newline": newline}
+        with os.fdopen(fd, "wb" if binary else "w", **options) as fh:
             write(fh)
             fh.flush()
             os.fsync(fh.fileno())

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+from itertools import islice
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -150,19 +151,24 @@ def last_frame_readable(path: Path) -> bool:
 class SessionReader:
     """A session's raw chunks as one uint8 (n, h, w) stream, with the registry's drop rules and optional crop."""
 
-    def __init__(self, series_root: Path, rec: SessionRecord, crop: CropBox | None = None):
+    def __init__(self, series_root: Path, rec: SessionRecord, crop: CropBox | None = None, *,
+                 on_raw=None, interpolate=(), drop=()):
         self.root = Path(series_root)
         self.rec = rec
         self.crop = crop
+        self.on_raw = on_raw
+        self.interpolate = interpolate
+        self.drop = drop
+        self.input_frames = int(rec.n_frames)
         h, w = rec.parts[0].shape
         if crop is not None:
             h, w = crop.height, crop.width
-        self.n_frames = int(rec.n_frames)
+        self.n_frames = self.input_frames - sum(b - a + 1 for a, b in drop)
         self.shape = (self.n_frames, h, w)
 
     def _chunk_plan(self) -> Iterator[tuple[Path, int, bool]]:
         """(path, frames taken from its head, broken tail) of each chunk the stream uses, in stream order."""
-        left = self.n_frames
+        left = self.input_frames
         for part in self.rec.parts:
             # a part stops at its own frame count, so a surplus at its end cannot shift the next part
             part_left = int(part.n_frames)
@@ -183,8 +189,20 @@ class SessionReader:
                 left -= n
 
     def _iter_frames(self) -> Iterator[np.ndarray]:
+        raw = self._raw_frames()
+        if self.interpolate or self.drop:
+            from bearmind.bad_frames import filter_frames
+
+            yield from filter_frames(raw, self.interpolate, self.drop)
+        else:
+            yield from raw
+
+    def _raw_frames(self):
         for path, n, broken in self._chunk_plan():
-            yield from _head_frames(path, n, broken)
+            for frame in _head_frames(path, n, broken):
+                if self.on_raw is not None:
+                    self.on_raw(frame)
+                yield frame
 
     def _crop(self, fr: np.ndarray) -> np.ndarray:
         c = self.crop
@@ -220,6 +238,8 @@ class SessionReader:
         A chunk outside every window is not decoded: an hour-long session needs only the few chunks under
         its windows.
         """
+        if self.interpolate or self.drop or self.on_raw is not None:
+            raise ValueError("Frame repair and full-frame inspection need a sequential read.")
         T = self.n_frames
         if T <= n_windows * length:
             spans = [(0, T)]
@@ -290,6 +310,19 @@ def write_preview_mp4(chunks: Iterable[np.ndarray], path: Path, fps: float, crf:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def write_mc_clip(source: Path, path: Path, first: int, seconds: int = 30) -> None:
+    """Encode a short MC clip at recording speed, beginning at the specified frame."""
+    movie = VideoArray(source)
+    fps = video_info(source)[3]
+    stop = min(len(movie), first + max(1, round(seconds * fps)))
+    if not 0 <= first < stop:
+        raise ValueError("The selected time is outside the MC video.")
+    chunks = (image[None] for _, image in islice(movie._decode_from(first), stop - first))
+    with fileio.file_lock(path):
+        if not path.is_file():
+            write_preview_mp4(chunks, path, fps, speed=1, tbin=1)
 
 
 def _write_mp4(chunks, path, fps, crf, speed, tbin, ssub=1) -> None:

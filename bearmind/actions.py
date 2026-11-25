@@ -361,18 +361,40 @@ def _warn_excluded(res: ActionResult, rec) -> None:
 
 # --- actions ---
 
-def _decide(paths, sids, what: str, value: str, who: str) -> None:
+def _decide(paths, sids, what: str, value: str, who: str, comment: str | None = None) -> None:
     now = datetime.now().isoformat(timespec="milliseconds")  # same format as gate.decide
 
     def change(rec):
-        rec.decisions.append(Decision(what, value, who, now))
+        text = comment or (exclusion_reason(rec) if what == "exclude" and value == "true" else None)
+        rec.decisions.append(Decision(what, value, who, now, text))
         rec.excluded = scan.evaluate_excluded(rec)  # the same rule as the scan: the latest decision wins
 
     for sid in sids:
         registry.update_record(paths, sid, change)
 
 
-def set_excluded(paths, sids, excluded: bool, who: str) -> ActionResult:
+def exclusion_reason(rec) -> str | None:
+    decision = next((d for d in reversed(rec.decisions) if d.what == "exclude"), None)
+    return decision.comment if decision is not None and decision.value == "true" else None
+
+
+def set_bad_frames(paths, sid, ranges, action, who, *, clear=False):
+    from bearmind import bad_frames
+
+    rec = registry.load_record(paths, sid)
+    normalized = bad_frames.normalize(ranges, rec.n_frames)
+    patch = {"bad_frames": [list(span) for span in normalized]} if ranges else {}
+    if action is not None:
+        patch["bad_frames_action"] = action
+    if clear:
+        config.update_yaml(paths.session_config(sid), {}, remove=("bad_frames", "bad_frames_action"))
+    else:
+        config.update_yaml(paths.session_config(sid), patch)
+    _decide(paths, [sid], "bad_frames", bad_frames.label(normalized) or "none", who, action)
+    return normalized
+
+
+def set_excluded(paths, sids, excluded: bool, who: str, comment: str | None = None) -> ActionResult:
     recs = _records(paths)
     sids = list(sids)
     check_sids(recs, sids)
@@ -382,7 +404,8 @@ def set_excluded(paths, sids, excluded: bool, who: str) -> ActionResult:
             res.warnings.append((sid, "no_fps_stays_excluded"))
         elif not excluded and any(a.code == "not_found_in_scan" for a in recs[sid].anomalies):
             res.warnings.append((sid, "not_found_stays_excluded"))  # scan.evaluate_excluded always excludes it
-    _decide(paths, sids, "exclude", "true" if excluded else "false", who)
+    reason = ((comment or "").strip() or None) if excluded else None
+    _decide(paths, sids, "exclude", "true" if excluded else "false", who, reason)
     res.ok = sids
     return res
 

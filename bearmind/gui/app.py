@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
 from bearmind import config
 from bearmind.gui.inspection_tab import InspectionTab
 from bearmind.gui.monitor_tab import SELECTION_STYLE, MonitorTab
+from bearmind.gui.parameters_tab import ParametersTab
 from bearmind.gui.scan_tab import ScanTab
 from bearmind.gui.thresholds_tab import ThresholdsTab
 
-TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection")
+TAB_NAMES = ("Monitor", "Scan", "Thresholds", "Inspection", "Parameters")
 MAX_RECENT = 10
 NO_RAW_ASK = ("This folder has no 1_Raw subfolder, so it does not look like a series folder:\n{series}\n\n"
               "Opening it creates a _bearmind folder inside it. Open it as a series anyway?")
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow):
             built.append(ScanTab(series))
             built.append(ThresholdsTab(series))
             built.append(InspectionTab(series))
+            built.append(ParametersTab(series))
         except Exception:
             for tab in built:
                 self._retire(tab)
@@ -140,11 +142,12 @@ class MainWindow(QMainWindow):
         self.tabs.insertTab(index, tab, name)
 
     def _set_tabs(self, monitor_tab: MonitorTab, scan_tab: ScanTab, thresholds_tab: ThresholdsTab,
-                  inspection_tab: InspectionTab) -> None:
+                  inspection_tab: InspectionTab, parameters_tab: ParametersTab) -> None:
         self._replace_tab("Monitor", monitor_tab)
         self._replace_tab("Scan", scan_tab)
         self._replace_tab("Thresholds", thresholds_tab)
         self._replace_tab("Inspection", inspection_tab)
+        self._replace_tab("Parameters", parameters_tab)
         self.tabs.setCurrentIndex(0)
         self.monitor, self.scan, self.thresholds = monitor_tab, scan_tab, thresholds_tab
         self.inspection = inspection_tab
@@ -160,6 +163,7 @@ class MainWindow(QMainWindow):
         # a finished scan changes the table and the not-scanned state, which the timer would show only later; a
         # failed one may have written records before it failed
         scan_tab.scan_finished.connect(lambda ok: monitor_tab.refresh())
+        scan_tab.scan_finished.connect(lambda ok: parameters_tab.refresh_targets())
         scan_tab.decided.connect(monitor_tab.refresh)
 
     def _scan_running(self) -> bool:

@@ -13,7 +13,7 @@ import bearmind.stages
 from bearmind import checks, provenance
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult
-from bearmind.timestamps import session_timestamps, write_timestamps
+from bearmind.timestamps import analysis_frame_count, analysis_timestamps, write_timestamps
 
 
 def _ml_filter(est):
@@ -144,14 +144,15 @@ def run(paths, rec, cfg) -> StageResult:
             f"{counts['n_merge_products_dropped'] or 0} merge products dropped (rule: {counts['component_rule']})",
             data={"n_snr_duplicates_exported": counts["n_snr_duplicates_exported"] or 0,
                   "n_merge_products_dropped": counts["n_merge_products_dropped"] or 0}))
-    ts = session_timestamps(paths, rec)
-    n_ts = min(n_frames, rec.n_frames, len(ts.raw))
-    if n_frames != rec.n_frames or n_ts < n_frames:
+    ts = analysis_timestamps(paths, rec)
+    expected = analysis_frame_count(rec)
+    n_ts = min(n_frames, expected, len(ts.raw))
+    if n_frames != expected or n_ts < n_frames:
         anomalies.append(Anomaly(
             "export_frames_mismatch", "warning",
-            f"estimates have {n_frames} frames, registry has {rec.n_frames}, "
+            f"estimates have {n_frames} frames, registry has {expected}, "
             f"timestamps have {len(ts.raw)}; timestamps written for {n_ts}",
-            data={"estimates": n_frames, "registry": rec.n_frames, "timestamps": len(ts.raw)}))
+            data={"estimates": n_frames, "registry": expected, "timestamps": len(ts.raw)}))
 
     if not len(idx):
         n = int(len(est.idx_components))

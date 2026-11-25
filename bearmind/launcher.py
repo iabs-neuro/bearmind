@@ -33,6 +33,19 @@ def inspect_command(series_root: Path) -> list[str]:
     return [str(_python()), "-m", "bearmind", "inspect", str(series_root), "--no-browser"]
 
 
+def estimates_viewer_command(series_root: Path, sid=None, file=None) -> list[str]:
+    cmd = [str(_python()), "-m", "bearmind", "view-estimates", str(series_root)]
+    if sid is not None:
+        cmd.append(sid)
+    if file is not None:
+        cmd.extend(("--file", str(file)))
+    return cmd
+
+
+def light_estimates_command(series_root: Path) -> list[str]:
+    return [str(_python()), "-m", "bearmind", "light-estimates", str(series_root)]
+
+
 def _flags(breakaway: bool) -> int:
     if os.name != "nt":
         return 0

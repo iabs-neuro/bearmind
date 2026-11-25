@@ -19,8 +19,8 @@ import psutil
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QMessageBox, QPushButton,
-                               QTableView, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox,
+                               QPushButton, QTableView, QVBoxLayout, QWidget)
 
 from bearmind import actions, config, inspect_lock, launcher, monitor
 from bearmind.gui.monitor_tab import (ACCENT_BUTTON, CELL_BG, CELL_INK, EXCLUDED_INK, MUTED, WARNING_TEXT,
@@ -193,11 +193,20 @@ class InspectionTab(QWidget):
         self.inspect_button = QPushButton("Manual inspection")
         self.inspect_button.setStyleSheet(ACCENT_BUTTON)
         self.not_needed_button = QPushButton("Not needed")
+        self.viewer_button = QPushButton("View estimates")
+        viewer_menu = QMenu(self.viewer_button)
+        viewer_menu.addAction("Browse series estimates", lambda: self._guarded(self._open_viewer))
+        viewer_menu.addAction("Choose estimates file…", lambda: self._guarded(self._choose_estimates_file))
+        self.viewer_button.setMenu(viewer_menu)
+        self.light_button = QPushButton("Make light estimates")
+        self.light_button.clicked.connect(lambda: self._guarded(self._make_light))
         self.hint_label = QLabel(HINT)
         self.hint_label.setStyleSheet(f"color: {MUTED};")
         self.inspect_button.clicked.connect(lambda: self._guarded(self._on_inspect))
         self.not_needed_button.clicked.connect(lambda: self._guarded(self.mark_not_needed))
         row.addWidget(self.inspect_button)
+        row.addWidget(self.viewer_button)
+        row.addWidget(self.light_button)
         row.addWidget(self.not_needed_button)
         row.addSpacing(8)
         row.addWidget(self.hint_label)
@@ -368,6 +377,24 @@ class InspectionTab(QWidget):
             self._say(why)
             return
         self.open_inspection(sids[0])
+
+    def _choose_estimates_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a trusted estimates file", str(self.series),
+                                              "Estimates (*.pickle)")
+        if path:
+            self._open_viewer(file=Path(path))
+
+    def _make_light(self) -> None:
+        launcher.spawn_detached(launcher.light_estimates_command(self.series),
+                                self.paths, "light_estimates_console.log")
+        self._say("Making light estimates. See _bearmind/logs/light_estimates_console.log for progress.")
+
+    def _open_viewer(self, file=None) -> None:
+        selected = self.selected_sids()
+        sid = selected[0] if file is None and len(selected) == 1 else None
+        launcher.spawn_detached(launcher.estimates_viewer_command(self.series, sid, file),
+                                self.paths, "estimates_viewer_console.log")
+        self._say("Opening the read-only estimates viewer in the browser…")
 
     def open_inspection(self, sid: str) -> None:
         """Open `sid` in the browser on the series' server; start the server first when none runs."""

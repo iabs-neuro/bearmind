@@ -9,7 +9,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QHeaderView, QLabel, QPushButton
 
 from bearmind import actions, fileio, monitor, registry, scan, scan_view
-from bearmind.gui.app import MainWindow
+from bearmind.gui.app import MainWindow, TAB_NAMES
 from bearmind.gui.monitor_tab import CELL_BG, EXCLUDED_INK, SELECTION_STYLE, MonitorTab
 from bearmind.gui import scan_tab
 from bearmind.gui.scan_tab import ScanTab
@@ -426,7 +426,9 @@ def test_scan_tab_texts_are_english(qapp, make_series, tmp_path):
 def test_window_scan_tab_replaces_placeholder(qapp, tmp_series):
     w = MainWindow(tmp_series)
     assert isinstance(w.tabs.widget(1), ScanTab)
-    assert [w.tabs.tabText(i) for i in range(w.tabs.count())] == ["Monitor", "Scan", "Thresholds", "Inspection"]
+    assert [w.tabs.tabText(i) for i in range(w.tabs.count())] == [
+        "Monitor", "Scan", "Thresholds", "Inspection", "Parameters",
+    ]
     assert w.tabs.currentIndex() == 0
 
 
@@ -437,7 +439,7 @@ def test_window_reopen_replaces_scan_tab(qapp, tmp_series, tmp_path):
     first = w.tabs.widget(1)
     w.open_series(other)
     assert w.tabs.widget(1) is not first and w.tabs.widget(1).series == other.resolve()
-    assert w.tabs.count() == 4
+    assert w.tabs.count() == len(TAB_NAMES)
 
 
 def test_scan_finished_refreshes_monitor(qapp, make_series, tmp_path):

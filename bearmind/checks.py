@@ -65,6 +65,14 @@ def evaluate(stage: str, metrics: dict, series_metrics: list[dict], cfg: dict) -
                              "max shift {v} px", note))
         out.append(_absolute(stage, "mc_template_corr", metrics, "mean_template_corr", cfg, False,
                              "template corr {v}"))
+        stripes = metrics.get("stripe_events") or []
+        if stripes:
+            count = sum(e["last"] - e["first"] + 1 for e in stripes)
+            by_action = {e["action"] for e in stripes}
+            longest = max(e["duration_s"] for e in stripes)
+            out.append(Check("mc", "mc_stripe_frames", "warning", float(count),
+                             f"{count} stripe frames in {len(stripes)} bursts; longest {longest:.3f} s; "
+                             f"{', '.join(sorted(by_action))}"))
     elif stage == "cnmf":
         out.append(_components_vs_median(metrics, series_metrics, cfg))
         out.append(_absolute(stage, "cnmf_missed_cells", metrics, "missed_cells", cfg, True,

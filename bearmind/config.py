@@ -97,7 +97,7 @@ def machine_config() -> dict:
     return _read_yaml(f)
 
 
-def resolve(paths, sid=None, mouse=None) -> dict:
+def resolve(paths, sid=None, mouse=None, *, overrides=None) -> dict:
     if sid is not None and mouse is None:
         mouse = naming.mouse_id(sid)
     cfg = load_defaults()
@@ -107,17 +107,28 @@ def resolve(paths, sid=None, mouse=None) -> dict:
     if sid:
         layers.append(paths.session_config(sid))
     for f in layers:
-        cfg = deep_merge(cfg, _read_yaml(f))
+        cfg = deep_merge(cfg, overrides[f] if overrides is not None and f in overrides else _read_yaml(f))
     cfg["machine"] = machine_config()
     return cfg
 
 
-def update_yaml(path, patch: dict) -> None:
+def update_yaml(path, patch: dict, *, remove=()) -> None:
     """Merge `patch` into the YAML file: reread under the file lock, write atomically (fileio)."""
     path = Path(path)
     with fileio.file_lock(path):
         data = deep_merge(_read_yaml(path), patch)
+        for key in remove:
+            data.pop(key, None)
         fileio.write_atomic(path, lambda f: yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True))
+
+
+def replace_yaml(path, updated, expected) -> None:
+    """Write an edited layer only if it still matches the source shown to the expert."""
+    path = Path(path)
+    with fileio.file_lock(path):
+        if _read_yaml(path) != expected:
+            raise ConfigError("The configuration changed. Reload it before saving.", path)
+        fileio.write_atomic(path, lambda f: yaml.safe_dump(updated, f, sort_keys=False, allow_unicode=True))
 
 
 def params_hash(params: dict) -> str:

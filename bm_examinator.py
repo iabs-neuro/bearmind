@@ -29,12 +29,13 @@ from bokeh.plotting import figure, show, output_notebook
 from bokeh.document.document import Document
 from bokeh.models import (LinearColorMapper, CDSView, ColumnDataSource, Plot, CustomJS, Button,
                           RadioButtonGroup, PointDrawTool, TapTool, LabelSet, Div, PreText, CheckboxGroup, Spacer,
-                          CustomJSExpr, IndexFilter, Range1d)
+                          CustomJSExpr, IndexFilter, Range1d, Select, Slider as BokehSlider)
 from bokeh.core.properties import expr
 
 from bokeh.layouts import column, row
 from bokeh.events import Tap, RangesUpdate
 from bokeh.io import push_notebook
+from bearmind.trace_view import _minmax_positions, decimate_minmax
 from glob import glob
 from caiman.source_extraction.cnmf import params
 from caiman.components_evaluation import (
@@ -184,34 +185,6 @@ def get_fps_from_timestamps(name, default_fps=20, verbose=True):
         return fps
 
 
-def _minmax_positions(Y, n_out):
-    """Bins of the rows of Y (k, n) for keeping at most n_out points, two per bin: (bin starts (1, nb), position
-    of the earlier and of the later of each bin's min and max (k, nb), bin length).
-
-    The last bin is padded with the row's last value; argmin and argmax return the first occurrence, so a
-    position never points into the padding."""
-    k, n = Y.shape
-    b = -(-n // max(n_out // 2, 1))
-    nb = -(-n // b)
-    pad = nb * b - n
-    Z = np.concatenate([Y, np.repeat(Y[:, -1:], pad, axis=1)], axis=1) if pad else Y
-    Z = Z.reshape(k, nb, b)
-    amin, amax = Z.argmin(axis=2), Z.argmax(axis=2)
-    starts = (np.arange(nb) * b)[None, :]
-    return starts, starts + np.minimum(amin, amax), starts + np.maximum(amin, amax), b
-
-
-def decimate_minmax(y: np.ndarray, n_out: int = 2000) -> tuple[np.ndarray, np.ndarray]:
-    """(frame index of every kept point, values): the min and the max of each bin, in time order; at most
-    n_out points; y not longer than n_out is returned whole."""
-    y = np.asarray(y)
-    if len(y) <= n_out:
-        return np.arange(len(y)), y
-    _, first, second, _ = _minmax_positions(y[None, :], n_out)
-    frames = np.stack([first[0], second[0]], axis=1).ravel()
-    return frames, y[frames]
-
-
 def _decimate_rows(Y, n_out):
     """decimate_minmax of every row of Y (k, n) on one shared time axis: (frames, values (k, <= n_out)).
 
@@ -344,10 +317,11 @@ def EstimatesToSrc(estimates, comps_to_select=[], cthr=0.3):
     return dict(xs=xs, ys=ys, times=times, traces=traces, colors=colors, idx=comps_to_select)
 
 
-def _component_contours(estimates, comps, cthr=0.3):
+def _component_contours(estimates, comps, cthr=0.3, method="nrg"):
     """Contour coordinates of the components `comps`, one (k, 2) array each with CaImAn's NaN rows kept:
     what EstimatesToSrcFast draws, and what a server may cache for the same file and cthr."""
-    conts = cm.utils.visualization.get_contours(estimates.A[:, comps], dims=estimates.imax.shape, thr=cthr)
+    conts = cm.utils.visualization.get_contours(estimates.A[:, comps], dims=estimates.imax.shape,
+                                               thr=cthr, thr_method=method)
     return [c["coordinates"] for c in conts]
 
 
@@ -1047,6 +1021,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         size = bkapp_kwargs.get('size', 500)
         view = _view_options(bkapp_kwargs)
         cthr = view['cthr']
+        contour_method = "nrg"
+        contour_edited = False
         ds = view['ds']
         corr_thr = view['corr_thr']
         correlation_method = bkapp_kwargs.get('correlation_method', 'pearson')
@@ -1174,11 +1150,11 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         lo, hi = min(-10.0, float(base_time[0])), float(base_time[-1])
         pad = 0.05 * (hi - lo) if hi > lo else 1.0
         p2 = figure(width=trwidth, height=height, tools=tools2, toolbar_location='below', output_backend=backend,
-                    x_range=Range1d(lo - pad, hi + pad))
+                    x_range=Range1d(lo - pad, hi + pad), name="inspection_trace")
 
-        recon_renderer = None
+        recon_renderer = contour_renderer = None
         if not emergency:
-            p1.patches('xs',
+            contour_renderer = p1.patches('xs',
                        'ys',
                        fill_alpha=fill_alpha,
                        nonselection_alpha=nonselection_alpha,
@@ -1467,11 +1443,25 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 new.update(corr_scores=full(numbering.corr_scores, 0.0),
                            corr_groups=full(numbering.corr_groups, 0.0))
             src.data.update(new)
+            if contour_edited:
+                refresh_contours()
+
+        def refresh_contours():
+            comps = list(storage.numbering.slot_of)
+            contours = _component_contours(storage.estimates, comps, cthr, contour_method) if comps else []
+            xs, ys, areas = (list(src.data[name]) for name in ("xs", "ys", "areas"))
+            for comp, coors in zip(comps, contours):
+                slot = storage.slot_of(comp)
+                polygon = coors[~np.isnan(coors).any(axis=1)]
+                xs[slot] = polygon[:, 0].tolist()
+                ys[slot] = (dims[0] - polygon[:, 1]).tolist()
+                areas[slot] = calculate_polygon_area(coors)
+            src.data.update(xs=xs, ys=ys, areas=areas)
 
         def add_row(storage, comp, position):
             """A data source row for comp, a merge's result at position in the list; the only contour computed."""
             est = storage.estimates
-            coors = _component_contours(est, [comp], cthr)[0]
+            coors = _component_contours(est, [comp], cthr, contour_method)[0]
             polygon = coors[~np.isnan(coors).any(axis=1)]
             tr = np.array(est.C[comp, sf:ef][::ds], dtype=float)
             with np.errstate(invalid='ignore', divide='ignore'):
@@ -2140,6 +2130,44 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
         if not server:
             button_save_feedback.on_event('button_click', partial(save_feedback_callback, storage=storage))
 
+        plots = row(p1, metrics_div, p2)
+        controls = []
+        if server:
+            metrics_div.visible = False
+            toggle_metrics = Button(label="Show metrics", width=bwidth, width_policy="fit")
+
+            def show_metrics():
+                metrics_div.visible = not metrics_div.visible
+                toggle_metrics.label = "Hide metrics" if metrics_div.visible else "Show metrics"
+
+            toggle_metrics.on_click(show_metrics)
+            sliders = []
+            if contour_renderer is not None:
+                width = BokehSlider(title="Contour line width", start=0.5, end=6, step=0.5,
+                                    value=line_width, width=170)
+                opacity = BokehSlider(title="Contour fill opacity", start=0, end=1, step=0.05,
+                                      value=fill_alpha, width=170)
+                width.js_link("value", contour_renderer.glyph, "line_width")
+                opacity.js_link("value", contour_renderer.glyph, "fill_alpha")
+                sliders = [width, opacity]
+                if legacy:
+                    metric = Select(title="Contour metric", options=[("nrg", "Energy"), ("max", "Peak amplitude")],
+                                    value=contour_method, width=155)
+                    threshold = BokehSlider(title="Contour threshold", start=0, end=1, step=0.05,
+                                            value=cthr, width=160)
+
+                    def change_contours(_attr, _old, _new):
+                        nonlocal cthr, contour_method, contour_edited
+                        cthr, contour_method = threshold.value_throttled, metric.value
+                        contour_edited = True
+                        refresh_contours()
+
+                    metric.on_change("value", change_contours)
+                    threshold.on_change("value_throttled", change_contours)
+                    sliders.extend([metric, threshold])
+            controls.append(row(toggle_metrics, *sliders))
+            plots = row(p1, column(p2, metrics_div))
+
         doc.add_root(
             column(
                 row(
@@ -2160,7 +2188,8 @@ def make_app(fname, default_fps=20, bkapp_kwargs=None, *, prepared=None, final_s
                 ),
                 *([status] if status is not None else []),
                 sorting_row,
-                row(p1, metrics_div, p2)
+                *controls,
+                plots
             )
         )
 

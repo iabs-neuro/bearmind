@@ -441,7 +441,7 @@ def test_unschedulable_session_is_a_red_row_when_the_batch_is_stopped(tmp_series
     assert all(c.level == "error" and "cannot be scheduled: config: " in c.tooltip for c in row.cells.values())
     assert row.cells["crop"].text == "512×480"  # what is done stays readable
     ok = next(r for r in v.rows if r.sid == "A_M1_1D")
-    assert ok.problem is None and ok.cells["crop"].level == "none"
+    assert ok.problem is None and ok.cells["crop"].level == "queued"
     assert v.eta_s == pytest.approx(sum(defaults()[s] for s in PENDING_STAGES) * 1000)  # the healthy one only
     assert (v.bars["crop"].done, v.bars["crop"].failed, v.bars["crop"].pending) == (1, 0, 1)
     assert (v.bars["mc"].failed, v.bars["mc"].pending) == (1, 1)

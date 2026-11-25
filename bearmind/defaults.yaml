@@ -116,10 +116,13 @@ inspection:
   webgl: true
   trace_points: 2000
   wave: {k_mad: 3.0, active_frac: 0.3, warn_frac: 0.025}
+estimates:
+  light: true
 # MC checks: provisional, from 6 real sessions (task 17, docs/superpowers/specs/2026-11-01-e2e-report.md):
 # max shift 2.2-4.6 px, template corr 0.82-0.94; a uniform 2 px misalignment lowers the corr to 0.57-0.75.
 # The cnmf / autoinspect / export values are the initial guesses: they need production data.
 checks:
+  thresholds_vs_mouse: {min_corr: 0.03, min_pnr: 3}
   mc_max_shift_px: {warn: 10, error: 30}
   mc_template_corr: {warn: 0.7}
   # A frame whose mean in the MC video is below this is black and does not count for the max shift check.

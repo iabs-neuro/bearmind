@@ -12,9 +12,10 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from bearmind import fileio, pool
+from bearmind import bad_frames, fileio, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
+from bearmind.timestamps import session_time_s
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1
 
 CHUNK = 1000
@@ -173,7 +174,7 @@ def run(paths, rec, cfg) -> StageResult:
     if mcfg.get("pw_rigid"):
         raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
-    n_in = int(rec.n_frames)
+    action, limit, auto, manual = bad_frames.settings(cfg, rec.n_frames)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a missing CAIMAN_TEMP folder
     saved = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     os.environ["CAIMAN_TEMP"] = str(tmp)
@@ -183,7 +184,26 @@ def run(paths, rec, cfg) -> StageResult:
     result = None
     try:
         tif = tmp / f"{sid}_crop.tif"
-        _write_tif(SessionReader(paths.root, rec, crop=crop), tif)
+        meter = bad_frames.StripeMeter()
+        _write_tif(SessionReader(paths.root, rec, crop=crop, on_raw=meter.add), tif)
+        suspects = meter.suspects()
+        event_times = None
+        if suspects or manual:
+            try:
+                event_times = session_time_s(paths, rec, after_mc=False)
+            except (OSError, ValueError, TypeError):
+                pass  # a session without usable timestamps is reported in seconds from its frame rate
+        plan = bad_frames.repair_plan(suspects if auto else (), manual, action, limit, event_times, fps, rec.n_frames)
+        if not auto and suspects:
+            remaining = [i for i in suspects if not any(a <= i <= b for a, b in manual)]
+            plan.extend(bad_frames.repair_plan(remaining, [], "report", limit, event_times, fps, rec.n_frames))
+        repairs = {k: [(p["first"], p["last"]) for p in plan if p["action"] == k]
+                   for k in ("interpolate", "drop")}
+        n_in = rec.n_frames
+        if repairs["interpolate"] or repairs["drop"]:
+            reader = SessionReader(paths.root, rec, crop=crop, interpolate=repairs["interpolate"], drop=repairs["drop"])
+            _write_tif(reader, tif)
+            n_in = reader.n_frames
 
         dview = pool.start_pool(mc_pool_size(cfg))
         mc = cmc.MotionCorrect([str(tif)], dview=dview, **{
@@ -207,11 +227,21 @@ def run(paths, rec, cfg) -> StageResult:
             "n_frames": int(n),
             "crop": None if crop is None else [crop.top, crop.left, crop.height, crop.width],
         }
+        anomalies = []
+        if plan:
+            metrics["stripe_events"] = sorted(plan, key=lambda p: p["first"])
+            metrics["stripe_timing"] = "timestamps" if event_times is not None else "fps"
+            metrics["dropped_ranges"] = repairs["drop"]
+            for event in metrics["stripe_events"]:
+                a, b, effect = event["first"], event["last"], event["action"]
+                text = (f"Stripe frames {bad_frames.label([(a, b)])}: "
+                        f"{event['duration_s']:.3f} s, {effect}.")
+                anomalies.append(Anomaly("mc_stripe_frames", "warning", text, data=event))
         outputs = {
             "mc_video": paths.rel(paths.mc_video(sid)),
             "mc_shifts": paths.rel(paths.mc_shifts(sid)),
         }
-        result = StageResult(outputs=outputs, metrics=metrics)
+        result = StageResult(outputs=outputs, metrics=metrics, anomalies=anomalies)
     except BaseException as e:
         # traceback frames (e.g. of the writer) still reference the tif memmap and would block its deletion
         traceback.clear_frames(e.__traceback__)

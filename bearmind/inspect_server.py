@@ -31,6 +31,7 @@ import time
 import traceback
 import weakref
 import webbrowser
+from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_futures
 from dataclasses import dataclass
@@ -43,12 +44,12 @@ import numpy as np
 import psutil
 from bokeh.document import without_document_lock
 from bokeh.layouts import column, row
-from bokeh.models import Button, Div
+from bokeh.models import Button, CheckboxGroup, Div, TextInput
 from bokeh.server.server import Server
 from tornado.ioloop import IOLoop, PeriodicCallback
-from tornado.web import OutputTransform
+from tornado.web import OutputTransform, StaticFileHandler
 
-from bearmind import actions, config, naming, provenance, registry, runner, wave
+from bearmind import actions, config, light_estimates, naming, provenance, registry, runner, wave
 # the lock as other processes read it is in a module without Bokeh (the window imports it); its names stay here
 from bearmind.inspect_lock import (UNREADABLE_LOCK_STALE_S, ServerState, _lock_info,  # noqa: F401
                                    same_process as _same_process, server_state, session_url)
@@ -421,7 +422,7 @@ class Preparer:
         if prep is None:
             return None
         try:
-            current = prep.stamp == self._stamp(sid)
+            current = getattr(prep, "source_key", prep.stamp) == self._stamp(sid)
         except Exception:
             return None  # take() reads the stamp again and shows its error
         with self._cv:
@@ -437,7 +438,7 @@ class Preparer:
             if self._wanted == sid:
                 self._wanted = None  # not started yet: prepared here, now
             prep = self._ready.pop(sid, None)
-        if prep is not None and prep.stamp == self._stamp(sid):
+        if prep is not None and getattr(prep, "source_key", prep.stamp) == self._stamp(sid):
             return prep
         while True:
             e = self.failed(sid)
@@ -624,9 +625,15 @@ class _Page:
         kwargs = getattr(prep, "bkapp_kwargs", None) or srv.bkapp_kwargs
         wave_cfg = getattr(prep, "wave_cfg", None)
         hint = wave_hint(getattr(prep, "wave_frac", None), srv.wave_cfg if wave_cfg is None else wave_cfg)
-        self.doc.add_root(self._header(sid, hint, saved_before, out_of_date))
-        app = _bm().make_app(prep.fname, prep.options["default_fps"], kwargs, prepared=prep,
-                             final_save=partial(srv.final_save, self, sid, prep.stamp),
+        bm = _bm()
+        editable = not bm._autoinspected(prep.estimates)
+        self.doc.add_root(self._header(sid, hint, saved_before, out_of_date, editable=editable))
+
+        def save(est):
+            return srv.final_save(self, sid, prep.stamp, est, exports=0 in self.exports.active)
+
+        app = bm.make_app(prep.fname, prep.options["default_fps"], kwargs, prepared=prep,
+                             final_save=save,
                              progress_save=partial(srv.progress_save, sid),
                              refuse_autoinspected=AUTOINSPECTED.format(sid=sid), on_change=partial(self.changed, sid))
         app(self.doc)
@@ -634,7 +641,7 @@ class _Page:
         srv.after_open(self, sid)
 
     def _header(self, sid, hint: str | None = None, saved_before: str | None = None,
-                out_of_date: str | None = None):
+                out_of_date: str | None = None, *, editable=True):
         self.next_button = Button(label=NEXT_LABEL.format(sid=""), button_type="primary", visible=False,
                                   name="next", width_policy="fit")
         self.next_button.on_event("button_click", self._on_next)
@@ -646,9 +653,113 @@ class _Page:
         self.wave = Div(text=html.escape(hint or "", quote=False), name="wave", visible=bool(hint),
                         styles=WAVE_STYLE)
         self.notes_div = Div(text=self._notes_html(), name="notes", visible=bool(self.notes))
+        controls = []
+        if editable:
+            self.exports = CheckboxGroup(labels=["Exports"], active=[], name="inspection_exports")
+            exclusion_buttons, exclusion_panel = self._exclusion_controls(sid)
+            video_button, video = self._video_controls(sid)
+            controls = [row(self.exports, video_button, *exclusion_buttons), exclusion_panel, video]
         return column(row(Div(text=f"<b>{html.escape(sid)}</b>", name="session"), self.next_button,
-                          self.next_text), self.out_of_date, self.saved_before, self.wave, self.notes_div,
+                          self.next_text), *controls, self.out_of_date, self.saved_before, self.wave, self.notes_div,
                       name="inspection_header")
+
+    def _video_controls(self, sid):
+        from bearmind.estimates_viewer import _mc_preview
+        from bearmind.video import write_mc_clip
+
+        preview = _mc_preview(self.server.paths, sid)
+        source = self.server.paths.mc_video(sid)
+        has_source = source.is_file()
+        available = preview is not None or has_source
+        button = Button(label="Show MC video" if available else "MC video unavailable", disabled=not available)
+        player = Div()
+        seek = Button(label="Play from trace start", visible=has_source, width_policy="fit")
+        panel = column(seek, player, visible=False)
+
+        def show_video(path, autoplay=False):
+            player.text = (f'<video controls {"autoplay " if autoplay else ""}preload="metadata" width="540" '
+                           f'src="/mc-preview/{quote(path.name)}"></video>')
+            if preview is not None and path != preview:
+                player.text += f'<p><a href="/mc-preview/{quote(preview.name)}" target="_blank">Full MC preview</a></p>'
+
+        def clip_ready(clip, future):
+            seek.disabled = False
+            try:
+                future.result()
+            except Exception:
+                log.exception("%s: MC clip could not be prepared", sid)
+                player.text = "Could not prepare the selected MC interval. Details in the series log."
+            else:
+                if panel.visible:
+                    show_video(clip, autoplay=True)
+
+        def play():
+            trace = self.doc.get_model_by_name("inspection_trace")
+            times = self.prepared.estimates.time
+            start = trace.x_range.start if trace is not None else times[0]
+            frame = min(int(np.searchsorted(times, start)), len(times) - 1)
+            try:
+                clip = self.server.paths.preview(sid, f"mc_clip_{source.stat().st_mtime_ns}_{frame}")
+                clip.parent.mkdir(parents=True, exist_ok=True)
+                future = self.server._bg.submit(write_mc_clip, source, clip, frame)
+            except (OSError, RuntimeError):
+                log.exception("%s: could not schedule MC clip", sid)
+                player.text = "Could not open the MC video. Details in the series log."
+                return
+            seek.disabled = True
+            player.text = "Preparing the MC video from the start of the visible trace..."
+            future.add_done_callback(lambda job: self._next_tick(clip_ready, clip, job))
+
+        def toggle():
+            panel.visible = not panel.visible
+            button.label = "Hide MC video" if panel.visible else "Show MC video"
+            if not panel.visible:
+                player.text = ""
+            elif preview is not None:
+                show_video(preview)
+            elif not seek.disabled:
+                play()
+
+        if available:
+            button.on_click(toggle)
+        seek.on_click(play)
+        return button, panel
+
+    def _exclusion_controls(self, sid):
+        by_session = Button(label="Exclude session", button_type="warning")
+        by_mouse = Button(label="Exclude mouse", button_type="warning")
+        preview = Div()
+        note = TextInput(title="Reason (optional)")
+        apply = Button(label="Confirm exclusion", button_type="danger")
+        cancel = Button(label="Cancel")
+        panel = column(preview, note, row(apply, cancel), visible=False)
+        targets = []
+
+        def explain(whole_mouse):
+            rec = registry.load_record(self.server.paths, sid)
+            targets[:] = ([r.sid for r in registry.all_records(self.server.paths) if r.mouse == rec.mouse]
+                          if whole_mouse else [sid])
+            preview.text = ("The batch will skip these sessions. Unsaved edits on this page will be discarded."
+                            "<br>" + html.escape(", ".join(targets)))
+            panel.visible = True
+
+        def exclude():
+            if self.sid != sid or not panel.visible or not targets:
+                return
+            try:
+                actions.set_excluded(self.server.paths, targets, True, actions.current_user(), note.value)
+            except (OSError, ValueError) as exc:
+                preview.text = f"Could not record exclusion: {html.escape(str(exc))}"
+                return
+            self.server.release(self)
+            self.prepared = None
+            self.show_index()
+
+        by_session.on_click(partial(explain, False))
+        by_mouse.on_click(partial(explain, True))
+        apply.on_click(exclude)
+        cancel.on_click(lambda: setattr(panel, "visible", False))
+        return (by_session, by_mouse), panel
 
     def _show_saved_text(self, sid: str) -> None:
         """The status line of a saved page names Next while Next is offered, else says the tab can be closed
@@ -899,12 +1010,20 @@ class InspectServer:
     def stamp(self, sid: str) -> _Stamp:
         return _stamp_of(self.paths, registry.load_record(self.paths, sid))
 
+    def _preparation_stamp(self, sid):
+        rec = registry.load_record(self.paths, sid)
+        full = _estimates_file(self.paths, rec)
+        source = light_estimates.inspection_input(self.paths, sid, full)
+        return _stamp_of(self.paths, rec), source, runner._file_stat(source)
+
     def failure_key(self, sid: str):
         """What a failed preparation of sid depends on (Preparer): its stamp, its record (a rescan rewrites it)
         and its timestamps files."""
         rec = registry.load_record(self.paths, sid)
         files = [self.paths.registry_file(sid)] + [self.paths.root / p.timestamps_file for p in rec.parts
                                                    if p.timestamps_file]
+        full = _estimates_file(self.paths, rec)
+        files.append(light_estimates.light_path(full))
         return _stamp_of(self.paths, rec), [runner._file_stat(f) for f in files]
 
     def build(self, sid: str):
@@ -917,13 +1036,16 @@ class InspectServer:
         if cnmf is None or cnmf.state is not State.DONE:
             raise _NotDone(sid)
         stamp = _stamp_of(paths, rec)
-        fname = _estimates_file(paths, rec)
+        full = _estimates_file(paths, rec)
+        fname = light_estimates.inspection_input(paths, sid, full)
+        source_stat = runner._file_stat(fname)
+        light = fname != full
         cfg = self.read_cfg()
         kwargs, wave_cfg = self._kwargs_of(cfg), cfg.get("wave") or {}
         wkey = self._wave_key(wave_cfg)
         try:
             time_s = session_time_s(paths, rec)
-            contours, cached_frac = self._read_cache(sid, stamp, kwargs, wkey)
+            contours, cached_frac = (None, None) if light else self._read_cache(sid, stamp, kwargs, wkey)
             bm = _bm()
             # forward slashes: the window titles its image with the part of the path after the last "/"
             prep = bm.prepare_session(fname.as_posix(), time=time_s, default_fps=DEFAULT_FPS, bkapp_kwargs=kwargs,
@@ -937,13 +1059,14 @@ class InspectServer:
                 raise _PartTimestamps(sid, int(m.group(1)), int(m.group(2))) from e
             raise
         frac = cached_frac if cached_frac is not None else self._wave_frac(sid, prep.estimates, wave_cfg)
-        if prep.contours is not None and (contours is None or (cached_frac is None and frac is not None)):
+        if not light and prep.contours is not None and (contours is None or (cached_frac is None and frac is not None)):
             self._write_cache(sid, stamp, kwargs, prep.contours, frac, wkey)
         if frac is not None:
             # in the series log even without a threshold: the values a later warn_frac can be chosen from
             log.info("%s: calcium-wave share %.4f%s (inspection.wave.warn_frac %s)", sid, frac,
                      " (cached)" if cached_frac is not None else "", wave_cfg.get("warn_frac"))
         prep.sid, prep.stamp, prep.wave_frac = sid, stamp, frac
+        prep.source_key = stamp, fname, source_stat
         prep.bkapp_kwargs, prep.wave_cfg = kwargs, wave_cfg
         return prep
 
@@ -1196,7 +1319,7 @@ class InspectServer:
             log.exception("background job failed")
 
     # -- saves --
-    def final_save(self, page, sid: str, opened: _Stamp, est) -> str:
+    def final_save(self, page, sid: str, opened: _Stamp, est, *, exports=False) -> str:
         """Save results: the result, then the decision "cleaned"; side files in the background. Never raises:
         the page shows the returned text."""
         try:
@@ -1218,6 +1341,7 @@ class InspectServer:
             return notice
         bm = _bm()
         try:
+            light_estimates.remember_input(self.paths, sid, est)
             bm.write_result(est, self.paths.manual_result(sid))
         except Exception as e:
             log.exception("%s: save failed", sid)
@@ -1234,7 +1358,8 @@ class InspectServer:
             return DECISION_FAILED.format(what=code)
         log.info("%s: manual result saved, decision cleaned recorded", sid)
         _say(f"[OK] {sid}: result saved, decision cleaned recorded")
-        self._queue_side_files(page, sid, est)
+        if exports:
+            self._queue_side_files(page, sid, est)
         page.saved(sid)
         return SAVED.format(sid=sid)
 
@@ -1244,11 +1369,19 @@ class InspectServer:
         bm = _bm()
         with self._lock:
             earlier = self._side_last.get(sid)
+            full = self.paths.manual_result(sid)
+            snap = full.with_name(f".{sid}-export-{uuid4().hex}.pickle")
             try:
-                # written by a child process that reads the result just written (bm_examinator._side_files_child)
+                # Pin this save so a newer save with Exports off cannot change the child process's input.
+                try:
+                    os.link(full, snap)
+                    source = snap
+                except OSError:
+                    source = None  # a filesystem without hard links: the writer owns the in-memory result
                 future = bm.write_side_files_in_background(est, self.paths.inspection_dir(sid), f"{sid}_",
-                                                           source=self.paths.manual_result(sid))
+                                                           source=source)
             except Exception as e:  # the executor is shut down: the result and the decision stand
+                snap.unlink(missing_ok=True)
                 log.exception("%s: side files not queued", sid)
                 page.add_note(SIDE_FILES_FAILED.format(sid=sid, what=page_error(e)))
                 return  # the earlier save's job stays: its files are the newest that will be written
@@ -1259,11 +1392,15 @@ class InspectServer:
                 log.info("%s: side files of an earlier save dropped, this save replaces them", sid)
         # the page through a weak reference: a finished Future keeps its callbacks, and a closed tab's page holds
         # its document and the session's data
-        future.add_done_callback(partial(self._side_files_done, weakref.ref(page), sid))
+        future.add_done_callback(partial(self._side_files_done, weakref.ref(page), sid, snap))
 
-    def _side_files_done(self, page_ref, sid: str, future) -> None:
+    def _side_files_done(self, page_ref, sid: str, snap: Path, future) -> None:
         """Done callback (the writer's thread, or here when cancelled): forget the job; a failure goes on the
         page if the tab is still there."""
+        try:
+            snap.unlink(missing_ok=True)
+        except OSError:
+            log.warning("Could not remove the export input snapshot: %s", snap, exc_info=True)
         with self._lock:
             self._side_futures.discard(future)
             self._side_saves.pop(future, None)
@@ -1277,6 +1414,7 @@ class InspectServer:
         """Save progress: a copy in 5_Inspection/<SID>/progress, the date in its name; no decision."""
         name = f"{sid}_{datetime.now():%Y-%m-%d_%H-%M-%S}_estimates.pickle"
         try:
+            light_estimates.remember_input(self.paths, sid, est)
             _bm().write_result(est, self.paths.inspection_progress_dir(sid) / name)
         except Exception as e:
             log.exception("%s: progress not saved", sid)
@@ -1351,7 +1489,9 @@ class InspectServer:
                               check_unused_sessions_milliseconds=CHECK_UNUSED_MS,
                               unused_session_lifetime_milliseconds=UNUSED_SESSION_MS,
                               # passed on to Tornado's Application: every response goes through them
-                              transforms=[_NoStorePages])
+                              transforms=[_NoStorePages],
+                              extra_patterns=[(r"/mc-preview/([A-Za-z0-9_-]+_mc(?:_clip_\d+_\d+)?\.mp4)", StaticFileHandler,
+                                               {"path": str(self.paths.root / "Preview")})])
             except OSError as e:
                 if want or attempt == 4:
                     raise OSError(f"cannot listen on port {port}") from e
@@ -1365,7 +1505,7 @@ class InspectServer:
         asyncio.set_event_loop(loop)
         io_loop = IOLoop.current()
         server = tick = None
-        self.preparer = Preparer(self.build, self.stamp, self.failure_key)
+        self.preparer = Preparer(self.build, self._preparation_stamp, self.failure_key)
         self._bg = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bearmind-inspect-bg")
         try:
             try:

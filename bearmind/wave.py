@@ -83,8 +83,8 @@ def component_noise(est, idx=None) -> np.ndarray:
     return out
 
 
-def _active_counts(C, rows: np.ndarray, sn_rows: np.ndarray | None, k_mad: float) -> np.ndarray:
-    """Per frame, how many of the components `rows` are active."""
+def active_mask(C, rows: np.ndarray, sn_rows: np.ndarray | None, k_mad: float) -> np.ndarray:
+    """Which components exceed their per-trace baseline and noise floor in each frame."""
     X = np.asarray(C[rows], dtype=np.float64)
     med = np.median(X, axis=1, keepdims=True)
     dev = np.subtract(X, med)
@@ -96,7 +96,7 @@ def _active_counts(C, rows: np.ndarray, sn_rows: np.ndarray | None, k_mad: float
     if bad.any():
         noise[bad] = _robust_sd(np.diff(X[bad], axis=1)) / math.sqrt(2) if X.shape[1] > 1 else 0.0
     floor = np.maximum(spread, np.nan_to_num(noise, nan=0.0))
-    return np.count_nonzero(X > med + k_mad * floor[:, None], axis=0)
+    return X > med + k_mad * floor[:, None]
 
 
 def wave_frac(C: np.ndarray, idx: np.ndarray, k_mad: float = 3.0, active_frac: float = 0.3,
@@ -122,7 +122,7 @@ def wave_frac(C: np.ndarray, idx: np.ndarray, k_mad: float = 3.0, active_frac: f
     blocks = [rows[i:i + _BLOCK_ROWS] for i in range(0, rows.size, _BLOCK_ROWS)]
 
     def count(block):
-        return _active_counts(C, block, sn[block] if sn is not None else None, k_mad)
+        return np.count_nonzero(active_mask(C, block, sn[block] if sn is not None else None, k_mad), axis=0)
 
     if len(blocks) == 1:
         counts = [count(blocks[0])]

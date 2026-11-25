@@ -26,7 +26,8 @@ BEARMIND = REPO / "bearmind"
 # bearmind/monitor.py is the window's model: the stage columns (STAGE_TITLE: Crop, Autoinspect) and the cell texts
 # are named only there.
 UI_SOURCES = (sorted((BEARMIND / "gui").glob("*.py"))
-              + [REPO / "bm_examinator.py", BEARMIND / "inspect_server.py", BEARMIND / "monitor.py"])
+              + [REPO / "bm_examinator.py", BEARMIND / "inspect_server.py", BEARMIND / "estimates_viewer.py",
+                 BEARMIND / "monitor.py"])
 # Texts quoted as `code` may also come from the modules whose strings the window or the page show as they are: the
 # Scan tab's anomaly titles (scan_view) and messages (scan), check messages in Warnings (checks), the Thresholds
 # tab's states and source line (threshold_model), the calcium-wave banner (wave), Start's refusals (runner,
@@ -43,7 +44,7 @@ HOME_FILES = {"machine.yaml": BEARMIND / "config.py", "gui.log": BEARMIND / "gui
 SHELL_COMMANDS = {"run_bearmind.bat", "bearmind_gui.bat", "conda", "mamba", "pip", "git", "cd", "mkdir", "python",
                   "setx"}
 PLACEHOLDER_ARGS = {"sid": "<SID>", "mouse": "<MOUSE>", "kind": "<kind>"}
-TABS = ("Monitor", "Scan", "Thresholds", "Inspection")  # the author's order, which is the window's (checked below)
+TABS = ("Monitor", "Scan", "Thresholds", "Inspection", "Parameters")
 OLD_TAB_NAMES = ("Скан", "Пороги")  # the plan's Russian tab names, replaced by the program's English ones
 MAX_STEP_WORDS = 20
 MAX_IMAGE_BYTES = 300_000
@@ -420,7 +421,7 @@ def test_guide_tab_order(guide):
         assert order == [t for t in TABS if t in first], f"{p.name}: tabs first named in the order {order}"
         old = [w for w in OLD_TAB_NAMES if w in text]
         assert not old, f"{p.name}: the plan's Russian tab names {old}; the window says {TABS}"
-    assert all(f"**{t}**" in workflow for t in TABS), "series-workflow.md must name all four tabs"
+    assert all(f"**{t}**" in workflow for t in TABS), "series-workflow.md must name every tab"
 
 
 # --- the root README points to the guide (carried item П-17) ---

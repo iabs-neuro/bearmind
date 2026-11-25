@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFileDialog, QHBoxL
                                QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView,
                                QVBoxLayout, QWidget)
 
-from bearmind import actions, config, launcher, monitor
+from bearmind import actions, config, launcher, monitor, registry
 from bearmind.gui.logs import LogView
 from bearmind.paths import SeriesPaths
 from bearmind.registry import STAGES
@@ -35,7 +35,7 @@ MUTED = "#5d6676"
 ERROR_INK = "#c62828"
 ACCENT = "#2f5bd3"  # the mockup's primary buttons
 # status chip (background, ink), the mockup's palette: Running has the colour of running cells
-CHIP = {"Running": ("#bbdefb", "#0d47a1"), "Stopping after current stage": ("#fff3b0", "#6d5300"),
+CHIP = {"Running": ("#bbdefb", "#0d47a1"), "Stopping after current stage": ("#ffe0b2", "#6d5300"),
         "Not responding": ("#ffcdd2", "#8e0000"), "Stopped": ("#eef0f3", MUTED)}
 ACCENT_BUTTON = (f"QPushButton {{ background: {ACCENT}; color: white; border: 1px solid {ACCENT}; "
                  "border-radius: 6px; padding: 4px 10px; }"
@@ -43,7 +43,8 @@ ACCENT_BUTTON = (f"QPushButton {{ background: {ACCENT}; color: white; border: 1p
 WARNINGS_MIN_H = 62  # two warning rows with a Retry button; the panel and the log can be dragged larger
 LOG_MIN_H = 52  # about three log lines
 # The cell colours are light and the ink dark in both light and dark system themes, so the table reads the same.
-CELL_BG = {"ok": "#c8e6c9", "warning": "#fff3b0", "error": "#ffcdd2", "running": "#bbdefb", "waiting": "#e1bee7"}
+CELL_BG = {"ok": "#c8e6c9", "queued": "#fff3b0", "warning": "#ffe0b2", "error": "#ffcdd2",
+           "running": "#bbdefb", "waiting": "#e1bee7"}
 CELL_INK = "#1d2330"
 EXCLUDED_INK = "#8a8f98"
 # A selected row of every table and list: light blue with black text. The system theme draws it grey with white
@@ -53,10 +54,18 @@ SELECTION_BG = "#b3d1f2"
 SELECTION_INK = "#000000"
 SELECTION_STYLE = f"QAbstractItemView::item:selected {{ background: {SELECTION_BG}; color: {SELECTION_INK}; }}"
 SEGMENTS = (("done", "#43a047"), ("running", "#1e88e5"), ("waiting", "#8e24aa"), ("failed", "#e53935"))
-LEGEND = (("done", "#43a047"), ("running", "#1e88e5"), ("waits for the expert", "#8e24aa"), ("failed", "#e53935"))
+LEGEND = (("done", "#43a047"), ("running", "#1e88e5"), ("queued", "#e0bb2d"),
+          ("waits for the expert", "#8e24aa"), ("failed", "#e53935"))
 BAR_BG = "#eef0f3"
 _STYLE_ROLE = Qt.ItemDataRole.UserRole + 1
-LEVEL_STYLE = {"error": ("ERROR", "#ffcdd2", "#8e0000"), "warning": ("WARN", "#fff3b0", "#6d5300")}
+LEVEL_STYLE = {"error": ("ERROR", "#ffcdd2", "#8e0000"), "warning": ("WARN", "#ffe0b2", "#6d5300")}
+TABLE_COLUMNS = tuple(key for stage in STAGES
+                      for key in (monitor.THRESHOLD_COLUMNS if stage == "thresholds" else (stage,)))
+
+
+def _chip_style(bg, ink):
+    return (f"background: {bg}; color: {ink}; border-radius: 8px; padding: 2px 7px; "
+            "font-weight: 600; font-size: 13pt;")
 MAX_NAMED = 12  # sessions named in a confirmation before "and N more"
 NOT_SCANNED_TEXT = "Series not scanned. Open the Scan tab and press Scan."
 NO_SESSIONS_TEXT = "No sessions recognized in this series. See the Scan tab."
@@ -68,7 +77,7 @@ NOTHING_TO_INCLUDE = "None of the selected sessions is excluded: nothing to incl
 ACTIONS = ("exclude", "include", "accept_mismatch", "rerun_from", "retry_failed", "inspection_not_needed",
            "inspection_not_needed_all", "export_csv")
 ACTION_TEXT = {
-    "exclude": "Exclude", "include": "Include", "accept_mismatch": "Accept frame mismatch",
+    "exclude": "Exclude / edit reason", "include": "Include", "accept_mismatch": "Accept frame mismatch",
     "rerun_from": "Rerun from stage…", "retry_failed": "Retry failed (selected or all)",
     "inspection_not_needed": "Inspection not needed (selected)",
     "inspection_not_needed_all": "Inspection not needed for all waiting", "export_csv": "Export summary CSV…",
@@ -243,13 +252,15 @@ class MonitorTab(QWidget):
     status_message = Signal(str)
 
     def __init__(self, series: Path, parent=None, start=None, stop=None, confirm=None, choose_stage=None,
-                 choose_file=None, message=None, report=None):
+                 choose_file=None, message=None, report=None, choose_exclusion=None):
         super().__init__(parent)
         self.series = Path(series)
         self.paths = SeriesPaths(self.series)
         self._start = start or launcher.start_detached
         self._stop = stop or launcher.request_stop
         self._confirm = confirm or self._ask_confirm
+        self._choose_exclusion = choose_exclusion or (
+            self._ask_exclusion if confirm is None else lambda text: "" if confirm(text) else None)
         self._choose_stage = choose_stage or self._ask_stage
         self._choose_file = choose_file or self._ask_file
         self._message = message or self._show_message
@@ -294,9 +305,17 @@ class MonitorTab(QWidget):
 
     def _build_header(self) -> None:
         self.root_layout.addWidget(_SectionLabel("Batch"))
-        row = QHBoxLayout()
         self.batch_label = QLabel("Stopped")  # a chip: its colours are set with the status
         self.batch_detail = QLabel()
+        self.heartbeat_label = QLabel()
+        self.stage_eta_label = QLabel()
+        self.eta_label = QLabel()
+        status = QHBoxLayout()
+        for chip in (self.batch_label, self.batch_detail, self.heartbeat_label, self.stage_eta_label, self.eta_label):
+            status.addWidget(chip)
+        status.addStretch(1)
+        self.root_layout.addLayout(status)
+        row = QHBoxLayout()
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop after current stage")
         self.folder_button = QPushButton("Open folder")
@@ -306,11 +325,9 @@ class MonitorTab(QWidget):
         self.start_button.clicked.connect(self._on_start)
         self.stop_button.clicked.connect(self._on_stop)
         self.folder_button.clicked.connect(self._on_folder)
-        row.addWidget(self.batch_label)
-        row.addWidget(self.batch_detail)
-        row.addStretch(1)
         for b in (self.start_button, self.stop_button, self.folder_button, self.previews_box):
             row.addWidget(b)
+        row.addStretch(1)
         self.root_layout.addLayout(row)
 
     def _build_progress(self) -> None:
@@ -321,13 +338,11 @@ class MonitorTab(QWidget):
         self.legend_label = QLabel(legend)
         self.legend_label.setTextFormat(Qt.TextFormat.RichText)
         self.legend_label.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
-        self.eta_label = QLabel()
         head = QHBoxLayout()
         head.addWidget(self.progress_title)
         head.addSpacing(16)
         head.addWidget(self.legend_label)
         head.addStretch(1)
-        head.addWidget(self.eta_label)
         self.root_layout.addLayout(head)
         self.bars: dict[str, _StageRow] = {}
         bars = QVBoxLayout()
@@ -353,8 +368,8 @@ class MonitorTab(QWidget):
         self.root_layout.addLayout(row)
 
     def _build_table(self) -> None:
-        self.model = QStandardItemModel(0, 1 + len(STAGES), self)
-        self.model.setHorizontalHeaderLabels(["Session"] + [monitor.STAGE_TITLE[s] for s in STAGES])
+        self.model = QStandardItemModel(0, 1 + len(TABLE_COLUMNS), self)
+        self.model.setHorizontalHeaderLabels(["Session"] + [monitor.STAGE_TITLE.get(s, s) for s in TABLE_COLUMNS])
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -363,6 +378,9 @@ class MonitorTab(QWidget):
         self._fit_rows()
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for key in monitor.THRESHOLD_COLUMNS:
+            self.table.horizontalHeader().setSectionResizeMode(1 + TABLE_COLUMNS.index(key),
+                                                               QHeaderView.ResizeMode.ResizeToContents)
         self.not_scanned_label = QLabel(NOT_SCANNED_TEXT)
         self.scan_tab_button = QPushButton("Open Scan tab")
         self.scan_tab_button.clicked.connect(lambda: self.open_tab.emit("Scan"))
@@ -475,11 +493,17 @@ class MonitorTab(QWidget):
             if stage is None:
                 return
         plan = actions.retry_plan(self.paths, target) if name == "retry_failed" else None
-        if not self._confirm(self._ask_text(name, target, stage, plan)):
+        question = self._ask_text(name, target, stage, plan)
+        comment = None
+        if name == "exclude":
+            comment = self._choose_exclusion(question)
+            if comment is None:
+                return
+        elif not self._confirm(question):
             return
         try:
             res = {
-                "exclude": lambda: actions.set_excluded(self.paths, sids, True, who),
+                "exclude": lambda: actions.set_excluded(self.paths, sids, True, who, comment),
                 "include": lambda: actions.set_excluded(self.paths, sids, False, who),
                 "accept_mismatch": lambda: actions.accept_mismatch(self.paths, sids, who),
                 "rerun_from": lambda: actions.rerun_from(self.paths, sids, stage, who),
@@ -664,7 +688,18 @@ class MonitorTab(QWidget):
 
     def header_text(self) -> str:
         """The batch line as read: "Stopped — finished", "Running LT1_J05_2D · MC · 6 min   heartbeat 4 s ago"."""
-        return f"{self.batch_label.text()} {self.batch_detail.text()}".strip()
+        return " ".join(s for s in (self.batch_label.text(), self.batch_detail.text(),
+                                    self.heartbeat_label.text()) if s)
+
+    def _ask_exclusion(self, question):
+        sids = self.selected_sids()
+        initial = ""
+        if len(sids) == 1 and actions.include_targets(self.paths, sids)[0]:
+            initial = actions.exclusion_reason(registry.load_record(self.paths, sids[0])) or ""
+            question = f"Edit the exclusion reason for {sids[0]}."
+        text, ok = QInputDialog.getMultiLineText(
+            self, "Exclude / edit reason", f"{question}\n\nReason (optional):", initial)
+        return text if ok else None
 
     # --- refresh ---
 
@@ -759,7 +794,7 @@ class MonitorTab(QWidget):
     def _show_runner(self, view: monitor.SeriesView) -> None:
         r = view.runner
         self._alive = r.alive
-        detail, red = "", False
+        detail, pulse, red = "", "", False
         if r.alive:
             self._starting_since = self._clicked_at = None
             name = "Stopping after current stage" if r.stopping else "Running"
@@ -772,10 +807,10 @@ class MonitorTab(QWidget):
                 person = view.waiting.get("thresholds", 0) + view.waiting.get("manual_inspection", 0)
                 detail = "waiting for the expert" if person else "waiting"
             if r.age_s is not None:
-                detail += f"   heartbeat {_age(max(0.0, r.age_s))} ago"
+                pulse = f"heartbeat {_age(max(0.0, r.age_s))} ago"
         elif r.status == "dead":
             name = "Not responding"
-            detail = "no heartbeat" if r.age_s is None else f"last heartbeat {_age(max(0.0, r.age_s))} ago"
+            pulse = "no heartbeat" if r.age_s is None else f"last heartbeat {_age(max(0.0, r.age_s))} ago"
         else:
             name, why = "Stopped", _exit_text(r.exit)
             if why:
@@ -784,10 +819,14 @@ class MonitorTab(QWidget):
             self._check_start(r)
         bg, ink = CHIP[name]
         self.batch_label.setText(name)
-        self.batch_label.setStyleSheet(f"background: {bg}; color: {ink}; border-radius: 10px; padding: 2px 9px; "
-                                       "font-weight: 600;")
+        self.batch_label.setStyleSheet(_chip_style(bg, ink))
         self.batch_detail.setText(detail.strip())
-        self.batch_detail.setStyleSheet(f"color: {ERROR_INK}; font-weight: 600;" if red else "")
+        self.batch_detail.setStyleSheet(_chip_style("#ffcdd2" if red else "#eef0f3", ERROR_INK if red else CELL_INK))
+        self.batch_detail.setVisible(bool(detail))
+        self.heartbeat_label.setText(pulse)
+        old = r.status == "dead" or (r.age_s is not None and r.age_s > START_GRACE_S * 2)
+        self.heartbeat_label.setStyleSheet(_chip_style("#ffcdd2" if old else "#eef0f3", ERROR_INK if old else CELL_INK))
+        self.heartbeat_label.setVisible(bool(pulse))
         self._update_buttons()
 
     def _show_progress(self, view: monitor.SeriesView) -> None:
@@ -796,6 +835,10 @@ class MonitorTab(QWidget):
         for stage, row in self.bars.items():
             row.show_bar(view.bars[stage])
         self.eta_label.setText(_eta_text(view.eta_s, view.runner.alive))
+        self.eta_label.setStyleSheet(_chip_style("#e8f1f9", CELL_INK))
+        self.stage_eta_label.setText(_eta_text(view.stage_eta_s).replace("Estimated time left:", "Stage left:"))
+        self.stage_eta_label.setStyleSheet(_chip_style("#f0e7fa", CELL_INK))
+        self.stage_eta_label.setVisible(view.runner.alive and view.runner.current is not None)
 
     def _show_waiting(self, waiting: dict[str, int]) -> None:
         for button, label, key in ((self.thresholds_button, "Thresholds", "thresholds"),
@@ -842,6 +885,8 @@ class MonitorTab(QWidget):
             tip = f"{row.mouse}\ncannot be scheduled: {row.problem}"
         else:
             tip = row.mouse
+        if row.exclusion_reason:
+            tip += f"\nExclusion reason: {row.exclusion_reason}"
         style = f"first|{row.excluded}"
         if first.text() != row.sid:
             first.setText(row.sid)
@@ -850,8 +895,8 @@ class MonitorTab(QWidget):
         if first.data(_STYLE_ROLE) != style:
             first.setData(style, _STYLE_ROLE)
             first.setForeground(QBrush(QColor(EXCLUDED_INK)) if row.excluded else QBrush())
-        for c, stage in enumerate(STAGES, start=1):
-            cell = row.cells[stage]
+        for c, stage in enumerate(TABLE_COLUMNS, start=1):
+            cell = row.threshold_cells.get(stage) or row.cells["thresholds" if stage in monitor.THRESHOLD_COLUMNS else stage]
             item = self.model.item(i, c)
             # write only changed values: repainting every cell on every refresh flickers and costs time
             if item.text() != cell.text:

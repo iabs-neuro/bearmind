@@ -123,6 +123,9 @@ def test_member_deleted_later_drops_out():
     out = assign_merge_groups(_df([5.0, 6.0, 7.0, 30.0], [1.0] * 4),
                               _fbd(4, {(0, 1): 5, (1, 2): 5, (2, 3): 5}))
     assert out["delete"].tolist() == [0, 0, 1, 0] and out["merge"].tolist() == [1, 1, 0, 0]
+    assert out.loc[2, ["duplicate_of_input", "duplicate_distance_px", "duplicate_snr_difference"]].tolist() == [
+        out.loc[3, "component_idx"], 5, 23,
+    ]
 
 
 def test_groups_are_numbered_across_clusters():

@@ -144,6 +144,27 @@ def write_timestamps(ts: Timestamps, frame_idx: np.ndarray, path: Path) -> None:
         f.write(body)
 
 
+def analysis_frame_count(rec) -> int:
+    mc = rec.stages.get("mc")
+    return int(mc.metrics.get("n_frames", rec.n_frames)) if mc is not None else rec.n_frames
+
+
+def analysis_timestamps(paths, rec) -> Timestamps:
+    return _after_mc(rec, session_timestamps(paths, rec))
+
+
+def _after_mc(rec, timestamps) -> Timestamps:
+    mc = rec.stages.get("mc")
+    removed = (mc.metrics or {}).get("dropped_ranges") if mc is not None else None
+    if not removed:
+        return timestamps
+    from bearmind.bad_frames import frame_mask
+
+    keep = frame_mask(rec.n_frames, removed)[:len(timestamps.raw)]
+    return dataclasses.replace(timestamps, raw=timestamps.raw[keep], t_ms=timestamps.t_ms[keep],
+                               buffer=None if timestamps.buffer is None else timestamps.buffer[keep])
+
+
 # Frame rates of the sessions processed before the pipeline took the rate from timestamp files ('#;Filename;FPS').
 # The processed files of the paper corpus carry no timestamps, so the scripts that work on them (autoinspection
 # called without fps, the validation, the research collectors) look the rate up here.
@@ -180,8 +201,10 @@ def fps_from_table(name: str, table: dict[str, float] | None = None) -> float | 
     return None
 
 
-def session_time_s(paths, rec) -> np.ndarray:
+def session_time_s(paths, rec, *, after_mc=True) -> np.ndarray:
     """The session's frame times in seconds from its first frame: the stitched timestamps of the registry
     (timestamps.session_timestamps), one per frame; rec.n_frames of them when the timestamps cover every frame."""
-    t = np.asarray(session_timestamps(paths, rec).t_ms, dtype=np.float64)
-    return (t - t[0]) / 1000.0 if len(t) else t
+    raw = session_timestamps(paths, rec)
+    timestamps = _after_mc(rec, raw) if after_mc else raw
+    t = np.asarray(timestamps.t_ms, dtype=np.float64)
+    return (t - raw.t_ms[0]) / 1000.0 if len(t) else t

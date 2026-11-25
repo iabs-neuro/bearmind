@@ -3,7 +3,7 @@ import pytest
 
 from bearmind.registry import RawPart, SessionRecord
 from bearmind.video import (CropBox, SessionReader, VideoArray, decode_to_memmap, last_frame_readable,
-                            video_info, write_ffv1, write_preview_mp4)
+                            video_info, write_ffv1, write_mc_clip, write_preview_mp4)
 
 
 def _frames(n, h=24, w=32, seed=0):
@@ -145,6 +145,22 @@ def test_preview_mp4(tmp_path):
         s = c.streams.video[0]
         assert s.codec_context.width % 2 == 0 and s.codec_context.height % 2 == 0
         assert sum(1 for _ in c.decode(s)) == 6  # ceil(11/2)
+
+
+def test_mc_clip_starts_at_trace_frame_and_uses_recording_speed(tmp_path):
+    import av
+
+    frames = np.broadcast_to(np.arange(40, dtype=np.uint8)[:, None, None] * 5, (40, 24, 32))
+    source, clip = tmp_path / "mc.avi", tmp_path / "clip.mp4"
+    write_ffv1([frames], source, fps=20.0)
+    write_mc_clip(source, clip, first=13, seconds=1)
+    with av.open(str(clip)) as file:
+        stream = file.streams.video[0]
+        assert float(stream.average_rate) == 20.0
+        decoded = [frame.to_ndarray(format="gray") for frame in file.decode(stream)]
+    assert len(decoded) == 20
+    assert np.mean(decoded[0]) == pytest.approx(65, abs=2)
+    assert np.mean(decoded[-1]) == pytest.approx(160, abs=2)
 
 
 def test_last_frame_readable_false_on_garbage(tmp_path):

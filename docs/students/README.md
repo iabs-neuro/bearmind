@@ -94,8 +94,8 @@ failure, 2 bad input, 3 series busy, 130 interrupted.
 
 positional arguments:
   command
-    scan        find sessions in the series folder and register them
-    run         process the series (resumes where it stopped)
+    scan              find sessions in the series folder and register them
+    run               process the series (resumes where it stopped)
 ```
 
 Пустое окно пишет **Open a series: Series > Open series…**. Это нормально: серию вы откроете позже.

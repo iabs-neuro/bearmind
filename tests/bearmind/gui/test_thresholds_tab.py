@@ -891,7 +891,7 @@ def test_window_count_drops_at_once_after_accept_while_the_registry_still_waits(
     assert registry.load_record(p, S1).stages["cnmf"].state is State.WAITING  # the batch has not looked yet
     assert w.monitor.thresholds_button.text() == "Thresholds: 1 session →"
     row = next(i for i in range(w.monitor.model.rowCount()) if w.monitor.model.item(i, 0).text() == S1)
-    assert w.monitor.model.item(row, 3).text() == "gSig 4"  # the Thresholds cell no longer says it waits
+    assert w.monitor.model.item(row, 3).text() == "4"  # the gSig column no longer says it waits
     w.thresholds.shutdown()
     w.close()
 

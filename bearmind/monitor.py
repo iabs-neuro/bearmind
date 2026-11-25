@@ -4,6 +4,7 @@ Read-only: it never writes. A record that cannot be read is a row marked unreada
 because the batch rewrites registry files while the window reads them.
 """
 import json
+import math
 import os
 import statistics
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from bearmind.runner import wait_reason
 STAGE_TITLE = {"crop": "Crop", "mc": "MC", "thresholds": "Thresholds", "cnmf": "CNMF-E",
                "gate": "Inspection", "autoinspect": "Autoinspect", "export": "Export",
                "mc_preview": "MC preview", "cnmf_preview": "CNMF-E preview"}
+THRESHOLD_COLUMNS = ("gSig", "min_corr", "min_pnr")
 
 HINTS = {
     # the MC preview videos are off by default; the Thresholds tab always shows the MC video
@@ -32,7 +34,8 @@ HINTS = {
 _SIDE_OF = {main: side for side, main in SIDE_STAGES.items()}  # MC -> its preview, CNMF-E -> its QC video
 
 # check name -> panel kind; every other check and anomaly only colours its cell
-_CHECK_KIND = {"mc_max_shift_px": "mc_shift", "cnmf_n_components_vs_median": "cnmf_count",
+_CHECK_KIND = {"mc_max_shift_px": "mc_shift", "mc_stripe_frames": "mc_shift",
+               "cnmf_n_components_vs_median": "cnmf_count",
                "auto_deleted_frac": "autoinspect_deleted", "export_n_neurons": "export_count"}
 _SCAN_CODES = ("frames_ts_mismatch", "fps_outlier")
 _LEVEL = {"ok": 0, "warning": 1, "error": 2}
@@ -70,6 +73,8 @@ class Row:
     cells: dict[str, Cell]
     unreadable: bool = False
     problem: str | None = None  # why the batch cannot schedule the session; the row is red
+    threshold_cells: dict[str, Cell] = field(default_factory=dict)
+    exclusion_reason: str | None = None
 
 
 @dataclass
@@ -105,6 +110,7 @@ class SeriesView:
     n_warning_sessions: int
     unreadable_files: list[Path] = field(default_factory=list)
     found_nothing: bool = False  # not scanned: the scan ran (it wrote its unrecognized list) but found no session
+    stage_eta_s: float | None = None
 
 
 # --- reading with a cache ---
@@ -473,6 +479,71 @@ def _blocked(cell: Cell, why: str) -> Cell:
     return Cell(cell.state, "error", cell.text, f"cannot be scheduled: {why}\n{cell.tooltip}")
 
 
+def _thresholds(cfg):
+    cnmf = (cfg or {}).get("cnmf") or {}
+    if not isinstance(cnmf, dict):
+        return {}
+    values = {}
+    for key in THRESHOLD_COLUMNS:
+        value = cnmf.get(key)
+        if key == "gSig" and isinstance(value, (list, tuple)) and len(value) == 2 and value[0] == value[1]:
+            value = value[0]
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            values[key] = value
+    return values
+
+
+def _threshold_cells(cell, own, peers, tolerances):
+    result = {}
+    for key in THRESHOLD_COLUMNS:
+        value = own.get(key)
+        other = [p[key] for p in peers if key in p]
+        tip = cell.tooltip
+        level = cell.level if key == "gSig" or cell.level not in ("warning", "ok") else "none"
+        if value is not None and len(other) >= 2 and cell.level not in ("error", "excluded"):
+            if key == "gSig":
+                modes = statistics.multimode(other)
+                warns = len(modes) == 1 and value != modes[0]
+                comparison = f"other sessions: {', '.join(_num(v) for v in sorted(modes))} (mode)"
+            else:
+                mid = statistics.median(other)
+                delta = abs(value - mid)
+                tolerance = tolerances[key]
+                warns = delta > tolerance and not math.isclose(delta, tolerance)
+                comparison = f"other sessions: {_num(mid)} (median), tolerance {_num(tolerance)}"
+            tip += f"\n{comparison}"
+            if warns:
+                level = "warning"
+                tip += "\nOutside this mouse’s usual values."
+        text = _num(value) if value is not None and cell.level != "excluded" else (
+            cell.text if cell.level in ("waiting", "queued", "running", "error") else "–")
+        result[key] = Cell(cell.state, level, text, tip)
+    return result
+
+
+def _queue_cells(view, rec, cells, cfg, thresholds):
+    first = view.first_not_current(rec)
+    if first is None:
+        return
+    for stage in STAGES[STAGES.index(first):]:
+        cell = cells[stage]
+        if view.blocked(rec, stage):
+            break
+        if stage == "cnmf" and len(thresholds) != len(THRESHOLD_COLUMNS):
+            break
+        if stage == "gate" and ((cfg or {}).get("gate") or {}).get("enabled", True):
+            if not view.current_through(rec, "cnmf"):
+                break
+            try:
+                decision = actions.counted_gate_decision(view.paths, rec)
+            except (OSError, ValueError):
+                break
+            if decision is None:
+                break
+        if cell.state == State.PENDING.value and cell.level == "none":
+            cells[stage] = Cell(cell.state, "queued", "queued", f"{cell.tooltip}\nRuns without the expert.")
+
+
 def _unreadable_row(f: Path, why: str) -> Row:
     tip = f"registry file cannot be read: {f}: {why}"
     return Row(f.stem, "", False, {s: Cell("unreadable", "error", "?", tip) for s in STAGES}, unreadable=True)
@@ -554,7 +625,7 @@ def _rates(records, cfg) -> dict:
     return out
 
 
-def _eta(records, human, now, rates, problems, alive, stale=None):
+def _eta(records, human, now, rates, problems, alive, stale=None, current=None, current_rate=None):
     """Seconds of batch work left: 0.0 when nothing is left, None when what is left has no estimate. Waits for
     a person and sessions that cannot be scheduled are not counted; a DONE stage the batch would redo (`stale`:
     sid -> stages) is."""
@@ -580,7 +651,7 @@ def _eta(records, human, now, rates, problems, alive, stale=None):
                 continue
             if stage not in rates:
                 continue
-            sec, by_session = rates[stage]
+            sec, by_session = current_rate if (r.sid, stage) == current and current_rate else rates[stage]
             t = sec if by_session else sec * r.n_frames
             started = _iso(st.started)
             # an interrupted stage (no live batch) runs again from its start
@@ -591,6 +662,27 @@ def _eta(records, human, now, rates, problems, alive, stale=None):
     if not left:
         return 0.0
     return total if any_est else None
+
+
+def _current_rate(records, current, rates):
+    if current is None:
+        return None
+    sid, stage = current
+    target = next((r for r in records if r.sid == sid and r.fps and r.n_frames), None)
+    if target is None or stage not in rates:
+        return None
+    _, per_session = rates[stage]
+    similar = []
+    for r in records:
+        if r.sid == sid or not r.fps or not r.n_frames:
+            continue
+        if abs(r.fps / target.fps - 1) > .1 or abs(r.n_frames / target.n_frames - 1) > .25:
+            continue
+        st = r.stages.get(stage)
+        duration = _duration(st) if st is not None and st.state is State.DONE else None
+        if duration is not None and duration >= 0:
+            similar.append(duration if per_session else duration / r.n_frames)
+    return (statistics.median(similar), per_session) if len(similar) >= 2 else rates[stage]
 
 
 def _bars(records, human, problems, alive, stale=None) -> dict:
@@ -634,7 +726,14 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     human = {r.sid: (actions.waits_for_thresholds(view, r), cache.gate_waits(paths, r)) for r in records}
     # sid -> DONE stages the batch would redo; a session that cannot be scheduled is red instead (it has none)
     stale = {r.sid: ([] if r.sid in problems else view.done_not_current(r)) for r in records}
-    settings = {r.sid: _settings(view.cfg(r)) for r in records}  # the configs the view resolved
+    configs = {r.sid: view.cfg(r) for r in records}
+    settings = {sid: _settings(cfg) for sid, cfg in configs.items()}
+    choices = {sid: _thresholds(cfg) for sid, cfg in configs.items()}
+    peers = {}
+    for r in records:
+        if not r.excluded:
+            peers.setdefault(r.mouse, []).append(r.sid)
+    defaults = config.load_defaults()
     rows = []
     for r in records:
         first = view.first_not_current(r) if stale[r.sid] else None
@@ -642,7 +741,17 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
         why = problems.get(r.sid)
         if why is not None:  # red like an unreadable record; the panel has no seventh kind
             cells = {s: _blocked(c, why) for s, c in cells.items()}
-        rows.append(Row(r.sid, r.mouse, r.excluded, cells, problem=why))
+        elif not r.excluded:
+            _queue_cells(view, r, cells, configs[r.sid], choices[r.sid])
+        cfg = configs[r.sid] or {}
+        tolerances = (cfg.get("checks") or {}).get("thresholds_vs_mouse") or {}
+        threshold_cells = _threshold_cells(
+            cells["thresholds"], choices[r.sid], [choices[s] for s in peers.get(r.mouse, []) if s != r.sid],
+            {"min_corr": .03, "min_pnr": 3, **tolerances},
+        )
+        reason = actions.exclusion_reason(r) if r.excluded else None
+        rows.append(Row(r.sid, r.mouse, r.excluded, cells, problem=why, threshold_cells=threshold_cells,
+                        exclusion_reason=reason))
     rows += [_unreadable_row(f, why) for f, why in broken]
     rows.sort(key=lambda x: (x.mouse, x.sid))
     live = [r for r in records if not r.excluded]
@@ -651,7 +760,14 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     warnings = [w for r in records for w in _warnings(r, _preview_if_failed(r, settings[r.sid][1]))]
     order = {s: i for i, s in enumerate(("",) + ALL_STAGES)}
     warnings.sort(key=lambda w: (w.level != "error", w.sid, order[w.stage]))
-    rates = _rates(records, config.load_defaults().get("monitor", {}))
+    rates = _rates(records, defaults.get("monitor", {}))
+    current_rate = _current_rate(records, rs.current, rates) if rs.alive else None
+    stage_eta = None
+    if current_rate is not None:
+        current_rec = next(r for r in records if r.sid == rs.current[0])
+        sec, per_session = current_rate
+        stage_eta = max(0.0, sec * (1 if per_session else current_rec.n_frames) - (rs.stage_elapsed_s or 0))
     return SeriesView(paths.root, True, rs, rows, _bars(records, human, problems, rs.alive, stale),
-                      _eta(records, human, now, rates, problems, rs.alive, stale), waiting, warnings,
-                      len({w.sid for w in warnings}), [f for f, _ in broken])
+                      _eta(records, human, now, rates, problems, rs.alive, stale, rs.current, current_rate),
+                      waiting, warnings, len({w.sid for w in warnings}), [f for f, _ in broken],
+                      stage_eta_s=stage_eta)
