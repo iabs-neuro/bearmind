@@ -311,9 +311,14 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
                   "n_frames": p.n_frames,
                   "file": _file_stat(paths.root / p.timestamps_file) if p.timestamps_file else None}
                  for p in rec.parts]
-        return {"ml_threshold": ran.get("ml_threshold", cfg["autoinspect"].get("ml_threshold")),
-                "component_rule": bearmind.stages.COMPONENT_RULE,
-                "timestamps": parts}
+        params = {"ml_threshold": ran.get("ml_threshold", cfg["autoinspect"].get("ml_threshold")),
+                  "component_rule": bearmind.stages.COMPONENT_RULE,
+                  "timestamps": parts}
+        # A rescan can change the exported timestamps even when their source file is untouched.
+        steps = [a.data for a in rec.anomalies if a.code == "timestamp_clock_step" and a.auto_fixed]
+        if steps:
+            params["timestamp_clock_steps"] = steps
+        return params
     raise ValueError(f"unknown stage {stage!r}")
 
 

@@ -121,6 +121,25 @@ def test_robust_fps_lt1_j06_1d():
     assert est.fps == pytest.approx(span, abs=0.01) and est.n_gaps == 0
 
 
+@pytest.mark.parametrize("defect", ["one bad row", "duplicate", "frame number gap"])
+def test_ambiguous_ucla_timestamps_are_not_shifted(tmp_path, defect):
+    f = tmp_path / "timeStamps.csv"
+    times = np.arange(60) * 50
+    frames = np.arange(60)
+    if defect == "one bad row":
+        times[30] -= 3000
+    elif defect == "duplicate":
+        times[30] = times[29]
+    else:
+        times[30:] -= 3000
+        frames[30:] += 1
+    f.write_text(UCLA_HDR + "".join(f"{i},{t},0\n" for i, t in zip(frames, times)), encoding="utf-8")
+
+    ts = read_timestamps(f)
+    np.testing.assert_array_equal(ts.raw, times)
+    assert not ts.clock_steps
+
+
 def _ucla_part(tmp_path, name, start, n):
     f = tmp_path / name
     rows = "".join(f"{i},{i * 33},{i % 3}\n" for i in range(n))

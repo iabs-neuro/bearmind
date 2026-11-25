@@ -179,6 +179,13 @@ def _read_part(paths: SeriesPaths, sid: str, mode: str, folder: Path, cfg_scan: 
     else:
         ts_error = f"no timestamps file for {where}"
 
+    for step in ts.clock_steps if ts is not None else ():
+        anomalies.append(Anomaly(
+            "timestamp_clock_step", "warning",
+            f"timestamp clock moved backward by {-step.jump_ms} ms at frame {step.frame} in {ts_file}. "
+            f"Added {step.offset_ms} ms from that frame onward using a {step.interval_ms} ms frame interval.",
+            auto_fixed=True, data={"file": ts_file, **dataclasses.asdict(step)}))
+
     if ts is not None and ts.dropped_row is not None:
         row = ts.dropped_row
         k = len(str(ts.raw[-1]))

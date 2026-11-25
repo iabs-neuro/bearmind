@@ -12,6 +12,14 @@ UCLA = "ucla_ms"
 UCLA_HEADER = "Frame Number,Time Stamp (ms),Buffer Index"
 
 
+@dataclass(frozen=True)
+class ClockStep:
+    frame: int
+    jump_ms: int
+    offset_ms: int
+    interval_ms: int
+
+
 @dataclass
 class Timestamps:
     raw: np.ndarray
@@ -20,6 +28,7 @@ class Timestamps:
     start_epoch_ms: float | None = None
     buffer: np.ndarray | None = None
     dropped_row: str | None = None  # text of an incomplete last row that was left out (Bonsai only)
+    clock_steps: tuple[ClockStep, ...] = ()  # repairs applied to raw and t_ms (UCLA only)
 
 
 @dataclass
@@ -29,6 +38,43 @@ class FpsEstimate:
     n_gaps: int  # intervals above gap_factor * m: pauses, dropped frames; left out of fps
     max_gap_ms: float  # the longest interval, a gap or not
     median_interval_ms: float
+
+
+def _repair_ucla_clock_steps(raw: np.ndarray, rows: list[list[str]]) -> tuple[np.ndarray, tuple[ClockStep, ...]]:
+    """Undo large backward clock steps between runs of normally spaced, consecutive frames.
+
+    Estimate only the interval across each step. Shift the later timestamps by a constant so their
+    measured intervals are preserved. A duplicate, isolated bad row or unclear change is left for the
+    scanner's damaged-timestamps check.
+    """
+    deltas = np.diff(raw)
+    jumps = np.flatnonzero(deltas < 0)
+    if not len(jumps):
+        return raw, ()
+    window = 5  # ordinary intervals required on either side of the jump
+    offsets = np.zeros_like(raw)
+    steps = []
+    for i in jumps:
+        if i < window or i + window >= len(deltas):
+            continue
+        neighbors = np.concatenate((deltas[i - window:i], deltas[i + 1:i + 1 + window]))
+        period = float(np.median(neighbors))
+        if period <= 0 or np.any((neighbors < 0.5 * period) | (neighbors > 1.5 * period)):
+            continue
+        jump = int(deltas[i])
+        if -jump < 2 * period:
+            continue
+        try:
+            frames = [int(row[0]) for row in rows[i - window:i + window + 2]]
+        except ValueError:
+            continue
+        if any(b != a + 1 for a, b in zip(frames, frames[1:])):
+            continue
+        interval = int(period + 0.5)  # round the positive estimate to the nearest millisecond
+        offset = interval - jump
+        offsets[i + 1] = offset
+        steps.append(ClockStep(frames[window + 1], jump, offset, interval))
+    return (raw + offsets.cumsum(), tuple(steps)) if steps else (raw, ())
 
 
 def read_timestamps(path: Path, start_epoch_ms: float | None = None) -> Timestamps:
@@ -45,10 +91,11 @@ def read_timestamps(path: Path, start_epoch_ms: float | None = None) -> Timestam
             buf = np.array([int(r[2]) for r in rows], dtype=np.int64)
         except (ValueError, IndexError):
             raise ValueError(f"unknown timestamp format: {path}") from None
+        raw, clock_steps = _repair_ucla_clock_steps(raw, rows)
         t = raw.astype(np.float64)
         if start_epoch_ms is not None:
             t = t + start_epoch_ms
-        return Timestamps(raw, t, UCLA, start_epoch_ms, buf)
+        return Timestamps(raw, t, UCLA, start_epoch_ms, buf, clock_steps=clock_steps)
     try:
         raw = np.array([int(ln) for ln in lines], dtype=np.int64)
     except ValueError:

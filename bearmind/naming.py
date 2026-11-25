@@ -12,18 +12,20 @@ import re
 # SESSION NAMING PATTERNS - Single source of truth
 # =============================================================================
 # Session name structure: {EXP}_{MOUSE}_{DAY}[_{TRIAL}]
-#   EXP:   Experiment code - alphanumeric, any length (NOF, LNOF, 3DM, FOF, RFC, etc.)
+#   EXP:   Experiment code - alphanumeric, mixed case allowed (NOF, LNOF, 3DM, FCZad, etc.)
 #   MOUSE: Mouse ID - letter + digits (H01, J53, F05, D17)
-#   DAY:   Day identifier - digit + letter (1D, 2D, 3D, 4D)
+#   DAY:   Day identifier - one or more digits + letter (0D, 1D, 14D, 30D)
 #   TRIAL: Optional trial - digit + letter (1T, 2T)
 #
 # Examples: NOF_H01_1D, LNOF_J53_3D, 3DM_D17_1D_1T, FOF_F05_2D_2T
 
+_SESSION_BASE = r'[A-Za-z0-9]+_[A-Z]\d+_\d+[A-Z]'
+
 # Full session with optional trial suffix
-SESSION_PATTERN = r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z](?:_\d[A-Z])?)'
+SESSION_PATTERN = rf'({_SESSION_BASE}(?:_\d[A-Z])?)'
 
 # Base session without trial (EXP_MOUSE_DAY only)
-SESSION_PATTERN_BASE = r'([A-Z0-9]+_[A-Z]\d+_\d[A-Z])'
+SESSION_PATTERN_BASE = rf'({_SESSION_BASE})'
 
 # Timestamp format used in filenames
 TIMESTAMP_PATTERN = r'(\d{2}-\d{2}-\d{4} \d{2}-\d{2}-\d{2})'

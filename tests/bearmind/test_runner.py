@@ -1039,6 +1039,17 @@ def test_export_hashes_timestamp_inputs(series):
     _touch(s.paths.root / rec.parts[0].timestamps_file, b"0" + bytes([10]) + b"500000" + bytes([10]))
     _run(s)
     assert s.stubs.calls == [(S2, "export")]
+    s.stubs.calls.clear()
+
+    def repair_clock_step(d):
+        d.anomalies.append(registry.Anomaly(
+            "timestamp_clock_step", "warning", "clock step corrected", auto_fixed=True,
+            data={"file": d.parts[0].timestamps_file, "frame": 20, "jump_ms": -3115,
+                  "offset_ms": 3166, "interval_ms": 51}))
+
+    registry.update_record(s.paths, S3, repair_clock_step)
+    _run(s)
+    assert s.stubs.calls == [(S3, "export")]
 
 
 def test_lock_timeout_on_registry_write_does_not_abort(series, monkeypatch):

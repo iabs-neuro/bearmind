@@ -99,6 +99,50 @@ def test_scan_button_fills_table(qapp, make_series, tmp_path):
     assert tab.scan_button.text() == "Rescan"
 
 
+def test_scan_fczad_legacy_sessions(qapp, make_series, tmp_path):
+    legacy_sids = ("FCZad_J03_0D", "FCZad_J03_14D", "FCZad_J03_30D")
+    root = build(make_series, tmp_path, sids=legacy_sids, layout="legacy")
+    bonsai_sid = "NOF_H01_1D"
+    make_series(root, sid=bonsai_sid)
+    tab = make_tab(root)
+
+    assert wait_scan(tab)
+    assert tab.model.rowCount() == len(legacy_sids) + 1
+    for sid in legacy_sids:
+        assert tab.model.item(row_of(tab, sid), 1).text() == "legacy"
+        rec = registry.load_record(SeriesPaths(root), sid)
+        assert rec.n_frames == 30 and not rec.excluded
+    assert tab.model.item(row_of(tab, bonsai_sid), 1).text() == "bonsai"
+
+
+def test_scan_reports_repaired_legacy_clock_step(qapp, make_series, tmp_path):
+    from bearmind.timestamps import UCLA_HEADER, analysis_timestamps, write_timestamps
+
+    root = make_series(tmp_path / "s", "legacy", sid="FCZad_J24_7D")
+    raw_file = next((root / "1_Raw").rglob("timeStamps.csv"))
+    source = UCLA_HEADER + "\n" + "".join(f"{i},{i * 50 - (3165 if i >= 15 else 0)},0\n" for i in range(30))
+    raw_file.write_text(source, encoding="utf-8")
+    tab = make_tab(root)
+    assert wait_scan(tab)
+    select(tab, "FCZad_J24_7D")
+    details = tab.details.toPlainText()
+    assert "FIXED timestamp clock moved backward by 3115 ms at frame 15" in details
+    assert "Added 3165 ms from that frame onward" in details
+    assert "frame loss test skipped" not in details
+
+    paths = SeriesPaths(root)
+    rec = registry.load_record(paths, "FCZad_J24_7D")
+    warning, = rec.anomalies
+    assert (warning.code, warning.level, warning.auto_fixed) == ("timestamp_clock_step", "warning", True)
+    assert rec.fps == 20 and rec.n_frames == 30 and not rec.excluded
+    timestamps = analysis_timestamps(paths, rec)
+    output = tmp_path / "exported.csv"
+    write_timestamps(timestamps, range(30), output)
+    assert output.read_text(encoding="utf-8") == UCLA_HEADER + "\n" + "".join(
+        f"{i},{i * 50},0\n" for i in range(30))
+    assert raw_file.read_text(encoding="utf-8") == source
+
+
 def test_progress_bar_reaches_total(qapp, make_series, tmp_path):
     tab = make_tab(build(make_series, tmp_path))
     texts = []

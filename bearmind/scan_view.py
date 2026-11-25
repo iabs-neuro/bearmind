@@ -18,6 +18,7 @@ ANOMALY_TITLE = {
     "gap_test_skipped": "frame loss test skipped",
     "broken_last_frame": "broken last frame",
     "ts_last_row_incomplete": "last timestamp row incomplete",
+    "timestamp_clock_step": "timestamp clock step",
     "chunk_tail_frames": "extra chunk frames",
     "no_metadata": "no recording start time",
     "unreadable_video": "unreadable video",
