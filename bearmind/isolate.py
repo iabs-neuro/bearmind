@@ -200,15 +200,21 @@ class _Tree:
     def kill(self) -> None:
         self.track()
         procs = [p for p in [self.root, *self.seen.values()] if p is not None]
-        left = (self.job.kill(KILL_WAIT_S) if self.job is not None else 0) or 0
+        left = self.job.kill(KILL_WAIT_S) if self.job is not None else None
+        if left == 0:
+            return  # Windows has confirmed that the job has no live processes
         for p in procs:
             try:
                 p.kill()  # psutil checks the creation time: a reused pid is not touched
             except psutil.Error:
                 pass
-        _, alive = psutil.wait_procs(procs, timeout=KILL_WAIT_S)
+        try:
+            _, alive = psutil.wait_procs(procs, timeout=KILL_WAIT_S)
+        except psutil.AccessDenied as e:
+            log.warning("stage process wait was denied: %s", e)
+            alive = [p for p in procs if psutil.pid_exists(p.pid)]
         if left or alive:
-            log.warning("stage process tree not fully killed: %d in the job, pids %s still running", left,
+            log.warning("stage process tree not fully killed: %d in the job, pids %s still running", left or 0,
                         [p.pid for p in alive])
 
     def cpu_s(self) -> float:

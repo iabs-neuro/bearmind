@@ -80,6 +80,26 @@ def test_mc_stage(tmp_path, make_avi, monkeypatch):
 
 
 @pytest.mark.slow
+def test_mc_stage_tail_trim_writes_matching_timestamps(tmp_path, make_avi):
+    from bearmind.timestamps import read_timestamps
+
+    paths, rec, cfg = _setup(tmp_path, make_avi)
+    path = paths.root / rec.parts[0].folder / "ticks.csv"
+    path.write_text("".join(f"{i * 500000}{chr(10)}" for i in range(T)), encoding="utf-8")
+    rec.parts[0].timestamps_file = paths.rel(path)
+    rec.parts[0].ts_format = "bonsai_ticks"
+    cfg["bad_frames_trim_tail_from"] = 180
+    res = mc_stage.run(paths, rec, cfg)
+
+    assert res.metrics["dropped_ranges"] == [(180, T - 1)]
+    assert res.metrics["n_frames"] == len(VideoArray(paths.mc_video(SID))) == 180
+    assert np.load(paths.mc_shifts(SID)).shape == (180, 2)
+    assert res.outputs["mc_timestamps"] == paths.rel(paths.mc_timestamps(SID))
+    assert np.array_equal(read_timestamps(paths.mc_timestamps(SID)).raw, np.arange(180) * 500000)
+    assert len(read_timestamps(path).raw) == T
+
+
+@pytest.mark.slow
 def test_mc_stage_failure_cleans_up(tmp_path, make_avi, monkeypatch):
     import caiman.motion_correction as cmc
     paths, rec, cfg = _setup(tmp_path, make_avi)

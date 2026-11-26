@@ -15,7 +15,7 @@ import tifffile
 from bearmind import bad_frames, fileio, pool
 from bearmind.registry import Anomaly
 from bearmind.stages import StageResult, WaitingForInput, require_temp_space
-from bearmind.timestamps import session_time_s
+from bearmind.timestamps import session_time_s, session_timestamps, write_timestamps
 from bearmind.video import CropBox, SessionReader, VideoArray, write_ffv1
 
 CHUNK = 1000
@@ -174,7 +174,7 @@ def run(paths, rec, cfg) -> StageResult:
     if mcfg.get("pw_rigid"):
         raise ValueError("pw_rigid motion correction is not supported by this stage")
     sid, fps = rec.sid, rec.fps
-    action, limit, auto, manual = bad_frames.settings(cfg, rec.n_frames)
+    action, limit, auto, manual, trim_from = bad_frames.settings(cfg, rec.n_frames)
     tmp.mkdir(parents=True, exist_ok=True)  # CaImAn ignores a missing CAIMAN_TEMP folder
     saved = {k: os.environ.get(k) for k in ("CAIMAN_TEMP", "OPENBLAS_NUM_THREADS")}
     os.environ["CAIMAN_TEMP"] = str(tmp)
@@ -188,14 +188,16 @@ def run(paths, rec, cfg) -> StageResult:
         _write_tif(SessionReader(paths.root, rec, crop=crop, on_raw=meter.add), tif)
         suspects = meter.suspects()
         event_times = None
-        if suspects or manual:
+        if suspects or manual or trim_from is not None:
             try:
                 event_times = session_time_s(paths, rec, after_mc=False)
             except (OSError, ValueError, TypeError):
                 pass  # a session without usable timestamps is reported in seconds from its frame rate
-        plan = bad_frames.repair_plan(suspects if auto else (), manual, action, limit, event_times, fps, rec.n_frames)
+        plan = bad_frames.repair_plan(suspects if auto else (), manual, action, limit, event_times, fps,
+                                      rec.n_frames, trim_from=trim_from)
         if not auto and suspects:
-            remaining = [i for i in suspects if not any(a <= i <= b for a, b in manual)]
+            remaining = [i for i in suspects if (trim_from is None or i < trim_from)
+                         and not any(a <= i <= b for a, b in manual)]
             plan.extend(bad_frames.repair_plan(remaining, [], "report", limit, event_times, fps, rec.n_frames))
         repairs = {k: [(p["first"], p["last"]) for p in plan if p["action"] == k]
                    for k in ("interpolate", "drop")}
@@ -204,6 +206,14 @@ def run(paths, rec, cfg) -> StageResult:
             reader = SessionReader(paths.root, rec, crop=crop, interpolate=repairs["interpolate"], drop=repairs["drop"])
             _write_tif(reader, tif)
             n_in = reader.n_frames
+
+        axis_path = paths.mc_timestamps(sid)
+        axis = None
+        if repairs["drop"] or axis_path.is_file():
+            axis = session_timestamps(paths, rec)
+            if len(axis.raw) != rec.n_frames:
+                raise ValueError(f"{sid}: {len(axis.raw)} timestamps for {rec.n_frames} source frames.")
+            kept_frames = np.flatnonzero(bad_frames.frame_mask(rec.n_frames, repairs["drop"]))
 
         dview = pool.start_pool(mc_pool_size(cfg))
         mc = cmc.MotionCorrect([str(tif)], dview=dview, **{
@@ -241,6 +251,16 @@ def run(paths, rec, cfg) -> StageResult:
             "mc_video": paths.rel(paths.mc_video(sid)),
             "mc_shifts": paths.rel(paths.mc_shifts(sid)),
         }
+        if axis is not None:
+            if len(kept_frames) != n:
+                raise ValueError(f"{sid}: {len(kept_frames)} retained timestamps for {n} MC frames.")
+            partial = axis_path.with_suffix(".partial.csv")
+            try:
+                write_timestamps(axis, kept_frames, partial)
+                fileio.replace(partial, axis_path)
+            finally:
+                partial.unlink(missing_ok=True)
+            outputs["mc_timestamps"] = paths.rel(axis_path)
         result = StageResult(outputs=outputs, metrics=metrics, anomalies=anomalies)
     except BaseException as e:
         # traceback frames (e.g. of the writer) still reference the tif memmap and would block its deletion

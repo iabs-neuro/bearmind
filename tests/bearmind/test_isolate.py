@@ -96,6 +96,18 @@ class Descendants:
         return sorted(p.pid for p in self.seen.values() if p.is_running())
 
 
+def test_empty_windows_job_does_not_wait_on_exited_pids(monkeypatch):
+    tree = object.__new__(isolate._Tree)
+    tree.root, tree.seen = None, {}
+    tree.job = SimpleNamespace(kill=lambda seconds: 0)
+
+    def denied(*args, **kwargs):
+        raise psutil.AccessDenied(34840)
+
+    monkeypatch.setattr(psutil, "wait_procs", denied)
+    tree.kill()
+
+
 def test_result_and_output_come_back(stage):
     with Descendants() as d:
         res = run(stage, "ok")

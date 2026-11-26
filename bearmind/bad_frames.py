@@ -1,5 +1,6 @@
 """Detect stripe bursts on original frames and apply a reviewed handling policy before motion correction."""
 from collections import deque
+from itertools import chain
 import math
 
 import cv2
@@ -11,9 +12,10 @@ REL_MAX = 1.5
 VZ_MAX = 20.0
 VZ_WINDOW = 301
 DEFAULT_ACTION = "auto"
+FRAME_REPAIR_RULE = "mirror_horizontal_edges_v2"
 
 
-def normalize(ranges, n_frames):
+def normalize(ranges, n_frames, *, allow_all=False):
     pairs = []
     for span in ranges:
         if not isinstance(span, (list, tuple)) or len(span) != 2 or any(type(i) is not int for i in span):
@@ -28,7 +30,7 @@ def normalize(ranges, n_frames):
             merged[-1] = (merged[-1][0], max(merged[-1][1], b))
         else:
             merged.append((a, b))
-    if merged == [(0, n_frames - 1)]:
+    if not allow_all and merged == [(0, n_frames - 1)]:
         raise ValueError("At least one frame must remain outside the bad frame ranges.")
     return merged
 
@@ -64,29 +66,55 @@ def frame_mask(n_frames, ranges):
     return keep
 
 
-def filter_frames(frames, interpolate=(), drop=()):
-    """Stream corrected frames. Bad frames need no storage, even for a long run."""
-    inserts = deque(interpolate)
+def _kept_frames(frames, drop):
     removals = deque(drop)
-    previous = None
     for i, image in enumerate(frames):
         if removals and i >= removals[0][0]:
             if i == removals[0][1]:
                 removals.popleft()
-            continue
+        else:
+            yield i, image
+
+
+def _reflected_index(distance, count):
+    if count == 1:
+        return 0
+    period = 2 * (count - 1)
+    pos = distance % period
+    return min(pos, period - pos)
+
+
+def filter_frames(frames, interpolate=(), drop=()):
+    """Reflect a missing prefix and interpolate interior gaps between retained frames."""
+    inserts = deque(interpolate)
+    stream = _kept_frames(frames, drop)
+    previous = None
+    while (item := next(stream, None)) is not None:
+        i, image = item
         if inserts and inserts[0][0] <= i <= inserts[0][1]:
             continue
         if inserts and i > inserts[0][1]:
             a, b = inserts.popleft()
             size = b - a + 1
             if previous is None:
+                good = [image]
                 for _ in range(size):
-                    yield image
-            else:
-                before = previous.astype(np.float32)
-                delta = image.astype(np.float32) - before
-                for k in range(1, size + 1):
-                    yield np.rint(before + delta * (k / (size + 1))).astype(np.uint8)
+                    following = next(stream, None)
+                    if following is None:
+                        break
+                    if inserts and following[0] >= inserts[0][0]:
+                        stream = chain((following,), stream)
+                        break
+                    good.append(following[1])
+                for distance in range(size, 0, -1):
+                    yield good[_reflected_index(distance, len(good))]
+                yield from good
+                previous = good[-1]
+                continue
+            before = previous.astype(np.float32)
+            delta = image.astype(np.float32) - before
+            for k in range(1, size + 1):
+                yield np.rint(before + delta * (k / (size + 1))).astype(np.uint8)
         yield image
         previous = image
     if inserts and previous is not None:
@@ -106,7 +134,10 @@ def settings(cfg, n_frames):
     if type(enabled) is not bool:
         raise ValueError("bad_frames_auto must be true or false.")
     manual = normalize(cfg.get("bad_frames") or (), n_frames)
-    return action, duration, enabled, manual
+    trim_from = cfg.get("bad_frames_trim_tail_from")
+    if trim_from is not None and (type(trim_from) is not int or not 0 < trim_from < n_frames):
+        raise ValueError(f"bad_frames_trim_tail_from must be a frame index from 1 to {n_frames - 1}.")
+    return action, duration, enabled, manual, trim_from
 
 
 def duration_s(a, b, timestamps, fps):
@@ -117,23 +148,52 @@ def duration_s(a, b, timestamps, fps):
     return (b - a + 1) / fps
 
 
-def repair_plan(suspects, manual, action, limit, timestamps, fps, n_frames):
-    """Measured bursts with their action. Auto interpolates short bursts; long ones need review."""
-    all_ranges = normalize([*ranges_from_indices(suspects), *manual], n_frames)
+def repair_plan(suspects, manual, action, limit, timestamps, fps, n_frames, *, trim_from=None):
+    """Plan repairs in source frame indices, with an explicit tail trim taking precedence."""
+    all_ranges = normalize([*ranges_from_indices(suspects), *manual], n_frames, allow_all=True)
+    end = trim_from if trim_from is not None else n_frames
     plan = []
     for a, b in all_ranges:
+        if a >= end:
+            break
+        b = min(b, end - 1)
         seconds = duration_s(a, b, timestamps, fps)
         effect = action if action != "auto" else ("interpolate" if seconds <= limit else "report")
+        if a == 0 and b == end - 1:
+            if effect == "drop":
+                raise ValueError("At least one frame must remain outside the bad frame ranges.")
+            effect = "report"  # no intact frame to interpolate from
         plan.append({"first": a, "last": b, "duration_s": round(seconds, 6), "action": effect})
+    if trim_from is not None:
+        seconds = duration_s(trim_from, n_frames - 1, timestamps, fps)
+        plan.append({"first": trim_from, "last": n_frames - 1, "duration_s": round(seconds, 6), "action": "drop"})
     return plan
+
+
+def _horizontal_edges(frame):
+    """Count alternating horizontal edges shared by the central image columns."""
+    h, w = frame.shape
+    if min(h, w) < 16:
+        return False
+    center = frame[h // 10:h - h // 10, w // 5:w - w // 5:3]
+    profiles = [strip.mean(axis=1, dtype=np.float32) for strip in np.array_split(center, 3, axis=1)]
+    slope = np.median(np.diff(profiles, axis=1), axis=0)
+    strength = np.abs(slope)
+    strong = strength > max(1.5, 4 * np.median(strength))
+    signs = np.signbit(slope[strong])
+    return np.count_nonzero(signs[1:] != signs[:-1]) >= 5
 
 
 class StripeMeter:
     def __init__(self):
         self._ratio = []
         self._peak = []
+        self._horizontal = []
+        self._brightness = []
 
     def add(self, frame):
+        self._horizontal.append(_horizontal_edges(frame))
+        self._brightness.append(cv2.mean(frame)[0])
         if min(frame.shape) < 2:
             self._ratio.append(0.0)
             self._peak.append(0.0)
@@ -153,5 +213,11 @@ class StripeMeter:
         local = median_filter(peaks, size=min(VZ_WINDOW, len(peaks) // 2 * 2 + 1), mode="nearest")
         residual = peaks - local
         scatter = 1.4826 * np.median(np.abs(residual - np.median(residual)))
-        return np.flatnonzero(((ratios > REL_MAX * base) & (base > 0))
-                              | (residual > VZ_MAX * max(float(scatter), .001))).tolist()
+        marked = (((ratios > REL_MAX * base) & (base > 0))
+                  | (residual > VZ_MAX * max(float(scatter), .001))
+                  | np.asarray(self._horizontal))
+        levels = np.asarray(self._brightness)
+        if np.any(levels > 0):
+            illuminated = np.flatnonzero(levels >= 0.1 * np.median(levels[levels > 0]))
+            marked[:illuminated[0]] = True
+        return np.flatnonzero(marked).tolist()

@@ -267,7 +267,10 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
 
         c = cfg.get("crop") or {}
         params = {"mc": cfg["mc"], "box": c.get("box"), "box_pos": c.get("box_pos", _UNSET)}
-        action, limit, auto, manual = bad_frames.settings(cfg, rec.n_frames)
+        action, limit, auto, manual, trim_from = bad_frames.settings(cfg, rec.n_frames)
+        params["frame_repair_rule"] = bad_frames.FRAME_REPAIR_RULE
+        if trim_from is not None:
+            params["bad_frames_trim_tail_from"] = trim_from
         if manual or any(k in cfg for k in ("bad_frames_action", "bad_frames_auto", "bad_frames_max_interpolate_s")):
             params["bad_frames"] = [list(span) for span in manual]
             params["bad_frames_action"] = action
@@ -362,6 +365,13 @@ def _output_ok(paths, outputs: dict, key: str) -> bool:
     return key in outputs and (paths.root / outputs[key]).is_file()
 
 
+def _missing_outputs(paths, stage, outputs):
+    keys = REQUIRED[stage]
+    if stage == "mc" and "mc_timestamps" in outputs:
+        keys = (*keys, "mc_timestamps")
+    return [key for key in keys if not _output_ok(paths, outputs, key)]
+
+
 def _one_line(e: BaseException) -> str:
     return " ".join(f"{type(e).__name__}: {e}".split())  # YAML errors span several lines
 
@@ -429,7 +439,7 @@ class StageView:
             return False
         h = self.hash(rec, stage)
         return (h is not None and st.params_hash == h
-                and all(_output_ok(self.paths, st.outputs, k) for k in REQUIRED[stage]))
+                and not _missing_outputs(self.paths, stage, st.outputs))
 
     def blocked(self, rec, stage) -> bool:
         """FAILED / SKIPPED with unchanged parameters: retried only after reset_from or a parameter change."""
@@ -1407,7 +1417,7 @@ def _run_stage(paths, sid, stage, run_: _Run) -> str:
         applied = []  # the result was written: nobody changed the stage while it ran
         try:
             res = _call_stage(paths, sid, stage, rec, cfg, temp_root, run_)
-            missing = [k for k in REQUIRED[stage] if not _output_ok(paths, res.outputs, k)]
+            missing = _missing_outputs(paths, stage, res.outputs)
             if missing:
                 raise FileNotFoundError(f"required output missing: {', '.join(missing)}")
             anomalies = [dataclasses.replace(a, data={**a.data, "stage": stage}) for a in res.anomalies]

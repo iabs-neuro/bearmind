@@ -49,6 +49,9 @@ class SeriesPaths:
     def export_json(self, sid: str) -> Path:
         return self.root / "6_Export" / "npz" / f"{sid}_metadata.json"
 
+    def mc_timestamps(self, sid: str) -> Path:
+        return self.mc_video(sid).with_name(f"{sid}_MC_timestamps.csv")
+
     def export_timestamps(self, sid: str) -> Path:
         return self.root / "6_Export" / "npz" / f"{sid}_timestamps.csv"
 

@@ -23,6 +23,29 @@ def test_frame_repair_preserves_time_and_applies_the_selected_policy(monkeypatch
     assert np.allclose(timestamps.session_time_s(None, rec), [.1, .4, .9])
 
 
+def test_mirror_prefix_uses_the_following_clean_frames_in_reverse():
+    frames = [np.full((2, 2), v, dtype=np.uint8) for v in (0, 0, 0, 30, 40, 50, 60, 70)]
+    fixed = bad_frames.filter_frames(frames, interpolate=[(0, 2)], drop=[(7, 7)])
+    assert [int(f[0, 0]) for f in fixed] == [60, 50, 40, 30, 40, 50, 60]
+
+
+def test_tail_trim_preserves_the_prefix_repair_policy():
+    plan = bad_frames.repair_plan([0, 1, 4, 5, 6, 7], [], "auto", 0.15, None, 20, 8, trim_from=5)
+    assert [(e["first"], e["last"], e["action"]) for e in plan] == [
+        (0, 1, "interpolate"), (4, 4, "interpolate"), (5, 7, "drop")]
+
+
+def test_detects_dark_prefix_and_horizontal_stripes_through_the_last_frame():
+    rng = np.random.default_rng(0)
+    clean = cv2.GaussianBlur(rng.integers(0, 255, (128, 128), dtype=np.uint8), (0, 0), 3)
+    profile = np.where(np.arange(128) // 4 % 2, 15, -15)[:, None]
+    striped = (clean.astype(np.int16) + profile).clip(0, 255).astype(np.uint8)
+    meter = bad_frames.StripeMeter()
+    for frame in [np.zeros_like(clean)] * 3 + [clean] * 47 + [striped] * 350:
+        meter.add(frame)
+    assert meter.suspects() == list(range(3)) + list(range(50, 400))
+
+
 def test_stripe_meter_detects_a_displaced_band():
     rng = np.random.default_rng(0)
     base = cv2.GaussianBlur(rng.integers(0, 255, (128, 128)).astype(np.uint8), (0, 0), 3)

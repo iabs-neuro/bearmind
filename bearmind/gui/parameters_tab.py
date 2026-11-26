@@ -14,7 +14,8 @@ from bearmind.registry import State
 
 SECTIONS = ("scan", "crop", "mc", "thresholds", "cnmf", "gate", "autoinspect", "estimates", "inspection",
             "preview", "checks", "pool", "memory", "runner", "monitor", "Frame repair")
-FRAME_KEYS = ("bad_frames", "bad_frames_action", "bad_frames_max_interpolate_s", "bad_frames_auto")
+FRAME_KEYS = ("bad_frames", "bad_frames_action", "bad_frames_max_interpolate_s", "bad_frames_auto",
+              "bad_frames_trim_tail_from")
 
 
 def _fields(data, section):
