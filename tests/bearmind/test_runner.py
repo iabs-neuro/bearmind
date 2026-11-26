@@ -525,6 +525,23 @@ def _make_mc_legacy(s, sid):
     return cfg, chain_params["mc"], chain_hashes["mc"], legacy_hash
 
 
+def test_legacy_threshold_maps_keep_downstream_current_until_explicit_rerun(series, monkeypatch):
+    s = series
+    with monkeypatch.context() as patch:
+        patch.setattr(config, "threshold_gsigs", list)
+        _run(s)
+    rec = load_record(s.paths, S1)
+    assert rec.stages["thresholds"].params["gsig_range"] == [3, 4, 5, 6, 7]
+    s.stubs.calls.clear()
+    assert runner.StageView(s.paths).current_through(rec, "export")
+    assert _run(s) == ZERO and s.stubs.calls == []
+
+    actions.rerun_from(s.paths, [S1], "thresholds", "expert")
+    _run(s, until="thresholds")
+    assert s.stubs.calls == [(S1, "thresholds")]
+    assert load_record(s.paths, S1).stages["thresholds"].params["gsig_range"] == [3, 4, 5]
+
+
 def test_legacy_mc_with_lost_output_reruns_without_fps(series):
     s = series
     _run(s)

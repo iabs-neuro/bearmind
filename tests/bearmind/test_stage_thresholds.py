@@ -33,20 +33,19 @@ def test_thresholds_stage(tmp_path, monkeypatch):
                         fps_info={}, anomalies=[], decisions=[], excluded=False, stages={})
     cfg = config.load_defaults()
     cfg["machine"] = {"n_cpus": 2, "temp_dir": str(tmp_path / "tmp"), "ram_gb": 16}
-    cfg["thresholds"]["gsig_range"] = [3, 4]
     _no_videoarray_reads(monkeypatch)
     calls = []
     real = thresholds.bm_qc.compute_init_maps
 
     def spy(movie, **kw):
-        calls.append((isinstance(movie, np.memmap), kw["max_mem_gb"]))
+        calls.append((kw["gSig"], isinstance(movie, np.memmap), kw["max_mem_gb"]))
         return real(movie, **kw)
 
     monkeypatch.setattr(thresholds.bm_qc, "compute_init_maps", spy)
 
     res = thresholds.run(paths, rec, cfg)
 
-    assert calls == [(True, 2), (True, 2)]  # decoded once; budget clip(0.1 * 16 GB, 2, 32)
+    assert calls == [(g, True, 2) for g in (3, 4, 5)]  # one decoded movie, 2 GB budget per map
     assert not paths.temp_dir(tmp_path / "tmp", SID).exists()
 
     out = paths.threshold_maps(SID)
@@ -54,8 +53,9 @@ def test_thresholds_stage(tmp_path, monkeypatch):
     assert not list(out.parent.glob("*.partial*"))
     d = np.load(out)
     shape = mov.shape[1:]
-    assert list(d["gsig"]) == [3, 4]
-    for g in (3, 4):
+    assert list(d["gsig"]) == res.metrics["gsig_range"] == [3, 4, 5]
+    assert not any(k.endswith(("_6", "_7")) for k in d.files)
+    for g in (3, 4, 5):
         for k in ("cn", "pnr", "cn_mirror", "pnr_mirror"):
             a = d[f"{k}_{g}"]
             assert a.shape == shape and a.dtype == np.float32

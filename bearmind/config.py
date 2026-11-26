@@ -135,6 +135,11 @@ def params_hash(params: dict) -> str:
     return hashlib.sha256(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def threshold_gsigs(gsigs) -> list[int]:
+    """Scales used to calculate and display threshold maps."""
+    return [g for g in map(int, gsigs) if g not in (6, 7)]
+
+
 def fallback_gsig(gsigs) -> int:
     """gSig when nothing suggests one: 4, else the middle of the range. One rule for the thresholds stage
     (its suggestion maps) and the Thresholds window (start values)."""

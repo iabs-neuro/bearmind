@@ -44,6 +44,8 @@ memory:
   # strongest background downsampling the batch applies by itself
   max_ssub_B: 4
 thresholds:
+  # Keep the full list for older runners that reread this file mid-batch.
+  # Thresholds uses the scales selected by config.threshold_gsigs.
   gsig_range: [3, 4, 5, 6, 7]
   # Thresholds window only (not inputs of the stage hash): the smallest group of passing pixels that counts
   # as a blob, and the slider start values when the autotune gave no suggestion.

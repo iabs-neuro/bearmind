@@ -67,7 +67,7 @@ class ThresholdItem:
 
 def load_maps(path: Path) -> ThresholdMaps:
     with np.load(path) as z:
-        gsigs = [int(g) for g in z["gsig"]]
+        gsigs = config.threshold_gsigs(z["gsig"])
         get = lambda prefix: {g: z[f"{prefix}_{g}"] for g in gsigs if f"{prefix}_{g}" in z.files}  # noqa: E731
         return ThresholdMaps(gsigs, z["mean"], z["max"], get("cn"), get("pnr"),
                              get("cn_mirror"), get("pnr_mirror"))

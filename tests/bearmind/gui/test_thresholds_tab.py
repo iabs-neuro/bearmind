@@ -364,6 +364,14 @@ def test_gsig_click_switches_maps(qapp, series_maps, make_tab):
     assert red_pixels(tab.overlay_image("corr")) < red4
 
 
+def test_thresholds_hides_unsupported_scales_in_existing_maps(qapp, series_maps, make_tab):
+    paths = series_maps.paths
+    save_maps(paths.threshold_maps(S1), gsigs=(3, 4, 5, 6, 7))
+    make_current(paths, S1, "thresholds")
+    tab = make_tab(paths)
+    assert sorted(tab.gsig_buttons) == [3, 4, 5]
+
+
 def test_gsig_listed_without_maps_falls_back(qapp, series_maps, make_tab):
     p = series_maps.paths
     with np.load(p.threshold_maps(S1)) as z:

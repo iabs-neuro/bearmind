@@ -279,7 +279,8 @@ def stage_params(stage: str, rec, cfg: dict, paths) -> dict:
             params["bad_frames_auto"] = auto
         return params
     if stage == "thresholds":
-        return {"gsig_range": cfg["thresholds"]["gsig_range"], "tsub": cfg["cnmf"]["tsub"]}
+        return {"gsig_range": config.threshold_gsigs(cfg["thresholds"]["gsig_range"]),
+                "tsub": cfg["cnmf"]["tsub"]}
     if stage == "cnmf":
         from bearmind.stages.cnmf import cnmf_movie_shape, cnmf_params  # imports CaImAn
 
@@ -338,6 +339,22 @@ def _mc_legacy(rec, params: dict, upstream: list, h: str) -> tuple:
     return (legacy, lh) if lh == old.params_hash else (params, h)
 
 
+def _thresholds_legacy(rec, params: dict, upstream: list, h: str) -> tuple:
+    """Keep the hash of compatible finished maps when they also contain scales 6 or 7."""
+    old = rec.stages.get("thresholds")
+    if old is None or old.state is not State.DONE:
+        return params, h
+    old_range = old.params.get("gsig_range")
+    requested = params["gsig_range"]
+    if (not old_range or not requested or old_range == requested
+            or config.threshold_gsigs(old_range) != requested
+            or config.fallback_gsig(old_range) != config.fallback_gsig(requested)):
+        return params, h
+    legacy = {**params, "gsig_range": old_range}
+    legacy_hash = config.params_hash({"params": legacy, "upstream": upstream})
+    return (legacy, legacy_hash) if legacy_hash == old.params_hash else (params, h)
+
+
 def _chain(rec, cfg, paths, upto=None, new_run=None, expected=None):
     """params and hashes of every main stage up to `upto`; each hash covers the hashes of all earlier main
     stages (never of a side stage). `new_run` names the stage about to be started: its params and hash are
@@ -349,6 +366,8 @@ def _chain(rec, cfg, paths, upto=None, new_run=None, expected=None):
         hashes[s] = config.params_hash({"params": params[s], "upstream": upstream})
         if s == "mc" and new_run != "mc":
             params[s], hashes[s] = _mc_legacy(rec, params[s], upstream, hashes[s])
+        if s == "thresholds" and new_run != "thresholds":
+            params[s], hashes[s] = _thresholds_legacy(rec, params[s], upstream, hashes[s])
         if expected is not None:
             expected[s] = hashes[s]
         old = rec.stages.get(s)

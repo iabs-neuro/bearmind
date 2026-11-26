@@ -118,7 +118,9 @@ def _parallel_maps(u8_path, shape, gsigs, tsub, mem_gb, n_workers):
 
 def run(paths, rec, cfg) -> StageResult:
     sid = rec.sid
-    gsigs = [int(g) for g in cfg["thresholds"]["gsig_range"]]
+    gsigs = config.threshold_gsigs(cfg["thresholds"]["gsig_range"])
+    if not gsigs:
+        raise ValueError("thresholds.gsig_range must include a gSig other than 6 or 7")
     g_sug = config.fallback_gsig(gsigs)
     tsub = cfg["cnmf"]["tsub"]
     mem_gb = mem_budget_gb(cfg)
