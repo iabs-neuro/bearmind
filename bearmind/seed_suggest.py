@@ -56,12 +56,24 @@ def halo_mask(maps, valid, excl_radius, k_pnr=5.0, k_corr=3.0):
     a negative halo around cells, so the inverted movie is not a clean null there. The mask is fixed
     (independent of the tested thresholds) so that null counts stay comparable across the threshold grid.
     """
-    mc, sc = _robust(maps['cn'][valid])
-    mp, sp = _robust(maps['pnr'][valid])
-    strong = valid & (maps['pnr'] > mp + k_pnr * sp) & (maps['cn'] > mc + k_corr * sc)
+    cn, pnr = maps['cn'], maps['pnr']
+    valid = valid & np.isfinite(cn) & np.isfinite(pnr)
+    if not np.any(valid):
+        return np.zeros(cn.shape, dtype=bool)
+    correlations = cn[valid]
+    mc, sc = _robust(correlations)
+    mp, sp = _robust(pnr[valid])
+    # A broad correlation distribution can make median + k*MAD exceed 1,
+    # losing every halo even where the strongest cell transients are present.
+    corr_cut = min(mc + k_corr * sc, float(np.percentile(correlations, 99)))
+    strong = valid & (pnr > mp + k_pnr * sp) & (cn > corr_cut)
     r = int(excl_radius)
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
     return cv2.dilate(strong.astype(np.uint8), disk).astype(bool)
+
+
+def _mirrored_background(maps, valid, halo):
+    return valid & ~halo & np.isfinite(maps['cn_neg']) & np.isfinite(maps['pnr_neg'])
 
 
 def threshold_seeds(maps, min_corr, min_pnr, gSiz=None, valid=None, halo=None):
@@ -75,13 +87,16 @@ def threshold_seeds(maps, min_corr, min_pnr, gSiz=None, valid=None, halo=None):
     min_dist = 2 * maps['gSig']
     valid = valid if valid is not None else valid_mask(maps)
     s = count_seeds(maps['cn'], maps['pnr'], min_corr, min_pnr, gSiz, valid=valid, min_dist=min_dist)
-    if 'cn_neg' not in maps:
+    if 'cn_neg' not in maps or 'pnr_neg' not in maps:
         return s, None, 1.0
     halo = halo if halo is not None else halo_mask(maps, valid, gSiz)
-    null_area = valid & ~halo
+    null_area = _mirrored_background(maps, valid, halo)
+    n_background = np.count_nonzero(null_area)
+    if not n_background:
+        return s, None, 1.0
     s0 = count_seeds(maps['cn_neg'], maps['pnr_neg'], min_corr, min_pnr, gSiz, valid=null_area,
                      min_dist=min_dist)
-    return s, s0, valid.sum() / max(null_area.sum(), 1)
+    return s, s0, valid.sum() / n_background
 
 
 def evaluate_thresholds(maps, min_corr, min_pnr, gSiz=None, valid=None, halo=None):
@@ -100,8 +115,8 @@ def suggest_init_thresholds(maps, gSiz=None, target_fdr=0.1, marginal_fdr=0.5, b
     """
     Automatic min_corr / min_pnr suggestions, three independent methods:
 
-    'robust_bg'  : background level + bg_k robust SD (median + k*1.4826*MAD) of each map.
-                   Background pixels dominate the field of view, so the median/MAD describe the noise floor.
+    'robust_bg'  : median + bg_k * 1.4826*MAD of the mirrored maps outside the cell halos.
+                   When no mirrored background is available, estimate from the usable real maps.
     'pct_margin' : pct-th percentile of the map + fixed margin (simple rule of thumb).
     'mirror_fdr' : for every (min_corr, min_pnr) on a grid, count seeds in the real maps and in the maps of the
                    sign-inverted movie (null: inverted movie has no calcium transients). Estimated false discovery
@@ -119,24 +134,35 @@ def suggest_init_thresholds(maps, gSiz=None, target_fdr=0.1, marginal_fdr=0.5, b
     """
     cn, pnr = maps['cn'], maps['pnr']
     gSiz = gSiz if gSiz is not None else 4 * maps['gSig'] + 1
-    mirror = 'cn_neg' in maps
-    valid = valid_mask(maps, border_pix=border_pix)
+    mirror = 'cn_neg' in maps and 'pnr_neg' in maps
+    valid = valid_mask(maps, border_pix=border_pix) & np.isfinite(cn) & np.isfinite(pnr)
+    if not np.any(valid):
+        raise ValueError("no finite pixels in the usable seed-map area")
     halo = halo_mask(maps, valid, excl_radius if excl_radius is not None else gSiz) if mirror else None
     cn_i, pnr_i = cn[valid], pnr[valid]
+    cn_bg, pnr_bg = cn_i, pnr_i
+    if mirror:
+        cn_neg, pnr_neg = maps['cn_neg'], maps['pnr_neg']
+        background = _mirrored_background(maps, valid, halo)
+        if np.any(background):
+            cn_bg, pnr_bg = cn_neg[background], pnr_neg[background]
 
     def summary(min_corr, min_pnr):
         return evaluate_thresholds(maps, float(np.clip(min_corr, 0, 0.99)), float(max(min_pnr, 0)),
                                    gSiz, valid, halo)
 
     out = {}
-    m_c, s_c = _robust(cn_i)
-    m_p, s_p = _robust(pnr_i)
+    m_c, s_c = _robust(cn_bg)
+    m_p, s_p = _robust(pnr_bg)
     out['robust_bg'] = summary(m_c + bg_k * s_c, m_p + bg_k * s_p)
     out['pct_margin'] = summary(np.percentile(cn_i, pct) + pct_corr_margin,
                                 np.percentile(pnr_i, pct) + pct_pnr_margin)
 
     grid = None
-    if mirror:
+    if mirror and not np.any(background):
+        out['mirror_fdr'] = {'min_corr': None, 'min_pnr': None, 'n_seeds': 0,
+                             'target_fdr': target_fdr, 'note': 'no usable mirrored background'}
+    elif mirror:
         corr_grid = np.round(np.arange(0.5, 0.981, 0.02), 3) if corr_grid is None else np.asarray(corr_grid)
         pnr_grid = np.round(np.arange(2, 20.01, 0.5), 2) if pnr_grid is None else np.asarray(pnr_grid)
         n_real = np.zeros((len(corr_grid), len(pnr_grid)), int)
