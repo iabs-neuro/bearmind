@@ -1,4 +1,4 @@
-"""MC video view: one frame, a slider and a play button. Decoding runs in a worker thread, so the GUI never waits.
+"""MC video view with playback and display controls. Decoding runs in a worker thread.
 
 A frame request is a single slot in the worker: a new request replaces the one that is still waiting, so a fast
 scrub decodes only the frames the slider rests on, and the last request is always decoded. Opening the file
@@ -16,9 +16,10 @@ from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider,
+                               QVBoxLayout, QWidget)
 
 from bearmind.video import VideoArray
 
@@ -157,6 +158,8 @@ class VideoView(QWidget):
         self._path: Path | None = None
         self._fps = 20.0
         self._contrast: tuple[float, float] | None = None
+        self._display_lut: np.ndarray | None = None
+        self._shown_frame: np.ndarray | None = None
         self._total = 0
         self._index = 0
         self._shown = -1
@@ -170,26 +173,59 @@ class VideoView(QWidget):
         self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.image_label.setStyleSheet("background: #808080; color: #202020;")
         self.slider = QSlider(Qt.Horizontal)
-        self.slider.setEnabled(False)
         self.play_button = QPushButton("▶")
         self.play_button.setToolTip("Play")
-        self.play_button.setEnabled(False)
         self.play_button.setFixedWidth(40)
         self.position_label = QLabel("")
         bar = QHBoxLayout()
         bar.addWidget(self.play_button)
         bar.addWidget(self.slider, 1)
         bar.addWidget(self.position_label)
+
+        self.brightness_slider = QSlider(Qt.Horizontal)
+        self.brightness_slider.setRange(-100, 100)
+        self.brightness_slider.setSingleStep(5)
+        self.brightness_slider.setAccessibleName("Video brightness")
+        self.contrast_slider = QSlider(Qt.Horizontal)
+        self.contrast_slider.setRange(25, 200)
+        self.contrast_slider.setValue(100)
+        self.contrast_slider.setSingleStep(5)
+        self.contrast_slider.setAccessibleName("Video contrast")
+        self.reset_levels_button = QPushButton("Reset")
+        self.reset_levels_button.setToolTip("Reset the video to its automatic brightness and contrast")
+        self.reset_levels_button.setAccessibleName("Reset video levels")
+        levels = QHBoxLayout()
+        levels.addWidget(QLabel("Brightness"))
+        levels.addWidget(self.brightness_slider, 1)
+        levels.addWidget(QLabel("Contrast"))
+        levels.addWidget(self.contrast_slider, 1)
+        self.highlight_overexposure = QCheckBox("Highlight overexposure")
+        self.highlight_overexposure.setToolTip(
+            "Mark pixels that already have value 255 in the saved MC video in red."
+        )
+        options = QHBoxLayout()
+        options.addWidget(self.highlight_overexposure)
+        options.addStretch()
+        options.addWidget(self.reset_levels_button)
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.image_label, 1)
         lay.addLayout(bar)
+        lay.addLayout(levels)
+        lay.addLayout(options)
 
         self._timer = QTimer(self)
         self._timer.setInterval(PLAY_TICK_MS)
         self._timer.timeout.connect(self._tick)
         self.slider.valueChanged.connect(self.seek)
         self.play_button.clicked.connect(self._toggle_play)
+        self.brightness_slider.valueChanged.connect(self._update_display_levels)
+        self.contrast_slider.valueChanged.connect(self._update_display_levels)
+        self.highlight_overexposure.toggled.connect(self._update_display_levels)
+        self.reset_levels_button.clicked.connect(self._reset_display_levels)
+        self._update_display_levels()
+        self._set_controls(False)
 
     # ---- public ----
     def set_video(self, path: Path | None, fps: float, contrast: tuple[float, float] | None = None) -> None:
@@ -200,7 +236,8 @@ class VideoView(QWidget):
         self._contrast = contrast
         self._total, self._index, self._shown = 0, 0, -1
         self._cache.clear()
-        self._image = None
+        self._shown_frame, self._image = None, None
+        self._update_display_levels()
         self.image_label.setPixmap(QPixmap())
         self.position_label.setText("")
         self._set_controls(False)
@@ -279,7 +316,7 @@ class VideoView(QWidget):
         if token != self._token or index != self._index:
             return
         self._pause()
-        self._image, self._shown = None, -1
+        self._shown_frame, self._image, self._shown = None, None, -1
         self.image_label.setPixmap(QPixmap())
         self.image_label.setText(f"frame {index + 1} cannot be read")
 
@@ -295,17 +332,45 @@ class VideoView(QWidget):
     def _show(self, index: int, frame: np.ndarray) -> None:
         if index == self._shown:
             return
-        self._image, self._shown = self._to_image(frame), index
+        self._shown, self._shown_frame = index, frame
+        self._image = self._to_image(frame)
         self._fit()
         self.frame_shown.emit(index)
 
+    def _reset_display_levels(self) -> None:
+        with QSignalBlocker(self.brightness_slider), QSignalBlocker(self.contrast_slider):
+            self.brightness_slider.setValue(0)
+            self.contrast_slider.setValue(100)
+        self._update_display_levels()
+
+    def _update_display_levels(self) -> None:
+        brightness = self.brightness_slider.value()
+        contrast = self.contrast_slider.value()
+        self.brightness_slider.setToolTip(f"Video brightness offset: {brightness:+d}%")
+        self.contrast_slider.setToolTip(f"Video contrast: {contrast}%")
+        self._display_lut = None
+        if self._contrast is not None or brightness != 0 or contrast != 100:
+            lo, hi = self._contrast if self._contrast is not None else (0.0, 255.0)
+            pixels = np.arange(256, dtype=np.float32)
+            levels = (pixels - lo) / max(hi - lo, 1e-9)
+            # Work before clipping so the controls can recover detail beyond the automatic range.
+            adjusted = (levels - 0.5) * (contrast / 100) + 0.5 + brightness / 100
+            self._display_lut = np.clip(adjusted * 255, 0, 255).astype(np.uint8)
+        if self.highlight_overexposure.isChecked():
+            grey = self._display_lut if self._display_lut is not None else np.arange(256, dtype=np.uint8)
+            self._display_lut = np.repeat(grey[:, None], 3, axis=1)
+            self._display_lut[255] = (255, 0, 0)
+        if self._shown_frame is not None:
+            self._image = self._to_image(self._shown_frame)
+            self._fit()
+
     def _to_image(self, frame: np.ndarray) -> QImage:
-        if self._contrast is not None:
-            lo, hi = self._contrast
-            frame = np.clip((frame.astype(np.float32) - lo) * (255.0 / max(hi - lo, 1e-9)), 0, 255).astype(np.uint8)
+        if self._display_lut is not None:
+            frame = self._display_lut[frame]
         frame = np.ascontiguousarray(frame)
-        h, w = frame.shape
-        return QImage(frame.data, w, h, w, QImage.Format_Grayscale8).copy()  # copy: detach from the numpy buffer
+        h, w = frame.shape[:2]
+        fmt = QImage.Format_Grayscale8 if frame.ndim == 2 else QImage.Format_RGB888
+        return QImage(frame.data, w, h, frame.strides[0], fmt).copy()  # detach from the numpy buffer
 
     def _fit(self) -> None:
         if self._image is not None:
@@ -319,6 +384,10 @@ class VideoView(QWidget):
     def _set_controls(self, on: bool) -> None:
         self.slider.setEnabled(on)
         self.play_button.setEnabled(on)
+        self.brightness_slider.setEnabled(on)
+        self.contrast_slider.setEnabled(on)
+        self.highlight_overexposure.setEnabled(on)
+        self.reset_levels_button.setEnabled(on)
         if not on:
             self._pause()
 

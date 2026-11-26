@@ -688,6 +688,33 @@ def test_refresh_guard_reports_once_then_says_it(qapp, series_maps, make_tab, mo
     assert tab.said == ["Refresh failed: RuntimeError: registry busy"]
 
 
+def test_video_levels_follow_view_without_changing_thresholds(qapp, series_maps, make_tab):
+    tab = make_tab(series_maps.paths)
+    shown = []
+    tab.video.frame_shown.connect(shown.append)
+    tab.show()
+    tab.show_session(S1)
+    tab.video.seek(6)
+    _wait(qapp, lambda: shown and shown[-1] == 6)
+
+    original_thresholds = tab.current()
+    original = tab.video.shown_image().pixelColor(0, 0).red()
+    tab.video.brightness_slider.setValue(50)
+    assert tab.video.shown_image().pixelColor(0, 0).red() > original
+    tab.video.highlight_overexposure.click()
+    assert tab.current() == original_thresholds
+
+    tab.show_session(S2)
+    _wait(qapp, lambda: tab.video.shown_image() is not None)
+    assert tab.video.brightness_slider.value() == 50
+    assert tab.video.highlight_overexposure.isChecked()
+    tab.video.reset_levels_button.click()
+    assert tab.video.brightness_slider.value() == 0
+    assert tab.video.highlight_overexposure.isChecked()
+    assert not series_maps.paths.session_config(S1).exists()
+    assert not series_maps.paths.session_config(S2).exists()
+
+
 def test_video_workers_joined_at_exit_without_exec(qapp, make_avi, tmp_path):
     """A process that never runs exec() gets no aboutToQuit: the atexit guard joins the workers. Twice is harmless,
     and a worker whose C++ object is already gone is skipped."""

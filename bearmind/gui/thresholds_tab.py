@@ -759,8 +759,7 @@ class ThresholdsTab(QWidget):
         self._set_video(self._video_for(sid))
 
     def _video_for(self, sid: str) -> tuple:
-        """(path, fps, contrast) of the session's MC video; the contrast comes from the shown maps' mean image, so
-        the movie and the maps look alike (None without maps)."""
+        """MC playback with a fixed range per session, based on the mean image when available."""
         rec = self._record(sid)
         contrast = None
         if self._maps is not None:
@@ -768,7 +767,10 @@ class ThresholdsTab(QWidget):
             fin = mean[np.isfinite(mean)]
             if fin.size:
                 lo, hi = np.percentile(fin, [1.0, 99.5])
-                contrast = (float(lo), float(hi)) if hi > lo else None
+                if hi > lo:
+                    # Leave room above the mean-image range for brighter pixels in individual frames.
+                    white = min(255, hi + 0.25 * (hi - lo))
+                    contrast = (float(lo), float(white))
         return self.paths.mc_video(sid), rec.fps if rec is not None and rec.fps else 0, contrast
 
     def _read_maps(self, item: tm.ThresholdItem):

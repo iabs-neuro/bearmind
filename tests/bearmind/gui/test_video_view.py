@@ -45,6 +45,57 @@ def test_contrast_stretches(qapp, make_avi, tmp_path):
     v.close()
 
 
+def test_display_levels_update_the_paused_frame_and_reset(qapp, make_avi, tmp_path):
+    p, _ = _movie(make_avi, tmp_path)
+    view = VideoView()
+    view.set_video(p, 20, contrast=(20.0, 120.0))
+    view.seek(10)
+    _wait(qapp, lambda: view.shown_image() is not None)
+    worker = view._worker
+
+    def pixel():
+        return view.shown_image().pixelColor(0, 0).red()
+
+    automatic = pixel()
+    view.brightness_slider.setValue(20)
+    brighter = pixel()
+    assert brighter == automatic + 51
+    view.contrast_slider.setValue(50)
+    assert pixel() > brighter  # this frame is below the midpoint
+    view.reset_levels_button.click()
+    assert pixel() == automatic and view.current_index() == 10 and view._worker is worker
+    assert (view.brightness_slider.value(), view.contrast_slider.value()) == (0, 100)
+    view.set_video(None, 0)
+    assert not view.brightness_slider.isEnabled() and not view.contrast_slider.isEnabled()
+    view.close()
+
+
+def test_highlight_marks_only_saturated_video_pixels(qapp, make_avi, tmp_path):
+    row = np.array([20, 70, 120, 255], dtype=np.uint8)
+    p = make_avi(tmp_path / "overexposure.avi", np.tile(row, (2, 12, 1)))
+    view = VideoView()
+    view.set_video(p, 20, contrast=(20.0, 120.0))
+    _wait(qapp, lambda: view.shown_image() is not None)
+
+    def colors():
+        return [view.shown_image().pixelColor(i, 0).getRgb()[:3] for i in range(4)]
+
+    neutral = colors()
+    view.highlight_overexposure.click()
+    red = (255, 0, 0)
+    assert colors() == neutral[:3] + [red]
+    view.brightness_slider.setValue(60)
+    assert colors()[1:] == [(255, 255, 255), (255, 255, 255), red]
+    view.brightness_slider.setValue(-50)
+    assert colors()[2:] == [(127, 127, 127), red]
+    view.contrast_slider.setValue(25)
+    assert colors()[2:] == [(31, 31, 31), red]
+    view.highlight_overexposure.click()
+    assert colors()[2:] == [(31, 31, 31), (117, 117, 117)]
+    assert view.current_index() == 0
+    view.close()
+
+
 def test_rapid_seek_shows_last_request(qapp, make_avi, tmp_path):
     p, n = _movie(make_avi, tmp_path)
     v = VideoView()
