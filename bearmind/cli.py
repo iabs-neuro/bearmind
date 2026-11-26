@@ -269,12 +269,12 @@ def _side_off(on, stage) -> bool:
     return on is not None and not on.get(stage, True)
 
 
-STALE_MARK = "D*"  # done in the registry, but the batch would redo it (runner.StageView.current)
+STALE_MARK = "D*"  # completed result with a changed input, file or prerequisite
 
 
 def _pv(rec, on, stale=()) -> str:
     """The pv column: "off" when the session's config turns every preview off, else one mark per side stage
-    ("-" for one that is off, D* for one in `stale`: done but the batch would redo it)."""
+    ("-" for one that is off, D* for one in `stale`: completed but out of date)."""
     if all(_side_off(on, s) for s in _SIDES):
         return "off"
     return "".join("-" if _side_off(on, s) else STALE_MARK if s in stale
@@ -368,10 +368,10 @@ def cmd_status(args) -> int:
         stale_sides = state.view.side_done_not_current(r)
         cells, reason = _row(r, on, stale, runner.waits_for_thresholds(state.view, r))
         if (stale or stale_sides) and not reason and r.sid not in state.problems:
-            # the stage the batch runs first, in its own order: the main stages, then the previews
-            first = state.view.first_ready(r) or state.view.first_not_current(r)
+            first = state.view.first_not_current(r) if stale else stale_sides[0]
             if first:
-                reason = f"out of date: the batch redoes {first} first"
+                verb = "review" if state.view.blocked(r, first) else "resume from"
+                reason = f"out of date: {verb} {first}"
         rows.append((r.sid, "yes " if r.excluded else "no  ", cells + [_pv(r, on, stale_sides)], _check_mark(r),
                      _note(r, reason, state)))
     rows += [(Path(f).stem, "?   ", ["?"] * (len(STAGES) + 1), "?", _clip(state.problems[Path(f).stem]))
@@ -381,7 +381,7 @@ def cmd_status(args) -> int:
     odd = scan.read_unrecognized(paths)
     if odd:
         _say(f"unrecognized folders: {len(odd)}; list: {paths.scan_unrecognized_csv}")
-    _say("D done, D* done but out of date (the batch redoes it), R running, W waiting, F failed, S skipped, "
+    _say("D done, D* done but out of date, R running, W waiting, F failed, S skipped, "
          ". not started, ? unknown; "
          "chk: W warning, E error in a check of a done stage; pv: MC and CNMF-E preview videos, off (-) when turned off")
     width = max(len("session"), *(len(sid) for sid, *_ in rows))
@@ -437,8 +437,8 @@ def cmd_thresholds(args) -> int:
     code = OK
     stale = {sid for sid, w in res.warnings if w == actions.MAPS_OUT_OF_DATE}
     for sid in sids:
-        if sid in stale:  # the batch redoes the maps first: a suggestion on them would be chosen unseen
-            _say(f"[WARN] {sid}: maps out of date; the batch recomputes them first")
+        if sid in stale:  # a suggestion from stale maps would be chosen unseen
+            _say(f"[WARN] {sid}: maps out of date; review the affected stage")
             continue
         if sid in res.failed:
             fcode, detail = res.failed[sid]

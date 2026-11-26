@@ -199,6 +199,7 @@ def run(paths, rec, cfg) -> StageResult:
             remaining = [i for i in suspects if (trim_from is None or i < trim_from)
                          and not any(a <= i <= b for a, b in manual)]
             plan.extend(bad_frames.repair_plan(remaining, [], "report", limit, event_times, fps, rec.n_frames))
+        plan = bad_frames.pad_interpolation(plan, event_times, fps, rec.n_frames)
         repairs = {k: [(p["first"], p["last"]) for p in plan if p["action"] == k]
                    for k in ("interpolate", "drop")}
         n_in = rec.n_frames

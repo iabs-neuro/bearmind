@@ -276,6 +276,7 @@ class MonitorTab(QWidget):
         self._cache = monitor.RecordCache()
         self._slow_logged = False
         self._sids: list[str] = []
+        self._rows: dict[str, monitor.Row] = {}
 
         self.root_layout = QVBoxLayout(self)
         self.root_layout.setContentsMargins(8, 6, 8, 6)
@@ -387,6 +388,21 @@ class MonitorTab(QWidget):
         box = _section_box(_SectionLabel("Sessions"), self.table)
         box.layout().addWidget(self.not_scanned_label)
         box.layout().addWidget(self.scan_tab_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.stage_actions = QWidget()
+        controls = QHBoxLayout(self.stage_actions)
+        controls.setContentsMargins(0, 0, 0, 0)
+        self.stage_choice = QLabel()
+        self.stage_choice.setWordWrap(True)
+        self.reanalyse_button = QPushButton()
+        self.keep_stage_button = QPushButton("Keep as is")
+        controls.addWidget(self.stage_choice, 1)
+        controls.addWidget(self.reanalyse_button)
+        controls.addWidget(self.keep_stage_button)
+        self.reanalyse_button.clicked.connect(lambda: self._selected_stage_action(False))
+        self.keep_stage_button.clicked.connect(lambda: self._selected_stage_action(True))
+        self.table.selectionModel().currentChanged.connect(lambda *_: self._update_stage_actions())
+        box.layout().addWidget(self.stage_actions)
+        self.stage_actions.hide()
         self.splitter.addWidget(box)
 
     def _build_warnings(self) -> None:
@@ -517,6 +533,62 @@ class MonitorTab(QWidget):
         self._report_result(name, res, stage)
         self.refresh()
 
+    def _selected_stage(self):
+        index = self.table.currentIndex()
+        if not index.isValid():
+            return None
+        item = self.model.item(index.row(), 0)
+        row = self._rows.get(item.text()) if item is not None else None
+        if row is None or row.excluded or row.unreadable:
+            return None
+        if index.column() == 0:
+            stage = next(iter(row.reviews), None)
+        else:
+            stage = TABLE_COLUMNS[index.column() - 1]
+            if stage in monitor.THRESHOLD_COLUMNS:
+                stage = "thresholds"
+        return (row, stage) if stage is not None else None
+
+    def _update_stage_actions(self):
+        selected = self._selected_stage()
+        self.stage_actions.setVisible(selected is not None)
+        if selected is None:
+            return
+        row, stage = selected
+        title = monitor.STAGE_TITLE.get(stage, stage)
+        reason = row.reviews.get(stage)
+        first = next(iter(row.reviews), None)
+        if first in STAGES and stage in STAGES and STAGES.index(first) < STAGES.index(stage):
+            reason = f"Review {monitor.STAGE_TITLE[first]} first."
+        self.stage_choice.setText(f"{row.sid} | {title}" + (f" | {reason}" if reason else ""))
+        self.reanalyse_button.setText(f"Reanalyse from {title}")
+        running = stage in row.cells and row.cells[stage].level == "running"
+        self.reanalyse_button.setEnabled(not running)
+        self.keep_stage_button.setVisible(stage in row.reviews)
+
+    def _selected_stage_action(self, keep):
+        selected = self._selected_stage()
+        if selected is not None:
+            row, stage = selected
+            self._stage_action(row.sid, stage, keep)
+
+    def _stage_action(self, sid, stage, keep):
+        title = monitor.STAGE_TITLE.get(stage, stage)
+        text = (f"Keep the recorded state of {sid} | {title}?"
+                if keep else self._ask_text("rerun_from", [sid], stage))
+        if not self._confirm(text):
+            return
+        try:
+            if keep:
+                actions.keep_stage_result(self.paths, sid, stage, actions.current_user())
+                self._say(f"Kept {sid} | {title}.")
+            else:
+                res = actions.rerun_from(self.paths, [sid], stage, actions.current_user())
+                self._report_result("rerun_from", res, stage)
+        except (ValueError, actions.UnknownSession) as exc:
+            self._message("BEARMiND", str(exc))
+        self.refresh()
+
     @staticmethod
     def _retry_text(sids, plan) -> str:
         """What a retry resets (plan: sid -> actions.retry_stages): a failed main stage and the later ones, or a
@@ -554,7 +626,7 @@ class MonitorTab(QWidget):
     def _report_result(self, name: str, res, stage) -> None:
         done = {
             "exclude": "Excluded", "include": "Included", "accept_mismatch": "Accepted the frame mismatch of",
-            "rerun_from": f"Reset from {monitor.STAGE_TITLE.get(stage, stage)}:",
+            "rerun_from": f"Queued from {monitor.STAGE_TITLE.get(stage, stage)}:",
             "retry_failed": "Reset failed stages of", "inspection_not_needed": "Inspection not needed for",
             "inspection_not_needed_all": "Inspection not needed for",
         }[name]
@@ -741,7 +813,7 @@ class MonitorTab(QWidget):
             log.warning("monitor refresh took %.1f s for %d sessions", spent, len(view.rows))
 
     def _show_warnings(self, view: monitor.SeriesView) -> None:
-        sig = (view.n_warning_sessions, tuple((w.level, w.kind, w.sid, w.stage, w.text, w.retry)
+        sig = (view.n_warning_sessions, tuple((w.level, w.kind, w.sid, w.stage, w.text, w.retry, w.review)
                                               for w in view.warnings))
         if sig == self._warnings_sig:  # rebuilding would flicker and could swallow a click on Retry
             return
@@ -781,6 +853,14 @@ class MonitorTab(QWidget):
             btn = QPushButton("Retry")
             btn.clicked.connect(lambda _=False, sid=w.sid, stage=w.stage: self._retry(sid, stage))
             h.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
+        if w.review:
+            keep = QPushButton("Keep as is")
+            keep.clicked.connect(lambda _=False, sid=w.sid, stage=w.stage: self._stage_action(sid, stage, True))
+            h.addWidget(keep, 0, Qt.AlignmentFlag.AlignTop)
+            if not w.retry:
+                rerun = QPushButton("Reanalyse")
+                rerun.clicked.connect(lambda _=False, sid=w.sid, stage=w.stage: self._stage_action(sid, stage, False))
+                h.addWidget(rerun, 0, Qt.AlignmentFlag.AlignTop)
         return row
 
     def _show_log_of_selection(self) -> None:
@@ -853,12 +933,14 @@ class MonitorTab(QWidget):
         self.not_scanned_label.setText(NO_SESSIONS_TEXT if view.found_nothing else NOT_SCANNED_TEXT)
         self.not_scanned_label.setVisible(not view.scanned)
         self.scan_tab_button.setVisible(not view.scanned)
+        self._rows = {r.sid: r for r in view.rows}
         sids = [r.sid for r in view.rows]
         if sids != self._sids:
             self._rebuild(view.rows)
             self._sids = sids
         for i, row in enumerate(view.rows):
             self._fill_row(i, row)
+        self._update_stage_actions()
         self._show_log_of_selection()
 
     def _rebuild(self, rows: list[monitor.Row]) -> None:
@@ -887,7 +969,10 @@ class MonitorTab(QWidget):
             tip = row.mouse
         if row.exclusion_reason:
             tip += f"\nExclusion reason: {row.exclusion_reason}"
-        style = f"first|{row.excluded}"
+        if row.reviews:
+            stage, why = next(iter(row.reviews.items()))
+            tip += f" ? {monitor.STAGE_TITLE.get(stage, stage)} ? {why}"
+        style = f"first|{row.excluded}|{bool(row.reviews)}"
         if first.text() != row.sid:
             first.setText(row.sid)
         if first.toolTip() != tip:
@@ -895,6 +980,7 @@ class MonitorTab(QWidget):
         if first.data(_STYLE_ROLE) != style:
             first.setData(style, _STYLE_ROLE)
             first.setForeground(QBrush(QColor(EXCLUDED_INK)) if row.excluded else QBrush())
+            first.setBackground(QBrush(QColor(CELL_BG["warning"])) if row.reviews else QBrush())
         for c, stage in enumerate(TABLE_COLUMNS, start=1):
             cell = row.threshold_cells.get(stage) or row.cells["thresholds" if stage in monitor.THRESHOLD_COLUMNS else stage]
             item = self.model.item(i, c)

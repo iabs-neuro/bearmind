@@ -43,6 +43,7 @@ def mark_current(paths, rec, stages=None):
         h = view.hash(rec, stage)
         assert h is not None, f"{rec.sid}: the stage hashes cannot be computed: {view.errors.get(rec.sid)}"
         st.params_hash = h
+        st.output_stats = runner._output_stats(paths, st.outputs)
     return rec
 
 

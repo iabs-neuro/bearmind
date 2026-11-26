@@ -75,6 +75,7 @@ class Row:
     problem: str | None = None  # why the batch cannot schedule the session; the row is red
     threshold_cells: dict[str, Cell] = field(default_factory=dict)
     exclusion_reason: str | None = None
+    reviews: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -95,6 +96,7 @@ class WarningItem:
     stage: str
     text: str
     retry: bool
+    review: bool = False
 
 
 @dataclass
@@ -436,9 +438,9 @@ def _cell(rec, stage, settings, human, alive, stale=(), first_stale=None) -> Cel
     lines = [c.message for c in st.checks] if st.state is State.DONE else []
     lines += [a.message for a in _live_anomalies(rec, stage)]
     if st.state is State.DONE and stage in stale:
-        # not coloured as a result: the batch replaces it; the old number stays readable in the tooltip
-        level, text = "none", OUT_OF_DATE
-        lines.insert(0, f"{OUT_OF_DATE}: the batch redoes {first_stale} first; old result: "
+        level, text = "warning", OUT_OF_DATE
+        first_title = STAGE_TITLE.get(first_stale, first_stale)
+        lines.insert(0, f"Review required from {first_title}. Recorded result: "
                         f"{_cell_text(rec, stage, st, settings[0])}")
     elif st.state is State.DONE:
         level = _worse([c.level for c in st.checks] + [a.level for a in _live_anomalies(rec, stage)])
@@ -560,7 +562,8 @@ def _problems(paths, records, rs: RunnerState, cache, view) -> dict:
     return cache.problems(paths, records, view)
 
 
-def _warnings(rec, preview_on) -> list[WarningItem]:
+def _warnings(rec, preview_on, reviews=None) -> list[WarningItem]:
+    reviews = reviews or {}
     # the window labels each item "<sid> · <stage>": the text starts with what happened
     out = []
     scan = [a for a in rec.anomalies if a.code in _SCAN_CODES and not a.auto_fixed]
@@ -575,12 +578,16 @@ def _warnings(rec, preview_on) -> list[WarningItem]:
         if stage in SIDE_STAGES and preview_on is False:
             continue
         if st.state is State.FAILED:
+            if stage not in reviews:
+                continue
             crash = next((a for a in rec.anomalies if a.code == "stage_crashed"
                           and a.data.get("stage") == stage and a.data.get("cause") in HINTS), None)
             what = HINTS[crash.data["cause"]] if crash else (_last_line(st.error) or "failed")
             out.append(WarningItem("error", "stage_failed", rec.sid, stage,
-                                   f"{what.rstrip('.')}. {HINTS['stage_failed']}", True))
+                                   f"{what.rstrip('.')}. {HINTS['stage_failed']}", True, True))
         elif st.state is State.DONE:
+            if stage in reviews and stage == next(iter(reviews)):
+                out.append(WarningItem("warning", "stage_review", rec.sid, stage, reviews[stage], False, True))
             bad = [c for c in st.checks if c.name in _CHECK_KIND and c.level != "ok"]
             for kind in dict.fromkeys(_CHECK_KIND[c.name] for c in bad):
                 cs = [c for c in bad if _CHECK_KIND[c.name] == kind]
@@ -625,16 +632,15 @@ def _rates(records, cfg) -> dict:
     return out
 
 
-def _eta(records, human, now, rates, problems, alive, stale=None, current=None, current_rate=None):
+def _eta(records, human, now, rates, problems, alive, holds=None, current=None, current_rate=None):
     """Seconds of batch work left: 0.0 when nothing is left, None when what is left has no estimate. Waits for
-    a person and sessions that cannot be scheduled are not counted; a DONE stage the batch would redo (`stale`:
-    sid -> stages) is."""
-    stale = stale or {}
+    a person, stages awaiting review and sessions that cannot be scheduled are left out."""
+    holds = holds or {}
     total, left, any_est = 0.0, False, False
     for r in records:
         if r.excluded or r.sid in problems:
             continue
-        cut = len(STAGES)  # stages from a person's wait on cannot start until the person decides
+        cut = STAGES.index(holds[r.sid]) if r.sid in holds else len(STAGES)
         if human[r.sid][0]:
             cut = min(cut, STAGES.index("cnmf"))
         if human[r.sid][1]:
@@ -643,7 +649,7 @@ def _eta(records, human, now, rates, problems, alive, stale=None, current=None, 
             st = r.stages.get(stage) or StageRecord()
             # WAITING here is the core's own wait (crop_finalize), or a stale wait for thresholds: it ends
             # without a person
-            if st.state not in (State.PENDING, State.RUNNING, State.WAITING) and stage not in stale.get(r.sid, ()):
+            if st.state not in (State.PENDING, State.RUNNING, State.WAITING):
                 continue
             left = True
             if stage == "gate":  # a check of the decision, no work: a person's wait is cut above
@@ -686,7 +692,7 @@ def _current_rate(records, current, rates):
 
 
 def _bars(records, human, problems, alive, stale=None) -> dict:
-    """`stale`: sid -> the DONE stages the batch would redo; they count as pending, not done."""
+    """`stale` maps sessions to completed stages affected by an earlier review."""
     stale = stale or {}
     live = [r for r in records if not r.excluded]
     bars = {}
@@ -697,7 +703,7 @@ def _bars(records, human, problems, alive, stale=None) -> dict:
             if (stage == "thresholds" and human[r.sid][0]) or (stage == "gate" and human[r.sid][1]):
                 b.waiting += 1  # a person can act on it, even in a session that cannot be scheduled
             elif st is State.DONE and stage in stale.get(r.sid, ()):
-                b.pending += 1
+                b.waiting += 1
             elif st is State.DONE:
                 b.done += 1
             elif r.sid in problems:  # cannot run until a config is fixed: needs a person, like a failure
@@ -724,8 +730,15 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
     view = cache.stage_view(paths)  # one per refresh: the runner's rule, on the cached configs
     problems = _problems(paths, records, rs, cache, view)
     human = {r.sid: (actions.waits_for_thresholds(view, r), cache.gate_waits(paths, r)) for r in records}
-    # sid -> DONE stages the batch would redo; a session that cannot be scheduled is red instead (it has none)
+    # Completed results affected by the earliest review. Configuration errors are shown separately.
     stale = {r.sid: ([] if r.sid in problems else view.done_not_current(r)) for r in records}
+    reviews = {r.sid: {stage: why for stage in ALL_STAGES if (why := view.review_reason(r, stage))}
+               for r in records}
+    holds = {}
+    for r in records:
+        first = view.first_not_current(r)
+        if first is not None and (r.stages.get(first) or StageRecord()).state in (State.DONE, State.FAILED, State.SKIPPED):
+            holds[r.sid] = first
     configs = {r.sid: view.cfg(r) for r in records}
     settings = {sid: _settings(cfg) for sid, cfg in configs.items()}
     choices = {sid: _thresholds(cfg) for sid, cfg in configs.items()}
@@ -751,13 +764,13 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
         )
         reason = actions.exclusion_reason(r) if r.excluded else None
         rows.append(Row(r.sid, r.mouse, r.excluded, cells, problem=why, threshold_cells=threshold_cells,
-                        exclusion_reason=reason))
+                        exclusion_reason=reason, reviews=reviews[r.sid]))
     rows += [_unreadable_row(f, why) for f, why in broken]
     rows.sort(key=lambda x: (x.mouse, x.sid))
     live = [r for r in records if not r.excluded]
     waiting = {"thresholds": sum(human[r.sid][0] for r in live),
                "manual_inspection": sum(human[r.sid][1] for r in live)}
-    warnings = [w for r in records for w in _warnings(r, _preview_if_failed(r, settings[r.sid][1]))]
+    warnings = [w for r in records for w in _warnings(r, _preview_if_failed(r, settings[r.sid][1]), reviews[r.sid])]
     order = {s: i for i, s in enumerate(("",) + ALL_STAGES)}
     warnings.sort(key=lambda w: (w.level != "error", w.sid, order[w.stage]))
     rates = _rates(records, defaults.get("monitor", {}))
@@ -768,6 +781,6 @@ def series_view(paths, now: datetime | None = None, cache: RecordCache | None = 
         sec, per_session = current_rate
         stage_eta = max(0.0, sec * (1 if per_session else current_rec.n_frames) - (rs.stage_elapsed_s or 0))
     return SeriesView(paths.root, True, rs, rows, _bars(records, human, problems, rs.alive, stale),
-                      _eta(records, human, now, rates, problems, rs.alive, stale, rs.current, current_rate),
+                      _eta(records, human, now, rates, problems, rs.alive, holds, rs.current, current_rate),
                       waiting, warnings, len({w.sid for w in warnings}), [f for f, _ in broken],
                       stage_eta_s=stage_eta)

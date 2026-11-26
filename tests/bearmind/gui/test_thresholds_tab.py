@@ -369,6 +369,7 @@ def test_gsig_listed_without_maps_falls_back(qapp, series_maps, make_tab):
     with np.load(p.threshold_maps(S1)) as z:
         arrays = {k: z[k] for k in z.files if not k.endswith("_4")}  # the suggested gSig 4 lost its maps
     np.savez_compressed(p.threshold_maps(S1), **arrays)
+    make_current(p, S1, "thresholds")
     tab = make_tab(p)
     assert sorted(tab.gsig_buttons) == [3, 5]
     assert tab.current() == (S1, 5, 0.85, 8.0) and tab.gsig_buttons[5].isChecked()
@@ -435,6 +436,7 @@ def test_new_maps_file_reloads_and_keeps_the_values(qapp, series_maps, make_tab)
     tab.set_thresholds(0.7, 12.0)
     assert "mirrored" in tab.counters_label.text()
     save_maps(p.threshold_maps(S1), mirror=False)
+    make_current(p, S1, "thresholds")
     tab.refresh()
     assert tab.current() == (S1, 5, 0.7, 12.0) and tab.gsig_buttons[5].isChecked()
     assert "mirrored" not in tab.counters_label.text()
@@ -737,6 +739,10 @@ def test_maps_recomputed_or_unreadable_show_the_reason(qapp, series_maps, make_t
     tab.show_session(S1)
     assert "being recomputed" in tab.corr_view.text() and not tab.accept_button.isEnabled()
     tab.show_session(S2)
+    assert tab.corr_view.text() == "The maps are out of date. Review thresholds in Monitor."
+    assert not tab.accept_button.isEnabled()
+    actions.keep_stage_result(p, S2, "thresholds", "expert")
+    tab.refresh()
     assert tab.corr_view.text().startswith("Maps cannot be read") and not tab.accept_button.isEnabled()
     # the batch finishes the maps of the shown session: the tab shows them without a session change
     tab.show_session(S1)
@@ -856,7 +862,7 @@ def test_probe_cases_agree_in_tab_monitor_and_actions(qapp, series_maps, make_ta
     with_maps(p, S3, series_maps.make_avi)  # (c): maps of S3, then a crop input of its mouse changes
     config.update_yaml(p.mouse_config("NOF_H02"), {"crop": {"fov_threshold_frac": 0.3}})
     tab = make_tab(p)
-    assert tree_rows(tab)[0] == {S1: "waiting", S2: "waiting", S3: "maps out of date: the batch redoes crop first"}
+    assert tree_rows(tab)[0] == {S1: "waiting", S2: "waiting", S3: "maps wait for review from crop"}
     v = monitor.series_view(p)
     assert v.waiting["thresholds"] == 2
     cells = {r.sid: r.cells["thresholds"] for r in v.rows}
@@ -864,16 +870,16 @@ def test_probe_cases_agree_in_tab_monitor_and_actions(qapp, series_maps, make_ta
     assert actions.waiting_threshold_sids(p) == [S1, S2]
     assert [i.sid for i in tm.threshold_items(p) if i.waiting] == [S1, S2]
     tab.show_session(S3)
-    note = "The maps are out of date: the batch redoes crop first."
+    note = "The maps are out of date. Review crop in Monitor."
     shown = tab.corr_view.text()
-    assert shown.startswith(note + " ") and tab.pnr_view.text() == shown
+    assert shown == note and tab.pnr_view.text() == shown
     assert not tab.accept_button.isEnabled() and tab.accept_button.toolTip() == shown
     assert not tab.accept_mouse_button.isEnabled()
     tab.accept_and_next()  # refused: nothing is written
     assert not p.session_config(S3).exists() and not _choices(p)
     config.update_yaml(p.session_config(S3), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
     tab.refresh()
-    assert tree_rows(tab)[0][S3] == "chosen · maps will be recomputed"
+    assert tree_rows(tab)[0][S3] == "chosen · maps wait for review from crop"
 
 
 def test_window_count_drops_at_once_after_accept_while_the_registry_still_waits(qapp, series_maps):
@@ -1100,6 +1106,7 @@ def test_maps_reload_sets_the_video_again(qapp, series_maps, make_tab):
         arrays = {k: z[k] for k in z.files}
     arrays["mean"] = arrays["mean"] * 2.0
     np.savez_compressed(p.threshold_maps(S1), **arrays)
+    make_current(p, S1, "thresholds")
     tab.refresh()
     after = tab._video_args[2]
     assert after != before and after[1] == pytest.approx(2 * before[1], rel=1e-3)
@@ -1178,22 +1185,19 @@ def test_deleted_mc_video_puts_every_later_stage_out_of_date(qapp, series_maps, 
     v = monitor.series_view(p)
     cells = next(r for r in v.rows if r.sid == S1).cells
     assert cells["crop"].text != "out of date"
-    assert all(cells[s].text == "out of date" and cells[s].level == "none" for s in later)
-    assert all("the batch redoes mc first" in cells[s].tooltip for s in later)
-    rates = config.load_defaults()["monitor"]["eta_s_per_frame"]
-    n_frames = registry.load_record(p, S1).n_frames
-    added = sum(rates[s] for s in ("mc", "thresholds", "cnmf", "autoinspect", "export")) * n_frames
-    assert v.eta_s == pytest.approx(before.eta_s + added)
-    assert v.bars["export"].done == 0 and v.bars["export"].pending == 3
+    assert all(cells[s].text == "out of date" and cells[s].level == "warning" for s in later)
+    assert all("Review required from MC" in cells[s].tooltip for s in later)
+    assert v.eta_s == pytest.approx(before.eta_s)
+    assert v.bars["export"].done == 0 and v.bars["export"].waiting == 1
     capsys.readouterr()
     assert cli.main(["status", str(p.root)]) == 0
     row = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(S1))
-    assert row.split()[2:9] == ["D"] + ["D*"] * 6 and row.endswith("out of date: the batch redoes mc first")
+    assert row.split()[2:9] == ["D"] + ["D*"] * 6 and row.endswith("out of date: review mc")
     with open(p.summary_csv, encoding="utf-8", newline="") as f:
         srow = next(r for r in _csv.DictReader(f) if r["sid"] == S1)
     assert srow["crop"] == "done" and all(srow[s] == "done (out of date)" for s in later)
     tab = make_tab(p)
-    assert tree_rows(tab)[0][S1] == "chosen · maps will be recomputed"
+    assert tree_rows(tab)[0][S1] == "chosen · maps wait for review from mc"
 
 
 def test_unreadable_pending_choices_message_is_true(qapp, series_maps, make_tab):
@@ -1683,6 +1687,7 @@ def test_method_values_recomputed_for_new_maps(qapp, series_maps, make_tab, monk
     mod = sys.modules[save_maps.__module__]
     monkeypatch.setattr(mod, "BLOBS", ((10, 12, 10.0), (20, 30, 12.0)))
     save_maps(p.threshold_maps(S1), mirror=False)
+    make_current(p, S1, "thresholds")
     tab.refresh()
     _wait(qapp, lambda: len(calls) > n and _settled(tab))
     g = tab.current()[1]

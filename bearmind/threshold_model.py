@@ -155,13 +155,16 @@ def _chosen(cnmf_cfg: dict) -> dict | None:
     return v if all(x is not None for x in v.values()) else None
 
 
-def _stale(th, first_stale) -> tuple[str, str, bool]:
+def _stale(th, first_stale, held=False) -> tuple[str, str, bool]:
     """(short reason, sentence, the batch recomputes them without a person) for maps that are not up to date
     while their old file is still there."""
     error = last_line(th.error).rstrip(".") if th is not None else ""
     state = th.state if th is not None else State.PENDING
     if state is State.RUNNING:
         return "maps being recomputed", "The maps are being recomputed by the batch.", True
+    if held and state in (State.PENDING, State.DONE):
+        return (f"maps wait for review from {first_stale}",
+                f"The maps are out of date. Review {first_stale} in Monitor.", False)
     if state is State.PENDING:
         return ("maps out of date: the batch will recompute them",
                 "The maps are out of date: the batch will recompute them.", True)
@@ -245,7 +248,10 @@ def _item(paths, view, rec, ahead_of, rs) -> ThresholdItem:
     elif not has_file:
         state = "no_maps"
         blocked_at = first_stale if first_stale is not None and view.blocked(rec, first_stale) else None
-        if th is not None and th.state is State.FAILED:
+        awaiting_review = blocked_at is not None and rec.stages[blocked_at].state is State.DONE
+        if awaiting_review:
+            reason = f"review {blocked_at} in Monitor"
+        elif th is not None and th.state is State.FAILED:
             reason = last_line(th.error) or "failed"
         elif blocked_at is not None:
             # a failed stage of the session holds it back: the batch offers nothing until a person retries it
@@ -259,7 +265,7 @@ def _item(paths, view, rec, ahead_of, rs) -> ThresholdItem:
         if cnmf is not None and cnmf.state is State.DONE:
             reason += " (CNMF-E done)"
         note = f"No maps: {reason}"
-        if blocked_at is not None and not (th is not None and th.state is State.FAILED):
+        if blocked_at is not None and not awaiting_review and not (th is not None and th.state is State.FAILED):
             note = f"No maps: {reason}. Retry the failed stage in Monitor."
         elif reason.startswith("not computed yet"):
             maps_note, ahead = "No maps yet.", ahead_of(rec.sid)
@@ -272,7 +278,8 @@ def _item(paths, view, rec, ahead_of, rs) -> ThresholdItem:
         # maps nobody has seen: the maps are not shown and Accept is refused with the sentence (the author may
         # relax this later).
         state = "out_of_date"
-        reason, note, recomputed = _stale(th, first_stale)
+        held = first_stale is not None and view.blocked(rec, first_stale)
+        reason, note, recomputed = _stale(th, first_stale, held)
         maps_note = note
         if recomputed and not (first_stale is not None and view.blocked(rec, first_stale)):
             ahead = ahead_of(rec.sid)

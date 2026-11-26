@@ -56,7 +56,7 @@ ALREADY_DECIDED_ASK = ("Manual inspection of {sid} is already decided ({value});
 # the inspection page's notice of a saved result (inspect_server.SAVED_BEFORE), told before the page opens
 SAVED_BEFORE = (" A result of {sid} was saved {when} by {who}. The inspection page shows the CNMF-E output, not "
                 "that result; Save results replaces it.")
-OUT_OF_DATE_TIP = "CNMF-E of {sid} is out of date: the batch recomputes it first."
+OUT_OF_DATE_TIP = "CNMF-E of {sid} is out of date. Review the affected stage in Monitor."
 UNSCHEDULABLE_TIP = "{sid} cannot be scheduled: {problem}"
 NOT_DONE_TIP = "CNMF-E of {sid} is not done."
 SELECT_ONE = "Select one session in the table."

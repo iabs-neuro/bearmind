@@ -17,7 +17,7 @@ from bearmind.paths import SeriesPaths
 from bearmind.registry import Anomaly
 
 SIDS = ("NOF_H01_1D", "NOF_H01_2D", "NOF_H02_1D")
-ASK_RUNNING = "Batch is running. If session files changed, their stages will be recomputed. Rescan?"
+ASK_RUNNING = "Batch is running. Changes to existing results will be shown for review. Rescan?"
 CYRILLIC = "[А-Яа-яЁё]"
 
 

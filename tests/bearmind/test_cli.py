@@ -319,8 +319,8 @@ def test_status_marks_out_of_date_stages(series, capsys):
     out = _status(series, capsys)
     rows = {line.split()[0]: line for line in out.splitlines() if line.startswith("NOF_")}
     assert rows[S1].split()[2:5] == ["D*", "D*", "D*"] and rows[S3].split()[2:5] == ["D", "D", "D"]
-    assert rows[S1].endswith("out of date: the batch redoes crop first") and "out of date" not in rows[S3]
-    assert "D* done but out of date (the batch redoes it)" in out and out.isascii()
+    assert rows[S1].endswith("out of date: review crop") and "out of date" not in rows[S3]
+    assert "D* done but out of date" in out and out.isascii()
     with open(series.paths.summary_csv, encoding="utf-8", newline="") as f:
         csv_rows = {r["sid"]: r for r in csv.DictReader(f)}
     assert [csv_rows[S2][s] for s in ("crop", "mc", "thresholds")] == ["done (out of date)"] * 3
@@ -742,12 +742,12 @@ def test_status_marks_out_of_date_previews(series, capsys):
     col = head.index("pv")
     assert rows[S1][col:col + 4] == "D*D*" and rows[S2][col:col + 4] == "DD  "
     assert rows[S1].split()[2:9] == ["D", "D", "D", "D", "D", "D*", "D*"]
-    assert rows[S1].endswith("out of date: the batch redoes autoinspect first")
-    assert runner.next_ready(runner.series_state(paths).records, paths) == (S1, "autoinspect")
+    assert rows[S1].endswith("out of date: review autoinspect")
+    assert runner.next_ready(runner.series_state(paths).records, paths) is None
     # previews off: the column says so, and the note goes back to the main stages
     assert _main("previews", series.root, "off") == 0
     head, rows = _status_rows(_status(series, capsys))
-    assert rows[S1][col:col + 3] == "off" and rows[S1].endswith("out of date: the batch redoes autoinspect first")
+    assert rows[S1][col:col + 3] == "off" and rows[S1].endswith("out of date: review autoinspect")
 
 
 def test_retry_all_failed_covers_a_failed_preview(series, capsys):
@@ -826,7 +826,7 @@ def test_accept_suggested_warns_for_out_of_date_maps(series, capsys):
     config.update_yaml(series.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
     assert _main("thresholds", series.root, "accept-suggested", "--sessions", S1, S3) == 0
     out = capsys.readouterr().out
-    assert f"[WARN] {S1}: maps out of date; the batch recomputes them first" in out and "[FAILED]" not in out
+    assert f"[WARN] {S1}: maps out of date; review the affected stage" in out and "[FAILED]" not in out
     assert f"[OK] {S3}: gSig=4" in out and not series.paths.session_config(S1).exists()
 
 

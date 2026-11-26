@@ -37,7 +37,7 @@ def test_defaults_int_keys_and_values():
     assert d["checks"]["mc_max_shift_px"] == {"warn": 10, "error": 30}  # task 17 calibration
     assert d["checks"]["mc_black_frame_mean"] == 0.5
     assert d["checks"]["mc_template_corr"] == {"warn": 0.7}  # task 17 calibration
-    assert d["runner"] == {"isolate_stages": True, "max_auto_retries": 1,
+    assert d["runner"] == {"isolate_stages": True, "max_auto_retries": 0,
                            "stall_timeout_min": 30}  # the runner reads only these
 
 

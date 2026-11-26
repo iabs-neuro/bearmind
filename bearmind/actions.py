@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from bearmind import checks, config, fileio, registry, runner, scan, scan_view
-from bearmind.registry import SIDE_STAGES, STAGES, Decision, State
+from bearmind.registry import ALL_STAGES, SIDE_STAGES, STAGES, Decision, State
 # One rule for "who waits for thresholds": it lives in runner, which counts by it too (heartbeat, status,
 # summary.csv); actions re-exports it.
 from bearmind.runner import THRESHOLD_KEYS, waits_for_thresholds  # noqa: F401
@@ -249,7 +249,7 @@ PENDING_CHOICES = "threshold_choices.pending.csv"  # next to the log: rows the l
 CHOICE_NOT_LOGGED = "choice_log_not_written"  # warning: the row waits in PENDING_CHOICES
 CHOICE_ONLY_IN_LOG = "choice_log_only_in_log"  # warning: the pending file failed too; the row is a log WARNING
 CHOICE_PENDING_KEPT = "choice_pending_kept"  # warning: the row is in the log; the pending file cannot be read
-MAPS_OUT_OF_DATE = "maps_out_of_date"  # warning of accept_suggested: the batch recomputes the maps first
+MAPS_OUT_OF_DATE = "maps_out_of_date"  # warning of accept_suggested: existing maps need review
 
 
 def _csv_text(rows, header: bool) -> str:
@@ -515,8 +515,8 @@ def gate_cleaned(paths, sid: str, who: str) -> ActionResult:
 
 
 def rerun_from(paths, sids, stage: str, who: str) -> ActionResult:
-    if stage not in STAGES:
-        raise ValueError(f"unknown stage {stage!r}; stages: {', '.join(STAGES)}")
+    if stage not in ALL_STAGES:
+        raise ValueError(f"unknown stage {stage!r}; stages: {', '.join(ALL_STAGES)}")
     sids = list(sids)
     check_sids(_records(paths), sids)
     res = ActionResult()
@@ -524,6 +524,11 @@ def rerun_from(paths, sids, stage: str, who: str) -> ActionResult:
         runner.reset_from(paths, sid, stage, who)
         res.ok.append(sid)
     return res
+
+
+def keep_stage_result(paths, sid, stage, who: str) -> None:
+    check_sids(_records(paths), [sid])
+    runner.keep_result(paths, sid, stage, who)
 
 
 def retry_failed(paths, sids, who: str) -> ActionResult:

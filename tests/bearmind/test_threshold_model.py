@@ -349,11 +349,11 @@ def test_out_of_date_maps_state(series):
     config.update_yaml(p.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
     it = _items(series)[S1]
     assert (it.state, it.first_stale, it.waiting) == ("out_of_date", "crop", False)
-    assert tm.state_text(it) == "maps out of date: the batch redoes crop first"
-    assert it.maps_note == "The maps are out of date: the batch redoes crop first."
-    assert it.note.startswith(it.maps_note + " ")  # then the queue and what the batch does
+    assert tm.state_text(it) == "maps wait for review from crop"
+    assert it.maps_note == "The maps are out of date. Review crop in Monitor."
+    assert it.note == it.maps_note
     config.update_yaml(p.session_config(S1), {"cnmf": {"gSig": 4, "min_corr": 0.8, "min_pnr": 8.0}})
-    assert tm.state_text(_items(series)[S1]) == "chosen · maps will be recomputed"
+    assert tm.state_text(_items(series)[S1]) == "chosen · maps wait for review from crop"
     _set(p, S1, "thresholds", State.FAILED, error="MemoryError: x")
     assert tm.state_text(_items(series)[S1]) == "chosen · maps out of date: the thresholds stage failed"
     for t in (tm.state_text(i) for i in _items(series).values()):
@@ -456,7 +456,7 @@ def test_sessions_ahead_leaves_out_what_the_batch_never_offers(series):
     recs = registry.read_all(p)[0]
     view = runner.StageView(p)
     assert view.blocked(registry.load_record(p, S2), "crop")
-    assert not view.blocked(registry.load_record(p, S2), "mc")
+    assert view.blocked(registry.load_record(p, S2), "mc")
     assert tm.sessions_ahead(view, recs, {r.sid: r for r in recs}[S1]) == 0
     assert runner.next_ready(recs, p, until="thresholds") == (S1, "thresholds")
 
@@ -496,15 +496,18 @@ def test_no_maps_note_when_the_batch_is_not_running(series):
     assert note.endswith("The batch is not running: press Start on the Monitor tab.")
 
 
-def test_out_of_date_maps_that_the_batch_redoes_say_the_queue(series):
+def test_out_of_date_maps_show_queue_after_confirmation(series):
     p = series.paths
     _save(p.threshold_maps(S1), _maps(), False)
     make_current(p, S1, "crop", "mc", "thresholds")
     config.update_yaml(p.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
     it = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(alive=False))}[S1]
-    assert it.note.startswith("The maps are out of date: the batch redoes crop first. ")
-    assert it.note.endswith("The batch is not running: press Start on the Monitor tab.")
-    assert it.maps_note == "The maps are out of date: the batch redoes crop first."
+    assert it.note == "The maps are out of date. Review crop in Monitor."
+    actions.rerun_from(p, [S1], "crop", "expert")
+    item = {i.sid: i for i in tm.threshold_items(p, runner_state=_batch_state(alive=False))}[S1]
+    assert item.note.startswith("The maps are out of date: the batch will recompute them.")
+    assert item.note.endswith("The batch is not running: press Start on the Monitor tab.")
+    assert it.maps_note == "The maps are out of date. Review crop in Monitor."
 
 
 def test_blocked_session_without_maps_does_not_claim_a_queue(series):

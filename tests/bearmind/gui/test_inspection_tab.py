@@ -148,7 +148,7 @@ def test_inspect_button_rules(qapp, series4, make_ui):
     assert not t.inspect_button.isEnabled() and t.not_needed_button.isEnabled()
     ui.select(S4)  # CNMF-E done but out of date: the batch redoes it before anyone inspects it
     assert not t.inspect_button.isEnabled()
-    assert t.inspect_button.toolTip() == f"CNMF-E of {S4} is out of date: the batch recomputes it first."
+    assert t.inspect_button.toolTip() == f"CNMF-E of {S4} is out of date. Review the affected stage in Monitor."
     ui.select(S1)
     registry.update_record(series4, S1, lambda r: r.stages.update({"cnmf": StageRecord(State.RUNNING)}))
     t.refresh()  # its CNMF-E runs again: the row goes, and the button with it

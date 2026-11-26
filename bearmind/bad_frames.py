@@ -12,7 +12,7 @@ REL_MAX = 1.5
 VZ_MAX = 20.0
 VZ_WINDOW = 301
 DEFAULT_ACTION = "auto"
-FRAME_REPAIR_RULE = "mirror_horizontal_edges_v2"
+FRAME_REPAIR_RULE = "mirror_horizontal_edges_with_padding_v3"
 
 
 def normalize(ranges, n_frames, *, allow_all=False):
@@ -168,6 +168,28 @@ def repair_plan(suspects, manual, action, limit, timestamps, fps, n_frames, *, t
         seconds = duration_s(trim_from, n_frames - 1, timestamps, fps)
         plan.append({"first": trim_from, "last": n_frames - 1, "duration_s": round(seconds, 6), "action": "drop"})
     return plan
+
+
+def pad_interpolation(plan, timestamps, fps, n_frames):
+    """Extend interpolation by one frame on either side, within the retained video."""
+    ordered = sorted(plan, key=lambda e: e["first"])
+    padded = []
+    for i, event in enumerate(ordered):
+        first, last, action = event["first"], event["last"], event["action"]
+        if action == "interpolate":
+            previous = ordered[i - 1] if i else None
+            following = ordered[i + 1] if i + 1 < len(ordered) else None
+            low = previous["last"] + 1 if previous and previous["action"] != action else 0
+            high = following["first"] - 1 if following and following["action"] != action else n_frames - 1
+            first, last = max(low, first - 1), min(high, last + 1)
+        if padded and action == "interpolate" and padded[-1][2] == action and first <= padded[-1][1] + 1:
+            first, last = padded.pop()[0], last
+        padded.append((first, last, action))
+    unavailable = sum(last - first + 1 for first, last, action in padded if action != "report")
+    if unavailable >= n_frames:  # interpolation requires an intact reference frame
+        return ordered
+    return [{"first": a, "last": b, "duration_s": round(duration_s(a, b, timestamps, fps), 6), "action": action}
+            for a, b, action in padded]
 
 
 def _horizontal_edges(frame):

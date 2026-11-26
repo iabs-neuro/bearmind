@@ -145,7 +145,7 @@ runner:
   # each stage in a child process: a crash or a dead CaImAn pool worker fails the stage, not the batch
   isolate_stages: true
   # automatic re-runs per run of a stage whose process crashed (0: none); other failures are not re-run
-  max_auto_retries: 1
+  max_auto_retries: 0
   # minutes without CPU progress of the stage process tree after which the stage is killed and counts as
   # crashed (0: no limit). CPU time, not output: a stage that computes silently is healthy; a deadlock or
   # a wait on stuck I/O uses no CPU.

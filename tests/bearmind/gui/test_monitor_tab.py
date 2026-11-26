@@ -87,6 +87,23 @@ def live(series4, monkeypatch):
     monkeypatch.setattr(monitor, "_holds_lock", lambda lock: 1)
 
 
+def test_stage_cell_offers_keep_or_reanalysis_for_the_selected_stage(qapp, series4):
+    sid = "LT1_J01_1D"
+    series4.mc_video(sid).write_bytes(b"manually repaired")
+    t = tab_for(series4, confirm=lambda text: True)
+    index = t.model.index(0, 1 + monitor_tab.TABLE_COLUMNS.index("mc"))
+    t.table.setCurrentIndex(index)
+    assert t.reanalyse_button.text() == "Reanalyse from MC"
+    assert not t.keep_stage_button.isHidden()
+    t.keep_stage_button.click()
+    assert registry.load_record(series4, sid).decisions[-1].what == "keep_stage_result"
+    assert t.keep_stage_button.isHidden()
+    t.reanalyse_button.click()
+    rec = registry.load_record(series4, sid)
+    assert rec.stages["crop"].state is State.DONE
+    assert rec.stages["mc"].state is rec.stages["thresholds"].state is State.PENDING
+
+
 def test_batch_header_states(qapp, series4):
     t = tab_for(series4)
     assert t.batch_label.text() == "Stopped"

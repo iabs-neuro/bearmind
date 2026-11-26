@@ -46,6 +46,16 @@ def test_detects_dark_prefix_and_horizontal_stripes_through_the_last_frame():
     assert meter.suspects() == list(range(3)) + list(range(50, 400))
 
 
+def test_interpolation_padding_merges_ranges_and_preserves_the_trim_boundary():
+    plan = bad_frames.repair_plan([0, 1, 6, 9, 13], [], "interpolate", .5, None, 20, 18, trim_from=14)
+    padded = bad_frames.pad_interpolation(plan, None, 20, 18)
+    assert [(e["first"], e["last"], e["action"]) for e in padded] == [
+        (0, 2, "interpolate"), (5, 10, "interpolate"), (12, 13, "interpolate"), (14, 17, "drop")]
+    assert bad_frames.pad_interpolation(
+        [{"first": 0, "last": 1, "action": "interpolate"}], None, 20, 3
+    ) == [{"first": 0, "last": 1, "action": "interpolate"}]
+
+
 def test_stripe_meter_detects_a_displaced_band():
     rng = np.random.default_rng(0)
     base = cv2.GaussianBlur(rng.integers(0, 255, (128, 128)).astype(np.uint8), (0, 0), 3)

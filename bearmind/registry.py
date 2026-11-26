@@ -84,6 +84,8 @@ class StageRecord:
     checks: list[Check] = field(default_factory=list)
     error: str | None = None
     params: dict = field(default_factory=dict)  # resolved parameters the stage ran with (provenance)
+    output_stats: dict | None = None
+    kept_revision: str | None = None
 
 
 @dataclass

@@ -238,7 +238,7 @@ def test_eta_from_history_and_defaults(tmp_series):
     # two DONE mc runs of 0.1 and 0.3 s/frame: median 0.2 for pending mc; other stages have no history
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done(seconds=100)})
     put(tmp_series, "A_M1_2D", {"crop": done(), "mc": done(seconds=300)})
-    # FAILED and SKIPPED stages are not estimated; the stages after them are pending
+    # Failed stages and the work they block are excluded from the estimate.
     put(tmp_series, "A_M1_3D", {"mc": StageRecord(State.FAILED, error="x"), "crop": StageRecord(State.SKIPPED),
                                 "thresholds": StageRecord(State.FAILED, error="x")})
     put(tmp_series, "A_M1_4D")
@@ -246,7 +246,6 @@ def test_eta_from_history_and_defaults(tmp_series):
     after_mc = sum(d[s] for s in PENDING_STAGES if s not in ("crop", "mc")) * 1000
     expected = (after_mc  # session 1: everything after mc
                 + after_mc  # session 2
-                + sum(d[s] for s in ("cnmf", "autoinspect", "export")) * 1000  # session 3
                 + 0.2 * 1000 + rest)  # session 4: pending mc at the median
     assert view(tmp_series).eta_s == pytest.approx(expected)
 
@@ -531,7 +530,7 @@ def test_manual_inspection_count_is_the_action_set(tmp_series):
     put(tmp_series, "A_M1_1D", {"cnmf": done(), "gate": waiting("manual_inspection")})
     put(tmp_series, "A_M1_2D", {"cnmf": done()})  # the gate not checked yet: the action takes it
     put(tmp_series, "A_M1_3D", {"mc": waiting("crop_finalize")})
-    put(tmp_series, "A_M1_4D", {"cnmf": done(), "gate": done({"gate": "not_needed"})})
+    put(tmp_series, "A_M1_4D", {s: done() for s in STAGES[:STAGES.index("gate") + 1]})
     v = view(tmp_series)
     assert v.waiting["manual_inspection"] == len(actions.waiting_gate_sids(tmp_series)) == 2
     assert v.bars["gate"].waiting == 2
@@ -735,8 +734,7 @@ def test_thresholds_wait_ends_as_soon_as_thresholds_are_written(tmp_series):
 
 
 def test_out_of_date_stage_in_cell_bar_and_eta(tmp_series):
-    """A4: a DONE stage the batch would redo says so in its cell (text and tooltip, the old number kept); it
-    counts as pending in the bar and in the time left; the warnings panel keeps its six kinds."""
+    """Stale results remain visible and wait for review, outside the batch estimate."""
     config.update_yaml(tmp_series.session_config("A_M1_1D"), THRESH)
     put(tmp_series, "A_M1_1D", {"crop": done(), "mc": done({"max_shift_px": 3.2}), "thresholds": done()})
     assert view(tmp_series).rows[0].cells["mc"].text == "3.2 px"
@@ -745,13 +743,12 @@ def test_out_of_date_stage_in_cell_bar_and_eta(tmp_series):
     cells = v.rows[0].cells
     assert cells["crop"].level == "ok" and cells["crop"].text == "done"
     for stage in ("mc", "thresholds"):
-        assert (cells[stage].level, cells[stage].text) == ("none", "out of date")
-        assert "out of date: the batch redoes mc first" in cells[stage].tooltip
-    assert "old result: 3.2 px" in cells["mc"].tooltip
-    assert (v.bars["mc"].done, v.bars["mc"].pending) == (0, 1) and v.bars["crop"].done == 1
-    d = defaults()
-    assert v.eta_s == pytest.approx(sum(d[s] for s in PENDING_STAGES if s != "crop") * 1000)
-    assert v.waiting["thresholds"] == 0 and v.warnings == []
+        assert (cells[stage].level, cells[stage].text) == ("warning", "out of date")
+        assert "Review required from MC" in cells[stage].tooltip
+    assert "Recorded result: 3.2 px" in cells["mc"].tooltip
+    assert (v.bars["mc"].done, v.bars["mc"].waiting) == (0, 1) and v.bars["crop"].done == 1
+    assert v.eta_s == 0.0 and v.waiting["thresholds"] == 0
+    assert [(w.stage, w.kind, w.review) for w in v.warnings] == [("mc", "stage_review", True)]
 
 
 def test_out_of_date_maps_do_not_wait_for_thresholds(tmp_series):

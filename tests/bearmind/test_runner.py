@@ -211,6 +211,8 @@ def test_order_and_resume(series):
     assert s.stubs.calls == []
 
     config.update_yaml(s.paths.series_config, {"cnmf": {"merge_thr": 0.7}})
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, SIDS, "cnmf", "viktor")
     res = _run(s)
     assert s.stubs.calls == [(sid, st) for st in ("cnmf", "gate", "autoinspect", "export") for sid in SIDS]
     assert res["done"] == 12
@@ -234,8 +236,15 @@ def test_failure_isolated(series):
     del s.stubs.fail[(S2, "mc")]
     s.stubs.calls.clear()
     assert _run(s) == ZERO and s.stubs.calls == []
-    # changing a parameter of the failed stage retries it
+    # A parameter change leaves the recorded failure held.
     config.update_yaml(s.paths.session_config(S2), {"mc": {"max_deviation_rigid": 10}})
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.keep_stage_result(s.paths, S2, "mc", "viktor")
+    rec = load_record(s.paths, S2)
+    assert rec.stages["mc"].state is State.FAILED
+    assert runner.StageView(s.paths).review_reason(rec, "mc") is None
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.retry_failed(s.paths, [S2], "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S2, "mc")
 
@@ -256,7 +265,7 @@ def test_waiting_does_not_block_others(series):
     assert s.stubs.calls.count((S1, "gate")) == 1  # once=True: each waiting stage is tried once
     hb = _heartbeat(s.paths)
     assert hb["counts"] == {"done": 1, "running": 0, "waiting_thresholds": 1, "waiting_manual": 1,
-                            "waiting_crop": 0, "failed": 0, "skipped": 0, "pending": 0}  # per session
+                            "waiting_crop": 0, "failed": 0, "skipped": 0, "waiting_review": 0, "pending": 0}  # per session
     assert hb["by_stage"] == {"crop": 3, "mc": 3, "thresholds": 3, "cnmf": 2, "gate": 1, "autoinspect": 1,
                               "export": 1}
     assert hb["status"] == "idle" and hb["current"] is None and hb["pid"] == os.getpid()
@@ -397,6 +406,8 @@ def test_config_writes_do_not_invalidate_upstream(series):
     # a new crop position re-runs MC and everything after it, never crop itself
     s.stubs.calls.clear()
     config.update_yaml(s.paths.session_config(S2), {"crop": {"box_pos": [1, 2]}})
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S2], "mc", "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S2, "mc")
 
@@ -406,6 +417,8 @@ def test_missing_required_output_reruns(series):
     _run(s)
     s.stubs.calls.clear()
     s.paths.estimates(S1).unlink()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1], "cnmf", "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S1, "cnmf")
     s.stubs.calls.clear()
@@ -468,7 +481,7 @@ def test_corrupt_registry_file_skipped(series):
 def test_mc_params_have_no_fps(series):
     _run(series)
     rec = load_record(series.paths, S1)
-    assert set(rec.stages["mc"].params) == {"mc", "box", "box_pos"}
+    assert set(rec.stages["mc"].params) == {"mc", "box", "box_pos", "frame_repair_rule"}
 
 
 def test_legacy_mc_record_keeps_hash_but_a_rerun_writes_no_fps(series):
@@ -518,8 +531,10 @@ def test_legacy_mc_with_lost_output_reruns_without_fps(series):
     cfg, new_params, new_hash, legacy_hash = _make_mc_legacy(s, S1)
     rec = load_record(s.paths, S1)
     assert rec.stages["mc"].state is State.DONE and runner.StageView(s.paths).current(rec, "mc")
-    s.paths.mc_video(S1).unlink()  # a required MC output is gone: the DONE record stays, MC is rerun
+    s.paths.mc_video(S1).unlink()  # a required MC output is gone: the DONE record stays until review
     s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1], "mc", "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S1, "mc")
     rec = load_record(s.paths, S1)
@@ -664,7 +679,7 @@ def test_heartbeat_logs_and_cwd(series, monkeypatch):
     hb = _heartbeat(s.paths)
     assert hb["status"] == "idle" and hb["current"] is None
     assert hb["counts"] == {"done": 3, "running": 0, "waiting_thresholds": 0, "waiting_manual": 0,
-                            "waiting_crop": 0, "failed": 0, "skipped": 0, "pending": 0}
+                            "waiting_crop": 0, "failed": 0, "skipped": 0, "waiting_review": 0, "pending": 0}
     assert hb["by_stage"] == {st: 3 for st in STAGES}
     assert not any(t.name == "bearmind-heartbeat" for t in threading.enumerate())
     for sid in SIDS:
@@ -1008,6 +1023,8 @@ def test_crop_rule_is_a_crop_input(series, monkeypatch):
     monkeypatch.setattr(bearmind.crop, "FOV_RULE", "activity_v999")
     assert runner.stage_hash(rec, "crop", cfg, s.paths) != before
     s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, SIDS, "crop", "viktor")
     _run(s)
     assert s.stubs.calls == ALL
 
@@ -1018,6 +1035,8 @@ def test_crop_detection_params_rerun_crop(series):
     _run(s)
     s.stubs.calls.clear()
     config.update_yaml(s.paths.mouse_config("NOF_H02"), {"crop": {"fov_threshold_frac": 0.3}})
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S3], "crop", "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S3, "crop")
 
@@ -1032,11 +1051,15 @@ def test_export_hashes_timestamp_inputs(series):
         d.parts[0].start_ms = 1728989165178.0
 
     registry.update_record(s.paths, S1, shift)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1], "export", "viktor")
     _run(s)
     assert s.stubs.calls == [(S1, "export")]
     s.stubs.calls.clear()
     rec = load_record(s.paths, S2)
     _touch(s.paths.root / rec.parts[0].timestamps_file, b"0" + bytes([10]) + b"500000" + bytes([10]))
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S2], "export", "viktor")
     _run(s)
     assert s.stubs.calls == [(S2, "export")]
     s.stubs.calls.clear()
@@ -1048,6 +1071,8 @@ def test_export_hashes_timestamp_inputs(series):
                   "offset_ms": 3166, "interval_ms": 51}))
 
     registry.update_record(s.paths, S3, repair_clock_step)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S3], "export", "viktor")
     _run(s)
     assert s.stubs.calls == [(S3, "export")]
 
@@ -1288,9 +1313,12 @@ def test_removed_mouse_box_is_placed_again_never_uncropped(series):
     _run(s)
     s.stubs.calls.clear()
     _set_box(s.paths, "NOF_H01", box=None)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"].get("box") is None
+    actions.rerun_from(s.paths, [S1], "mc", "viktor")
     _run(s)
     assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"]["box"] == [16, 16]
-    assert s.stubs.calls == []  # the same box again: MC is up to date, it never ran uncropped
+    assert s.stubs.calls == _tail(S1, "mc")
     assert load_record(s.paths, S1).stages["mc"].metrics["crop"] == [0, 0, 16, 16]
 
 
@@ -1301,6 +1329,7 @@ def test_removed_mouse_box_waits_while_finalize_cannot_run(series):
     s.stubs.calls.clear()
     _set_box(s.paths, "NOF_H01", box=None)
     s.paths.session_config(S2).write_text("cnmf: [unclosed" + chr(10), encoding="utf-8")
+    actions.rerun_from(s.paths, [S1], "mc", "viktor")
     _run(s)
     assert (S1, "mc") in s.stubs.calls  # tried, and it waits
     st = load_record(s.paths, S1).stages["mc"]
@@ -1317,6 +1346,8 @@ def test_resized_mouse_box_places_the_sessions_again(series):
     assert _yaml(s.paths.session_config(S1))["crop"]["box_pos"] == [1, 2]  # +15 would pass the 16 px edge
     s.stubs.calls.clear()
     _set_box(s.paths, "NOF_H01", box=[15, 15])
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1, S2], "mc", "viktor")
     _run(s)
     assert s.stubs.calls == _tail(S1, "mc")[:1] + _tail(S2, "mc")[:1] + [
         (sid, st) for st in STAGES[2:] for sid in (S1, S2)]
@@ -1338,6 +1369,8 @@ def test_detection_parameter_change_recomputes_an_automatic_box(series, source, 
     s.stubs.fov.update({S1: [4, 4, 6, 6], S2: [5, 5, 6, 6]})  # what the new threshold finds
     config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
     s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1, S2], "crop", "viktor")
     _run(s)
     assert (S1, "crop") in s.stubs.calls and (S2, "crop") in s.stubs.calls
     assert _yaml(s.paths.mouse_config("NOF_H01"))["crop"]["box"] == box
@@ -1462,6 +1495,8 @@ def test_export_rule_is_an_export_input(series, monkeypatch):
     assert load_record(s.paths, S1).stages["export"].params["component_rule"] == "ml_or_merged_not_deleted"
     s.stubs.calls.clear()
     monkeypatch.setattr(bearmind.stages, "COMPONENT_RULE", "another_rule")
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, SIDS, "export", "viktor")
     _run(s)
     assert s.stubs.calls == [(sid, "export") for sid in SIDS]
 
@@ -1487,6 +1522,7 @@ def test_mc_waits_for_finalize_after_crop_is_detected_again(series):
     good = s.paths.session_config(S2).read_text(encoding="utf-8")
     s.paths.session_config(S2).write_text(BROKEN_YAML, encoding="utf-8")
     s.stubs.calls.clear()
+    actions.rerun_from(s.paths, [S1, S2], "crop", "viktor")
     _run(s)
     r1 = load_record(s.paths, S1)
     assert (S1, "crop") in s.stubs.calls
@@ -1508,6 +1544,7 @@ def test_stale_positions_wait_with_isolated_stages(series, monkeypatch):
     config.update_yaml(s.paths.mouse_config("NOF_H01"), {"crop": {"fov_threshold_frac": 0.3}})
     s.paths.session_config(S2).write_text(BROKEN_YAML, encoding="utf-8")
     s.stubs.calls.clear()
+    actions.rerun_from(s.paths, [S1], "crop", "viktor")
     _run(s)
     assert (S1, "crop") in s.stubs.calls and (S1, "mc") not in s.stubs.calls
     st = load_record(s.paths, S1).stages["mc"]
@@ -1839,6 +1876,7 @@ def test_old_records_with_preview_outputs_rerun_only_previews(series):
         def add(d, old_mc=old_mc, old_qc=old_qc):
             d.stages["mc"].outputs.update(old_mc)
             d.stages["cnmf"].outputs.update(old_qc)
+            d.stages["mc"].output_stats = d.stages["cnmf"].output_stats = None
 
         registry.update_record(s.paths, sid, add)
     _on(s)
@@ -1854,6 +1892,9 @@ def test_preview_settings_change_remakes_only_previews(series):
     _run(s)
     s.stubs.calls.clear()
     _on(s, tbin=4)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    for stage in SIDE:
+        actions.rerun_from(s.paths, SIDS, stage, "viktor")
     res = _run(s)
     assert s.stubs.calls == _sides_only() and res["done"] == 6
     assert load_record(s.paths, S1).stages["mc_preview"].params["tbin"] == 4
@@ -1915,6 +1956,8 @@ def test_mc_rerun_resets_mc_preview(series):
     _run(s)
     s.stubs.calls.clear()
     config.update_yaml(s.paths.series_config, {"mc": {"max_deviation_rigid": 10}})
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, SIDS, "mc", "viktor")
     _run(s)
     assert s.stubs.calls == [(sid, st) for st in STAGES[1:] for sid in SIDS] + _sides_only()
     # a main stage reset from cnmf on resets the CNMF-E preview, not the MC one
@@ -1940,6 +1983,8 @@ def test_running_main_stage_resets_the_previews_that_read_it(series):
 
     s.stubs.hooks[(S1, "mc")] = look
     s.paths.mc_video(S1).unlink()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1], "mc", "viktor")
     _run(s)
     assert seen == {"mc_preview": State.PENDING, "cnmf_preview": State.PENDING}
     assert s.stubs.calls == [(S1, st) for st in STAGES[1:]] + [(S1, "mc_preview"), (S1, "cnmf_preview")]
@@ -1951,6 +1996,8 @@ def test_missing_preview_file_remakes_only_it(series):
     _run(s)
     s.stubs.calls.clear()
     s.paths.preview(S2, "mc").unlink()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S2], "mc_preview", "viktor")
     _run(s)
     assert s.stubs.calls == [(S2, "mc_preview")]
 
@@ -2008,7 +2055,9 @@ def test_invalid_preview_setting_fails_only_the_previews(series):
         assert "preview.tbin must be an integer >= 1" in rec.stages["mc_preview"].error
     assert res["failed"] == 6 and runner.schedule_problems(s.paths, registry.all_records(s.paths)) == {}
     s.stubs.calls.clear()
-    _on(s, tbin=2)  # fixed: other parameters, so the previews are offered again
+    _on(s, tbin=2)
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.retry_failed(s.paths, SIDS, "viktor")
     _run(s)
     assert s.stubs.calls == _sides_only()
 
@@ -2118,6 +2167,8 @@ def test_parent_rerun_while_previews_are_off_remakes_them_when_turned_on(series)
     actions.set_previews(s.paths, False)
     s.paths.mc_video(S1).unlink()
     s.stubs.calls.clear()
+    assert _run(s) == ZERO and s.stubs.calls == []
+    actions.rerun_from(s.paths, [S1], "mc", "viktor")
     _run(s)
     assert s.stubs.calls == [(S1, st) for st in STAGES[1:]]
     rec = load_record(s.paths, S1)
@@ -2226,8 +2277,7 @@ def test_failed_overview_redraw_removes_the_old_picture(series, monkeypatch):
 # --- the runner's view shared with the window and status (phase 4 final fix wave, A) ---
 
 def test_stage_view_is_the_batch_rule_on_an_out_of_date_stage(series):
-    """runner.StageView is the runner's own view under a public name. With a stage out of date the batch still
-    starts from it, and the view's questions for the window and status agree with what the batch does."""
+    """The runner and status report hold stale work until the same stage is selected for reanalysis."""
     s = series
     assert runner._View is runner.StageView
     _run(s, until="thresholds")
@@ -2236,8 +2286,8 @@ def test_stage_view_is_the_batch_rule_on_an_out_of_date_stage(series):
     records = registry.all_records(s.paths)
     by = {r.sid: r for r in records}
     view = runner.StageView(s.paths)
-    assert runner.next_ready(records, s.paths, until="thresholds", _view=view) == (S1, "crop")
-    assert runner.next_ready(records, s.paths, until="thresholds") == (S1, "crop")  # its own view: the same
+    assert runner.next_ready(records, s.paths, until="thresholds", _view=view) is None
+    assert runner.next_ready(records, s.paths, until="thresholds") is None
     for sid in (S1, S2):
         assert view.problem(by[sid]) is None
         assert view.first_not_current(by[sid]) == "crop"
@@ -2248,10 +2298,39 @@ def test_stage_view_is_the_batch_rule_on_an_out_of_date_stage(series):
     row = runner.summary(s.paths).set_index("sid")
     assert row.loc[S1, "crop"] == row.loc[S2, "thresholds"] == runner.OUT_OF_DATE == "done (out of date)"
     assert row.loc[S3, "crop"] == "done" and list(row.reset_index().columns) == runner.SUMMARY_COLUMNS
+    assert _run(s, until="thresholds") == ZERO and s.stubs.calls == []
+    assert _heartbeat(s.paths)["counts"]["waiting_review"] == 2
+    actions.rerun_from(s.paths, [S1, S2], "crop", "viktor")
     _run(s, until="thresholds")
     assert s.stubs.calls == [(S1, "crop"), (S2, "crop"), (S1, "mc"), (S2, "mc"), (S1, "thresholds"),
                              (S2, "thresholds")]
     assert all(runner.StageView(s.paths).first_not_current(r) == "cnmf" for r in registry.all_records(s.paths))
+
+
+def test_external_output_review_keeps_upstream_hash_and_requires_fresh_decision(series):
+    s = series
+    _run(s, until="thresholds")
+    s.stubs.calls.clear()
+    paths = s.paths
+    path = paths.mc_video(S1)
+    path.write_bytes(b"externally repaired video")
+    config.update_yaml(paths.session_config(S1), {"mc": {"max_shifts": [21, 21]}})
+    rec = registry.load_record(paths, S1)
+    view = runner.StageView(paths)
+    assert view.review_reason(rec, "mc") == "An output was changed outside the batch."
+    _run(s, until="thresholds")
+    assert s.stubs.calls == []
+
+    actions.keep_stage_result(paths, S1, "mc", "expert")
+    kept = registry.load_record(paths, S1)
+    assert kept.stages["mc"].params_hash == rec.stages["mc"].params_hash
+    assert runner.StageView(paths).current_through(kept, "thresholds")
+    path.write_bytes(b"changed again")
+    rec = registry.load_record(paths, S1)
+    assert runner.StageView(paths).review_reason(rec, "mc") == "An output was changed outside the batch."
+    actions.rerun_from(paths, [S1], "mc", "expert")
+    _run(s, until="thresholds")
+    assert s.stubs.calls == [(S1, "mc"), (S1, "thresholds")]
 
 
 def test_stage_view_resolve_hook_and_unschedulable_session(series):
@@ -2279,15 +2358,14 @@ def test_stage_view_resolve_hook_and_unschedulable_session(series):
 
 
 def test_done_not_current_names_every_stage_the_batch_redoes(series):
-    """Residual I-1: with one MC video gone, MC is redone and so is every later main stage (_reset_downstream);
-    each of them counts as out of date, though its own record and hash are unchanged."""
+    """A missing MC video flags the downstream stages even if their own inputs still match."""
     s = series
     _run(s)
     s.paths.mc_video(S1).unlink()
     records = registry.all_records(s.paths)
     by = {r.sid: r for r in records}
     view = runner.StageView(s.paths)
-    assert runner.next_ready(records, s.paths, _view=view) == (S1, "mc")
+    assert runner.next_ready(records, s.paths, _view=view) is None
     assert view.current(by[S1], "thresholds")  # its own rule still holds: the chain decides
     assert view.first_not_current(by[S1]) == "mc"
     assert view.done_not_current(by[S1]) == list(STAGES[1:])

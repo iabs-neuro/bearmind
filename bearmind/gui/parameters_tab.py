@@ -201,7 +201,7 @@ class ParametersTab(QWidget):
                         changes[stage] += 1
             affected = "\n".join(f"{stage}: {count} finished sessions" for stage, count in sorted(changes.items()))
             text = f"Apply the edited parameters in {self.path}?\n\n"
-            text += f"Outputs affected on the next run:\n{affected}" if changes else "No finished stage becomes out of date."
+            text += f"Completed stages to review in Monitor:\n{affected}" if changes else "No finished stage becomes out of date."
             if QMessageBox.question(self, "Save parameters", text) != QMessageBox.StandardButton.Yes:
                 return
             config.replace_yaml(self.path, updated, self.original)
