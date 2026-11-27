@@ -7,6 +7,7 @@ import _thread
 import json
 import os
 import pickle
+import sys
 import threading
 import time
 from pathlib import Path
@@ -121,6 +122,21 @@ def test_result_and_output_come_back(stage):
     text = log_text(stage)
     assert "fake stage: stdout line" in text and "fake stage: stderr line" in text
     assert "INFO fake stage: info record" in text
+    assert d.alive() == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows WMI fallback")
+def test_windows_stage_and_worker_load_h5py_without_wmi(stage):
+    import platform
+
+    original = platform._wmi_query
+    machine = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ["PROCESSOR_ARCHITECTURE"]
+    with Descendants() as d:
+        result = run(stage, "windows_platform_info")
+    assert result.metrics["stage"] == result.metrics["worker"]
+    architecture, h5py_version = result.metrics["worker"]
+    assert architecture == machine and h5py_version
+    assert platform._wmi_query is original
     assert d.alive() == []
 
 

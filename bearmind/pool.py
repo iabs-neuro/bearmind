@@ -10,6 +10,7 @@ cannot be interrupted, and the runner (bearmind.isolate) turns that exit code in
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import sys
 import threading
@@ -95,11 +96,33 @@ class _Watchdog:
             self._thread.join()
 
 
+def _wmi_unavailable(*_args):
+    raise OSError("WMI is unavailable in this BEARMiND process")
+
+
+def use_local_platform_info() -> None:
+    """Use CPython's fallback for platform information in this Windows child process."""
+    if sys.platform == "win32":
+        import platform
+
+        # A slow or incomplete WMI reply can crash Python while a worker imports h5py.
+        # The standard library already has a fallback when WMI is unavailable.
+        if hasattr(platform, "_wmi_query"):
+            platform._wmi_query = _wmi_unavailable
+
+
 def start_pool(n_processes: int):
     """CaImAn's multiprocessing pool (dview) of n_processes workers, watched for dead workers."""
-    from caiman.cluster import setup_cluster
+    if sys.platform == "win32":
+        # CaImAn's Windows backend creates this same Pool but offers no worker initializer.
+        sys.stdout.flush()
+        if multiprocessing.active_children():
+            raise RuntimeError("A cluster is already running. Terminate it before starting another pool.")
+        dview = multiprocessing.get_context("spawn").Pool(int(n_processes), initializer=use_local_platform_info)
+    else:
+        from caiman.cluster import setup_cluster
 
-    _, dview, _ = setup_cluster(backend="multiprocessing", n_processes=int(n_processes), single_thread=False)
+        _, dview, _ = setup_cluster(backend="multiprocessing", n_processes=int(n_processes), single_thread=False)
     dview._bearmind_watchdog = _Watchdog(dview)
     return dview
 

@@ -60,6 +60,29 @@ def mpl_backend(paths, rec, cfg):
                                 "worker_env": child.stdout.strip()})
 
 
+def _platform_probe():
+    import platform
+
+    from bearmind.pool import _wmi_unavailable
+
+    assert platform._wmi_query is _wmi_unavailable
+    import h5py
+
+    return platform.uname().machine, h5py.__version__
+
+
+def windows_platform_info(paths, rec, cfg):
+    from bearmind import pool
+
+    stage_info = _platform_probe()
+    dview = pool.start_pool(2)
+    try:
+        worker_info = dview.apply_async(_platform_probe).get(timeout=60)
+    finally:
+        pool.stop_pool(dview)
+    return StageResult(metrics={"stage": stage_info, "worker": worker_info})
+
+
 def value_error(paths, rec, cfg):
     raise ValueError("x")
 

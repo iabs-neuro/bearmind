@@ -29,7 +29,7 @@ from pathlib import Path
 
 import psutil
 
-from bearmind.pool import POOL_WORKER_DIED
+from bearmind.pool import POOL_WORKER_DIED, use_local_platform_info
 from bearmind.stages import WaitingForInput
 
 POLL_S = 1.0
@@ -292,6 +292,7 @@ def _child(func_spec: str, blob: bytes, log_path: str, conn) -> None:
     if conn.recv() != "go":  # the parent has put this process into its job: nothing escapes it now
         return
     try:
+        use_local_platform_info()
         paths, rec, cfg = pickle.loads(blob)
         msg = ("ok", resolve(func_spec)(paths, rec, cfg))
     except BaseException as e:
